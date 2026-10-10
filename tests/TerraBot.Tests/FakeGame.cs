@@ -10,14 +10,19 @@ namespace TerraBot.Tests;
 
 /// <summary>
 /// A small fake Terraria for brain/skill tests, on top of <see cref="SimWorld"/>. Uses the vanilla item, tile and
-/// recipe numbers the bot needs up to an iron pickaxe (recipes checked against the decompiled Recipe.SetupRecipes,
+/// recipe numbers the bot needs up to iron armour (recipes checked against the decompiled Recipe.SetupRecipes,
 /// tML 2026.08), in an "iron world" (lead ore does not exist):
 /// <list type="bullet">
 /// <item>trees fall after 30 ticks of axe swings at their base and drop one wood per trunk tile around it;</item>
-/// <item>mined stone/ore/dirt drops its item where the cell was; drops within 42 px are picked up;</item>
+/// <item>mined stone/ore/dirt drops its item where the cell was; drops within 42 px are picked up; placing a block
+/// (SimWorld) spends a carried stone or dirt block;</item>
 /// <item>crafting checks ingredients (recipe groups included) and stations within 4 tiles of the body;</item>
-/// <item>stations are placed as 2×1 platform-like tiles (the real furnace is 3×2; footprints are the game
-/// adapter's business);</item>
+/// <item>furniture has vanilla footprints (TileObjectData size and origin): work bench 2×1, furnace 3×2,
+/// anvil 2×1, table 3×2, chair 1×2, door 1×3, torch 1×1. Floor furniture needs solid ground under it, a door
+/// solid tiles above and below, a torch a wall or a solid side; nothing goes over the player except torches;</item>
+/// <item>walls go into cells next to a tile or wall; the housing check is a simplified WorldGen.StartRoomCheck +
+/// RoomNeeds (8-neighbour flood fill, ≥ 60 cells frame included, walls or solids within 2 cells, chair, table,
+/// door and light source);</item>
 /// <item>slimes (AI style 1) sit still, take 10 damage per in-reach swing and drop 2 gel.</item>
 /// </list>
 /// </summary>
@@ -27,12 +32,17 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int Wood = 9, WorkBench = 36, WoodenSword = 24, Gel = 23, Torch = 8, StoneBlock = 3, DirtBlock = 2;
 	public const int Furnace = 33, IronOre = 11, IronBar = 22, IronAnvil = 35, IronPickaxe = 1;
 	public const int LeadOre = 700, LeadBar = 704, LeadAnvil = 716, LeadPickaxe = 3497, WoodPlatform = 94, IronFence = 2333;
+	public const int WoodWall = 93, Door = 25, Chair = 34, Table = 32;
+	public const int IronBroadsword = 4, IronHelmet = 90, IronChainmail = 81, IronGreaves = 77;
 	public const int TileDirt = 0, TileStone = 1, TileIron = 6, TileLead = 167, TileAnvil = 16, TileFurnace = 17, TileBench = 18;
+	public const int TileTorch = 4, TileDoor = 10, TileTable = 14, TileChair = 15;
 	public const int SlimeAi = 1;
 
 	public static readonly GameIds Ids = new() {
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
 		Gel = Gel, Torch = Torch, FurnaceTile = TileFurnace, AnvilTile = TileAnvil, IronTierPickaxe = IronPickaxe,
+		IronTierBroadsword = IronBroadsword, IronTierHelmet = IronHelmet, IronTierChainmail = IronChainmail, IronTierGreaves = IronGreaves,
+		WoodWall = WoodWall, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
 	};
 
 	public readonly ArrayTileGrid Grid;
@@ -40,6 +50,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly SimWorld Sim;
 	public readonly Dictionary<TilePos, int> Trees = new(); // base -> height
 	public readonly Dictionary<TilePos, int> TileTypes = new(); // solid cells that are not dirt
+	public readonly Dictionary<TilePos, int> Furniture = new(); // cell -> tile type of placed furniture
+	public readonly HashSet<TilePos> Walls = new();
+	public readonly HashSet<int> Equipped = new();
 	public readonly Dictionary<int, int> Items = new();
 	public readonly List<DropInfo> Drops = new();
 	public readonly Dictionary<int, TilePos> Stations = new();
@@ -50,6 +63,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	private int nextDropId = 1000;
 	private int swingTimer;
 	private int facing = 1;
+	private int placedSeen;
 
 	private readonly Dictionary<int, List<RecipeInfo>> recipes = new();
 
@@ -90,6 +104,14 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = LeadAnvil, Ingredients = new[] { new Ingredient(5, LeadBar) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = IronPickaxe, Ingredients = new[] { new Ingredient(10, IronBar), new Ingredient(3, Wood) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = LeadPickaxe, Ingredients = new[] { new Ingredient(10, LeadBar), new Ingredient(3, Wood) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = IronBroadsword, Ingredients = new[] { new Ingredient(8, IronBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = IronHelmet, Ingredients = new[] { new Ingredient(15, IronBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = IronChainmail, Ingredients = new[] { new Ingredient(25, IronBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = IronGreaves, Ingredients = new[] { new Ingredient(20, IronBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = WoodWall, ResultStack = 4, Ingredients = new[] { new Ingredient(1, Wood) }, Stations = new[] { TileBench } });
+		Add(new RecipeInfo { Result = Door, Ingredients = new[] { new Ingredient(6, Wood) }, Stations = new[] { TileBench } });
+		Add(new RecipeInfo { Result = Chair, Ingredients = new[] { new Ingredient(4, Wood) }, Stations = new[] { TileBench } });
+		Add(new RecipeInfo { Result = Table, Ingredients = new[] { new Ingredient(8, Wood) }, Stations = new[] { TileBench } });
 		// A cycle like vanilla's: platforms from wood and wood back from platforms.
 		Add(new RecipeInfo { Result = WoodPlatform, ResultStack = 2, Ingredients = new[] { new Ingredient(1, Wood) } });
 		Add(new RecipeInfo { Result = Wood, Ingredients = new[] { new Ingredient(2, WoodPlatform) } });
@@ -133,11 +155,16 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		TileBench => new[] { WorkBench },
 		TileFurnace => new[] { Furnace },
 		TileAnvil => new[] { IronAnvil, LeadAnvil },
+		TileTable => new[] { Table },
+		TileChair => new[] { Chair },
+		TileDoor => new[] { Door },
+		TileTorch => new[] { Torch },
 		_ => Array.Empty<int>(),
 	};
 
 	public int TilePlacedBy(int itemType) => itemType switch {
-		WorkBench => TileBench, Furnace => TileFurnace, IronAnvil or LeadAnvil => TileAnvil, _ => -1,
+		WorkBench => TileBench, Furnace => TileFurnace, IronAnvil or LeadAnvil => TileAnvil,
+		Table => TileTable, Chair => TileChair, Door => TileDoor, Torch => TileTorch, _ => -1,
 	};
 
 	public string ItemName(int itemType) => $"item{itemType}";
@@ -147,18 +174,46 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	public bool IsTreeTrunk(int x, int y) => Trees.Any(t => t.Key.X == x && y <= t.Key.Y && y > t.Key.Y - t.Value);
 
+	public (int Width, int Height, int OriginX, int OriginY) Footprint(int itemType) => TilePlacedBy(itemType) switch {
+		TileBench or TileAnvil => (2, 1, 0, 0),
+		TileFurnace or TileTable => (3, 2, 1, 1),
+		TileChair => (1, 2, 0, 1),
+		TileDoor => (1, 3, 0, 0),
+		_ => (1, 1, 0, 0),
+	};
+
+	private bool Free(int x, int y) => Grid.Get(x, y) == CellKind.Empty && !Furniture.ContainsKey(new TilePos(x, y)) && !IsTreeTrunk(x, y);
+
 	public bool CanPlaceItem(int itemType, int x, int y)
 	{
-		if (TilePlacedBy(itemType) < 0)
+		int tile = TilePlacedBy(itemType);
+		if (tile < 0)
 			return false;
+		var (w, h, ox, oy) = Footprint(itemType);
+		int x0 = x - ox, y0 = y - oy;
 		TilePos n = Sim.Node;
-		bool overlapsBody = (x + 1 >= n.X && x <= n.X + 1) && y >= n.Y - 2 && y <= n.Y;
-		return !overlapsBody && Grid.Get(x, y) == CellKind.Empty && Grid.Get(x + 1, y) == CellKind.Empty
-			&& Grid.Get(x, y + 1).IsSolid() && Grid.Get(x + 1, y + 1).IsSolid() && !IsTreeTrunk(x, y) && !IsTreeTrunk(x + 1, y);
+		for (int cx = x0; cx < x0 + w; cx++)
+			for (int cy = y0; cy < y0 + h; cy++) {
+				if (!Free(cx, cy))
+					return false;
+				bool inBody = cx >= n.X && cx <= n.X + 1 && cy >= n.Y - 2 && cy <= n.Y;
+				if (inBody && tile != TileTorch)
+					return false;
+			}
+		if (tile == TileTorch)
+			return Walls.Contains(new TilePos(x, y)) || Grid.Get(x - 1, y).IsSolid() || Grid.Get(x + 1, y).IsSolid() || Grid.Get(x, y + 1).IsSolid();
+		if (tile == TileDoor)
+			return Grid.Get(x0, y0 - 1).IsSolid() && Grid.Get(x0, y0 + h).IsSolid();
+		for (int cx = x0; cx < x0 + w; cx++)
+			if (!Grid.Get(cx, y0 + h).IsSolid())
+				return false;
+		return true;
 	}
 
 	public int TileTypeAt(int x, int y)
 	{
+		if (Furniture.TryGetValue(new TilePos(x, y), out int f))
+			return f;
 		if (!Grid.Get(x, y).IsSolid())
 			return -1;
 		return TileTypes.TryGetValue(new TilePos(x, y), out int t) ? t : TileDirt;
@@ -174,10 +229,73 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		return found.OrderBy(c => c.ChebyshevTo(around)).ToList();
 	}
 
+	public bool HasWall(int x, int y) => Walls.Contains(new TilePos(x, y));
+
+	public bool CanPlaceWall(int wallItem, int x, int y)
+	{
+		if (wallItem != WoodWall || Walls.Contains(new TilePos(x, y)) || !Grid.InBounds(x, y))
+			return false;
+		bool Anchor(int i, int j) => Grid.Get(i, j) != CellKind.Empty || Furniture.ContainsKey(new TilePos(i, j)) || Walls.Contains(new TilePos(i, j));
+		return Anchor(x + 1, y) || Anchor(x - 1, y) || Anchor(x, y + 1) || Anchor(x, y - 1);
+	}
+
+	/// <summary>Simplified WorldGen.StartRoomCheck + RoomNeeds.</summary>
+	public string CheckHousing(int x, int y)
+	{
+		if (Grid.Get(x, y).IsSolid())
+			return "starts in a solid tile";
+		var seen = new HashSet<TilePos>();
+		var stack = new Stack<TilePos>();
+		var types = new HashSet<int>();
+		stack.Push(new TilePos(x, y));
+		while (stack.Count > 0) {
+			TilePos c = stack.Pop();
+			if (!seen.Add(c))
+				continue;
+			if (seen.Count > 750)
+				return "room too big";
+			if (!Grid.InBounds(c.X, c.Y))
+				return "open to the edge";
+			if (Furniture.TryGetValue(c, out int f))
+				types.Add(f);
+			if (Grid.Get(c.X, c.Y).IsSolid())
+				continue; // frame (closed doors included)
+			bool row = false, col = false;
+			for (int k = -2; k <= 2; k++) {
+				row |= Walls.Contains(new TilePos(c.X + k, c.Y)) || Grid.Get(c.X + k, c.Y).IsSolid();
+				col |= Walls.Contains(new TilePos(c.X, c.Y + k)) || Grid.Get(c.X, c.Y + k).IsSolid();
+			}
+			if (!row || !col)
+				return $"hole in the wall near {c}";
+			for (int dx = -1; dx <= 1; dx++)
+				for (int dy = -1; dy <= 1; dy++)
+					if (dx != 0 || dy != 0)
+						stack.Push(new TilePos(c.X + dx, c.Y + dy));
+		}
+		if (seen.Count < 60)
+			return $"room too small ({seen.Count})";
+		var missing = new List<string>();
+		if (!types.Contains(TileChair)) missing.Add("chair");
+		if (!types.Contains(TileTable)) missing.Add("table");
+		if (!types.Contains(TileDoor)) missing.Add("door");
+		if (!types.Contains(TileTorch)) missing.Add("light source");
+		return missing.Count == 0 ? null : "missing " + string.Join(", ", missing);
+	}
+
 	// ---------- IInventory / ICrafter ----------
 
 	public int Count(int itemType) => Items.TryGetValue(itemType, out int n) ? n : 0;
 	public bool HasRoomFor(int itemType) => true;
+	public bool IsEquipped(int itemType) => Equipped.Contains(itemType);
+
+	public bool TryEquip(int itemType)
+	{
+		if (Count(itemType) <= 0)
+			return false;
+		Items[itemType]--;
+		Equipped.Add(itemType);
+		return true;
+	}
 
 	public CraftResult TryCraft(int itemType)
 	{
@@ -214,9 +332,16 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		int tile = TileTypeAt(cell.X, cell.Y);
 		TileTypes.Remove(cell);
 		int item = tile switch { TileStone => StoneBlock, TileIron => IronOre, _ => DirtBlock };
-		Drops.Add(new DropInfo(nextDropId++, item, ItemName(item), 1, cell.X * 16f + 4, cell.Y * 16f + 4, 8, 8));
-		if (item == DirtBlock || item == StoneBlock)
-			Blocks.BlockCount++; // throwaway blocks the bot may place (picked up right away in practice)
+		int y = FallRow(cell.X, cell.Y);
+		Drops.Add(new DropInfo(nextDropId++, item, ItemName(item), 1, cell.X * 16f + 4, y * 16f + 4, 8, 8));
+	}
+
+	/// <summary>Items fall like in the game: down from (x, y) to the first row with a floor under it (the cell at y itself is being cleared).</summary>
+	private int FallRow(int x, int y)
+	{
+		while (Grid.InBounds(x, y + 1) && !Grid.Get(x, y + 1).CanStandOn())
+			y++;
+		return y;
 	}
 
 	/// <summary>Applies this tick's controls to the fake world (axe, placing, swings, pickup), then moves the body.</summary>
@@ -234,11 +359,15 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				}
 			}
 		}
-		if (o.Tool == ToolRequest.Item && o.UseItem && o.HasAim && Count(o.ToolItem) > 0 && CanPlaceItem(o.ToolItem, o.AimX, o.AimY)) {
-			Grid.Set(o.AimX, o.AimY, CellKind.Platform);
-			Grid.Set(o.AimX + 1, o.AimY, CellKind.Platform);
-			Stations[TilePlacedBy(o.ToolItem)] = new TilePos(o.AimX, o.AimY);
-			Items[o.ToolItem]--;
+		if (o.Tool == ToolRequest.Item && o.UseItem && o.HasAim && Count(o.ToolItem) > 0 && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
+			if (o.ToolItem == WoodWall) {
+				if (CanPlaceWall(WoodWall, o.AimX, o.AimY)) {
+					Walls.Add(new TilePos(o.AimX, o.AimY));
+					Items[WoodWall]--;
+				}
+			}
+			else if (CanPlaceItem(o.ToolItem, o.AimX, o.AimY))
+				PlaceFurniture(o.ToolItem, o.AimX, o.AimY);
 		}
 		PhysicsParams p = PhysicsParams.Default;
 		float cx = Sim.State.CenterX(p), cy = Sim.State.CenterY(p);
@@ -261,6 +390,11 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		if (swingTimer > 0)
 			swingTimer--;
 		Sim.Step(o);
+		// A block placed by the sim comes out of the inventory (stone first, then dirt).
+		for (; placedSeen < Sim.Placed; placedSeen++) {
+			int item = Count(StoneBlock) > 0 ? StoneBlock : DirtBlock;
+			Items[item] = Math.Max(0, Count(item) - 1);
+		}
 		cx = Sim.State.CenterX(p);
 		cy = Sim.State.CenterY(p);
 		foreach (DropInfo d in Drops.ToList())
@@ -268,6 +402,24 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				Items[d.Type] = Count(d.Type) + d.Stack;
 				Drops.Remove(d);
 			}
+	}
+
+	/// <summary>Stations and tables are solid-top (Platform), doors solid, chairs and torches not in the way.</summary>
+	private void PlaceFurniture(int itemType, int x, int y)
+	{
+		int tile = TilePlacedBy(itemType);
+		var (w, h, ox, oy) = Footprint(itemType);
+		for (int cx = x - ox; cx < x - ox + w; cx++)
+			for (int cy = y - oy; cy < y - oy + h; cy++) {
+				Furniture[new TilePos(cx, cy)] = tile;
+				if (tile == TileDoor)
+					Grid.Set(cx, cy, CellKind.Solid);
+				else if (tile is not (TileChair or TileTorch) && cy == y - oy)
+					Grid.Set(cx, cy, CellKind.Platform);
+			}
+		if (tile is TileBench or TileFurnace or TileAnvil)
+			Stations[tile] = new TilePos(x, y);
+		Items[itemType]--;
 	}
 
 	/// <summary>Like the game adapter, stations are only rescanned every 20 ticks.</summary>
@@ -282,6 +434,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		ctx.PickPower = Count(IronPickaxe) > 0 ? 40 : 35;
 		ctx.Combat.ItemAnimation = swingTimer;
 		ctx.Combat.Facing = facing;
+		Blocks.BlockCount = Count(StoneBlock) + Count(DirtBlock);
 		if (refreshes++ % 20 == 0)
 			seenStations = new Dictionary<int, TilePos>(Stations);
 		TilePos n = Sim.Node;

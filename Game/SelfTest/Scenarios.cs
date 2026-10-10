@@ -23,6 +23,12 @@ public sealed class RunResult
 	public bool BenchPlaced;
 	/// <summary>Best hotbar pickaxe power at the end.</summary>
 	public int PickPower;
+	/// <summary>The game's housing check on the built house: null = valid, else the reason ("no house" if none was built).</summary>
+	public string Housing = "no house";
+	/// <summary>Iron-tier armour pieces worn at the end (0-3).</summary>
+	public int ArmourWorn;
+	/// <summary>A wooden sword is in hotbar slots 1-10 at the end (usable).</summary>
+	public bool SwordOnHotbar;
 	public List<string> Log = new();
 
 	public bool LogHas(string s) => Log.Any(l => l.Contains(s));
@@ -47,12 +53,14 @@ public sealed class Scenario
 	public int EnemyType { get; init; }
 	/// <summary>Running tick at which the 'E' enemies spawn (0 = at the start).</summary>
 	public int SpawnAtTick { get; init; }
-	/// <summary>"walk" (to 'G'), "fight" (FightSkill), "chop" (gather 5 wood) or "auto" (early-game brain).</summary>
+	/// <summary>"walk" (to 'G'), "fight" (FightSkill), "chop" (gather 5 wood), "build" (a small house near 'S') or "auto" (the planner).</summary>
 	public string Mode { get; init; } = "walk";
 	/// <summary>Planner plan for Mode "auto" (ProgressionPlanner.Plans).</summary>
 	public string AutoPlan { get; init; } = Bot.Brain.ProgressionPlanner.Plans.Early;
 	/// <summary>Start at nightfall instead of mid-morning.</summary>
 	public bool Night { get; init; }
+	/// <summary>Main.time at the start for a day scenario (27000 = mid-morning; 0 = dawn, 15 minutes of daylight).</summary>
+	public double DayTime { get; init; } = 27000;
 	public bool ExpectSuccess { get; init; } = true;
 	public int TimeoutTicks { get; init; } = 60 * 45;
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
@@ -159,7 +167,7 @@ public sealed class Scenario
 				TimeoutTicks = 60 * 60 * 4,
 				Check = r => !r.BenchPlaced ? "no work bench placed" : r.Swords < 1 ? "no wooden sword"
 					: !r.LogHas("Hotbar: moved axe Copper Axe") ? "axe never moved to the hotbar"
-					: !r.LogHas("Hotbar: moved weapon Wooden Sword") ? "sword never moved to the hotbar" : null,
+					: !r.SwordOnHotbar ? "the crafted sword is not on the hotbar" : null,
 			},
 			new() {
 				Name = "early_game_with_slimes",
@@ -204,11 +212,63 @@ public sealed class Scenario
 					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
 			},
 			new() {
+				// Milestone 6: a house from a kit (dirt, wood walls, door, chair, table, torches) on flat ground, checked
+				// with the game's own housing query.
+				Name = "build_house",
+				Rows = Grid(Repeat(new string('.', 60), 16),
+					"..S.........................................................",
+					Repeat(new string(',', 60), 1),
+					Repeat(new string('#', 60), 4),
+					new string('@', 60)),
+				Mode = "build",
+				Dig = true,
+				Build = true,
+				Blocks = 60,
+				Inventory = p => {
+					p.inventory[10] = new Terraria.Item(Terraria.ID.ItemID.WoodWall, 50);
+					p.inventory[11] = new Terraria.Item(Terraria.ID.ItemID.WoodenDoor);
+					p.inventory[12] = new Terraria.Item(Terraria.ID.ItemID.WoodenChair);
+					p.inventory[13] = new Terraria.Item(Terraria.ID.ItemID.WoodenTable);
+					p.inventory[14] = new Terraria.Item(Terraria.ID.ItemID.Torch, 5);
+				},
+				TimeoutTicks = 60 * 60 * 3,
+				Check = r => r.Housing != null ? $"housing check: {r.Housing}" : r.FallDamageHits > 0 ? "fall damage" : null,
+			},
+			new() {
+				// Milestone 6 from copper tools: the iron chain, then a house, an iron-tier broadsword and the full
+				// iron-tier armour set, worn. Starts at dawn so the whole run is daylight (no night to sit out). Four slimes for gel: with
+				// spawns off in the arena there are no more later (the house needs a torch on top of the furnace's three).
+				Name = "settle_auto",
+				Rows = Grid(Repeat(new string('.', 100), 17),
+					"..S.......T.......T.......T.......T.....E.....E.....E...T.......T.......T...E...T.......T.......T...",
+					Repeat(new string(',', 100), 1),
+					Repeat(new string('#', 100), 1),
+					Repeat(new string('s', 100), 2),
+					Repeat(new string('s', 10) + new string('i', 50) + new string('s', 40), 6),
+					Repeat(new string('s', 100), 2),
+					new string('@', 100)),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Settle,
+				DayTime = 0,
+				Dig = true,
+				Build = true,
+				Pickaxe = false,
+				Weapon = Terraria.ID.ItemID.CopperShortsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				Inventory = p => p.inventory[0] = new Terraria.Item(Terraria.ID.ItemID.CopperPickaxe),
+				EnemyType = Terraria.ID.NPCID.BlueSlime,
+				TimeoutTicks = 60 * 60 * 25,
+				Check = r => r.PickPower < Bot.Brain.ProgressionPlanner.IronTierPickPower ? $"pick power {r.PickPower}"
+					: r.Housing != null ? $"housing check: {r.Housing}"
+					: r.ArmourWorn < 3 ? $"{r.ArmourWorn}/3 armour pieces worn"
+					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
+			},
+			new() {
 				// Nightfall with nothing built yet: dig in and seal the hole, ignore the zombie that turns up, open up in
 				// the morning and get on with the early chain.
 				Name = "night_shelter",
 				Rows = Grid(Repeat(new string('.', 90), 16),
-					"..S......................E..............T.........T.........T.........T...................",
+					"..S......................E....T.........T.........T.........T.........T.........T........",
 					Repeat(new string(',', 90), 1),
 					Repeat(new string('#', 90), 6),
 					new string('@', 90)),

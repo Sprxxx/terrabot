@@ -72,7 +72,7 @@ public sealed class ChopTreeSkill : ISkill
 
 	private WalkToSkill StartWalk(BotContext ctx)
 	{
-		var w = new WalkToSkill(Base) { Quiet = true, Tolerance = 1 };
+		var w = new WalkToSkill(Base) { Quiet = true, Tolerance = 1, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 		w.Start(ctx);
 		return w;
 	}
@@ -94,7 +94,9 @@ public sealed class CollectDropsSkill : ISkill
 {
 	private readonly Func<DropInfo, bool> want;
 	private readonly float radiusPx;
-	private readonly HashSet<int> skip = new();
+	/// <summary>Drops given up on (unreachable, or not picked up while standing on them). Callers that restart this
+	/// skill pass their own set, so the same unreachable drop is not tried again and again.</summary>
+	private readonly HashSet<int> skip;
 	private WalkToSkill walk;
 	private int walkTarget = -1;
 	private int standingTicks;
@@ -105,9 +107,10 @@ public sealed class CollectDropsSkill : ISkill
 	public string Name => "Collect";
 	public const int MaxTicks = 60 * 40;
 
-	public CollectDropsSkill(Func<DropInfo, bool> want, int radiusTiles = 20)
+	public CollectDropsSkill(Func<DropInfo, bool> want, int radiusTiles = 20, HashSet<int> skip = null)
 	{
 		this.want = want;
+		this.skip = skip ?? new HashSet<int>();
 		radiusPx = radiusTiles * 16f;
 	}
 
@@ -160,6 +163,17 @@ public sealed class CollectDropsSkill : ISkill
 		return SkillStatus.Running;
 	}
 
+	/// <summary>
+	/// Is there a matching drop this skill would actually go for? Callers must use this rather than "any drop anywhere":
+	/// a far drop makes the skill finish at once, and a caller that keeps restarting it never gets anywhere.
+	/// </summary>
+	public static bool AnyInRange(BotContext ctx, Func<DropInfo, bool> want, int radiusTiles)
+	{
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		return ctx.Drops.Any(d => want(d) && Dist(d, cx, cy) <= radiusTiles * 16f);
+	}
+
 	private static float Dist(DropInfo d, float x, float y) => MathF.Sqrt((d.CenterX - x) * (d.CenterX - x) + (d.CenterY - y) * (d.CenterY - y));
 }
 
@@ -172,9 +186,11 @@ public sealed class GatherWoodSkill : ISkill
 	public const int TreeSearchTiles = 60;
 	public const int ExploreStepTiles = 40;
 	public const int MaxExplores = 6;
+	public const int CollectRadius = 20;
 
 	private ISkill sub;
 	private readonly HashSet<TilePos> badTrees = new();
+	private readonly HashSet<int> ignoredDrops = new();
 	private int explores;
 	private int exploreDir = 1;
 
@@ -218,6 +234,7 @@ public sealed class GatherWoodSkill : ISkill
 				return SkillStatus.Running;
 			if (s == SkillStatus.Failed && sub is ChopTreeSkill chop) {
 				badTrees.Add(chop.Base);
+				ctx.UnreachableTiles.Add(chop.Base);
 				if (chop.FailureReason.StartsWith("no axe"))
 					return Fail(ctx, chop.FailureReason);
 			}
@@ -225,15 +242,15 @@ public sealed class GatherWoodSkill : ISkill
 			sub.Stop(ctx);
 			sub = null;
 			if (felled) {
-				sub = new CollectDropsSkill(d => d.Type == ItemType, 15);
+				sub = new CollectDropsSkill(d => d.Type == ItemType, 15, ignoredDrops);
 				sub.Start(ctx);
 				State = "collecting";
 				return SkillStatus.Running;
 			}
 		}
 
-		if (ctx.Drops.Any(d => d.Type == ItemType)) {
-			sub = new CollectDropsSkill(d => d.Type == ItemType, 20);
+		if (CollectDropsSkill.AnyInRange(ctx, d => d.Type == ItemType && !ignoredDrops.Contains(d.Id), CollectRadius)) {
+			sub = new CollectDropsSkill(d => d.Type == ItemType, CollectRadius, ignoredDrops);
 			State = "collecting";
 		}
 		else if (NearestTree(ctx) is TilePos tree) {
@@ -258,7 +275,7 @@ public sealed class GatherWoodSkill : ISkill
 	{
 		TilePos node = ctx.Node;
 		foreach (TilePos t in ctx.Seen.Trees)
-			if (!badTrees.Contains(t) && Math.Abs(t.X - node.X) <= TreeSearchTiles && ctx.World.IsTreeTrunk(t.X, t.Y))
+			if (!badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t) && Math.Abs(t.X - node.X) <= TreeSearchTiles && ctx.World.IsTreeTrunk(t.X, t.Y))
 				return t;
 		return null;
 	}

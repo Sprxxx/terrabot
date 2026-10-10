@@ -16,9 +16,10 @@ public class ProgressionTests
 	private readonly ITestOutputHelper output;
 	public ProgressionTests(ITestOutputHelper output) => this.output = output;
 
-	/// <summary>Surface feet row 24 over 2 rows of dirt, stone below with an iron vein (rows 29-31, x 10-30), '@' floor.</summary>
-	private static FakeGame Mine(int width = 90, params int[] treeColumns)
+	/// <summary>Surface feet row 24 over 2 rows of dirt, stone rows 27-36 with an iron vein (rows 29.., x 10..), '@' floor.</summary>
+	public static FakeGame Mine(int width = 90, int oreRows = 3, int veinWidth = 21, int[] treeColumns = null)
 	{
+		treeColumns ??= System.Array.Empty<int>();
 		var rows = Enumerable.Repeat(new string('.', width), 25).ToList();
 		char[] feet = rows[24].ToCharArray();
 		feet[3] = 'S';
@@ -29,8 +30,8 @@ public class ProgressionTests
 		rows.Add(new string('#', width));
 		for (int y = 27; y < 37; y++) {
 			char[] r = new string('s', width).ToCharArray();
-			if (y is >= 29 and <= 31)
-				for (int x = 10; x <= 30; x++)
+			if (y >= 29 && y < 29 + oreRows)
+				for (int x = 10; x < 10 + veinWidth; x++)
 					r[x] = 'i';
 			rows.Add(new string(r));
 		}
@@ -175,6 +176,52 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void MineSkill_DoesNotLoopOnAnUnreachableDrop()
+	{
+		// An ore drop sealed in an unbreakable pocket next to the vein: the collect gives up on it, and the mining
+		// must not keep restarting that collect (a livelock seen in the settle-chain test).
+		FakeGame g = Mine();
+		for (int x = 4; x <= 6; x++)
+			for (int y = 29; y <= 31; y++) {
+				g.Grid.Set(x, y, CellKind.Solid);
+				g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.Grid.Set(5, 30, CellKind.Empty);
+		g.Drops.Add(new DropInfo(1, FakeGame.IronOre, "Iron Ore", 1, 5 * 16f + 4, 30 * 16f + 4, 8, 8));
+		BotContext ctx = g.CreateContext(output);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 8), 60 * 120);
+		output.WriteLine($"{s} after {g.Sim.Ticks} ticks, ore {g.Count(FakeGame.IronOre)}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+	}
+
+	[Fact]
+	public void MineSkill_SkipsAnUnreachableCluster_AndRemembersIt()
+	{
+		// Ore sealed in unbreakable blocks right under the start scores better than the real vein (seen in game: ore
+		// under the arena's unbreakable floor). Mining must skip the whole cluster and get the vein, and a fresh
+		// MineSkill must not try the cluster again.
+		FakeGame g = Mine();
+		// An unbreakable block 0-13 x 25-32 with ore 6 rows down inside: pickaxes need no line of sight, but no
+		// standable spot is within tool range of it (the vein proper starts at x 14).
+		for (int x = 0; x <= 13; x++)
+			for (int y = 25; y <= 32; y++) {
+				g.Grid.Set(x, y, CellKind.Solid);
+				g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		foreach (int x in new[] { 5, 6, 7, 8 }) {
+			g.Blocks.Unbreakable.Remove(new TilePos(x, 30));
+			g.TileTypes[new TilePos(x, 30)] = FakeGame.TileIron;
+		}
+		BotContext ctx = g.CreateContext(output);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3), 60 * 120));
+		Assert.Contains(new TilePos(5, 30), ctx.UnreachableTiles);
+		Assert.Contains(new TilePos(8, 30), ctx.UnreachableTiles);
+		int before = g.Sim.Ticks;
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 6), 60 * 120));
+		output.WriteLine($"second run took {g.Sim.Ticks - before} ticks");
+	}
+
+	[Fact]
 	public void MineSkill_GivesUpQuickly_WhenNothingIsReachable()
 	{
 		FakeGame g = Mine();
@@ -221,7 +268,7 @@ public class ProgressionTests
 	[Fact]
 	public void AutoBrain_RunsTheIronChain()
 	{
-		FakeGame g = Mine(90, 40, 50, 60, 70, 80);
+		FakeGame g = Mine(90, treeColumns: new[] { 40, 50, 60, 70, 80 });
 		g.AddSlime(7, 30, 24);
 		BotContext ctx = g.CreateContext(output);
 		var brain = new BotBrain();

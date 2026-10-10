@@ -49,6 +49,17 @@ public class EarlyGameTests
 	}
 
 	[Fact]
+	public void GatherWood_IgnoresFarDrops_InsteadOfLoopingOnThem()
+	{
+		// A wood drop 40 tiles away is out of the collect radius: chop the near tree instead of restarting a
+		// collect that finishes at once (a livelock seen in the settle-chain test).
+		FakeGame game = Field(80, 12);
+		game.Drops.Add(new DropInfo(1, FakeGame.Wood, "Wood", 1, 70 * 16f, 24 * 16f, 8, 8));
+		BotContext ctx = game.CreateContext(output);
+		Assert.Equal(SkillStatus.Succeeded, RunSkill(game, ctx, new GatherWoodSkill(FakeGame.Wood, 5), 3000));
+	}
+
+	[Fact]
 	public void GatherWood_NoAxe_Fails()
 	{
 		FakeGame game = Field(80, 20);
@@ -82,6 +93,25 @@ public class EarlyGameTests
 		Assert.Equal(SkillStatus.Succeeded, RunSkill(game, ctx, place, 60 * 20));
 		output.WriteLine($"placed at {place.PlacedAt} after {game.Sim.Ticks} ticks, out of range {game.Sim.OutOfRange}");
 		Assert.True(game.Stations.ContainsKey(FakeGame.TileFurnace));
+	}
+
+	[Fact]
+	public void PlaceItem_LooksElsewhere_WhenNoFloorIsFlatNearby()
+	{
+		// Bumpy ground (every other column a step up) for 40 columns around the start: no 3-wide flat floor for a
+		// furnace within reach of the search; flat ground beyond. (Seen in game: no free floor where the bot stood.)
+		FakeGame game = Field(110);
+		for (int x = 0; x <= 45; x += 2)
+			game.Grid.Set(x, 24, Core.Grid.CellKind.Solid);
+		game.Grid.Set(3, 24, Core.Grid.CellKind.Empty);
+		game.Grid.Set(4, 24, Core.Grid.CellKind.Empty);
+		game.Grid.Set(5, 24, Core.Grid.CellKind.Solid); // the start gap is 2 wide: the 3-wide furnace never fits in it
+		BotContext ctx = game.CreateContext(output);
+		game.Items[FakeGame.Furnace] = 1;
+		var place = new PlaceItemSkill(FakeGame.Furnace);
+		Assert.Equal(SkillStatus.Succeeded, RunSkill(game, ctx, place, 60 * 60));
+		output.WriteLine($"placed at {place.PlacedAt} after {game.Sim.Ticks} ticks");
+		Assert.True(place.PlacedAt.Value.X > 45);
 	}
 
 	[Fact]

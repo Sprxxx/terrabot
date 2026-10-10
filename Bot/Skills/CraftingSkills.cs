@@ -73,15 +73,22 @@ public sealed class CraftSkill : ISkill
 /// range if needed (<see cref="GoalReachTile"/>), aim at it and use the item until the stack shrinks. Cells the
 /// bot could not reach, or that stayed refused once in range, are skipped. The game check also refuses cells
 /// whose footprint overlaps the player, so a spot is re-picked when the bot ends up standing on it.
+/// With no acceptable cell around, it walks to look elsewhere (±25, then ±50 tiles from where it started).
 /// </summary>
 public sealed class PlaceItemSkill : ISkill
 {
-	public const int MaxTicks = 60 * 20;
-	public const int SearchX = 10;
+	public const int MaxTicks = 60 * 60;
+	public const int SearchX = 20;
 	public const int SearchY = 3;
 	/// <summary>Ticks of using the item on an in-range spot before giving up on that spot.</summary>
 	public const int MaxUseTicksPerSpot = 60;
 	public const int MaxBadSpots = 6;
+	public const int MaxWanders = 4;
+	public const int WanderTiles = 25;
+	private WalkToSkill wander;
+	private int wanders;
+	private int wanderDir = 1;
+	private TilePos? wanderOrigin;
 
 	private readonly System.Collections.Generic.HashSet<TilePos> bad = new();
 	private int startCount = -1;
@@ -104,6 +111,8 @@ public sealed class PlaceItemSkill : ISkill
 	{
 		walk?.Stop(ctx);
 		walk = null;
+		wander?.Stop(ctx);
+		wander = null;
 	}
 
 	public SkillStatus Tick(BotContext ctx)
@@ -124,11 +133,30 @@ public sealed class PlaceItemSkill : ISkill
 			return Fail(ctx, $"{bad.Count} spots tried, none worked");
 
 		TilePos node = ctx.Node;
+		if (wander != null) {
+			if (wander.Tick(ctx) == SkillStatus.Running)
+				return SkillStatus.Running;
+			wander.Stop(ctx);
+			wander = null;
+		}
 		if (spot == null) {
 			spot = FindSpot(ctx, node);
 			useTicks = 0;
-			if (spot == null)
-				return ticks > 30 ? Fail(ctx, $"no free floor within {SearchX} tiles") : SkillStatus.Running;
+			if (spot == null) {
+				if (ticks <= 30)
+					return SkillStatus.Running; // give perception a moment (just landed, a drop being picked up...)
+				if (++wanders > MaxWanders)
+					return Fail(ctx, $"no free floor within {SearchX} tiles, here or {MaxWanders} places around");
+				// Uneven or dug-up ground: walk a bit (alternating sides) and look again.
+				wanderOrigin ??= node;
+				int far = WanderTiles * ((wanders + 1) / 2); // +25, -25, +50, -50 from where the search started
+				var goal = new TilePos(wanderOrigin.Value.X + wanderDir * far, node.Y - 5);
+				wanderDir = -wanderDir;
+				ctx.Log.Info($"Place: no free floor within {SearchX} tiles of {node}; looking towards {goal}");
+				wander = new WalkToSkill(goal) { Quiet = true, Tolerance = 3 };
+				wander.Start(ctx);
+				return SkillStatus.Running;
+			}
 		}
 		TilePos s = spot.Value;
 		var reach = new GoalReachTile(s, ctx.Physics);

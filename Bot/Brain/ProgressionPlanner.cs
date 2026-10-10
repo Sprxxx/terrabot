@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TerraBot.Bot.Building;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
 
@@ -20,6 +21,12 @@ public sealed record StationPlaced(int TileType, string Label) : Need(Label);
 
 /// <summary>The best hotbar pickaxe has at least <see cref="Power"/>; otherwise get <see cref="Item"/>.</summary>
 public sealed record PickaxeAtLeast(int Power, int Item, string Label) : Need(Label);
+
+/// <summary>A house (<see cref="Building.Blueprint.SmallHouse"/>) that passes the game's housing check.</summary>
+public sealed record HouseBuilt(string Label) : Need(Label);
+
+/// <summary>The item is worn (armour).</summary>
+public sealed record Wearing(int Item, string Label) : Need(Label);
 
 /// <summary>
 /// Altoclef-style "what is the next thing I need?" planner, re-evaluated whenever a skill ends. Works through a
@@ -59,7 +66,9 @@ public sealed class ProgressionPlanner
 		public const string Early = "early";
 		/// <summary>Work bench, wooden sword, furnace, anvil and an iron-tier pickaxe (Milestone 5).</summary>
 		public const string Iron = "iron";
-		public static readonly string[] All = { Early, Iron };
+		/// <summary>Iron plus a house, an iron-tier broadsword and the iron-tier armour set, worn (Milestone 6).</summary>
+		public const string Settle = "settle";
+		public static readonly string[] All = { Early, Iron, Settle };
 	}
 
 	private readonly Dictionary<int, long> notedAt = new();
@@ -67,10 +76,18 @@ public sealed class ProgressionPlanner
 	private readonly HashSet<int> costVisiting = new();
 	private string stuck;
 	private long lastShelterEnd = long.MinValue / 2;
+	private readonly List<TilePos> badSites = new();
+	private int siteFailures;
+	public const int MaxBuildFailuresPerSite = 2;
+	/// <summary>Spare building blocks on top of the missing frame cells: walking there may pillar or bridge with them too.</summary>
+	public const int BlockMargin = 10;
+
+	/// <summary>Top-left tile of the house being built or already built (kept across re-plans).</summary>
+	public TilePos? HouseSite { get; private set; }
 
 	/// <summary>Stations the bot has seen (tile type -> top-left tile), kept while out of sight.</summary>
 	public Dictionary<int, TilePos> KnownStations { get; } = new();
-	public string Plan { get; private set; } = Plans.Iron;
+	public string Plan { get; private set; } = Plans.Settle;
 	public string Status { get; private set; } = "";
 	public bool Complete { get; private set; }
 	/// <summary>Set when a stage cannot be resolved (no recipe, nothing places the station...).</summary>
@@ -89,6 +106,13 @@ public sealed class ProgressionPlanner
 		stages.Add(new StationPlaced(ids.FurnaceTile, "furnace"));
 		stages.Add(new StationPlaced(ids.AnvilTile, "anvil"));
 		stages.Add(new PickaxeAtLeast(IronTierPickPower, ids.IronTierPickaxe, "iron-tier pickaxe"));
+		if (plan == Plans.Iron)
+			return stages;
+		stages.Add(new HouseBuilt("house"));
+		stages.Add(new HaveItem(ids.IronTierBroadsword, 1, "iron-tier broadsword"));
+		stages.Add(new Wearing(ids.IronTierHelmet, "helmet"));
+		stages.Add(new Wearing(ids.IronTierChainmail, "chainmail"));
+		stages.Add(new Wearing(ids.IronTierGreaves, "greaves"));
 		return stages;
 	}
 
@@ -102,6 +126,9 @@ public sealed class ProgressionPlanner
 		Complete = false;
 		stuck = null;
 		lastShelterEnd = long.MinValue / 2;
+		HouseSite = null;
+		badSites.Clear();
+		siteFailures = 0;
 	}
 
 	/// <summary>Tell the planner about a finished skill (so a just-placed station counts before the next scan).</summary>
@@ -116,6 +143,16 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		if (skill is BuildSkill done && status == SkillStatus.Succeeded) {
+			HouseSite = done.Origin;
+			siteFailures = 0;
+		}
+		if (skill is BuildSkill build && status == SkillStatus.Failed && ++siteFailures >= MaxBuildFailuresPerSite) {
+			ctx.Log.Info($"Auto: giving up on the house site {build.Origin}");
+			badSites.Add(build.Origin);
+			HouseSite = null;
+			siteFailures = 0;
+		}
 	}
 
 	/// <summary>The next skill to run, or null when the plan is complete or stuck.</summary>
@@ -135,9 +172,11 @@ public sealed class ProgressionPlanner
 			if (skill != null)
 				return AtNight(skill, ctx);
 		}
-		Status = Plan == Plans.Early
-			? "early-game chain complete: work bench placed, wooden sword, wood stockpiled"
-			: "iron-age chain complete: work bench, furnace and anvil placed, iron-tier pickaxe in hand";
+		Status = Plan switch {
+			Plans.Early => "early-game chain complete: work bench placed, wooden sword, wood stockpiled",
+			Plans.Iron => "iron-age chain complete: work bench, furnace and anvil placed, iron-tier pickaxe in hand",
+			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
+		};
 		Complete = true;
 		return null;
 	}
@@ -160,6 +199,10 @@ public sealed class ProgressionPlanner
 			StationPlaced s => ResolveStation(s, claims, depth, ctx),
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Item, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
+			HouseBuilt => ResolveHouse(claims, depth, ctx),
+			Wearing wr => ctx.Inventory.IsEquipped(wr.Item) ? null
+				: ctx.Inventory.Count(wr.Item) > 0 ? Do($"putting on the {wr.Label}", new EquipSkill(wr.Item))
+				: Resolve(new HaveItem(wr.Item, 1, wr.Label), claims, depth + 1, ctx),
 			_ => null,
 		};
 	}
@@ -232,7 +275,52 @@ public sealed class ProgressionPlanner
 		foreach (int station in recipe.Stations)
 			if (!NearStation(ctx, station))
 				return Do($"walking to the {k.TileName(station)} to craft {name}", WalkToStation(KnownStations[station], ctx));
-		return Do($"crafting {more} {name}", new CraftSkill(item, target));
+		string have = string.Join(", ", recipe.Ingredients.Select(i => $"{k.ItemName(i.Item)} {ctx.Inventory.CountAny(i.Accepts)}/{i.Stack * crafts}"));
+		return Do($"crafting {more} {name} ({have})", new CraftSkill(item, target));
+	}
+
+	/// <summary>
+	/// A valid house, or: pick a site (near the work bench), get the materials it still needs (blocks for the
+	/// missing frame cells, walls for the bare ones, each furniture item not yet placed), then build.
+	/// </summary>
+	private ISkill ResolveHouse(Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		Blueprint bp = Blueprint.SmallHouse(ctx.Ids);
+		if (HouseSite is TilePos built && ctx.World.CheckHousing(built.X + bp.Inside.X, built.Y + bp.Inside.Y) == null)
+			return null;
+		if (HouseSite == null) {
+			TilePos anchor = KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node;
+			HouseSite = SiteFinder.Find(ctx, bp, anchor, badSites);
+			if (HouseSite == null) {
+				stuck = $"no building site within {SiteFinder.SearchRadius} tiles of {anchor}";
+				return null;
+			}
+			ctx.Log.Info($"Auto: house site {HouseSite.Value} ({SiteFinder.Edits(ctx, bp, HouseSite.Value)} edits)");
+		}
+		TilePos site = HouseSite.Value;
+		int blocks = 0, walls = 0;
+		for (int y = 0; y < bp.Height; y++)
+			for (int x = 0; x < bp.Width; x++) {
+				int wx = site.X + x, wy = site.Y + y;
+				if (bp.At(x, y) == PlanCell.Block && !ctx.Grid.Get(wx, wy).IsSolid())
+					blocks++;
+				else if (bp.At(x, y) == PlanCell.Wall && !ctx.World.HasWall(wx, wy))
+					walls++;
+			}
+		var needs = new List<Need>();
+		if (blocks > 0)
+			needs.Add(new HaveItem(ctx.Ids.BuildingBlocks, blocks + BlockMargin, "building blocks"));
+		if (walls > 0)
+			needs.Add(new HaveItem(bp.WallItem, walls, ctx.Knowledge.ItemName(bp.WallItem)));
+		foreach (PlanItem it in bp.Items)
+			if (!BuildSkill.IsPlaced(ctx, bp, site, it))
+				needs.Add(new HaveItem(it.ItemType, 1, ctx.Knowledge.ItemName(it.ItemType)));
+		foreach (Need n in needs) {
+			ISkill sub = Resolve(n, claims, depth + 1, ctx);
+			if (sub != null || stuck != null)
+				return sub;
+		}
+		return Do($"building a {bp.Name} at {site}", new BuildSkill(bp, site));
 	}
 
 	// ---------- cost estimate (rough ticks; infinity = cannot be had) ----------

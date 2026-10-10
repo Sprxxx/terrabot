@@ -93,6 +93,8 @@ public sealed class SimWorld
 			}
 			return;
 		}
+		if (c.Tool != ToolRequest.Block)
+			return; // other items (walls, furniture) are the caller's business, not blocks
 		// Place: vanilla needs an empty cell, a solid neighbour, and Collision.EmptyTile (no hitbox overlap).
 		if (k.CanStandOn() || blocks.BlockCount <= 0)
 			return;

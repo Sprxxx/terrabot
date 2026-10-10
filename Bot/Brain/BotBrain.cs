@@ -54,6 +54,7 @@ public sealed class BotBrain
 		Auto = on;
 		failures = 0;
 		Planner.Reset(plan);
+		ctx.UnreachableTiles.Clear();
 		LastResult = "";
 		ctx.Log.Info($"Auto mode {(on ? "ON" : "OFF")}" + (on ? $", plan '{Planner.Plan}'" : ""));
 	}
@@ -117,7 +118,7 @@ public sealed class BotBrain
 		Current.Stop(ctx);
 		Current = null;
 		Target = null;
-		if (Auto && wasFight && ctx.Drops.Count > 0) {
+		if (Auto && wasFight && CollectDropsSkill.AnyInRange(ctx, _ => true, LootRadiusTiles)) {
 			ctx.Log.Info("Auto: picking up loot after the fight");
 			Begin(new CollectDropsSkill(_ => true, LootRadiusTiles), ctx);
 			return;

@@ -89,7 +89,10 @@ public sealed class GoalReachTile : IGoal
 		return dx >= minDx && dx <= maxDx && dy >= minDy && dy <= maxDy;
 	}
 
-	public bool IsGoal(TilePos n) => InRange(n) && !(Tile.Y == n.Y + 1 && (Tile.X == n.X || Tile.X == n.X + 1));
+	/// <summary>Nodes that are not goals although in range (e.g. standing where a block or table is to go).</summary>
+	public Func<TilePos, bool> Exclude { get; init; }
+
+	public bool IsGoal(TilePos n) => InRange(n) && !(Tile.Y == n.Y + 1 && (Tile.X == n.X || Tile.X == n.X + 1)) && !(Exclude?.Invoke(n) ?? false);
 
 	public float Heuristic(TilePos n)
 	{

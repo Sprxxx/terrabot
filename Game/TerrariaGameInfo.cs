@@ -41,6 +41,15 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		FurnaceTile = TileID.Furnaces,
 		AnvilTile = TileID.Anvils,
 		IronTierPickaxe = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadPickaxe : ItemID.IronPickaxe,
+		IronTierBroadsword = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBroadsword : ItemID.IronBroadsword,
+		IronTierHelmet = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadHelmet : ItemID.IronHelmet,
+		IronTierChainmail = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadChainmail : ItemID.IronChainmail,
+		IronTierGreaves = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadGreaves : ItemID.IronGreaves,
+		WoodWall = ItemID.WoodWall,
+		Door = ItemID.WoodenDoor,
+		Chair = ItemID.WoodenChair,
+		Table = ItemID.WoodenTable,
+		BuildingBlocks = new int[] { ItemID.StoneBlock, ItemID.DirtBlock },
 	};
 
 
@@ -307,4 +316,70 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public string ItemName(int itemType) => Lang.GetItemNameValue(itemType);
 
 	public string TileName(int tileType) => TileID.Search.TryGetName(tileType, out string name) ? name : $"tile {tileType}";
+
+	// ---------- building (walls, footprints, housing) and armour ----------
+
+	public bool HasWall(int x, int y) => WorldGen.InWorld(x, y, 1) && Main.tile[x, y].WallType > WallID.None;
+
+	/// <summary>Mirror of the conditions in Player.PlaceThing_Walls (range aside): no wall yet, a tile or wall on a 4-neighbour.</summary>
+	public bool CanPlaceWall(int wallItem, int x, int y)
+	{
+		if (!WorldGen.InWorld(x, y, 2) || !ContentSamples.ItemsByType.TryGetValue(wallItem, out Item item) || item.createWall <= 0)
+			return false;
+		if (Main.tile[x, y].WallType == item.createWall)
+			return false;
+		static bool Anchors(int i, int j) => Main.tile[i, j].HasTile || Main.tile[i, j].WallType > WallID.None;
+		return Anchors(x + 1, y) || Anchors(x - 1, y) || Anchors(x, y + 1) || Anchors(x, y - 1);
+	}
+
+	public (int Width, int Height, int OriginX, int OriginY) Footprint(int itemType)
+	{
+		if (!ContentSamples.ItemsByType.TryGetValue(itemType, out Item item) || item.createTile <= -1)
+			return (1, 1, 0, 0);
+		TileObjectData data = TileObjectData.GetTileData(item.createTile, item.placeStyle);
+		return data == null ? (1, 1, 0, 0) : (data.Width, data.Height, data.Origin.X, data.Origin.Y);
+	}
+
+	/// <summary>
+	/// The housing query (WorldGen.MoveTownNPC without moving anyone): StartRoomCheck, RoomNeeds and ScoreRoom.
+	/// A room someone already lives in counts as a house (ScoreRoom reports that as hiScore -1).
+	/// </summary>
+	public string CheckHousing(int x, int y)
+	{
+		if (!WorldGen.InWorld(x, y, 10))
+			return "outside the world";
+		if (!WorldGen.StartRoomCheck(x, y))
+			return $"room: {WorldGen.roomCheckFailureReason}";
+		if (!WorldGen.RoomNeeds(NPCID.Guide)) {
+			var missing = new List<string>();
+			// Same sets RoomNeeds reads (its own flags are private); houseTile is filled by StartRoomCheck.
+			static bool Has(int[] types) => types.Any(t => t < WorldGen.houseTile.Length && WorldGen.houseTile[t]);
+			if (!Has(TileID.Sets.RoomNeeds.CountsAsChair)) missing.Add("chair");
+			if (!Has(TileID.Sets.RoomNeeds.CountsAsTable)) missing.Add("table");
+			if (!Has(TileID.Sets.RoomNeeds.CountsAsDoor)) missing.Add("door");
+			if (!Has(TileID.Sets.RoomNeeds.CountsAsTorch)) missing.Add("light source");
+			return "missing " + string.Join(", ", missing);
+		}
+		WorldGen.ScoreRoom(-1, NPCID.Guide);
+		if (WorldGen.hiScore == -1)
+			return null; // occupied: it is a house, someone lives there
+		return WorldGen.hiScore > 0 ? null : WorldGen.hiScore <= -250 ? "too much corruption/crimson around" : "no spot an NPC can stand on";
+	}
+
+	public bool IsEquipped(int itemType)
+	{
+		for (int i = 0; i < 3; i++)
+			if (player.armor[i].type == itemType && !player.armor[i].IsAir)
+				return true;
+		return false;
+	}
+
+	/// <summary>Right-click equip (ItemSlot.SwapEquip on the inventory slot), only for the local player.</summary>
+	public bool TryEquip(int itemType)
+	{
+		if (player.whoAmI != Main.myPlayer || FindItem(itemType, out int slot) == null)
+			return false;
+		Terraria.UI.ItemSlot.SwapEquip(player.inventory, Terraria.UI.ItemSlot.Context.InventoryItem, slot);
+		return IsEquipped(itemType);
+	}
 }

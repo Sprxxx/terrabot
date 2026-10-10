@@ -48,6 +48,7 @@ public sealed class SelfTestSystem : ModSystem
 	private readonly List<int> spawned = new();
 	private bool spawnFailed;
 	private int lifeAtStart;
+	private TilePos? buildSite;
 	private readonly List<string> summary = new();
 	private int passed;
 
@@ -103,7 +104,7 @@ public sealed class SelfTestSystem : ModSystem
 				bot.SetEnabled(false, "selftest setup");
 				bot.StopAll("selftest setup");
 				Main.dayTime = true;
-				Main.time = 27000;
+				Main.time = s.DayTime;
 				if (s.Night) {
 					Main.dayTime = false;
 					Main.time = 0;
@@ -153,6 +154,15 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (s.Mode == "chop") {
 					bot.Brain.StartSkill(new Bot.Skills.GatherWoodSkill(Terraria.ID.ItemID.Wood, 5), bot.Context);
+				}
+				else if (s.Mode == "build") {
+					Bot.Building.Blueprint bp = Bot.Building.Blueprint.SmallHouse(bot.Context.Ids);
+					TilePos? site = Bot.Building.SiteFinder.Find(bot.Context, bp, bot.FeetTile());
+					buildSite = site;
+					if (site != null)
+						bot.Brain.StartSkill(new Bot.Building.BuildSkill(bp, site.Value), bot.Context);
+					else
+						Mod.Logger.Warn("SELFTEST no building site found");
 				}
 				else if (s.Mode == "auto") {
 					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
@@ -238,8 +248,17 @@ public sealed class SelfTestSystem : ModSystem
 		bot.GameInfo.Bind(Main.LocalPlayer);
 		result.Wood = bot.GameInfo.Count(ItemID.Wood);
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
+		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		bot.Blocks.Refresh(Main.LocalPlayer);
 		result.PickPower = bot.Blocks.PickPower;
+		{
+			GameIds ids = bot.Context.Ids;
+			TilePos? house = s.Mode == "build" ? buildSite : bot.Brain.Planner.HouseSite;
+			Bot.Building.Blueprint bp = Bot.Building.Blueprint.SmallHouse(ids);
+			if (house is TilePos h)
+				result.Housing = bot.GameInfo.CheckHousing(h.X + bp.Inside.X, h.Y + bp.Inside.Y);
+			result.ArmourWorn = new[] { ids.IronTierHelmet, ids.IronTierChainmail, ids.IronTierGreaves }.Count(bot.GameInfo.IsEquipped);
+		}
 		result.BenchPlaced = bot.GameInfo.ScanStations(bot.FeetTile()).ContainsKey(TileID.WorkBenches) || bot.Brain.Planner.KnownStations.ContainsKey(TileID.WorkBenches);
 		result.FallDamageHits = bot.FallDamageHits;
 		result.FallingBlockHits = bot.FallingBlockHits;

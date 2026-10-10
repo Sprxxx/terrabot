@@ -34,6 +34,8 @@ public sealed class WalkToSkill : ISkill
 	public PathExecutor Executor { get; private set; }
 	public int Replans { get; private set; }
 	public int NoPathCount { get; private set; }
+	/// <summary>The last search started on a goal node next to the body (a zero-step Found).</summary>
+	public bool ArrivedNearGoal { get; private set; }
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 
@@ -47,6 +49,9 @@ public sealed class WalkToSkill : ISkill
 
 	/// <summary>"No path" results before giving up (sub-skills that have alternatives use 1).</summary>
 	public int MaxNoPathAttempts { get; init; } = MaxNoPath;
+
+	/// <summary>A* limits (null = the defaults). Sub-skills with alternatives give up sooner on far-off targets.</summary>
+	public SearchLimits Limits { get; init; }
 
 	public WalkToSkill(TilePos target)
 	{
@@ -132,8 +137,14 @@ public sealed class WalkToSkill : ISkill
 				State = $"planning ({search.Expanded} nodes)";
 				return SkillStatus.Running;
 			}
-			if (!FinishSearch(ctx))
+			if (!FinishSearch(ctx)) {
+				if (ArrivedNearGoal) {
+					Info(ctx, $"WalkTo: {Goal} is next to {node} (search started on it); done");
+					State = "arrived";
+					return SkillStatus.Succeeded;
+				}
 				return NoPathCount >= MaxNoPathAttempts ? Fail(ctx, $"no path after {NoPathCount} attempts ({LastPlan})") : SkillStatus.Running;
+			}
 		}
 
 		MoveInput input = Executor.Tick(ctx.Body);
@@ -173,9 +184,10 @@ public sealed class WalkToSkill : ISkill
 				break;
 			}
 		}
+		ArrivedNearGoal = false;
 		plans++;
 		searchMoves = moves;
-		search = new PathSearch(moves, start, Goal);
+		search = new PathSearch(moves, start, Goal, Limits);
 		State = "planning";
 	}
 
@@ -195,6 +207,12 @@ public sealed class WalkToSkill : ISkill
 			return true;
 		}
 
+		if (LastPlan.Status == PathStatus.Found && LastPlan.Steps.Count == 0) {
+			// The search started on a goal node: the start candidate next to us (we are not standing exactly on a node,
+			// or not grounded yet). That is "there", not "no path".
+			ArrivedNearGoal = true;
+			return false;
+		}
 		NoPathCount++;
 		State = $"no path ({LastPlan.Status}), retry {NoPathCount}/{MaxNoPath}";
 		waitTicks = NoPathRetryDelay;

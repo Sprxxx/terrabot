@@ -20,7 +20,7 @@ public sealed class BotCommand : ModCommand
 	public override string Description => "Control TerraBot";
 	public override string Usage =>
 		"/bot goto <x> <y>   (tile coords; ~dx ~dy = relative to you)\n" +
-		"/bot stop | on | off | status | fight | auto\n" +
+		"/bot stop | on | off | status | fight | auto [settle|iron|early]\n" +
 		"/bot dig [on|off]   /bot build [on|off]   (allow mining / placing blocks)\n" +
 		"/bot dump   (JSON snapshot to client.log)\n" +
 		"/bot trace [on|off|<seconds>]   (per-tick log)";
@@ -37,16 +37,18 @@ public sealed class BotCommand : ModCommand
 					Goto(caller, bot, args);
 					break;
 				case "auto": {
-					string plan = args.Length > 1 ? args[1].ToLowerInvariant() : ProgressionPlanner.Plans.Iron;
+					string plan = args.Length > 1 ? args[1].ToLowerInvariant() : ProgressionPlanner.Plans.Settle;
 					if (!ProgressionPlanner.Plans.All.Contains(plan)) {
 						caller.Reply($"Unknown plan {plan}. Plans: {string.Join(", ", ProgressionPlanner.Plans.All)}", Color.OrangeRed);
 						break;
 					}
 					bot.Brain.SetAuto(true, bot.Context, plan);
 					bot.SetEnabled(true, "/bot auto");
-					caller.Reply(plan == ProgressionPlanner.Plans.Early
-						? "TerraBot auto (early): work bench, wooden sword, 30 wood. Fights anything that comes close."
-						: "TerraBot auto (iron): work bench, wooden sword, furnace, anvil, iron-tier pickaxe. Fights, hides at night.", Color.LightGray);
+					caller.Reply(plan switch {
+						ProgressionPlanner.Plans.Early => "TerraBot auto (early): work bench, wooden sword, 30 wood. Fights anything that comes close.",
+						ProgressionPlanner.Plans.Iron => "TerraBot auto (iron): work bench, wooden sword, furnace, anvil, iron-tier pickaxe. Fights, hides at night.",
+						_ => "TerraBot auto (settle): the iron chain, then a house, an iron-tier broadsword and armour. Fights, hides at night.",
+					}, Color.LightGray);
 					break;
 				}
 				case "fight":

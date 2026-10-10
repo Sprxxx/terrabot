@@ -18,6 +18,18 @@ public interface IWorldInfo
 
 	/// <summary>Cells holding <paramref name="tileType"/> within <paramref name="radius"/> tiles (Chebyshev) of <paramref name="around"/>, nearest first.</summary>
 	IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius);
+
+	/// <summary>Is there a background wall in the cell?</summary>
+	bool HasWall(int x, int y);
+
+	/// <summary>Could the wall item go into the cell now (vanilla: no wall yet, a tile or wall on a 4-neighbour)?</summary>
+	bool CanPlaceWall(int wallItem, int x, int y);
+
+	/// <summary>Tile footprint of a placeable item: size and the origin cell the cursor aims at (TileObjectData).</summary>
+	(int Width, int Height, int OriginX, int OriginY) Footprint(int itemType);
+
+	/// <summary>The game's housing query for the room containing the cell: null if a town NPC could live there, else why not.</summary>
+	string CheckHousing(int x, int y);
 }
 
 /// <summary>Read-only view of the player's items.</summary>
@@ -28,6 +40,9 @@ public interface IInventory
 
 	/// <summary>Is there a free main-inventory slot (or a stack this item can join)?</summary>
 	bool HasRoomFor(int itemType);
+
+	/// <summary>Is the item worn in an armour slot (head, body, legs)?</summary>
+	bool IsEquipped(int itemType);
 }
 
 public enum CraftResult
@@ -47,6 +62,9 @@ public enum CraftResult
 public interface ICrafter
 {
 	CraftResult TryCraft(int itemType);
+
+	/// <summary>Put a carried armour piece on, like right-clicking it (vanilla ItemSlot.SwapEquip). False if it could not.</summary>
+	bool TryEquip(int itemType);
 
 	/// <summary>Human-readable recipe needs for logs ("10 Wood @ Work Bench").</summary>
 	string Describe(int itemType);
@@ -70,6 +88,17 @@ public sealed class GameIds
 	public int AnvilTile { get; init; }
 	/// <summary>The pickaxe of this world's iron tier (Iron or Lead Pickaxe, set per world).</summary>
 	public int IronTierPickaxe { get; init; }
+	public int IronTierBroadsword { get; init; }
+	public int IronTierHelmet { get; init; }
+	public int IronTierChainmail { get; init; }
+	public int IronTierGreaves { get; init; }
+	/// <summary>Furniture and walls for a house.</summary>
+	public int WoodWall { get; init; }
+	public int Door { get; init; }
+	public int Chair { get; init; }
+	public int Table { get; init; }
+	/// <summary>Blocks the bot builds frames from (any of them).</summary>
+	public int[] BuildingBlocks { get; init; } = System.Array.Empty<int>();
 
 	public static readonly GameIds None = new();
 }

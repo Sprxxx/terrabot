@@ -28,8 +28,13 @@ public sealed class MineSkill : ISkill
 	public const int CollectRadius = 12;
 	/// <summary>Unreachable targets in a row before giving up (nearby tiles tend to be unreachable for the same reason).</summary>
 	public const int MaxUnreachableInARow = 4;
+	/// <summary>Same-type tiles this close to an unreachable target are skipped too.</summary>
+	public const int UnreachableClusterRadius = 4;
+	/// <summary>A search for a mining spot gives up sooner than a general walk: there are other tiles to try.</summary>
+	public static readonly SearchLimits ReachLimits = new() { MaxExpansions = 12_000 };
 
 	private readonly HashSet<TilePos> bad = new();
+	private readonly HashSet<int> ignoredDrops = new();
 	private ISkill sub;
 	private TilePos? target;
 	private int mineTicks;
@@ -94,8 +99,8 @@ public sealed class MineSkill : ISkill
 			sub = null;
 		}
 
-		if (ctx.Drops.Any(d => d.Type == ItemType && Near(ctx, d))) {
-			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, CollectRadius), "collecting");
+		if (CollectDropsSkill.AnyInRange(ctx, d => d.Type == ItemType && !ignoredDrops.Contains(d.Id), CollectRadius)) {
+			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;
 		}
 		if (PickTarget(ctx) is TilePos next) {
@@ -123,7 +128,7 @@ public sealed class MineSkill : ISkill
 			target = null;
 			sub?.Stop(ctx);
 			sub = null;
-			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, CollectRadius), "collecting");
+			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;
 		}
 		var reach = new GoalReachTile(t, ctx.Physics, ctx.PickRangeBoost);
@@ -141,7 +146,7 @@ public sealed class MineSkill : ISkill
 		}
 		if (sub is not WalkToSkill) {
 			sub?.Stop(ctx);
-			sub = new WalkToSkill(reach) { Quiet = true, MaxNoPathAttempts = 1 };
+			sub = new WalkToSkill(reach) { Quiet = true, MaxNoPathAttempts = 1, Limits = ReachLimits };
 			sub.Start(ctx);
 		}
 		SkillStatus s = sub.Tick(ctx);
@@ -149,6 +154,10 @@ public sealed class MineSkill : ISkill
 			string why = ((WalkToSkill)sub).FailureReason;
 			if (++unreachableInARow >= MaxUnreachableInARow)
 				return Fail(ctx, $"{unreachableInARow} {Label(ctx)} tiles in a row unreachable" + (ctx.AllowBreak ? "" : " (digging is off)") + $"; last: {why}");
+			// Tiles of the same kind right around it are almost surely behind the same obstacle.
+			foreach (TilePos c in ctx.World.FindTiles(TileType, t, UnreachableClusterRadius))
+				ctx.UnreachableTiles.Add(c);
+			ctx.UnreachableTiles.Add(t);
 			return GiveUp(ctx, t, "unreachable: " + why);
 		}
 		if (s == SkillStatus.Succeeded) {
@@ -177,7 +186,7 @@ public sealed class MineSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		foreach (TilePos c in ctx.World.FindTiles(TileType, node, SearchRadius)) {
-			if (bad.Contains(c) || !SafeToBreak(moves, c))
+			if (bad.Contains(c) || ctx.UnreachableTiles.Contains(c) || !SafeToBreak(moves, c))
 				continue;
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
 			if (score < bestScore) {
@@ -190,13 +199,6 @@ public sealed class MineSkill : ISkill
 
 	public static bool SafeToBreak(MoveContext moves, TilePos c) =>
 		moves.Blocks != null && !float.IsInfinity(BlockRules.BreakCost(moves, c, Array.Empty<TilePos>()));
-
-	private static bool Near(BotContext ctx, DropInfo d)
-	{
-		PhysicsParams p = ctx.Physics;
-		float dx = d.CenterX - ctx.Body.CenterX(p), dy = d.CenterY - ctx.Body.CenterY(p);
-		return dx * dx + dy * dy <= CollectRadius * 16f * CollectRadius * 16f;
-	}
 
 	private void Begin(BotContext ctx, ISkill skill, string state)
 	{

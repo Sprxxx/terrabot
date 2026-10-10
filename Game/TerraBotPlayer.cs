@@ -125,7 +125,9 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (!Enabled)
 			return;
 		try {
-			if (++stockTicks >= StockHotbarInterval) {
+			// Due every 30 ticks, but only possible between swings: when blocked, try again next tick rather than in
+			// 30 (while chopping, the 30th tick kept landing mid-swing and a crafted sword stayed in the backpack).
+			if (++stockTicks >= StockHotbarInterval && Player.itemAnimation == 0 && Main.mouseItem.IsAir) {
 				stockTicks = 0;
 				string moved = Blocks.StockHotbar(Player);
 				if (moved != null)

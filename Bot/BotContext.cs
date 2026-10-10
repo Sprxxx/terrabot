@@ -69,14 +69,34 @@ public sealed class BotContext
 	/// <summary>Player-controlled switches (/bot dig, /bot build).</summary>
 	public bool AllowBreak { get; set; } = true;
 	public bool AllowPlace { get; set; } = true;
+	/// <summary>
+	/// Tiles a skill found it cannot get to (behind unbreakable blocks, out of the world...), shared across skill
+	/// restarts so a fresh skill does not spend its time on them again. Cleared when auto mode starts.
+	/// </summary>
+	public System.Collections.Generic.HashSet<TilePos> UnreachableTiles { get; } = new();
+	/// <summary>Cells path moves must neither mine nor fill (a building in progress); null or empty = none.</summary>
+	public System.Collections.Generic.IReadOnlySet<TilePos> Reserved { get; set; }
+	private ReservedBlocks reservedBlocks;
+
+	/// <summary><see cref="Blocks"/> as path moves see it, with <see cref="Reserved"/> applied (cached, so the move context stays stable).</summary>
+	public IBlockActions PathBlocks
+	{
+		get {
+			if (Blocks == null || Reserved == null || Reserved.Count == 0)
+				return Blocks;
+			if (reservedBlocks == null || !ReferenceEquals(reservedBlocks.Inner, Blocks) || !ReferenceEquals(reservedBlocks.Reserved, Reserved))
+				reservedBlocks = new ReservedBlocks(Blocks, Reserved);
+			return reservedBlocks;
+		}
+	}
 
 	/// <summary>Move context for the current grid, physics and settings; rebuilt (with jump templates) on change.</summary>
 	public MoveContext Moves
 	{
 		get {
 			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
-				|| !ReferenceEquals(moves.Blocks, Blocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace)
-				moves = new MoveContext(Grid, Physics) { Blocks = Blocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace };
+				|| !ReferenceEquals(moves.Blocks, PathBlocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace)
+				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace };
 			return moves;
 		}
 	}

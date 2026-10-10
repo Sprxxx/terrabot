@@ -17,6 +17,7 @@ public sealed class HuntSkill : ISkill
 
 	private ISkill sub;
 	private int wanders;
+	private readonly System.Collections.Generic.HashSet<int> ignoredDrops = new();
 	private int wanderDir = 1;
 	private int waitTicks;
 	private int lastHave;
@@ -64,12 +65,12 @@ public sealed class HuntSkill : ISkill
 			sub.Stop(ctx);
 			sub = null;
 			if (fought) {
-				Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, 20), "collecting");
+				Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, 20, ignoredDrops), "collecting");
 				return SkillStatus.Running;
 			}
 		}
-		if (ctx.Drops.Any(d => d.Type == ItemType)) {
-			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, 20), "collecting");
+		if (CollectDropsSkill.AnyInRange(ctx, d => d.Type == ItemType && !ignoredDrops.Contains(d.Id), 20)) {
+			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, 20, ignoredDrops), "collecting");
 			return SkillStatus.Running;
 		}
 		if (PreyInSight(ctx)) {

@@ -49,6 +49,12 @@ public sealed class Arena
 					t.ResetToType(TileID.LihzahrdBrick);
 			}
 		}
+		// Unbreakable side walls: the bot must not wander out into the real world (it did, exploring for trees and
+		// ore, which made runs depend on the terrain around the spawn).
+		for (int y = Top; y <= FloorY + 4; y++) {
+			Main.tile[Left, y].ResetToType(TileID.LihzahrdBrick);
+			Main.tile[Left + Width - 1, y].ResetToType(TileID.LihzahrdBrick);
+		}
 		for (int gy = 0; gy < rows.Length; gy++) {
 			for (int gx = 0; gx < rows[gy].Length; gx++) {
 				TilePos w = ToWorld(gx, gy, rows.Length);
@@ -133,6 +139,8 @@ public sealed class Arena
 		// The whole main inventory is cleared so counts (wood, benches...) start from zero.
 		for (int i = 0; i < 50; i++)
 			p.inventory[i] = new Item();
+		for (int i = 0; i < 3; i++)
+			p.armor[i] = new Item(); // worn armour (head, body, legs): the copied character's own set would satisfy armour goals
 		p.inventory[0] = pickaxe ? new Item(ItemID.IronPickaxe) : new Item();
 		p.inventory[1] = blocks > 0 ? new Item(ItemID.DirtBlock, blocks) : new Item();
 		p.inventory[2] = weapon > 0 ? new Item(weapon) : new Item();
