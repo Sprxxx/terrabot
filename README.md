@@ -6,7 +6,8 @@ change only because its pickaxe or block swing does it, with vanilla's range, to
 
 What it can do so far: walk to a target tile across uneven ground. Moves:
 - walking and 1-tile step-ups;
-- jumps up to 6 tiles high or about 5 tiles across;
+- jumps up to 6 tiles high, about 5 tiles across from a standstill, or 9 tiles across with a 2–4 tile
+  running start;
 - drops of up to 23 tiles;
 - since Milestone 2: tunnelling through blocks, digging down, bridging over gaps and pillaring up, using the
   pickaxe and blocks in your hotbar.

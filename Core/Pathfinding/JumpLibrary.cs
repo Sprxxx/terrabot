@@ -8,13 +8,20 @@ namespace TerraBot.Core.Pathfinding;
 
 /// <summary>
 /// All jump templates for one set of physics params. Built by simulation, never by hand-tuned reach tables:
-/// a (dx, dy) entry exists only if the simulated controller actually lands there from every start offset.
+/// an entry exists only if <see cref="JumpController"/> actually lands there from every start offset.
+/// Standing jumps take off from rest; running jumps first sprint <see cref="RunupOptions"/> tiles along the
+/// start row and exist only where the flight part is beyond a standing jump.
 /// </summary>
 public sealed class JumpLibrary
 {
 	public const int MaxDx = 8;
 	public const int MaxUp = 8;
 	public const int MaxDown = 6;
+
+	/// <summary>Run-up lengths offered for running jumps. 4 tiles reach full run speed from rest (vanilla 3 px/t).</summary>
+	public static readonly int[] RunupOptions = { 2, 4 };
+	/// <summary>Longest flight (take-off node to landing node) tried for running jumps.</summary>
+	public const int MaxRunFlight = 11;
 
 	/// <summary>The executor aligns to the start node within this many px; templates are robust to it.</summary>
 	public const float AlignTolerance = 3f;
@@ -23,12 +30,15 @@ public sealed class JumpLibrary
 	public const float OverheadTicks = 8f;
 
 	private static readonly float[] StartOffsets = { -AlignTolerance, 0f, AlignTolerance };
-	private const int MaxSimTicks = 240;
+	private const int MaxSimTicks = 300;
 
-	public sealed record Entry(int Dx, int Dy, JumpTemplate[] Variants);
+	public sealed record Entry(int Dx, int Dy, int Runup, JumpTemplate[] Variants);
 
 	public PhysicsParams Physics { get; }
 	public IReadOnlyList<Entry> Entries { get; }
+
+	/// <summary>Largest |dx| of any entry (sizes the jump expansion's grid window).</summary>
+	public int MaxReach { get; }
 
 	/// <summary>Apex rise in px of a full jump from rest.</summary>
 	public float FullJumpRise { get; }
@@ -38,6 +48,7 @@ public sealed class JumpLibrary
 		Physics = physics;
 		Entries = entries;
 		FullJumpRise = fullRise;
+		MaxReach = entries.Count == 0 ? 0 : entries.Max(e => Math.Abs(e.Dx));
 	}
 
 	private static readonly Dictionary<PhysicsParams, JumpLibrary> Cache = new();
@@ -56,6 +67,14 @@ public sealed class JumpLibrary
 		}
 	}
 
+	public Entry Find(int dx, int dy, int runup)
+	{
+		foreach (Entry e in Entries)
+			if (e.Dx == dx && e.Dy == dy && e.Runup == runup)
+				return e;
+		return null;
+	}
+
 	public static JumpLibrary Build(PhysicsParams p)
 	{
 		int fullHold = p.JumpHeight + 1; // tick 0 starts the jump, then JumpHeight sustained ticks
@@ -64,43 +83,67 @@ public sealed class JumpLibrary
 			apex[h] = PlayerPhysics.ApexRise(p, h);
 
 		var entries = new List<Entry>();
+		var standing = new HashSet<(int dx, int dy)>();
 		for (int dy = -MaxUp; dy <= MaxDown; dy++) {
 			for (int dx = -MaxDx; dx <= MaxDx; dx++) {
 				int adx = Math.Abs(dx);
 				if (adx <= 1 && dy >= 0)
 					continue; // walking / dropping covers these
-				float needRise = Math.Max(0, -dy) * Body.TileSize;
-				if (needRise > apex[fullHold] - 2f)
-					continue;
+				Entry e = BuildEntry(p, apex, fullHold, dx, dy, 0);
+				if (e != null) {
+					entries.Add(e);
+					standing.Add((dx, dy));
+				}
+			}
+		}
 
-				// Lower jumps fit under low ceilings; higher ones reach farther. Offer a spread from the
-				// minimal sufficient hold up to the full jump.
-				int minimal = Enumerable.Range(1, fullHold).FirstOrDefault(h => apex[h] >= needRise + 8f);
-				if (minimal == 0)
-					minimal = fullHold;
-				var holds = new SortedSet<int> { minimal, fullHold };
-				for (int h = minimal + 3; h < fullHold; h += 3)
-					holds.Add(h);
-
-				var variants = new List<JumpTemplate>();
-				foreach (int hold in holds) {
-					var delays = new SortedSet<int> { 0 };
-					if (dy < 0) {
-						int d = RisingDelay(p, hold, needRise + 2f);
-						if (d > 0)
-							delays.Add(d);
-					}
-					foreach (int delay in delays) {
-						JumpTemplate t = Simulate(p, dx, dy, hold, delay);
-						if (t != null)
-							variants.Add(t);
+		foreach (int runup in RunupOptions) {
+			for (int dy = -MaxUp; dy <= MaxDown; dy++) {
+				for (int flight = 2; flight <= MaxRunFlight; flight++) {
+					for (int dir = -1; dir <= 1; dir += 2) {
+						if (standing.Contains((dir * flight, dy)))
+							continue; // a standing jump from the take-off node already does it, cheaper
+						Entry e = BuildEntry(p, apex, fullHold, dir * (runup + flight), dy, runup);
+						if (e != null)
+							entries.Add(e);
 					}
 				}
-				if (variants.Count > 0)
-					entries.Add(new Entry(dx, dy, variants.OrderBy(v => v.Cost).ToArray()));
 			}
 		}
 		return new JumpLibrary(p, entries, apex[fullHold]);
+	}
+
+	private static Entry BuildEntry(PhysicsParams p, float[] apex, int fullHold, int dx, int dy, int runup)
+	{
+		float needRise = Math.Max(0, -dy) * Body.TileSize;
+		if (needRise > apex[fullHold] - 2f)
+			return null;
+
+		// Lower jumps fit under low ceilings; higher ones reach farther. Offer a spread from the
+		// minimal sufficient hold up to the full jump (running jumps: just minimal and full).
+		int minimal = Enumerable.Range(1, fullHold).FirstOrDefault(h => apex[h] >= needRise + 8f);
+		if (minimal == 0)
+			minimal = fullHold;
+		var holds = new SortedSet<int> { minimal, fullHold };
+		if (runup == 0)
+			for (int h = minimal + 3; h < fullHold; h += 3)
+				holds.Add(h);
+
+		var variants = new List<JumpTemplate>();
+		foreach (int hold in holds) {
+			var delays = new SortedSet<int> { 0 };
+			if (dy < 0 && runup == 0) {
+				int d = RisingDelay(p, hold, needRise + 2f);
+				if (d > 0)
+					delays.Add(d);
+			}
+			foreach (int delay in delays) {
+				JumpTemplate t = Simulate(p, dx, dy, hold, delay, runup);
+				if (t != null)
+					variants.Add(t);
+			}
+		}
+		return variants.Count > 0 ? new Entry(dx, dy, runup, variants.OrderBy(v => v.Cost).ToArray()) : null;
 	}
 
 	/// <summary>First tick after which the jump has risen at least <paramref name="rise"/> px (-1 if never).</summary>
@@ -118,13 +161,14 @@ public sealed class JumpLibrary
 	}
 
 	/// <summary>Simulates one variant from every start offset; returns null unless all of them land on target.</summary>
-	public static JumpTemplate Simulate(PhysicsParams p, int dx, int dy, int hold, int delay)
+	public static JumpTemplate Simulate(PhysicsParams p, int dx, int dy, int hold, int delay, int runup = 0)
 	{
 		var body = new HashSet<TilePos>();
 		var cross = new HashSet<TilePos>();
+		var probe = new JumpTemplate { Dx = dx, Dy = dy, HoldTicks = hold, DelayTicks = delay, RunupTiles = runup };
 		int worst = 0;
 		foreach (float offset in StartOffsets) {
-			if (!SimulateOnce(p, dx, dy, hold, delay, offset, body, cross, out int ticks))
+			if (!SimulateOnce(p, probe, offset, body, cross, out int ticks))
 				return null;
 			worst = Math.Max(worst, ticks);
 		}
@@ -133,6 +177,7 @@ public sealed class JumpLibrary
 			Dy = dy,
 			HoldTicks = hold,
 			DelayTicks = delay,
+			RunupTiles = runup,
 			Ticks = worst,
 			Cost = worst + OverheadTicks,
 			BodyCells = body.ToArray(),
@@ -142,25 +187,33 @@ public sealed class JumpLibrary
 
 	/// <summary>
 	/// Start node is (0,0): standing at rest with the hitbox centred (+offset) on columns 0..1, bottom at y = 16.
-	/// The controller here MUST stay identical to <see cref="Execution.PathExecutor"/>'s jump phase.
+	/// Free space, except that the body stays on the start row's floor until take-off (the planner checks that
+	/// floor exists under every run-up node).
 	/// </summary>
-	private static bool SimulateOnce(PhysicsParams p, int dx, int dy, int hold, int delay, float offset,
+	private static bool SimulateOnce(PhysicsParams p, JumpTemplate t, float offset,
 		HashSet<TilePos> body, HashSet<TilePos> cross, out int ticks)
 	{
 		const int T = Body.TileSize;
 		ticks = 0;
-		var s = new BodyState { X = Body.CanonicalLeft(0, p) + offset, Y = Body.StandingTop(0, p), ReleaseJump = true };
-		float targetX = Body.CanonicalLeft(dx, p);
-		float landLine = (dy + 1) * T;
-		float minLandX = dx * T;
-		float maxLandX = (dx + Body.WidthTiles) * T - p.Width;
+		float startY = Body.StandingTop(0, p);
+		var s = new BodyState { X = Body.CanonicalLeft(0, p) + offset, Y = startY, ReleaseJump = true };
+		var controller = new JumpController(t, Body.CanonicalLeft(0, p), Body.CanonicalLeft(t.Dx, p));
+		float landLine = (t.Dy + 1) * T;
+		float minLandX = t.Dx * T;
+		float maxLandX = (t.Dx + Body.WidthTiles) * T - p.Width;
 		AddCells(body, s.X, s.Y, p);
 
-		for (int t = 0; t < MaxSimTicks; t++) {
-			MoveInput input = ControllerInput(s, t, hold, delay, targetX, p);
+		for (int tick = 0; tick < MaxSimTicks; tick++) {
+			MoveInput input = controller.Next(s, tick, p);
 			BodyState prev = s;
 			PlayerPhysics.StepFreeSpace(ref s, input, p);
-			if (t == 0 && s.VY >= 0f)
+			if (!controller.TookOff) {
+				s.Y = startY; // running along the floor
+				s.VY = 0f;
+				AddCells(body, s.X, s.Y, p);
+				continue;
+			}
+			if (tick == controller.TakeoffTick && s.VY >= 0f)
 				return false;
 
 			float prevBottom = prev.Y + p.Height;
@@ -172,10 +225,10 @@ public sealed class JumpLibrary
 					float line = r * T;
 					float frac = (line - prevBottom) / (bottom - prevBottom);
 					float xAt = prev.X + (s.X - prev.X) * frac;
-					if (r == dy + 1 && xAt >= minLandX - 0.01f && xAt <= maxLandX + 0.01f) {
+					if (r == t.Dy + 1 && xAt >= minLandX - 0.01f && xAt <= maxLandX + 0.01f) {
 						AddCells(body, xAt, line - p.Height, p);
 						AddCells(body, (prev.X + xAt) * 0.5f, (prev.Y + line - p.Height) * 0.5f, p);
-						ticks = t + 1;
+						ticks = tick + 1;
 						return true;
 					}
 					int c0 = (int)Math.Floor(xAt / T);
@@ -191,14 +244,6 @@ public sealed class JumpLibrary
 				return false;
 		}
 		return false;
-	}
-
-	/// <summary>The jump controller, shared by simulation and execution. t = ticks since take-off was pressed.</summary>
-	public static MoveInput ControllerInput(in BodyState s, int t, int hold, int delay, float targetX, PhysicsParams p)
-	{
-		var input = new MoveInput { Jump = t < hold };
-		input.Horizontal = t >= delay ? Arrive.Steer(s.X, s.VX, targetX, p) : 0;
-		return input;
 	}
 
 	private static void AddCells(HashSet<TilePos> set, float x, float y, PhysicsParams p)

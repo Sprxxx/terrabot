@@ -95,6 +95,21 @@ public sealed class Scenario
 				Check = r => r.MaxFeetRow > 9 ? $"went down into the pit (feet row {r.MaxFeetRow})" : null,
 			},
 			new() {
+				Name = "running_jump_8_gap",
+				Rows = Grid(Repeat("..............................", 9), "..S.......................G...",
+					"@@@@@@@@@@........@@@@@@@@@@@@", "@@@@@@@@@@!!!!!!!!@@@@@@@@@@@@", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Check = r => r.MaxFeetRow > 9 ? $"fell into the gap (feet row {r.MaxFeetRow})"
+					: !r.LogHas("run") ? "no running jump in the plan" : null,
+			},
+			new() {
+				Name = "running_jump_no_room",
+				Rows = Grid(Repeat("@@@@@@@@......................", 9), "@@@@@@@@S.................G...",
+					"@@@@@@@@@@........@@@@@@@@@@@@", "@@@@@@@@@@!!!!!!!!@@@@@@@@@@@@", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Pickaxe = false,
+				ExpectSuccess = false,
+				TimeoutTicks = 60 * 20,
+			},
+			new() {
 				Name = "drop_6_no_damage",
 				Rows = Grid(Repeat("......................", 3), "..S...................", Repeat("@@@@@@@...............", 5),
 					"@@@@@@@.........G.....", "@@@@@@@@@@@@@@@@@@@@@@"),

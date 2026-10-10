@@ -45,6 +45,7 @@ public sealed class PathExecutor
 	private JumpPhase jumpPhase;
 	private int jumpTick;
 	private int jumpRetries;
+	private JumpController jumpController;
 	private bool lastJumpPressed;
 	private int lastHorizontal;
 	private bool prevGrounded;
@@ -94,16 +95,13 @@ public sealed class PathExecutor
 			if (s.Kind != MoveKind.Jump || (i == StepIndex && jumpPhase == JumpPhase.Air))
 				continue;
 			JumpTemplate fit = null;
-			foreach (JumpLibrary.Entry e in next.Jumps.Entries) {
-				if (e.Dx != s.To.X - s.From.X || e.Dy != s.To.Y - s.From.Y)
-					continue;
+			JumpLibrary.Entry e = next.Jumps.Find(s.To.X - s.From.X, s.To.Y - s.From.Y, s.Template?.RunupTiles ?? 0);
+			if (e != null)
 				foreach (JumpTemplate v in e.Variants)
 					if (v.Fits(next.Grid, s.From)) {
 						fit = v;
 						break;
 					}
-				break;
-			}
 			if (fit == null) {
 				reason = $"step {i} {s} is not possible with the new physics";
 				return false;
@@ -330,26 +328,39 @@ public sealed class PathExecutor
 			}
 			jumpPhase = JumpPhase.Air;
 			jumpTick = 0;
+			jumpController = new JumpController(t, Body.CanonicalLeft(step.From.X, p), Body.CanonicalLeft(step.To.X, p));
 		}
 
-		if (jumpTick == 1 && s.Grounded && node == step.From && jumpRetries < 3) {
-			// The jump did not fire (releaseJump was still false). Release for a tick and try again.
-			jumpRetries++;
-			jumpPhase = JumpPhase.Align;
-			Phase = "Jump retry";
-			return true;
+		if (!jumpController.TookOff) {
+			// Running jump, still on the run-up: must stay on the start row between start and take-off node.
+			int dir = Math.Sign(t.Dx);
+			int along = dir * (node.X - step.From.X);
+			if (settled && (node.Y != step.From.Y || along < -1 || along > t.RunupTiles + 1)) {
+				Finish(ExecStatus.OffPath, $"step {StepIndex} running jump {step.From}->{step.To} [{t.Variant}]: left the run-up at {node}");
+				return false;
+			}
 		}
-		if (jumpTick > 1 && settled) {
-			if (node == step.To || TryResync(node)) {
-				advanced = true;
+		else {
+			int sinceTakeoff = jumpTick - jumpController.TakeoffTick;
+			if (sinceTakeoff == 1 && s.Grounded && jumpRetries < 3) {
+				// The jump did not fire (releaseJump was still false). Release, walk back, try again.
+				jumpRetries++;
+				jumpPhase = JumpPhase.Align;
+				Phase = "Jump retry";
 				return true;
 			}
-			Finish(ExecStatus.OffPath, $"step {StepIndex} jump {step.From}->{step.To} [{t.Variant}] landed at {node} after {jumpTick} ticks");
-			return false;
+			if (sinceTakeoff > 1 && settled) {
+				if (node == step.To || TryResync(node)) {
+					advanced = true;
+					return true;
+				}
+				Finish(ExecStatus.OffPath, $"step {StepIndex} jump {step.From}->{step.To} [{t.Variant}] landed at {node} after {jumpTick} ticks");
+				return false;
+			}
 		}
 
-		input = JumpLibrary.ControllerInput(s, jumpTick, t.HoldTicks, t.DelayTicks, Body.CanonicalLeft(step.To.X, p), p);
-		Phase = $"Jump t{jumpTick}/{t.Ticks}";
+		input = jumpController.Next(s, jumpTick, p);
+		Phase = jumpController.TookOff ? $"Jump t{jumpTick}/{t.Ticks}" : $"Jump run-up t{jumpTick}";
 		jumpTick++;
 		return true;
 	}

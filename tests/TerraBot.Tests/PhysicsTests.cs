@@ -50,10 +50,13 @@ public class PhysicsTests
 	{
 		JumpLibrary lib = JumpLibrary.Build(TestUtil.P);
 		int maxUp = -lib.Entries.Min(e => e.Dy);
-		int maxFlat = lib.Entries.Where(e => e.Dy == 0).Max(e => e.Dx);
-		output.WriteLine($"entries {lib.Entries.Count}, max rise {maxUp} tiles, max same-level dx {maxFlat}");
+		int maxFlat = lib.Entries.Where(e => e.Dy == 0 && e.Runup == 0).Max(e => e.Dx);
+		int maxRunFlight = lib.Entries.Where(e => e.Dy == 0 && e.Runup > 0).Max(e => e.Dx - e.Runup);
+		output.WriteLine($"entries {lib.Entries.Count} ({lib.Entries.Count(e => e.Runup > 0)} running), max rise {maxUp} tiles, " +
+			$"max same-level dx standing {maxFlat}, running flight {maxRunFlight}");
 		Assert.Equal(6, maxUp); // 98 px rise: lands on a ledge 6 tiles up, never 7
 		Assert.InRange(maxFlat, 4, 6);
+		Assert.InRange(maxRunFlight, 8, 11); // ~49 ticks airborne at ~3 px/tick
 		Assert.All(lib.Entries, e => Assert.All(e.Variants, v => Assert.True(v.Ticks > 0)));
 	}
 

@@ -209,6 +209,19 @@ pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-g
   * Only hotbar items are used (M2).
   * `/bot dig off`, `/bot build off` disable the new moves.
 
+## Milestone 3: running jumps
+* A running jump starts at rest on the start node, like every jump, so templates stay deterministic. It
+  sprints `RunupTiles` (2 or 4) along the start row and takes off when the hitbox passes the take-off point.
+  Then it holds jump and arrive-steers as usual.
+* `JumpController` is the single implementation of that policy, used by both `JumpLibrary` (simulation) and
+  `PathExecutor` (replay).
+* `JumpTemplate.Fits` also requires floor under every run-up node.
+* Running entries exist only where the flight part (take-off node to landing) is not a standing-jump entry,
+  i.e. only for distances a standing jump can't do. That keeps 178 extra entries instead of thousands.
+* Reach with vanilla stats: standing 5 tiles, running flight 9 tiles at the same height.
+* Library build is about 130 ms (was 80) per distinct physics set; it's cached.
+* Later: flying starts, i.e. taking off from a walk chain without stopping at the run-up start.
+
 ## Out of scope for M1 (noted for later)
 Running-jump templates (currently standing jumps only), dropping through platforms, ropes/ladders, liquids
 physics (water is only penalised, lava avoided), slopes/half-blocks modelled as full blocks, doors,

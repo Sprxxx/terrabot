@@ -14,6 +14,9 @@ public sealed class JumpTemplate
 	public int Dy { get; init; }
 	public int HoldTicks { get; init; }
 	public int DelayTicks { get; init; }
+	/// <summary>Running jump: tiles sprinted along the start row before take-off (0 = standing jump). The run-up
+	/// nodes must be standable; the bot still starts at rest on the start node.</summary>
+	public int RunupTiles { get; init; }
 
 	/// <summary>Ticks from pressing jump to touching down (worst case over the simulated start offsets).</summary>
 	public int Ticks { get; init; }
@@ -28,7 +31,7 @@ public sealed class JumpTemplate
 	/// otherwise the player would land early (platforms) or clip a corner.</summary>
 	public TilePos[] CrossCells { get; init; }
 
-	public string Variant => $"h{HoldTicks} d{DelayTicks}";
+	public string Variant => RunupTiles > 0 ? $"run{RunupTiles} h{HoldTicks}" : $"h{HoldTicks} d{DelayTicks}";
 
 	public bool Fits(ITileGrid g, TilePos from)
 	{
@@ -37,6 +40,11 @@ public sealed class JumpTemplate
 				return false;
 		foreach (TilePos c in CrossCells)
 			if (g.Get(from.X + c.X, from.Y + c.Y).CanStandOn())
+				return false;
+		// Running jumps need floor under every run-up node (the body cells above are already in BodyCells).
+		int dir = System.Math.Sign(Dx);
+		for (int i = 1; i <= RunupTiles; i++)
+			if (!Body.HasSupport(g, from.X + dir * i, from.Y))
 				return false;
 		return true;
 	}

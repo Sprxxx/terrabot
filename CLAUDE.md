@@ -52,10 +52,12 @@ from the mouse *after* `SetControls`. When the bot is disabled, nothing is writt
 - Edge costs are in **ticks**. Each move type implements `Expand` (generate edges) and `IsValid` (re-check while
   executing). Add a move = add an `IMoveType` + register in `MoveContext.DefaultMoves` + executor handling.
   Planned next moves: BreakBlock/PlaceBlock (cost = mine/place time), DropThroughPlatform (hold Down), running jumps.
-- Jumps are **simulated, not hand-tuned**: `JumpLibrary.Build` runs `PlayerPhysics` with
-  `JumpLibrary.ControllerInput` (the exact controller `PathExecutor` replays) from start offsets −3/0/+3 px and
-  records swept `BodyCells` and descending `CrossCells`. If you change the executor's jump control, change
-  `ControllerInput`, never one side alone.
+- Jumps are **simulated, not hand-tuned**:
+  - `JumpLibrary.Build` runs `PlayerPhysics` with `JumpController`, the same object `PathExecutor` uses to
+    replay jumps. It simulates from start offsets −3/0/+3 px and records the swept `BodyCells` and the
+    descending `CrossCells`.
+  - Jump behaviour lives only in `JumpController`. Never re-implement it on one side.
+  - Entries are keyed by (dx, dy, runup); `RunupTiles > 0` marks a running jump, see PLAN.md Milestone 3.
 - Move types are shared singletons and must be stateless; per-search scratch lives on `MoveContext`.
 - World edits ride on steps as `PathStep.Actions` (Break/Place). The movement kind stays Walk/StepUp/Drop, so a
   tunnel is a Walk with breaks. Pillar is its own kind, with the place happening mid-jump.

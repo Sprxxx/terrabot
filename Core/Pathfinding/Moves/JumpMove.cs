@@ -4,7 +4,7 @@ using TerraBot.Core.Grid;
 namespace TerraBot.Core.Pathfinding.Moves;
 
 /// <summary>
-/// Standing jumps to any (dx, dy) in the <see cref="JumpLibrary"/>. For each standable destination the first
+/// Standing and running jumps to any entry in the <see cref="JumpLibrary"/>. For each standable destination the first
 /// (cheapest) template variant whose swept cells are free is used.
 /// </summary>
 public sealed class JumpMove : IMoveType
@@ -14,11 +14,12 @@ public sealed class JumpMove : IMoveType
 	public void Expand(MoveContext ctx, TilePos from, List<PathStep> output)
 	{
 		GridWindow window = ctx.Scratch;
-		// Covers every cell any template can touch: columns -MaxDx-2..MaxDx+3, rows from apex to below MaxDown.
+		// Covers every cell any template can touch: the library's reach plus a margin, rows from apex to below MaxDown.
 		const int margin = 3;
-		int left = from.X - JumpLibrary.MaxDx - margin;
+		int reach = ctx.Jumps.MaxReach;
+		int left = from.X - reach - margin;
 		int top = from.Y - JumpLibrary.MaxUp - Body.HeightTiles - margin;
-		int width = 2 * JumpLibrary.MaxDx + Body.WidthTiles + 2 * margin;
+		int width = 2 * reach + Body.WidthTiles + 2 * margin;
 		int height = JumpLibrary.MaxUp + JumpLibrary.MaxDown + Body.HeightTiles + 2 * margin;
 		window.Load(ctx.Grid, left, top, width, height);
 

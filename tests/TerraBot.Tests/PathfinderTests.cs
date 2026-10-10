@@ -123,6 +123,45 @@ public class PathfinderTests
 		Assert.All(r.Steps, s => Assert.Equal(floorRow, s.To.Y)); // never goes into the pit
 	}
 
+	private static readonly string[] WideLavaGap = {
+		"..............................",
+		"..............................",
+		"..............................",
+		"..............................",
+		"..............................",
+		"..............................",
+		"..............................",
+		"..............................",
+		"..............................",
+		"..S.......................G...",
+		"##########........############",
+		"##########!!!!!!!!############",
+		"##############################",
+	};
+
+	[Fact]
+	public void EightWideGap_NeedsRunningJump()
+	{
+		var g = ArrayTileGrid.Parse(WideLavaGap);
+		PathResult r = TestUtil.Plan(g, output);
+		Assert.Equal(PathStatus.Found, r.Status);
+		PathStep jump = Assert.Single(r.Steps, s => s.Kind == MoveKind.Jump);
+		Assert.True(jump.Template.RunupTiles > 0, jump.ToString());
+		Assert.All(r.Steps, s => Assert.Equal(9, s.To.Y));
+	}
+
+	[Fact]
+	public void EightWideGap_WithoutRoomToRun_IsUnreachable()
+	{
+		string[] rows = (string[])WideLavaGap.Clone();
+		for (int y = 0; y <= 9; y++)
+			rows[y] = "########" + rows[y].Substring(8); // wall right behind the edge: only the edge nodes remain
+		var g = ArrayTileGrid.Parse(rows);
+		g.Markers['S'] = new TilePos(8, 9);
+		PathResult r = TestUtil.Plan(g, output);
+		Assert.Equal(PathStatus.NoPath, r.Status);
+	}
+
 	[Fact]
 	public void UnreachableTarget_OnTallPillar_ReturnsNoPath()
 	{
