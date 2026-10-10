@@ -138,9 +138,9 @@ Milestone 2 (mining and placing) is implemented: 52 unit tests pass, including c
 pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-game testing is pending (README,
 "Test script: Milestone 2"). (Since verified by the self-test.)
 
-Current (2026-10-10): Milestones 1–5 are done, plus platform drop-through and melee combat. `/bot auto`
-takes a fresh character to an iron-tier pickaxe and digs in at night. 113 unit tests pass and the in-game
-self-test passes 25/25.
+Current (2026-10-10): Milestones 1–6 are done, plus platform drop-through and melee combat. `/bot auto`
+takes a fresh character to a house, an iron-tier pickaxe, broadsword and armour, and digs in at night. 124 unit
+tests pass; see the self-test history for the in-game suite.
 
 ## Milestone 1 checklist
 1. Scaffold (csproj, build.txt, description, localization), builds with `dotnet build`, loads.
@@ -333,6 +333,86 @@ of `ProgressionPlanner`, which replaced `EarlyGamePlanner`.
 * Perception rescans trees and stations on the first tick after the bot is switched on or stopped, so it
   never plans from a scan of a world that changed meanwhile.
 
+## Milestone 6: a house, a broadsword and iron armour
+Plan `settle` (the default for `/bot auto`) is the iron plan plus a house that passes the game's housing
+check, an iron-tier broadsword, and the iron-tier armour set (helmet, chainmail, greaves), worn.
+
+### Verified mechanics (decompiled tML 2026.08)
+* Recipes: Iron/Lead Helmet 15 bars, Chainmail 25, Greaves 20, Broadsword 8, all @ Anvil (copper/tin sets
+  12/20/16). Wooden Door 6 Wood, Chair 4, Table 8, Wood Wall ×4 = 1 Wood, all @ Work Bench.
+* Housing (`WorldGen.StartRoomCheck` / `CheckRoom` / `RoomNeeds` / `ScoreRoom`, which is what the housing
+  query runs):
+  - an 8-neighbour flood fill from a room cell that stops at solid tiles, with closed doors counting as
+    solid. The tiles it reaches, the frame included, must number between 60 and 750;
+  - every open cell needs a player-placed wall (`Main.wallHouse`) or a solid tile within 2 cells, both
+    horizontally and vertically;
+  - a chair, a table, a door and a light source (`TileID.Sets.RoomNeeds`);
+  - `ScoreRoom` needs a home spot: a solid floor tile with solid tiles on both sides and 3 free rows above.
+    `hiScore` −1 means occupied, ≤ −250 means too evil.
+* Walls (`Player.PlaceThing_Walls`): the wall item at a target within tool range, with a tile or wall on a
+  4-neighbour. The player's hitbox doesn't matter.
+* Equipping: right-click calls `ItemSlot.SwapEquip(inventory, Context.InventoryItem, slot)`, which swaps the
+  piece with `player.armor[0..2]`.
+* Furniture footprints come from `TileObjectData` (size and origin): table 3×2 with origin (1,1), chair 1×2
+  with origin (0,1), door 1×3 with origin (0,0).
+
+### Building (`Bot/Building/`)
+* `Blueprint.SmallHouse`: 12×6 including the frame (72 room tiles). Interior 10×4 with wood walls, a doorway
+  in the left column under a frame block, a table, a chair, a torch on the back wall, and the door, placed
+  last.
+* `SiteFinder`: within 40 columns of the work bench, the floor row is the ground under the plan's middle. It
+  picks the site with the fewest edits (blocks to place ×1, tiles to mine ×2) and rejects liquid, trees,
+  platforms, stations, unbreakable tiles, or more than 40 edits.
+* `BuildSkill`, in phase order:
+  1. mine the room cells clear, top-down;
+  2. place frame blocks bottom-up, each next to an existing tile;
+  3. place walls;
+  4. place furniture, never standing where it goes;
+  5. place the door from outside the house;
+  6. run `IWorldInfo.CheckHousing`, the game's query.
+
+  The current target is sticky: re-picking "the nearest" every tick made the bot step off the cell it stood
+  on and oscillate. Three failures on one cell fail the skill.
+* While building, every plan cell is reserved (`BotContext.Reserved` → `ReservedBlocks`), so path moves
+  never dig through the frame or pillar up inside the room.
+* Planner `HouseBuilt`: the site is remembered across re-plans. It gathers what is still missing (building
+  blocks for the bare frame cells, walls for the bare room cells, each unplaced furniture item), then builds.
+  After two failed builds on one site it tries another.
+
+### Armour
+`Wearing(item)`: worn → done; carried → `EquipSkill` (`ICrafter.TryEquip`); otherwise craft it. Hotbar
+stocking picks up the broadsword by damage per tick.
+
+### Bugs the simulator found (all fixed, each with a test)
+* Livelock: a skill restarted "collect drops" for a drop outside the collect radius, and the collect
+  finished at once. Drop checks now use `CollectDropsSkill.AnyInRange`.
+* Livelock: an unreachable drop was retried by each fresh collect. Callers now share one skip set.
+* Build oscillation (see sticky target).
+* Test fakes: SimWorld placed a block for any item use (walls, furniture), and fake drops didn't fall.
+
+### Bugs the in-game runs found (all fixed)
+* The bot mined the floor out from under its own work bench, furnace and anvil. Furniture with no support
+  breaks and drops, so it placed them again and finally found no free floor. `TerrariaBlockActions.BreakTicks`
+  now refuses any tile with a frame-important tile (furniture, stations, doors) on top, for mining and for
+  digging moves. Station placement also searches ±20 columns.
+* "Out of blocks" mid-build while 20 stone sat in the backpack: the hotbar dirt stack ran out, and stocking
+  only swaps a stack in when it is clearly bigger, so the stone came up only after the dirt hit zero. The
+  build now waits for stocking (up to 90 ticks) while the backpack still has blocks, and the planner asks for
+  10 spare blocks (walking may pillar with them).
+* A search that started on a goal node (a zero-step "Found") counted as "no path". It now counts as arrived.
+* Targets it can never reach: ore under the arena's unbreakable floor, and trees outside its walls. Each try
+  ran A* to the 40,000-node cap (about 2.5 s), and a fresh skill tried the same ones again. Now a shared
+  `BotContext.UnreachableTiles` (cleared when auto starts) remembers them, plus same-type tiles within 4 of an
+  unreachable ore. Mining and chopping walks get one attempt with a 12,000-node limit.
+* No flat floor anywhere near (bumpy or dug-up ground): station placement now walks ±25, then ±50 tiles from
+  where it started and looks again.
+* Hotbar stocking was skipped whenever its 30-tick mark fell mid-swing. While chopping that happened again and
+  again, so a crafted sword could stay in the backpack. It now retries on the next free tick.
+* Self-test arena: unbreakable side walls. The bot used to wander out into the real world around the spawn,
+  which made runs depend on that terrain (a failed `night_shelter`, and `settle_auto` ending up 138 rows down).
+* Test data: with spawns off and finite trees and ore, the settle scenario needs four slimes (gel for the
+  house torch on top of the furnace's three), 10 trees and 300 ore.
+
 ### Actions that stand in for UI clicks (approved by the user 2026-10-10)
 The bot otherwise acts only through controls. These four have no control to press, so they call what the
 UI click would call:
@@ -343,13 +423,15 @@ UI click would call:
 * **Station range**: `Player.AdjTiles()` normally runs only while the inventory screen is open. The crafter
   calls it right before `FindRecipes`, which is the same range check.
 * **Moving items** between backpack and hotbar is a slot swap, like dragging.
+* **Equipping armour**: `ItemSlot.SwapEquip`, the right-click handler.
+* **Housing check**: `WorldGen.StartRoomCheck` + `RoomNeeds` + `ScoreRoom`, read-only, as the housing query runs it.
 * **Pointing**: the tile target (`tileTargetX/Y`) and the mouse position (`Main.mouseX/Y`) are overridden for
   the duration of `ItemCheck`. Range, tool power and speed are vanilla's.
 
 ## Not yet (noted for later)
 Ropes/ladders, swimming (water only penalised, lava avoided), slopes/half-blocks (modelled as full blocks),
 doors, breaking above the head while pillaring, flying jump starts, ranged/magic combat, dodging,
-housing/NPCs, chests, torches placed for light, armour, biome woods (only forest Wood is a gather
+chests, torches placed for light, accessories, biome woods (only forest Wood is a gather
 source), conditional recipes (near water, biome...), bosses.
 
 ## Self-test history
@@ -365,3 +447,8 @@ the real game with copies of the user's player and world.
   the cost cache let the iron bar ↔ iron fence cycle through; and perception was stale right after enabling.
 * Seen once in `night_shelter`: the arena has 4 trees, so the bot left it for real trees, and a pillar step
   failed to place three times in real terrain (x 2003) before it recovered. Worth a look.
+* M6: `build_house` (valid housing per the game's query in 674 ticks) and `settle_auto` (copper tools to house,
+  iron broadsword and full iron armour in about 20,000 to 24,000 ticks). The last full run passed 26/27. Its failure was
+  `early_game_full_hotbar` checking for a "moved" log line; the sword had legitimately been crafted straight
+  onto the hotbar, so the check now looks at the hotbar. The scenarios touched by the final hotbar-stocking fix
+  (5 of them) were re-run on the final build and pass. 124 unit tests. Arena walls since this milestone.

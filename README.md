@@ -13,8 +13,9 @@ What it can do so far:
 - **Play on its own** (`/bot auto`): from a fresh character's copper tools to an iron (or lead) pickaxe. It chops
   trees, kills slimes for gel, makes torches, mines stone and ore, builds a work bench, furnace and anvil,
   smelts bars and crafts the pickaxe, and works out each step from the game's own recipes. It breaks off to
-  fight anything that comes close and digs in for the night. `/bot auto early` stops after the work bench,
-  a wooden sword and 30 wood.
+  fight anything that comes close and digs in for the night. Then (plan `settle`, the default) it builds a small
+  house that passes the game's housing check, crafts an iron broadsword and makes and wears the full iron armour
+  set. `/bot auto iron` stops at the pickaxe and `/bot auto early` after the work bench, a wooden sword and 30 wood.
 
 ## Build
 From this folder:
@@ -34,7 +35,7 @@ Reload. You can also use **Workshop → Develop Mods → TerraBot → Build + Re
 | `P` (keybind "Toggle Bot") | Bot on/off. Off returns control to you the same tick. |
 | `O` (keybind "Set Bot Target") | Sets the target to the tile under the mouse. |
 | `/bot goto <x> <y>` | Target a tile and switch the bot on. `~` means relative to you: `/bot goto ~20 ~0` is 20 tiles right. |
-| `/bot auto [iron|early]` | Auto mode, plan `iron` (default) or `early` (see above). Switches the bot on. `/bot stop` ends it; `P` pauses it, and pressing `P` again resumes it. |
+| `/bot auto [settle\|iron\|early]` | Auto mode, plan `settle` (default), `iron` or `early` (see above). Switches the bot on. `/bot stop` ends it; `P` pauses it, and pressing `P` again resumes it. |
 | `/bot fight` | Fight nearby enemies until none has been close for 1.5 s. Switches the bot on. |
 | `/bot stop` | Clear the target and leave auto mode. The bot stays on but idles. |
 | `/bot on`, `/bot off` | Same as the keybind. |
@@ -76,7 +77,7 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1
 ```
 This opens tModLoader in a separate, throw-away save folder, using copies of your `Pepi` character and the
-`Enchanting Outskirts` world; your real saves are only read. It plays 25 scenarios in an arena above the
+`Enchanting Outskirts` world; your real saves are only read. It plays 27 scenarios in an arena above the
 spawn and prints PASS/FAIL for each:
 - walking, ledge jump, gap jump, running jump over an 8-tile gap (and refusing one with no run-up room),
   dropping through platforms, a drop without fall damage, an unreachable target;
@@ -87,10 +88,24 @@ spawn and prints PASS/FAIL for each:
   axe in the backpack.
 - the iron chain from copper tools to an iron-tier pickaxe, and a night spent sealed in a hole while a zombie
   waits outside.
+- building a house from a kit (checked with the game's housing query), and the whole settle chain from copper
+  tools to a house, a broadsword and full iron armour.
 
-Then it quits. It takes about ten minutes. Keep the game window in front, because Terraria pauses while it's
+Then it quits. It takes about 25 minutes, most of it the settle chain. Keep the game window in front, because Terraria pauses while it's
 in the background. Run a subset with `-Scenarios "name1,name2"`. Claude can run this on its own; the manual
 scripts below are for things the self-test can't see, such as how the overlay looks or a real world's trees.
+
+## Test script: house and armour (Milestone 6)
+Continue from Milestone 5, or start fresh: `/bot auto` runs everything.
+
+1. After the pickaxe it looks for flat ground near the work bench (`Auto: house site ...` in the log), gathers
+   wood for 40 wood walls, a door, a chair and a table, and builds a 12×6 house: frame, then walls, then
+   furniture. It steps outside and puts the door in last.
+2. Check it the way a player would: open the housing menu and use the housing query (?) on the room. It should
+   say the room is suitable. A town NPC such as the Guide may move in later on its own.
+3. It crafts an iron (or lead) broadsword and then mines about 180 ore for the armour. It puts each piece on as
+   soon as it is made.
+4. The HUD ends at `auto: settled: house built, iron-tier pickaxe, broadsword and armour`.
 
 ## Test script: iron pickaxe (Milestone 5)
 Start a fresh character (copper tools) in a forest at daytime, with stone and ore within about 40 tiles below.
@@ -191,7 +206,7 @@ Then just tell me "done". I can read `client.log` from the tModLoader install fo
 - Pillars can't break blocks above the head yet; it needs open sky or a separate tunnel step.
 - Combat is melee only (swords and shortswords). No ranged or magic weapons, no dodging projectiles, no
   retreating. Auto mode stops after three failures in a row, e.g. when there are no trees to be found.
-- Auto mode's goals end at an iron-tier pickaxe. No houses, armour, chests or bosses yet. It gathers only
+- Auto mode's goals end at a house, an iron broadsword and iron armour. No accessories, chests or bosses yet. It gathers only
   forest wood, and recipes with conditions (near water, a biome...) are left out.
 - If your mouse cursor is over a UI element (inventory, a menu), the game blocks item use. Move the mouse away
   while the bot uses items.
