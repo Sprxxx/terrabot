@@ -31,6 +31,12 @@ public sealed record Wearing(int Item, string Label) : Need(Label);
 /// <summary>Max life (from life crystals) is at least <see cref="Life"/>.</summary>
 public sealed record LifeAtLeast(int Life, string Label) : Need(Label);
 
+/// <summary>The world records this boss as defeated: get its summon item, wait for night, summon and fight.</summary>
+public sealed record BossDefeated(int Npc, int SummonItem, int[] Minions, string Label) : Need(Label);
+
+/// <summary>Preparation for a boss (life, bow, arrows): moot once that boss is defeated.</summary>
+public sealed record PrepFor(int BossNpc, Need Inner) : Need(Inner.Label);
+
 /// <summary>
 /// Altoclef-style "what is the next thing I need?" planner, re-evaluated whenever a skill ends. Works through a
 /// list of stages (<see cref="Plans"/>); for the first unmet one it resolves the dependency tree from the
@@ -64,6 +70,14 @@ public sealed class ProgressionPlanner
 	public const int IronTierPickPower = 40;
 	/// <summary>Max life to have before a boss: 5 life crystals (also what vanilla wants before the Eye spawns on its own).</summary>
 	public const int BossLife = 200;
+	/// <summary>Arrows to carry into a boss fight (the Eye took about 250 in testing, misses included).</summary>
+	public const int BossArrows = 500;
+	/// <summary>Longest wait for nightfall: a whole Terraria day (15 minutes).</summary>
+	public const int NightWaitTicks = 54000 + 600;
+	/// <summary>Stations nothing can place (demon altars) are looked for this far around the bot.</summary>
+	public const int StationSearchRadius = 150;
+	/// <summary>NPC AI styles that only come out at night (demon eyes): hunt them at night, wait for it by day.</summary>
+	public static readonly int[] NocturnalAiStyles = { 2 };
 
 	public static class Plans
 	{
@@ -73,9 +87,11 @@ public sealed class ProgressionPlanner
 		public const string Iron = "iron";
 		/// <summary>Iron plus a house, an iron-tier broadsword and the iron-tier armour set, worn (Milestone 6).</summary>
 		public const string Settle = "settle";
+		/// <summary>Settle plus 200 max life, an iron-tier bow, 500 arrows and the Eye of Cthulhu defeated (Milestone 7).</summary>
+		public const string Boss = "boss";
 		/// <summary>Just max life 200 from life crystals (a building block of the boss plan; handy on its own).</summary>
 		public const string Crystals = "crystals";
-		public static readonly string[] All = { Early, Iron, Settle, Crystals };
+		public static readonly string[] All = { Early, Iron, Settle, Crystals, Boss };
 	}
 
 	private readonly Dictionary<int, long> notedAt = new();
@@ -122,6 +138,12 @@ public sealed class ProgressionPlanner
 		stages.Add(new Wearing(ids.IronTierHelmet, "helmet"));
 		stages.Add(new Wearing(ids.IronTierChainmail, "chainmail"));
 		stages.Add(new Wearing(ids.IronTierGreaves, "greaves"));
+		if (plan == Plans.Settle)
+			return stages;
+		stages.Add(new PrepFor(ids.EyeBoss, new LifeAtLeast(BossLife, "max life")));
+		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.IronTierBow, 1, "iron-tier bow")));
+		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.WoodenArrow, BossArrows, "arrows")));
+		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu"));
 		return stages;
 	}
 
@@ -136,6 +158,7 @@ public sealed class ProgressionPlanner
 		stuck = null;
 		lastShelterEnd = long.MinValue / 2;
 		HouseSite = null;
+		searchedFor.Clear();
 		badSites.Clear();
 		siteFailures = 0;
 	}
@@ -185,6 +208,7 @@ public sealed class ProgressionPlanner
 			Plans.Early => "early-game chain complete: work bench placed, wooden sword, wood stockpiled",
 			Plans.Iron => "iron-age chain complete: work bench, furnace and anvil placed, iron-tier pickaxe in hand",
 			Plans.Crystals => $"max life {ctx.Combat.LifeMaxBase} from life crystals",
+			Plans.Boss => "the Eye of Cthulhu is defeated",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
 		Complete = true;
@@ -193,6 +217,8 @@ public sealed class ProgressionPlanner
 
 	private ISkill AtNight(ISkill skill, BotContext ctx)
 	{
+		if (skill is HuntSkill h && NocturnalAiStyles.Contains(h.AiStyle))
+			return skill; // the prey only comes out at night
 		if (!ctx.IsNight || skill is not (GatherWoodSkill or HuntSkill) || ctx.Tick - lastShelterEnd < ShelterCooldownTicks)
 			return skill;
 		Status = $"night: sheltering instead of {skill.Name} ({Status})";
@@ -210,6 +236,8 @@ public sealed class ProgressionPlanner
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Item, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
 			HouseBuilt => ResolveHouse(claims, depth, ctx),
+			BossDefeated b => ResolveBoss(b, claims, depth, ctx),
+			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
 				: ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 ? Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new UseItemSkill(ctx.Ids.LifeCrystal))
 				: Resolve(new HaveItem(ctx.Ids.LifeCrystal, 1, "life crystal"), claims, depth + 1, ctx),
@@ -234,6 +262,18 @@ public sealed class ProgressionPlanner
 				return Do($"walking to the work bench to place a {name}", WalkToStation(b, ctx));
 			return Do($"placing a {name}", new PlaceItemSkill(carried));
 		}
+		if (items.Count == 0) {
+			// Nothing places it (a demon altar): find one in the world.
+			TilePos? found = ctx.World.FindTiles(s.TileType, ctx.Node, StationSearchRadius).Cast<TilePos?>().FirstOrDefault();
+			if (found == null) {
+				stuck = $"no {k.TileName(s.TileType)} within {StationSearchRadius} tiles, and nothing can place one";
+				return null;
+			}
+			KnownStations[s.TileType] = found.Value;
+			notedAt[s.TileType] = ctx.Tick + 60 * 60 * 60; // far away: do not forget it before going there
+			ctx.Log.Info($"Auto: found a {k.TileName(s.TileType)} at {found.Value}");
+			return null;
+		}
 		int best = Cheapest(items, ctx);
 		if (best < 0) {
 			stuck = $"no obtainable item places a {k.TileName(s.TileType)}";
@@ -254,7 +294,7 @@ public sealed class ProgressionPlanner
 		int more = h.Count - Math.Max(0, available);
 		int item = Cheapest(h.Accepts, ctx);
 		if (item < 0) {
-			stuck = $"no way to get {h.Label}";
+			stuck = $"no way to get {h.Label}" + MissingStationHint(h.Accepts, ctx);
 			return null;
 		}
 		string name = k.ItemName(item);
@@ -266,6 +306,8 @@ public sealed class ProgressionPlanner
 			case SourceKind.Mine:
 				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target));
 			case SourceKind.Hunt:
+				if (NocturnalAiStyles.Contains(src.NpcAiStyle) && !ctx.IsNight)
+					return Do($"waiting for night to hunt for {name}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
 				return Do($"need {more} more {name} (hunting to {target})", new HuntSkill(item, src.NpcAiStyle, target));
 		}
 
@@ -334,6 +376,22 @@ public sealed class ProgressionPlanner
 				return sub;
 		}
 		return Do($"building a {bp.Name} at {site}", new BuildSkill(bp, site));
+	}
+
+	/// <summary>Defeated, or: get the summon item (recursively), wait for night, then summon and fight.</summary>
+	private ISkill ResolveBoss(BossDefeated b, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		if (ctx.World.BossDefeated(b.Npc))
+			return null;
+		bool bossHere = ctx.Hostiles.Any(h => h.Type == b.Npc);
+		if (!bossHere) {
+			ISkill sub = Resolve(new HaveItem(b.SummonItem, 1, ctx.Knowledge.ItemName(b.SummonItem)), claims, depth + 1, ctx);
+			if (sub != null || stuck != null)
+				return sub;
+			if (!ctx.IsNight)
+				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
+		}
+		return Do($"fighting the {b.Label}", new BossFightSkill(b.SummonItem, b.Npc, b.Minions));
 	}
 
 	// ---------- cost estimate (rough ticks; infinity = cannot be had) ----------
@@ -423,8 +481,14 @@ public sealed class ProgressionPlanner
 		foreach (int station in r.Stations) {
 			if (KnownStations.ContainsKey(station))
 				continue;
+			IReadOnlyList<int> placers = ctx.Knowledge.ItemsPlacing(station);
+			if (placers.Count == 0) {
+				// Nothing places it (a demon altar): usable only if one exists out there.
+				sum += FindUnplaceableStation(station, ctx) ? FoundStationCost : float.PositiveInfinity;
+				continue;
+			}
 			float c = float.PositiveInfinity;
-			foreach (int i in ctx.Knowledge.ItemsPlacing(station))
+			foreach (int i in placers)
 				c = Math.Min(c, ctx.Inventory.Count(i) > 0 ? 0f : Cost(i, depth + 1, ctx));
 			sum += c;
 		}
@@ -432,6 +496,37 @@ public sealed class ProgressionPlanner
 	}
 
 	// ---------- helpers ----------
+
+	/// <summary>" (needs a Demon Altar: none within 150 tiles, and nothing can place one)" when that is why.</summary>
+	private string MissingStationHint(IReadOnlyList<int> items, BotContext ctx)
+	{
+		foreach (int i in items)
+			foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(i))
+				foreach (int st in r.Stations)
+					if (!KnownStations.ContainsKey(st) && ctx.Knowledge.ItemsPlacing(st).Count == 0)
+						return $" (needs a {ctx.Knowledge.TileName(st)}: none within {StationSearchRadius} tiles, and nothing can place one)";
+		return "";
+	}
+
+	/// <summary>Walking to a station found far away, roughly.</summary>
+	private const float FoundStationCost = 200f;
+	private readonly HashSet<int> searchedFor = new();
+
+	/// <summary>Look for a station nothing can place (once per planner reset); remember it when found.</summary>
+	private bool FindUnplaceableStation(int tile, BotContext ctx)
+	{
+		if (KnownStations.ContainsKey(tile))
+			return true;
+		if (!searchedFor.Add(tile))
+			return false;
+		TilePos? found = ctx.World.FindTiles(tile, ctx.Node, StationSearchRadius).Cast<TilePos?>().FirstOrDefault();
+		if (found == null)
+			return false;
+		KnownStations[tile] = found.Value;
+		notedAt[tile] = ctx.Tick + 60 * 60 * 60; // far away: do not forget it before going there
+		ctx.Log.Info($"Auto: found a {ctx.Knowledge.TileName(tile)} at {found.Value}");
+		return true;
+	}
 
 	private ISkill Do(string why, ISkill skill)
 	{
@@ -458,12 +553,16 @@ public sealed class ProgressionPlanner
 	private bool NearStation(BotContext ctx, int tileType) =>
 		KnownStations.TryGetValue(tileType, out TilePos at) && at.ChebyshevTo(ctx.Node) <= StationReach;
 
+	/// <summary>The stuck reason of the last <see cref="ResolveForTest"/> (null if not stuck).</summary>
+	public string ResolveForTestStuck => stuck;
+
 	/// <summary>Resolve a single need against the current state (tests).</summary>
 	public ISkill ResolveForTest(Need need, BotContext ctx)
 	{
 		costMemo.Clear();
 		stuck = null;
-		return Resolve(need, new Dictionary<int, int>(), 0, ctx);
+		ISkill skill = Resolve(need, new Dictionary<int, int>(), 0, ctx);
+		return skill == null ? null : AtNight(skill, ctx);
 	}
 
 	/// <summary>Hostile close enough that the brain should drop everything and fight.</summary>
@@ -471,6 +570,8 @@ public sealed class ProgressionPlanner
 	{
 		Core.Physics.PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
-		return ctx.Combat.HasWeapon && ctx.Hostiles.Any(h => h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f);
+		// Only hostiles we can see: one behind solid blocks cannot reach us right now (and must not interrupt a build).
+		return (ctx.Combat.HasWeapon || ctx.Combat.HasRanged) && ctx.Hostiles.Any(h => h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f
+			&& FightSkill.ClearShot(ctx, cx, cy, h.CenterX, h.CenterY));
 	}
 }

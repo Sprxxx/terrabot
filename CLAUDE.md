@@ -29,10 +29,10 @@ dotnet test tests/TerraBot.Tests              # pure unit tests (pathfinder, phy
 | Folder | Terraria types? | Contents |
 |---|---|---|
 | `Core/Grid` | no | `TilePos`, `CellKind` flags, `ITileGrid`, `ArrayTileGrid` (ASCII parser), `GridWindow` cache |
-| `Core/Physics` | no | `PhysicsParams`, `BodyState`, `MoveInput`, `PlayerPhysics` (vanilla tick replica), `Arrive` steering |
+| `Core/Physics` | no | `PhysicsParams`, `BodyState`, `MoveInput`, `PlayerPhysics` (vanilla tick replica), `Arrive` steering, `Ballistics` (arrow flight, lead and drop) |
 | `Core/Pathfinding` | no | `Body` (2×3 node model), `IMoveType` + `Moves/` (Walk, StepUp, Drop, DropThrough, Jump, DigMove, BuildMove), `BlockActions` (`IBlockActions`, `BlockAction`, `BlockRules`), `JumpLibrary`/`JumpTemplate`/`JumpController` (standing and running jumps), `Goals`, `PathSearch`/`AStarPathfinder` |
 | `Core/Execution` | no | `PathExecutor`: path + live `BodyState` → `MoveInput`; reports Finished/Stuck/OffPath/Blocked; re-fits jumps on small physics changes (`TryAdopt`) |
-| `Bot/` | no | `BotContext`, `IBotLog`, `Perception.cs` (`EntityInfo`, `DropInfo`, `CombatInfo`), `World.cs` (`IWorldInfo` incl. tile queries, `IInventory`, `ICrafter`, `GameIds`, `Surroundings`), `Knowledge.cs` (`IGameKnowledge`: recipes, raw sources, station items), `Skills/` (`WalkToSkill`, `FightSkill`, gathering: `ChopTreeSkill`/`CollectDropsSkill`/`GatherWoodSkill`, crafting: `CraftSkill`/`PlaceItemSkill`, `MineSkill`, `EquipSkill`, survival: `HuntSkill`/`ShelterSkill`), `Building/` (`Blueprint`, `SiteFinder`, `BuildSkill`), `Brain/` (`BotBrain`: manual target/skill or auto mode; `ProgressionPlanner`: recipe-driven next-need resolver with plans `early`, `iron` and `settle`) |
+| `Bot/` | no | `BotContext`, `IBotLog`, `Perception.cs` (`EntityInfo`, `DropInfo`, `CombatInfo`), `World.cs` (`IWorldInfo` incl. tile queries, `IInventory`, `ICrafter`, `GameIds`, `Surroundings`), `Knowledge.cs` (`IGameKnowledge`: recipes, raw sources, station items), `Skills/` (`WalkToSkill`, `FightSkill` (melee and bow), `BossFightSkill`, `UseItemSkill`, `WaitSkill`, gathering: `ChopTreeSkill`/`CollectDropsSkill`/`GatherWoodSkill`, crafting: `CraftSkill`/`PlaceItemSkill`, `MineSkill`, `EquipSkill`, survival: `HuntSkill`/`ShelterSkill`), `Building/` (`Blueprint`, `SiteFinder`, `BuildSkill`), `Brain/` (`BotBrain`: manual target/skill or auto mode; `ProgressionPlanner`: recipe-driven next-need resolver with plans `early`, `iron` and `settle`) |
 | `Game/` | **yes** | `TerraBotPlayer` (ModPlayer: perception, controls, aim, hotbar stocking), `TerrariaTileGrid`, `TerrariaBlockActions` (hotbar pickaxe/axe/weapon/blocks, vanilla pickaxe-damage mirror, `StockHotbar`), `TerrariaGameInfo` (trees, stations, tile queries, placement checks, inventory counts, crafting, and `IGameKnowledge` built once from the loaded recipes/items, mods included), `PhysicsReader`, `BotKeybinds`, `BotCommand` (/bot), `DebugOverlaySystem`, `Perception/` snapshot, `SelfTest/` (in-game scenarios) |
 
 **Rule:** `Core/` and `Bot/` must not reference Terraria, tModLoader or XNA. The test project compiles those
@@ -136,6 +136,10 @@ Gotchas already hit:
     `GatherWood start/done` and `GatherWood: no trees in sight, exploring towards (x,y)`; `Craft start: item N,
     needs <recipe>`, `Craft done`, `Craft item N failed: Missing|NeedsStation|NoRecipe ...`; `Placed item N at (x,y)`.
   - `Hotbar: moved <kind> <item> from inventory slot a to hotbar slot b (swapped out <item>)`.
+  - Boss (M7): `Fight: shooting <npc> with <bow> (<n> arrows), arrival in <t> ticks`, `Fight: <npc> is out of sight and there
+    is no way to it; leaving it`, `Auto: found a DemonAltar at (x,y)`, `Wait start: for night`, `Boss fight start/summoned`,
+    `Boss fight: <boss> at <life>/<max>, us <life>/<max>, <n> arrows` (about every 10%), `Boss fight: lost sight of the boss`,
+    `Boss fight: boss <n> defeated after <t> ticks`, `Boss fight failed: <reason>`.
   - Building (M6): `Auto: house site (x,y) (N edits)`, `Build start: small house at (x,y)`, `Build: <Kind> (x,y) failed (...),
     attempt n/3`, `Build done: ... is valid housing` or `Build ... failed: built, but the housing check says: <reason>`;
     `Equip start` / `Equipped item N`.

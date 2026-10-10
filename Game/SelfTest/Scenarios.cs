@@ -304,6 +304,58 @@ public sealed class Scenario
 					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
 			},
 			new() {
+				// Milestone 7 end to end from a settled character (iron gear worn, 200 life, stations and a house kit as
+				// items, an iron bow, wood and stone for arrows, 3 lenses), at nightfall: place the stations, build the house,
+				// craft 500 arrows, hunt demon eyes for the other lenses, find the altar, craft the Suspicious Looking Eye,
+				// summon and win. Spawns are off in the arena, so the scenario sends demon eyes while lenses are wanted.
+				Name = "boss_auto",
+				Rows = Grid(Repeat(new string('.', 100), 14),
+					"..S..............................................................A..................................",
+					new string(',', 100), Repeat(new string('#', 100), 2), Repeat(new string('s', 100), 4), new string('@', 100)),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Boss,
+				Night = true,
+				ResetBosses = true,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Dig = true,
+				Build = true,
+				Blocks = 60,
+				Weapon = Terraria.ID.ItemID.IronBroadsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				Inventory = p => {
+					int slot = 10;
+					void Give(int type, int stack = 1) => p.inventory[slot++] = new Terraria.Item(type, stack);
+					Give(Terraria.ID.ItemID.WoodenSword);
+					Give(Terraria.ID.ItemID.WorkBench);
+					Give(Terraria.ID.ItemID.Furnace);
+					Give(Terraria.ID.ItemID.IronAnvil);
+					Give(Terraria.ID.ItemID.IronBow);
+					Give(Terraria.ID.ItemID.Wood, 30);
+					Give(Terraria.ID.ItemID.StoneBlock, 30);
+					Give(Terraria.ID.ItemID.Lens, 3);
+					Give(Terraria.ID.ItemID.WoodWall, 40);
+					Give(Terraria.ID.ItemID.WoodenDoor);
+					Give(Terraria.ID.ItemID.WoodenChair);
+					Give(Terraria.ID.ItemID.WoodenTable);
+					Give(Terraria.ID.ItemID.Torch, 5);
+				},
+				During = (a, t) => {
+					Terraria.Player pl = Terraria.Main.LocalPlayer;
+					bool wantLenses = pl.CountItem(Terraria.ID.ItemID.Lens) < 6 && pl.CountItem(Terraria.ID.ItemID.SuspiciousLookingEye) == 0
+						&& !Terraria.NPC.AnyNPCs(Terraria.ID.NPCID.EyeofCthulhu) && !Terraria.NPC.downedBoss1;
+					if (!wantLenses || t % 300 != 0 || Terraria.Main.npc.Count(n => n.active && n.type == Terraria.ID.NPCID.DemonEye) >= 2)
+						return;
+					int side = (t / 300) % 2 == 0 ? 1 : -1;
+					// Inside the arena walls (an eye spawned outside was fought through the wall).
+					int x = Math.Clamp((int)(pl.Center.X / 16) + side * 25, a.Left + 4, a.Left + Arena.Width - 5);
+					Terraria.NPC.NewNPC(new Terraria.DataStructures.EntitySource_DebugCommand("TerraBot selftest"),
+						x * 16, (int)pl.Center.Y - 10 * 16, Terraria.ID.NPCID.DemonEye);
+				},
+				TimeoutTicks = 60 * 60 * 15,
+				Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : r.Housing != null ? $"housing: {r.Housing}" : null,
+			},
+			new() {
 				// Milestone 7: the Eye of Cthulhu, with the gear the boss plan collects: iron bow, wooden arrows, iron armour,
 				// 200 max life, a few lesser healing potions. Summoned at nightfall on a wide flat floor (kiting room).
 				Name = "eye_of_cthulhu",

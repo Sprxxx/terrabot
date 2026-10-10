@@ -42,6 +42,8 @@ public sealed class FightSkill : ISkill
 	private float targetDistance;
 	private bool healPressedLastTick;
 	private int shotAt = -1;
+	/// <summary>Targets the approach found no path to (behind walls): not fought again.</summary>
+	private readonly System.Collections.Generic.HashSet<int> unreachable = new();
 	private readonly System.Collections.Generic.HashSet<int> engaged = new();
 
 	public int Kills { get; private set; }
@@ -95,7 +97,7 @@ public sealed class FightSkill : ISkill
 		float dx = t.CenterX - cx, dy = t.CenterY - cy;
 		float reachX = p.Width * 0.5f + ctx.Combat.WeaponReach + t.Width * 0.5f - 4f;
 		float reachY = p.Height * 0.5f + t.Height * 0.5f + 8f;
-		bool inReach = ctx.Combat.HasWeapon && Math.Abs(dx) <= reachX && Math.Abs(dy) <= reachY;
+		bool inReach = ctx.Combat.HasWeapon && Math.Abs(dx) <= reachX && Math.Abs(dy) <= reachY && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY);
 
 		if (!inReach && UseRanged(ctx, t, cx, cy)) {
 			Shoot(ctx, t, cx, cy);
@@ -154,12 +156,30 @@ public sealed class FightSkill : ISkill
 		AimSolution s = Ballistics.Lead(cx, cy, t.CenterX, t.CenterY, t.VX, t.VY, ctx.Combat.Projectile);
 		ctx.Output.Tool = ToolRequest.Ranged;
 		ctx.Output.AimMouse(s.AimX, s.AimY);
-		ctx.Output.UseItem = s.Hits;
+		bool clear = s.Hits && ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile);
+		ctx.Output.UseItem = clear;
 		if (s.Hits && shotAt != t.Id) {
 			shotAt = t.Id;
 			ctx.Log.Info($"Fight: shooting {t.Name} with {ctx.Combat.RangedName} ({ctx.Combat.AmmoCount} arrows), arrival in {s.Ticks} ticks");
 		}
-		State = s.Hits ? $"shooting (arrives in {s.Ticks}t)" : "out of range";
+		State = clear ? $"shooting (arrives in {s.Ticks}t)" : s.Hits ? "no clear arc" : "out of range";
+	}
+
+	/// <summary>The arrow's simulated flight up to the target (the arc, not the straight line) passes no solid cell.</summary>
+	public static bool ArcClear(BotContext ctx, float ox, float oy, AimSolution s, ProjectileModel m)
+	{
+		float angle = MathF.Atan2(s.AimY - oy, s.AimX - ox);
+		float x = ox, y = oy, vx = MathF.Cos(angle) * m.Speed, vy = MathF.Sin(angle) * m.Speed;
+		int updates = Math.Max(1, s.Ticks) * m.UpdatesPerTick;
+		for (int u = 0; u < updates; u++) {
+			if (u >= m.GravityDelay)
+				vy = MathF.Min(vy + m.Gravity, m.MaxFallSpeed);
+			x += vx;
+			y += vy;
+			if (ctx.Grid.Get((int)MathF.Floor(x / 16f), (int)MathF.Floor(y / 16f)).IsSolid())
+				return false;
+		}
+		return true;
 	}
 
 	/// <summary>No solid cell on the straight line between the two points (sampled every 8 px).</summary>
@@ -186,7 +206,8 @@ public sealed class FightSkill : ISkill
 			float d = e.DistanceTo(cx, cy);
 			if (d <= engage)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
-			bool candidate = d <= engage || (engaged.Contains(e.Id) && d <= LeashRadius);
+			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
+			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= LeashRadius)) && !unreachable.Contains(e.Id);
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {
@@ -225,12 +246,17 @@ public sealed class FightSkill : ISkill
 		TilePos feet = t.FeetTile;
 		approachAge++;
 		if (approach == null || (approachAge > RetargetPathTicks && feet.ChebyshevTo(approachTarget) > 2)) {
-			approach = new WalkToSkill(feet) { Quiet = true, Tolerance = 2 };
+			approach = new WalkToSkill(feet) { Quiet = true, Tolerance = 2, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			approach.Start(ctx);
 			approachTarget = feet;
 			approachAge = 0;
 		}
 		SkillStatus s = approach.Tick(ctx);
+		if (s == SkillStatus.Failed && !ClearShot(ctx, ctx.Body.CenterX(p), ctx.Body.CenterY(p), t.CenterX, t.CenterY)) {
+			unreachable.Add(t.Id);
+			ctx.Log.Info($"Fight: {t.Name} is out of sight and there is no way to it; leaving it");
+			targetId = -1;
+		}
 		if (s != SkillStatus.Running)
 			approach = null;
 		State = "chasing";

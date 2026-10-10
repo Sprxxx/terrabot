@@ -37,6 +37,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int TileDirt = 0, TileStone = 1, TileIron = 6, TileLead = 167, TileAnvil = 16, TileFurnace = 17, TileBench = 18;
 	public const int TileTorch = 4, TileDoor = 10, TileTable = 14, TileChair = 15;
 	public const int LifeCrystal = 29, TileHeart = 12;
+	public const int IronBow = 99, WoodenArrow = 40, Lens = 38, SuspiciousEye = 43, TileDemonAltar = 26, EyeNpc = 4, ServantNpc = 5, DemonEyeAi = 2;
 	public const int SlimeAi = 1;
 
 	public static readonly GameIds Ids = new() {
@@ -45,6 +46,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		IronTierBroadsword = IronBroadsword, IronTierHelmet = IronHelmet, IronTierChainmail = IronChainmail, IronTierGreaves = IronGreaves,
 		WoodWall = WoodWall, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
 		LifeCrystal = LifeCrystal,
+		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
+		EyeBoss = EyeNpc, EyeServant = ServantNpc,
 	};
 
 	public readonly ArrayTileGrid Grid;
@@ -108,6 +111,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = LeadAnvil, Ingredients = new[] { new Ingredient(5, LeadBar) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = IronPickaxe, Ingredients = new[] { new Ingredient(10, IronBar), new Ingredient(3, Wood) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = LeadPickaxe, Ingredients = new[] { new Ingredient(10, LeadBar), new Ingredient(3, Wood) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = IronBow, Ingredients = new[] { new Ingredient(7, IronBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = WoodenArrow, ResultStack = 25, Ingredients = new[] { new Ingredient(1, Wood), new Ingredient(1, StoneBlock) }, Stations = new[] { TileBench } });
+		Add(new RecipeInfo { Result = SuspiciousEye, Ingredients = new[] { new Ingredient(6, Lens) }, Stations = new[] { TileDemonAltar } });
 		Add(new RecipeInfo { Result = IronBroadsword, Ingredients = new[] { new Ingredient(8, IronBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = IronHelmet, Ingredients = new[] { new Ingredient(15, IronBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = IronChainmail, Ingredients = new[] { new Ingredient(25, IronBar) }, Stations = new[] { TileAnvil } });
@@ -153,6 +159,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		DirtBlock => new ItemSource(SourceKind.Mine, TileDirt),
 		IronOre => new ItemSource(SourceKind.Mine, TileIron),
 		LifeCrystal => new ItemSource(SourceKind.Mine, TileHeart),
+		Lens => new ItemSource(SourceKind.Hunt, NpcAiStyle: DemonEyeAi),
 		_ => ItemSource.None, // lead ore: not in this world
 	};
 
@@ -240,6 +247,17 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
 
 	/// <summary>Puts a 2×2 life crystal with its top-left cell at (x, y) (cells must be open; it sits on the floor below).</summary>
+	/// <summary>A 3×2 demon altar (nothing places one; it is found) with its top-left at (x, y).</summary>
+	public void AddAltar(int x, int y)
+	{
+		for (int cx = x; cx <= x + 2; cx++)
+			for (int cy = y; cy <= y + 1; cy++) {
+				Grid.Set(cx, cy, cy == y ? CellKind.Platform : CellKind.Empty);
+				Furniture[new TilePos(cx, cy)] = TileDemonAltar;
+			}
+		Stations[TileDemonAltar] = new TilePos(x, y);
+	}
+
 	public void AddHeart(int x, int y)
 	{
 		for (int cx = x; cx <= x + 1; cx++)

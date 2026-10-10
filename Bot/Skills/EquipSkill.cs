@@ -103,3 +103,40 @@ public sealed class UseItemSkill : ISkill
 		return SkillStatus.Failed;
 	}
 }
+
+/// <summary>Do nothing (stand still, fights still pre-empt it) until a condition holds, e.g. nightfall.</summary>
+public sealed class WaitSkill : ISkill
+{
+	private readonly System.Func<BotContext, bool> until;
+	private int ticks;
+
+	public string What { get; }
+	public int MaxTicks { get; }
+	public string FailureReason { get; private set; } = "";
+	public string Name => "Wait";
+
+	public WaitSkill(string what, System.Func<BotContext, bool> until, int maxTicks)
+	{
+		What = what;
+		this.until = until;
+		MaxTicks = maxTicks;
+	}
+
+	public string Describe() => $"Wait for {What} ({ticks / 60}s)";
+	public void Start(BotContext ctx) => ctx.Log.Info($"Wait start: for {What}");
+	public void Stop(BotContext ctx) { }
+
+	public SkillStatus Tick(BotContext ctx)
+	{
+		ctx.Output = MoveInput.None;
+		if (until(ctx)) {
+			ctx.Log.Info($"Wait done: {What} after {ticks} ticks");
+			return SkillStatus.Succeeded;
+		}
+		if (++ticks > MaxTicks) {
+			FailureReason = $"no {What} after {MaxTicks} ticks";
+			return SkillStatus.Failed;
+		}
+		return SkillStatus.Running;
+	}
+}

@@ -12,7 +12,7 @@ namespace TerraBot.Game.SelfTest;
 /// Only reachable when tModLoader was launched with -terrabotselftest (tools/selftest.ps1, isolated save dir).
 ///
 /// Legend (same as the unit tests): '.' air, '#' dirt (breakable), '@' Lihzahrd brick (needs pick power 210, so
-/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, 'H' life crystal (right column of a 2×2 pocket), '=' wood platform, '!' lava, '~' water,
+/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, 'H' life crystal (right column of a 2×2 pocket), 'A' demon altar (bottom-middle), '=' wood platform, '!' lava, '~' water,
 /// 'S' start node (left body column, feet row), 'G' target tile.
 /// </summary>
 public sealed class Arena
@@ -74,6 +74,13 @@ public sealed class Arena
 			}
 		}
 		WorldGen.RangeFrame(Left - 1, Top - 1, Left + Width + 1, FloorY + 5);
+		// Demon altars: 'A' is the bottom-middle cell of a 3×2 altar standing on the floor below (WorldGen.Place3x2).
+		foreach (TilePos m in FindAll(rows, 'A')) {
+			TilePos w = ToWorld(m.X, m.Y, rows.Length);
+			WorldGen.Place3x2(w.X, w.Y, TileID.DemonAltar);
+			if (!Main.tile[w.X, w.Y].HasTile || Main.tile[w.X, w.Y].TileType != TileID.DemonAltar)
+				Terraria.ModLoader.ModContent.GetInstance<TerraBotMod>().Logger.Warn($"SELFTEST could not place a demon altar at {w}");
+		}
 		// Life crystals: 'H' marks the right column of a 2×2 air pocket over solid floor (WorldGen.AddLifeCrystal scans
 		// down from it to the floor and places the heart in the two columns ending there).
 		foreach (TilePos m in FindAll(rows, 'H')) {

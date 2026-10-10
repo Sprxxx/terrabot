@@ -51,6 +51,13 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Table = ItemID.WoodenTable,
 		BuildingBlocks = new int[] { ItemID.StoneBlock, ItemID.DirtBlock },
 		LifeCrystal = ItemID.LifeCrystal,
+		IronTierBow = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBow : ItemID.IronBow,
+		WoodenArrow = ItemID.WoodenArrow,
+		Lens = ItemID.Lens,
+		SuspiciousEye = ItemID.SuspiciousLookingEye,
+		DemonAltarTile = TileID.DemonAltar,
+		EyeBoss = NPCID.EyeofCthulhu,
+		EyeServant = NPCID.ServantofCthulhu,
 	};
 
 
@@ -304,10 +311,17 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		[ItemID.LifeCrystal] = TileID.Heart,
 	};
 
+	/// <summary>Items hunted from NPCs, by the NPCs' AI style (ItemDropDatabase: gel from slimes, lenses from demon eyes 1/3).</summary>
+	private static readonly Dictionary<int, int> DroppedByNpcAi = new() {
+		[ItemID.Lens] = NPCAIStyleID.DemonEye,
+	};
+
 	public ItemSource SourceOf(int itemType)
 	{
 		if (DroppedByTile.TryGetValue(itemType, out int dropTile))
 			return new ItemSource(SourceKind.Mine, dropTile);
+		if (DroppedByNpcAi.TryGetValue(itemType, out int ai))
+			return new ItemSource(SourceKind.Hunt, NpcAiStyle: ai);
 		if (itemType == ItemID.Wood)
 			return new ItemSource(SourceKind.Tree);
 		if (itemType == ItemID.Gel)

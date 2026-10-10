@@ -138,9 +138,9 @@ Milestone 2 (mining and placing) is implemented: 52 unit tests pass, including c
 pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-game testing is pending (README,
 "Test script: Milestone 2"). (Since verified by the self-test.)
 
-Current (2026-10-10): Milestones 1–6 are done, plus platform drop-through and melee combat. `/bot auto`
-takes a fresh character to a house, an iron-tier pickaxe, broadsword and armour, and digs in at night. 124 unit
-tests pass; see the self-test history for the in-game suite.
+Current (2026-10-10): Milestones 1–7 are done. `/bot auto` takes a fresh character to a house, iron gear,
+200 max life and a bow, then defeats the Eye of Cthulhu. 141 unit tests pass; see the self-test history for the
+in-game suite.
 
 ## Milestone 1 checklist
 1. Scaffold (csproj, build.txt, description, localization), builds with `dotnet build`, loads.
@@ -413,6 +413,74 @@ stocking picks up the broadsword by damage per tick.
 * Test data: with spawns off and finite trees and ore, the settle scenario needs four slimes (gel for the
   house torch on top of the furnace's three), 10 trees and 300 ore.
 
+## Milestone 7: the first boss (Eye of Cthulhu)
+Plan `boss` (the default for `/bot auto`) runs settle, then 200 max life, an iron-tier bow, 500 wooden arrows,
+and the Eye of Cthulhu defeated. Plan `crystals` is just the life part.
+
+### Verified mechanics (decompiled tML 2026.08; research notes in this section)
+* **Arrows** (projectile 1, Projectile.AI_001): straight for 14 updates, then +0.1 px/update² down, capped at 16,
+  no drag, no extra updates.
+  - Launch speed = bow shootSpeed + ammo shootSpeed: wooden bow 6.1, iron/lead/gold/platinum bow 6.6, wooden
+    arrow +3, flaming arrow +3.5.
+  - The shot starts at the player centre and points at the mouse.
+* **Damage to NPCs**: damage − defense/2 (minimum 1), ±15%.
+  - Eye of Cthulhu: 2800 life (normal mode), 12 defense and 15 contact damage in phase 1; below 50% life
+    defense 0 and 23 damage.
+  - It hovers about 200 px above the player and dashes 3 times. In phase 1 it spits Servants of Cthulhu (8 life);
+    normal mode spawns none in phase 2. It leaves at dawn.
+  - Expected hits: iron bow + wooden arrow 7/hit in phase 1, 13 in phase 2.
+* **Summon**: the Suspicious Looking Eye (6 Lens @ Demon Altar) works only at night with no Eye alive.
+  - Natural spawn would need 5 crystals, defense > 10, 4 town NPCs and a 1/3 roll each night.
+  - Demon eyes drop a Lens 1/3 of the time and only spawn at night on the surface.
+  - Demon altars cannot be broken or placed pre-hardmode; they are found in the world.
+* **Life crystals**: heart tile 12, 2×2, frame-important. Any pickaxe breaks it (100 damage), and it drops 1
+  Life Crystal (the item places nothing). Using one gives +20 max life, up to 15 crystals.
+* **Recipes**:
+  - Iron/Lead bow: 7 bars @ Anvil.
+  - Wooden Arrow ×25: 1 Wood + 1 Stone @ Work Bench.
+  - Flaming Arrow ×10: 10 arrows + 1 torch.
+  - Lesser Healing Potion ×2: 1 Mushroom + 2 Gel + 2 Bottle @ placed Bottle. Not used yet.
+
+### Ranged combat
+* `Core/Physics/Ballistics`: simulates the arrow update by update and searches the launch angle (bisection,
+  per arrival tick) so the shot meets the target's predicted position. Targets on the left are solved in a
+  mirrored frame.
+* FightSkill shoots fliers (AI styles 2/4/5/14) and anything out of melee reach within 40 tiles; with a bow it
+  engages at that range. It only fires when the simulated arc is clear (`ArcClear`). Melee needs a clear line
+  too.
+* Enemies out of sight are approached by path. If there is no path, that enemy is left alone. Danger
+  (pre-empting other work) counts only hostiles in line of sight. The user saw the bot fight a demon eye
+  through a wall: the eye was outside the arena, and nothing checked line of sight.
+
+### Boss fight (`BossFightSkill`)
+* Summon (UseItemSkill), then wait up to 5 s for the boss to appear: the item is used up before the boss is
+  visible.
+* Kite: run to ±20 tiles of the start and back, hopping every 50 ticks.
+* Shoot servants within 8 tiles first, then the boss. Quick-heal below 45%.
+* Bosses are perceived out to 200 tiles. The brain never pre-empts a boss fight.
+* Done when `IWorldInfo.BossDefeated` (NPC.downedBoss1 and friends) is true.
+
+### Planner
+* `LifeAtLeast` uses a carried crystal, or mines one (`DroppedByTile`: crystal from the heart).
+  `IWorldInfo.CanMineTarget` lets MineSkill break that frame-important target.
+* `BossDefeated`: get the summon item, then wait for night (`WaitSkill`), then fight.
+* Hunting nocturnal prey (demon eyes for lenses) waits for night by day and does not shelter at night.
+* Unplaceable stations (demon altar) are searched within 150 tiles and remembered. If none is found, the plan
+  is stuck with "needs a DemonAltar: none within 150 tiles, and nothing can place one".
+* `PrepFor(boss, need)`: the life, bow and arrow stages count as done once that boss is defeated. Without it,
+  the bot went back to crafting arrows right after winning.
+
+### In-game results
+* `shoot_demon_eye`: wooden bow, a demon eye shot from 18 to 40 tiles, no damage taken.
+* `life_crystals`: 100 to 200 max life in 2779 ticks.
+* `eye_of_cthulhu` (geared): won in 6814 ticks, losing 62 life.
+* `boss_auto` (from a settled character, at night): placed its stations, built the house, crafted 500
+  arrows, hunted lenses, found the altar, crafted the summon and won. 11,685 ticks.
+* The test world is a Journey world: the Eye had 1400 life and hit for 1-4. A classic world will be harder,
+  and is untested.
+* Final full suite on the finished milestone: 31/31 passed, 141 unit tests. `boss_auto` won in 12,371 ticks and
+  `eye_of_cthulhu` in 6,093.
+
 ### Actions that stand in for UI clicks (approved by the user 2026-10-10)
 The bot otherwise acts only through controls. These four have no control to press, so they call what the
 UI click would call:
@@ -424,6 +492,7 @@ UI click would call:
   calls it right before `FindRecipes`, which is the same range check.
 * **Moving items** between backpack and hotbar is a slot swap, like dragging.
 * **Equipping armour**: `ItemSlot.SwapEquip`, the right-click handler.
+* **Using items** (life crystal, boss summon) is holding the item and pressing use: a control, not a UI call.
 * **Housing check**: `WorldGen.StartRoomCheck` + `RoomNeeds` + `ScoreRoom`, read-only, as the housing query runs it.
 * **Pointing**: the tile target (`tileTargetX/Y`) and the mouse position (`Main.mouseX/Y`) are overridden for
   the duration of `ItemCheck`. Range, tool power and speed are vanilla's.

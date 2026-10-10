@@ -134,8 +134,9 @@ public sealed class BossFightSkill : ISkill
 			AimSolution s = Ballistics.Lead(cx, cy, t.CenterX, t.CenterY, t.VX, t.VY, ctx.Combat.Projectile);
 			ctx.Output.Tool = ToolRequest.Ranged;
 			ctx.Output.AimMouse(s.AimX, s.AimY);
-			ctx.Output.UseItem = s.Hits;
-			State = servant != null ? "shooting a servant" : "shooting the boss";
+			bool clear = s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile);
+			ctx.Output.UseItem = clear;
+			State = !clear ? "no clear arc" : servant != null ? "shooting a servant" : "shooting the boss";
 		}
 		else
 			State = "kiting";

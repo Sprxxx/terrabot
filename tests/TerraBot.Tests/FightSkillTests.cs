@@ -134,6 +134,33 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void IgnoresEnemyBehindAWall()
+	{
+		// Seen in game: a demon eye on the far side of a solid wall interrupted a build and got swung and shot at.
+		var g = ArrayTileGrid.Parse(
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"..........@...................",
+			"......S...@...................",
+			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		var ctx = new BotContext { Grid = g, Combat = new CombatInfo { WeaponReach = 30f } };
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		ctx.Body = sim.State;
+		ctx.Hostiles = new[] { Enemy(13 * 16f, 9 * 16f, 60) };
+		Assert.False(TerraBot.Bot.Brain.ProgressionPlanner.InDanger(ctx));
+		var (status, _, life) = Fight(g, new TilePos(13, 10));
+		Assert.Equal(SkillStatus.Succeeded, status); // gave up on it and calmed down
+		Assert.Equal(60, life);
+	}
+
+	[Fact]
 	public void ChasesWalkingEnemy()
 	{
 		var g = ArrayTileGrid.Parse(

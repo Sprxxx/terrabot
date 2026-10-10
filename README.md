@@ -8,14 +8,19 @@ What it can do so far:
 - **Get around** (`/bot goto`, `O`): walking and 1-tile step-ups; jumps up to 6 tiles high, about 5 tiles
   across from a standstill or 9 tiles with a 2–4 tile running start; drops of up to 23 tiles; dropping through
   platforms; tunnelling, digging down, bridging gaps and pillaring up with the pickaxe and blocks it carries.
-- **Fight** (`/bot fight`): melee with the best sword or shortsword it has, chasing enemies over the same
-  paths, and quick-healing when low.
+- **Fight** (`/bot fight`): melee with the best sword it has, or a bow with arrows (aimed with lead and drop,
+  only with a clear arc) at fliers and anything out of reach; quick-heals when low. Enemies it cannot see
+  do not interrupt it, and ones with no way to them are left alone.
 - **Play on its own** (`/bot auto`): from a fresh character's copper tools to an iron (or lead) pickaxe. It chops
   trees, kills slimes for gel, makes torches, mines stone and ore, builds a work bench, furnace and anvil,
   smelts bars and crafts the pickaxe, and works out each step from the game's own recipes. It breaks off to
   fight anything that comes close and digs in for the night. Then (plan `settle`, the default) it builds a small
   house that passes the game's housing check, crafts an iron broadsword and makes and wears the full iron armour
-  set. `/bot auto iron` stops at the pickaxe and `/bot auto early` after the work bench, a wooden sword and 30 wood.
+  set. Then (plan `boss`, the default) it mines and eats life crystals up to 200 max life,
+  crafts an iron bow and 500 arrows, hunts demon eyes at night for lenses, finds a demon altar, crafts a
+  Suspicious Looking Eye and fights the Eye of Cthulhu, kiting and shooting. `/bot auto settle` stops after the
+  armour, `/bot auto iron` at the pickaxe, `/bot auto early` after the work bench, a wooden sword and 30 wood, and
+  `/bot auto crystals` just gets 200 max life.
 
 ## Build
 From this folder:
@@ -35,7 +40,7 @@ Reload. You can also use **Workshop → Develop Mods → TerraBot → Build + Re
 | `P` (keybind "Toggle Bot") | Bot on/off. Off returns control to you the same tick. |
 | `O` (keybind "Set Bot Target") | Sets the target to the tile under the mouse. |
 | `/bot goto <x> <y>` | Target a tile and switch the bot on. `~` means relative to you: `/bot goto ~20 ~0` is 20 tiles right. |
-| `/bot auto [settle\|iron\|early]` | Auto mode, plan `settle` (default), `iron` or `early` (see above). Switches the bot on. `/bot stop` ends it; `P` pauses it, and pressing `P` again resumes it. |
+| `/bot auto [boss\|settle\|iron\|early\|crystals]` | Auto mode, plan `boss` (default) or a shorter one (see above). Switches the bot on. `/bot stop` ends it; `P` pauses it, and pressing `P` again resumes it. |
 | `/bot fight` | Fight nearby enemies until none has been close for 1.5 s. Switches the bot on. |
 | `/bot stop` | Clear the target and leave auto mode. The bot stays on but idles. |
 | `/bot on`, `/bot off` | Same as the keybind. |
@@ -77,7 +82,7 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1
 ```
 This opens tModLoader in a separate, throw-away save folder, using copies of your `Pepi` character and the
-`Enchanting Outskirts` world; your real saves are only read. It plays 27 scenarios in an arena above the
+`Enchanting Outskirts` world; your real saves are only read. It plays 31 scenarios in an arena above the
 spawn and prints PASS/FAIL for each:
 - walking, ledge jump, gap jump, running jump over an 8-tile gap (and refusing one with no run-up room),
   dropping through platforms, a drop without fall damage, an unreachable target;
@@ -90,10 +95,26 @@ spawn and prints PASS/FAIL for each:
   waits outside.
 - building a house from a kit (checked with the game's housing query), and the whole settle chain from copper
   tools to a house, a broadsword and full iron armour.
+- shooting a demon eye with a wooden bow, eating five life crystals, beating the Eye of Cthulhu with iron gear,
+  and the boss chain from a settled character (stations, house, arrows, lenses, altar, summon, fight).
 
-Then it quits. It takes about 25 minutes, most of it the settle chain. Keep the game window in front, because Terraria pauses while it's
+Then it quits. It takes about 40 minutes, most of it the settle and boss chains. Keep the game window in front, because Terraria pauses while it's
 in the background. Run a subset with `-Scenarios "name1,name2"`. Claude can run this on its own; the manual
 scripts below are for things the self-test can't see, such as how the overlay looks or a real world's trees.
+
+## Test script: the Eye of Cthulhu (Milestone 7)
+A world with a corruption or crimson nearby, so a demon altar is within 150 tiles. Start from the Milestone 6
+state, or let `/bot auto` do everything.
+
+1. It mines life crystals underground until max life is 200 (`Auto: using a life crystal (max life ...)`).
+2. It crafts an iron (or lead) bow and 500 wooden arrows.
+3. By day it waits for night to hunt (`Wait for night`). At night it shoots demon eyes until it has 6 lenses.
+4. It walks to the nearest demon altar (`Auto: found a DemonAltar at ...`) and crafts the Suspicious Looking Eye.
+   If there is none within 150 tiles it stops and says so.
+5. At night it summons the Eye and fights: it runs back and forth about 20 tiles each way, hops, and shoots.
+   The log shows `Boss fight: ...` with the boss's life about every 10%.
+6. Notes for me: whether it won, how long it took and how much life it lost. In a classic (non-Journey) world
+   the Eye hits harder: it is untested there.
 
 ## Test script: house and armour (Milestone 6)
 Continue from Milestone 5, or start fresh: `/bot auto` runs everything.
@@ -206,7 +227,9 @@ Then just tell me "done". I can read `client.log` from the tModLoader install fo
 - Pillars can't break blocks above the head yet; it needs open sky or a separate tunnel step.
 - Combat is melee only (swords and shortswords). No ranged or magic weapons, no dodging projectiles, no
   retreating. Auto mode stops after three failures in a row, e.g. when there are no trees to be found.
-- Auto mode's goals end at a house, an iron broadsword and iron armour. No accessories, chests or bosses yet. It gathers only
+- Auto mode's goals end at the Eye of Cthulhu. It does not make healing potions yet (it uses ones you carry),
+  the boss fight was tested in a Journey world only, and a demon altar has to be within 150 tiles. No
+  accessories or chests yet. It gathers only
   forest wood, and recipes with conditions (near water, a biome...) are left out.
 - If your mouse cursor is over a UI element (inventory, a menu), the game blocks item use. Move the mouse away
   while the bot uses items.

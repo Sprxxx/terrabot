@@ -110,6 +110,14 @@ public sealed class GameIds
 	public int[] BuildingBlocks { get; init; } = System.Array.Empty<int>();
 	/// <summary>Boss preparation (Milestone 7).</summary>
 	public int LifeCrystal { get; init; }
+	public int IronTierBow { get; init; }
+	public int WoodenArrow { get; init; }
+	public int Lens { get; init; }
+	public int SuspiciousEye { get; init; }
+	public int DemonAltarTile { get; init; }
+	/// <summary>Eye of Cthulhu and its Servants (NPC types).</summary>
+	public int EyeBoss { get; init; }
+	public int EyeServant { get; init; }
 
 	public static readonly GameIds None = new();
 }
