@@ -238,6 +238,26 @@ public class PathfinderTests
 	}
 
 	[Fact]
+	public void IncrementalSearch_MatchesOneShot()
+	{
+		var g = new ArrayTileGrid(200, 30);
+		g.Fill(0, 25, 199, 29, CellKind.Solid);
+		for (int x = 20; x < 200; x += 20)
+			g.Fill(x, 22, x + 1, 24, CellKind.Solid); // 3-high bumps to jump over
+		var ctx = new MoveContext(g, TestUtil.P);
+		var goal = new GoalStandAt(new TilePos(190, 24), TestUtil.P);
+		PathResult oneShot = new AStarPathfinder().FindPath(ctx, new TilePos(2, 24), goal);
+
+		var search = new PathSearch(ctx, new TilePos(2, 24), goal);
+		int slices = 0;
+		while (!search.Step(0.0))
+			slices++;
+		output.WriteLine($"{oneShot}; incremental took {slices + 1} slices");
+		Assert.Equal(PathStatus.Found, search.Result.Status);
+		Assert.Equal(oneShot.Steps, search.Result.Steps);
+	}
+
+	[Fact]
 	public void SearchBudget_ReturnsPartialTowardGoal()
 	{
 		var g = new ArrayTileGrid(400, 12);

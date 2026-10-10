@@ -23,6 +23,10 @@ public sealed class MoveContext
 	/// <summary>Cost multiplier for edges ending with the body in liquid (water physics are not modelled yet).</summary>
 	public float LiquidCostMultiplier { get; init; } = 3f;
 
+	/// <summary>Per-context scratch buffer for moves (move types are shared singletons and must stay stateless).
+	/// A MoveContext is therefore not thread-safe; use one per search thread.</summary>
+	public GridWindow Scratch { get; } = new();
+
 	private readonly int[] fallTicks;
 
 	public MoveContext(ITileGrid grid, PhysicsParams physics, IReadOnlyList<IMoveType> moves = null)

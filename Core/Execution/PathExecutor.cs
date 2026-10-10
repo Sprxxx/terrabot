@@ -202,7 +202,7 @@ public sealed class PathExecutor
 				return false;
 			}
 			bool aligned = settled && node == step.From && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
-				&& Math.Abs(s.VX) <= 0.3f && !lastJumpPressed && s.ReleaseJump;
+				&& Math.Abs(s.VX) <= 0.05f && !lastJumpPressed && s.ReleaseJump; // templates assume take-off from rest
 			if (!aligned) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);
 				Phase = "Jump align";

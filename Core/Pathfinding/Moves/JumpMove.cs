@@ -9,12 +9,11 @@ namespace TerraBot.Core.Pathfinding.Moves;
 /// </summary>
 public sealed class JumpMove : IMoveType
 {
-	private readonly GridWindow window = new();
-
 	public MoveKind Kind => MoveKind.Jump;
 
 	public void Expand(MoveContext ctx, TilePos from, List<PathStep> output)
 	{
+		GridWindow window = ctx.Scratch;
 		// Covers every cell any template can touch: columns -MaxDx-2..MaxDx+3, rows from apex to below MaxDown.
 		const int margin = 3;
 		int left = from.X - JumpLibrary.MaxDx - margin;

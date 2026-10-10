@@ -20,7 +20,11 @@ public sealed class WalkToSkill : ISkill
 		new(0, 0), new(-1, 0), new(1, 0), new(0, -1), new(0, 1), new(-1, -1), new(1, -1),
 	};
 
-	private readonly AStarPathfinder pathfinder = new();
+	/// <summary>CPU budget per game tick for A* (a frame is ~16.7 ms).</summary>
+	public const double PlanBudgetMsPerTick = 4.0;
+
+	private PathSearch search;
+	private MoveContext searchMoves;
 	private PhysicsParams plannedPhysics;
 	private int waitTicks;
 	private int plans;
@@ -57,6 +61,7 @@ public sealed class WalkToSkill : ISkill
 	public void Stop(BotContext ctx)
 	{
 		Executor = null;
+		search = null;
 		ctx.Output = MoveInput.None;
 	}
 
@@ -66,6 +71,7 @@ public sealed class WalkToSkill : ISkill
 		if (ctx.BodyIssue != null) {
 			State = "paused: " + ctx.BodyIssue;
 			Executor = null; // plan again from wherever we end up
+			search = null;
 			return SkillStatus.Running;
 		}
 
@@ -82,15 +88,23 @@ public sealed class WalkToSkill : ISkill
 		}
 
 		if (Executor == null) {
-			if (waitTicks > 0) {
-				waitTicks--;
+			if (search == null) {
+				if (waitTicks > 0) {
+					waitTicks--;
+					return SkillStatus.Running;
+				}
+				if (!ctx.Body.Grounded) {
+					State = "waiting to land";
+					return SkillStatus.Running;
+				}
+				StartSearch(ctx, node);
+			}
+			// Stand still while searching; long searches are spread over several ticks.
+			if (!search.Step(PlanBudgetMsPerTick)) {
+				State = $"planning ({search.Expanded} nodes)";
 				return SkillStatus.Running;
 			}
-			if (!ctx.Body.Grounded) {
-				State = "waiting to land";
-				return SkillStatus.Running;
-			}
-			if (!Plan(ctx, node))
+			if (!FinishSearch(ctx))
 				return NoPathCount >= MaxNoPath ? Fail(ctx, $"no path after {NoPathCount} attempts ({LastPlan})") : SkillStatus.Running;
 		}
 
@@ -119,7 +133,7 @@ public sealed class WalkToSkill : ISkill
 		return SkillStatus.Running;
 	}
 
-	private bool Plan(BotContext ctx, TilePos node)
+	private void StartSearch(BotContext ctx, TilePos node)
 	{
 		MoveContext moves = ctx.Moves;
 		TilePos start = node;
@@ -129,15 +143,22 @@ public sealed class WalkToSkill : ISkill
 				break;
 			}
 		}
-
 		plans++;
 		plannedPhysics = ctx.Physics;
-		LastPlan = pathfinder.FindPath(moves, start, Goal);
+		searchMoves = moves;
+		search = new PathSearch(moves, start, Goal);
+		State = "planning";
+	}
+
+	private bool FinishSearch(BotContext ctx)
+	{
+		LastPlan = search.Result;
+		search = null;
 		string steps = string.Join(" | ", LastPlan.Steps.Take(40).Select(s => s.ToString()));
-		ctx.Log.Info($"Plan #{plans} {start} -> {Goal}: {LastPlan}{(steps.Length > 0 ? " :: " + steps : "")}");
+		ctx.Log.Info($"Plan #{plans} {LastPlan.Start} -> {Goal}: {LastPlan}{(steps.Length > 0 ? " :: " + steps : "")}");
 
 		if (LastPlan.Status is PathStatus.Found or PathStatus.Partial && LastPlan.Steps.Count > 0) {
-			Executor = new PathExecutor(moves, LastPlan.Steps);
+			Executor = new PathExecutor(searchMoves, LastPlan.Steps);
 			State = "executing";
 			return true;
 		}
