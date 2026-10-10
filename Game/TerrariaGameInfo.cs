@@ -331,6 +331,16 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public bool CanMineTarget(int x, int y) =>
 		WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == TileID.Heart && WorldGen.CanKillTile(x, y);
 
+	/// <summary>Vanilla bosses' "downed" flags (the Eye of Cthulhu first; extend as bosses are added).</summary>
+	public bool BossDefeated(int npcType) => npcType switch {
+		NPCID.EyeofCthulhu => NPC.downedBoss1,
+		NPCID.KingSlime => NPC.downedSlimeKing,
+		NPCID.EaterofWorldsHead or NPCID.BrainofCthulhu => NPC.downedBoss2,
+		NPCID.SkeletronHead => NPC.downedBoss3,
+		NPCID.QueenBee => NPC.downedQueenBee,
+		_ => false,
+	};
+
 	public bool HasWall(int x, int y) => WorldGen.InWorld(x, y, 1) && Main.tile[x, y].WallType > WallID.None;
 
 	/// <summary>Mirror of the conditions in Player.PlaceThing_Walls (range aside): no wall yet, a tile or wall on a 4-neighbour.</summary>

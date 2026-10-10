@@ -255,6 +255,8 @@ public sealed class TerraBotPlayer : ModPlayer
 	}
 
 	public const float PerceptionRadiusPx = 50 * 16f;
+	/// <summary>Bosses roam far between attacks (the Eye of Cthulhu hovers and circles well off screen): keep them in view.</summary>
+	public const float BossPerceptionRadiusPx = 200 * 16f;
 	// Arrow flight (Projectile.AI_001 for wooden arrows): PENDING verification against the decompile.
 	public const int ArrowGravityDelay = 15;
 	public const float ArrowGravity = 0.1f;
@@ -277,7 +279,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		var hostiles = new List<EntityInfo>();
 		for (int i = 0; i < Main.maxNPCs; i++) {
 			NPC n = Main.npc[i];
-			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > PerceptionRadiusPx)
+			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > (n.boss ? BossPerceptionRadiusPx : PerceptionRadiusPx))
 				continue;
 			hostiles.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
 				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle));

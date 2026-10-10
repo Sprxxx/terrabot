@@ -29,6 +29,8 @@ public sealed class RunResult
 	public int ArmourWorn;
 	/// <summary>A wooden sword is in hotbar slots 1-10 at the end (usable).</summary>
 	public bool SwordOnHotbar;
+	/// <summary>NPC.downedBoss1 at the end (the Eye of Cthulhu).</summary>
+	public bool EyeDefeated;
 	public List<string> Log = new();
 
 	public bool LogHas(string s) => Log.Any(l => l.Contains(s));
@@ -61,6 +63,12 @@ public sealed class Scenario
 	public bool Night { get; init; }
 	/// <summary>Reset the copied character to 100 max life (no life crystals or fruit eaten).</summary>
 	public bool ResetLife { get; init; }
+	/// <summary>Max life to set instead (life crystals counted accordingly), 0 = leave as is.</summary>
+	public int MaxLife { get; init; }
+	/// <summary>Clear the world's "boss defeated" flags (throw-away copy of the world).</summary>
+	public bool ResetBosses { get; init; }
+	/// <summary>Armour to wear (head, body, legs item types), empty = none.</summary>
+	public int[] Wear { get; init; } = System.Array.Empty<int>();
 	/// <summary>Main.time at the start for a day scenario (27000 = mid-morning; 0 = dawn, 15 minutes of daylight).</summary>
 	public double DayTime { get; init; } = 27000;
 	public bool ExpectSuccess { get; init; } = true;
@@ -294,6 +302,27 @@ public sealed class Scenario
 					: r.Housing != null ? $"housing check: {r.Housing}"
 					: r.ArmourWorn < 3 ? $"{r.ArmourWorn}/3 armour pieces worn"
 					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
+			},
+			new() {
+				// Milestone 7: the Eye of Cthulhu, with the gear the boss plan collects: iron bow, wooden arrows, iron armour,
+				// 200 max life, a few lesser healing potions. Summoned at nightfall on a wide flat floor (kiting room).
+				Name = "eye_of_cthulhu",
+				Rows = Grid(Repeat(new string('.', 100), 20), "..................................................S" + new string('.', 49), new string('@', 100)),
+				Mode = "boss",
+				Night = true,
+				ResetBosses = true,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Pickaxe = false,
+				Weapon = Terraria.ID.ItemID.IronBroadsword,
+				Inventory = p => {
+					p.inventory[3] = new Terraria.Item(Terraria.ID.ItemID.IronBow);
+					p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 999);
+					p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.LesserHealingPotion, 10);
+					p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.SuspiciousLookingEye);
+				},
+				TimeoutTicks = 60 * 60 * 8,
+				Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
 			},
 			new() {
 				// Milestone 7: max life 100 -> 200 from five life crystals in stone pockets below the surface.

@@ -36,6 +36,9 @@ public interface IWorldInfo
 	/// mining for their drop (a life crystal): the current pickaxe can break it and the game allows it.
 	/// </summary>
 	bool CanMineTarget(int x, int y);
+
+	/// <summary>Has the world recorded this boss NPC type as defeated (NPC.downedBoss1 and friends)?</summary>
+	bool BossDefeated(int npcType);
 }
 
 /// <summary>Read-only view of the player's items.</summary>

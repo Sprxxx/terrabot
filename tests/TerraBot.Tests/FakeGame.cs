@@ -236,6 +236,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	/// <summary>Life crystals (2×2 heart objects) are the only frame-important targets worth mining.</summary>
 	public bool CanMineTarget(int x, int y) => TileTypeAt(x, y) == TileHeart;
+	public readonly System.Collections.Generic.HashSet<int> BossesDefeated = new();
+	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
 
 	/// <summary>Puts a 2×2 life crystal with its top-left cell at (x, y) (cells must be open; it sits on the floor below).</summary>
 	public void AddHeart(int x, int y)

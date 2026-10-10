@@ -77,7 +77,7 @@ public sealed class BotBrain
 	public void Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
-		if (Auto && Current is not FightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
+		if (Auto && Current is not FightSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
 			Interrupt(ctx);

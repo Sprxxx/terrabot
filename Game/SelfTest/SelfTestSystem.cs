@@ -124,6 +124,17 @@ public sealed class SelfTestSystem : ModSystem
 					p.ConsumedLifeFruit = 0;
 					p.statLifeMax = 100;
 				}
+				if (s.MaxLife > 0) {
+					p.ConsumedLifeCrystals = (s.MaxLife - 100) / 20;
+					p.ConsumedLifeFruit = 0;
+					p.statLifeMax = s.MaxLife;
+				}
+				if (s.ResetBosses) {
+					NPC.downedBoss1 = false;
+					NPC.downedSlimeKing = false;
+				}
+				for (int i = 0; i < s.Wear.Length && i < 3; i++)
+					p.armor[i] = new Item(s.Wear[i]);
 				Arena.StripHelpers(p);
 				TilePos start = Arena.Find(s.Rows, 'S');
 				Arena.PlacePlayer(p, arena.ToWorld(start.X, start.Y, s.Rows.Length));
@@ -149,6 +160,7 @@ public sealed class SelfTestSystem : ModSystem
 				tee = new TeeLog(originalLog);
 				bot.Context.Log = tee;
 				Mod.Logger.Info($"SELFTEST start {s.Name} (mode {s.Mode}, dig {s.Dig}, build {s.Build}, pick {s.Pickaxe}, blocks {s.Blocks}); {bot.Blocks.Describe()}");
+				Mod.Logger.Info("SELFTEST inventory: " + string.Join(", ", Enumerable.Range(0, 58).Where(i => !p.inventory[i].IsAir).Select(i => $"{i}:{p.inventory[i].Name} x{p.inventory[i].stack}")));
 				spawned.Clear();
 				spawnFailed = false;
 				if (s.EnemyType != 0 && s.SpawnAtTick == 0)
@@ -159,6 +171,9 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (s.Mode == "chop") {
 					bot.Brain.StartSkill(new Bot.Skills.GatherWoodSkill(Terraria.ID.ItemID.Wood, 5), bot.Context);
+				}
+				else if (s.Mode == "boss") {
+					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.SuspiciousLookingEye, NPCID.EyeofCthulhu, NPCID.ServantofCthulhu), bot.Context);
 				}
 				else if (s.Mode == "build") {
 					Bot.Building.Blueprint bp = Bot.Building.Blueprint.SmallHouse(bot.Context.Ids);
@@ -253,6 +268,7 @@ public sealed class SelfTestSystem : ModSystem
 		bot.GameInfo.Bind(Main.LocalPlayer);
 		result.Wood = bot.GameInfo.Count(ItemID.Wood);
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
+		result.EyeDefeated = NPC.downedBoss1;
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		bot.Blocks.Refresh(Main.LocalPlayer);
 		result.PickPower = bot.Blocks.PickPower;
