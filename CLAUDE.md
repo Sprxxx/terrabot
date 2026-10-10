@@ -30,10 +30,10 @@ dotnet test tests/TerraBot.Tests              # pure unit tests (pathfinder, phy
 |---|---|---|
 | `Core/Grid` | no | `TilePos`, `CellKind` flags, `ITileGrid`, `ArrayTileGrid` (ASCII parser), `GridWindow` cache |
 | `Core/Physics` | no | `PhysicsParams`, `BodyState`, `MoveInput`, `PlayerPhysics` (vanilla tick replica), `Arrive` steering |
-| `Core/Pathfinding` | no | `Body` (2×3 node model), `IMoveType` + `Moves/` (Walk, StepUp, Drop, Jump), `JumpLibrary`/`JumpTemplate`, `Goals`, `PathSearch`/`AStarPathfinder` |
+| `Core/Pathfinding` | no | `Body` (2×3 node model), `IMoveType` + `Moves/` (Walk, StepUp, Drop, Jump, DigMove, BuildMove), `BlockActions` (`IBlockActions`, `BlockAction`, `BlockRules`), `JumpLibrary`/`JumpTemplate`, `Goals`, `PathSearch`/`AStarPathfinder` |
 | `Core/Execution` | no | `PathExecutor`: path + live `BodyState` → `MoveInput`; reports Finished/Stuck/OffPath/Blocked |
 | `Bot/` | no | `BotContext`, `IBotLog`, `Skills/` (`ISkill`, `WalkToSkill`), `Brain/BotBrain` (stub: one target) |
-| `Game/` | **yes** | `TerraBotPlayer` (ModPlayer), `TerrariaTileGrid`, `PhysicsReader`, `BotKeybinds`, `BotCommand` (/bot), `DebugOverlaySystem`, `Perception/` snapshot |
+| `Game/` | **yes** | `TerraBotPlayer` (ModPlayer), `TerrariaTileGrid`, `TerrariaBlockActions` (hotbar pickaxe/blocks, vanilla pickaxe-damage mirror), `PhysicsReader`, `BotKeybinds`, `BotCommand` (/bot), `DebugOverlaySystem`, `Perception/` snapshot |
 
 **Rule:** `Core/` and `Bot/` must not reference Terraria, tModLoader or XNA. The test project compiles those
 folders directly without tModLoader references, so a violation breaks `dotnet test`.
@@ -41,7 +41,10 @@ folders directly without tModLoader references, so a violation breaks `dotnet te
 Control flow per tick (local player): `ProcessTriggers` (keybinds) → `SetControls`: build `BotContext`
 (body from `Player.position/velocity/jump/releaseJump`, physics captured last tick in `PostUpdateRunSpeeds`) →
 `BotBrain.Tick` → `WalkToSkill.Tick` (sliced A* `PathSearch.Step(4 ms)`, then `PathExecutor.Tick`) → write
-`Player.controlLeft/Right/Up/Down/Jump`. When the bot is disabled, `SetControls` writes nothing.
+`Player.controlLeft/Right/Up/Down/Jump`; if the `MoveInput` requests a tool, also `selectedItem` (only when
+`itemAnimation == 0`), `controlUseItem` (released between swings for non-autoReuse items) and `controlTorch = false`.
+The aim cell is written to `Player.tileTargetX/Y` in `PreItemCheck`, because vanilla recomputes the tile target
+from the mouse *after* `SetControls`. When the bot is disabled, nothing is written.
 
 ### Pathfinding model
 - Node `(x, y)`: body = columns `x..x+1`, rows `y-2..y`, `y` = feet row. Canonical hitbox left = `x*16+6`.
@@ -54,6 +57,14 @@ Control flow per tick (local player): `ProcessTriggers` (keybinds) → `SetContr
   records swept `BodyCells` and descending `CrossCells`. If you change the executor's jump control, change
   `ControllerInput`, never one side alone.
 - Move types are shared singletons and must be stateless; per-search scratch lives on `MoveContext`.
+- World edits ride on steps as `PathStep.Actions` (Break/Place). The movement kind stays Walk/StepUp/Drop, so a
+  tunnel is a Walk with breaks. Pillar is its own kind, with the place happening mid-jump.
+  `PathStep.Source` names the move type that re-validates the step.
+- **The planner does not track its own edits.** A move treats the cells of its current body as clear. That is
+  what lets chained digging plan at all. `DigMove` also emits action-less "dug-earlier" walks for moves that
+  only the stale grid would reject. Costs can be over-estimated; the executor skips actions whose cell is
+  already done.
+- Cost knobs live on `MoveContext`: `BreakCostMultiplier` (1.5), `BreakOverheadTicks` (8), `PlacePenaltyTicks` (20).
 
 ## Verifying game behaviour (don't trust memory)
 tModLoader's API and vanilla physics change between versions. Before relying on a hook, field or constant, check:
@@ -74,6 +85,13 @@ Gotchas already hit:
 - A ceiling bonk sets `velocity.Y = 0` for one tick mid-air, so the executor's "landed" checks require two grounded ticks.
 - A new jump only starts if jump was released the previous tick (`releaseJump`).
 - Analyzer CommonCollisionName: never name a type `Player`, `Tile`, `Item`, `NPC`, `Main`, `Mod`, ...
+- Analyzer ChangeMagicNumberToID: use `TileID.X` constants, not tile numbers (names verified against the decompiled TileID).
+- Solid blocks can't be placed into any player/NPC hitbox (`Collision.EmptyTile`, integer rectangle), so the
+  pillar places only once `floor(Y) + height <= cellTop - 2`.
+- Placement needs a solid 4-neighbour or a wall. Bridge and pillar cells are chosen so that the block we stand
+  on is that neighbour.
+- `Player.GetPickaxeDamage` is private and has side effects: `TerrariaBlockActions.PickDamage` mirrors it.
+  Re-check it when tML updates.
 
 ## Reading the logs
 - File: `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tModLoader-Logs\client.log` (previous runs in
@@ -92,7 +110,11 @@ Gotchas already hit:
     `Game/Perception/WorldSnapshot.cs`: `#` solid, `=` platform, `.` air, `~` water, `!` lava, `P` body,
     `T` target, `g` goal feet), NPCs, items, inventory.
   - `TRACE t<tick> node pos vel jump step [phase] in <input>` per tick while `/bot trace` is on (DEBUG level).
-  - `STATUS ...` from `/bot status`.
+  - `STATUS ...` from `/bot status`: includes `dig/build on/off` and the hotbar tools
+    (`pick <power> (slot n, <t>/hit) | <count> <block> (slot n)`).
+  - Plans that change the world end with `, breaks N, places M`. Steps print their actions as
+    `{break(x,y) place(x,y)}`. The executor phases `Mining (x,y) (i/n)`, `Placing ...` and `Pillar t<n>` show up in TRACE lines.
+  - `Digging allowed/disabled`, `Building allowed/disabled` when toggled.
 - To debug a failed run, find the `Plan` line, then the `Re-plan` reasons. If needed, ask the user to repeat it
   with `/bot trace` on and `/bot dump` at the start.
 

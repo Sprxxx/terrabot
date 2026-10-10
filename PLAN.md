@@ -128,6 +128,10 @@ Those fixes have not been re-tested in game yet.
 
 Open question: why vanilla StepDown sometimes doesn't snap at running speed (needs a `/bot trace` capture).
 
+Milestone 2 (mining and placing) is implemented: 52 unit tests pass, including closed-loop tunnel, dig-down,
+pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-game testing is pending (README,
+"Test script: Milestone 2").
+
 ## Milestone 1 checklist
 1. Scaffold (csproj, build.txt, description, localization), builds with `dotnet build`, loads.
 2. Keybinds: toggle bot (default `P`), set target to tile under cursor (default `O`); on-screen state.
@@ -138,6 +142,61 @@ Open question: why vanilla StepDown sometimes doesn't snap at running speed (nee
 6. Overlay: path, current step, jump-template cells, target, skill/state text.
 7. Unit tests: flat ground, step up, gap, unreachable, plus physics sanity and a closed-loop executor
    simulation on fake grids.
+
+## Milestone 2: mining and placing as costed moves
+
+### Verified game mechanics (decompiled Player / WorldGen / Collision, tML 2026.08)
+* **Aiming.**
+  * `Player.Update` recomputes the static `Player.tileTargetX/Y` from the mouse *after* `SetControls`, then
+    runs the smart-cursor lookup, then calls `ItemCheck()`. `ItemCheck()` calls `ModPlayer.PreItemCheck()`
+    before `ItemCheck_Inner`.
+  * ⇒ The bot aims by writing `tileTargetX/Y` in `PreItemCheck`. That is the mouse-aim equivalent: range,
+    pick power and use speed still apply.
+* **Swinging.** A swing starts when `controlUseItem` is held, `itemAnimation == 0`, and either `releaseUseItem`
+  or `autoReuse` is true. Smart-select only acts while `controlTorch` is held, so the bot forces it off.
+  `delayUseItem` (the mouse is over UI) cancels use.
+* **Mining.**
+  * Each hit happens when `toolTime(=itemTime) == 0 && itemAnimation > 0 && controlUseItem`. It adds
+    `GetPickaxeDamage` to the tile's hit counter, and the tile breaks at ≥ 100.
+  * The next hit comes after `CombinedHooks.TotalUseTime(useTime * pickSpeed)` ticks.
+  * Damage is `pickPower`, divided for hard tiles (dungeon /2, hallow ores /2..../4, Lihzahrd /4,
+    Chlorophyte /5), and doubled for dirt/sand/mud/clay/ash/silt/slush/snow/hardened sand.
+  * Minimum pick powers apply (Ebonstone/Crimstone/Pearlstone 65, Meteorite 50, Demonite/Crimtane below the
+    surface 55, Obsidian 55, Hellstone 65, dungeon bricks 100, hardmode ores 100/110/150, Chlorophyte 200,
+    Lihzahrd 210). Modded tiles use `ModTile.MineResist/MinPick`.
+  * `WorldGen.CanKillTile` must be true; it protects tiles under chests, trees and similar.
+* **Reach.** `IsTargetTileInItemRange`: `tileRangeX = 5`, `tileRangeY = 4` tiles beyond the hitbox, plus
+  `item.tileBoost`. Cells adjacent to the body are always in range.
+* **Placing a solid block** (`PlaceThing_Tiles`, `WorldGen.PlaceTile`):
+  * The target cell must be empty, or hold a `tileCut` plant or a `BreakableWhenPlacing` tile.
+  * It needs a solid/beam/rope neighbour (4-neighbourhood) or a background wall.
+  * `Collision.EmptyTile` refuses if the cell's rectangle intersects any player or NPC hitbox. So pillaring
+    means jumping until `(int)Y + height <= cellTop`, then placing under the feet.
+
+### Design
+* `IBlockActions` (Core, Terraria-free) answers three questions, and the game adapter implements it from the
+  hotbar:
+  * How many ticks would mining this cell take? (∞ if forbidden or impossible.)
+  * Can a block go here?
+  * How many blocks are available?
+* `PathStep.Actions`: an ordered list of `Break(cell)` / `Place(cell)` actions the executor performs before
+  (or, for pillars, during) the movement. Movement kinds stay Walk/StepUp/Drop, plus a new Pillar kind.
+* New move types:
+  * `DigMove`: Tunnel (walk through a blocked column), TunnelUp (step up through blocks), TunnelDown
+    (diagonal step down), DigDown (mine the two cells underfoot).
+  * `BuildMove`: Bridge (place a block under the leading column, then walk), Pillar (jump and place
+    underfoot). Pillar picks its column at run time, from whichever cell below is solid.
+* Costs:
+  * Breaking: mining ticks × 1.5 + 8 ticks overhead per block.
+  * Placing: place ticks + 20 ticks penalty.
+  * So the bot prefers existing routes and only digs or builds when that's clearly cheaper.
+* Safety rules (Core):
+  * Never break a cell with a falling block (sand family) directly above it, unless that cell is also being
+    broken in the same move.
+  * Never break a cell next to lava.
+  * Never break frame-important tiles, containers or tree/altar tiles (adapter).
+  * Only hotbar items are used (M2).
+  * `/bot dig off`, `/bot build off` disable the new moves.
 
 ## Out of scope for M1 (noted for later)
 Running-jump templates (currently standing jumps only), dropping through platforms, ropes/ladders, liquids

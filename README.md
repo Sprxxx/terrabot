@@ -1,9 +1,15 @@
 # TerraBot
 
-A tModLoader mod with a bot that plays Terraria by pressing the same controls you do: left, right, jump, and
-later use-item and hotbar. It never teleports, edits tiles or spawns items. Milestone 1: the bot walks to a
-target tile across uneven ground, using walking, 1-tile step-ups, jumps up to 6 tiles high or about 5 tiles
-across, and drops of up to 23 tiles.
+A tModLoader mod with a bot that plays Terraria by pressing the same controls you do: left, right, jump, use
+item, hotbar slot, and pointing at a tile. It never teleports, spawns items or edits tiles directly; blocks
+change only because its pickaxe or block swing does it, with vanilla's range, tool power and speed.
+
+What it can do so far: walk to a target tile across uneven ground. Moves:
+- walking and 1-tile step-ups;
+- jumps up to 6 tiles high or about 5 tiles across;
+- drops of up to 23 tiles;
+- since Milestone 2: tunnelling through blocks, digging down, bridging over gaps and pillaring up, using the
+  pickaxe and blocks in your hotbar.
 
 ## Build
 From this folder:
@@ -28,9 +34,13 @@ Reload. You can also use **Workshop → Develop Mods → TerraBot → Build + Re
 | `/bot status` | One-line status in chat and in the log. |
 | `/bot dump` | Writes a JSON snapshot (player, path, nearby tiles as ASCII, NPCs, items, inventory) to client.log. |
 | `/bot trace [on\|off\|<seconds>]` | Logs every tick while walking (default 30 s). |
+| `/bot dig [on\|off]` | Allow or forbid mining (default on). No argument toggles. |
+| `/bot build [on\|off]` | Allow or forbid placing blocks (default on). No argument toggles. |
 
 If `P` or `O` clashes with another mod, rebind them under **Settings → Controls → Keybindings → Mod Controls**.
-While the bot is on, it owns your movement keys. The mouse stays yours, so you can still place and break blocks.
+While the bot is on, it owns your movement keys. The mouse button stays yours except while the bot is mining or
+placing; then it also switches your hotbar slot. It only uses items from the hotbar (slots 1–10): the best
+pickaxe there, and plain blocks such as dirt, stone or wood. It never spends ores, gems, sand or seeds.
 
 Coordinates are tile coordinates: x to the right, y downward. The HUD shows your current tile.
 
@@ -47,8 +57,34 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
     Done steps fade, and the current step is drawn thicker with a box at its end.
   - During a jump, faint orange cells show the area the jump sweeps through. Red ticks mark tile tops it must
     not land on early.
+  - Red outlined cells will be mined and green outlined cells will get a block. The current step's are bold.
+    Pillar steps are purple.
+- **HUD** (bot on) also shows `dig on/off build on/off | pick <power> (slot n, <ticks>/hit) | <count> <block> (slot n)`.
 
-## Test script
+## Test script: Milestone 2 (mining and placing)
+Give the character a pickaxe and a stack of dirt or stone blocks (99+) in the hotbar. Say what pickaxe it was.
+
+1. **Tools detected.** `/bot status`. Expected: the reply ends with `pick <power> (slot n, ...) | <count> <block> (slot n)`.
+2. **Tunnel.** Build a 3-tall corridor with a roof (or use a cave) and wall it off with a 3-high block wall. Target
+   the far side. Expected: the bot stops at the wall and switches to the pickaxe. The HUD shows `Mining (x,y) (1/3)`
+   and the red outlined cells disappear one by one, then it walks through.
+3. **Dig down.** On flat ground, point at a block about 8–10 tiles straight down and press `O`. Expected: it digs a
+   2-wide shaft, one row at a time, and ends standing on that block. With digging allowed, a buried target means
+   "stand on that block".
+4. **Pillar.** `/bot dig off`, then target the top of a cliff or a block tower 8+ tiles high. Expected: it jumps and
+   places a block under its feet each time (purple steps), then walks or jumps onto the top. `/bot dig on` afterwards.
+5. **Bridge.** `/bot dig off`. Dig a dry pit 10+ tiles wide and 5+ deep (or find a chasm) and target the other side.
+   Expected: it places blocks under its leading foot and walks across (green outlines), maybe finishing with a jump.
+6. **Prefers walking.** Target something over a small hill. Expected: it walks over; digging costs more than a
+   short detour.
+7. **Off switches.** `/bot dig off` and `/bot build off`, then repeat test 2. Expected: `no path` (or a long way
+   round). The log shows `breaks 0, places 0` on plans.
+8. **Safety.** Put sand on top of the wall from test 2 (or try a desert). Expected: it won't mine a block that has sand
+   resting on it, so the sand never falls on it. It also won't mine next to lava.
+9. **Out of blocks.** Put only 3 blocks in the hotbar and repeat test 4. Expected: it pillars until it runs out,
+   then re-plans (`Blocked ... no longer valid`) and reports no path if there's no other way.
+
+## Test script: Milestone 1 (movement)
 Use a fresh small world. Journey mode is fine, but leave god mode off so fall damage is real. If you can,
 disable the big content mods (Calamity, Fargo's...) for the first run; the bot reads your live movement
 stats, but fewer mods means less noise. After each test, note what you did and what happened. Rough times
@@ -81,10 +117,16 @@ help me find it in the log.
 
 Then just tell me "done". I can read `client.log` from the tModLoader install folder myself.
 
-## Known limits (Milestone 1)
+## Known limits
 - Jumps are standing jumps only: the bot stops, aligns and jumps. Running jumps (longer gaps) come later.
-- No digging, block placing, platform drop-through, ropes, doors or swimming physics. Water is only avoided by
-  cost, and lava is never entered.
+- No platform drop-through, ropes, doors or swimming physics. Water is only avoided by cost, and lava is never
+  entered.
+- Mining and placing use hotbar items only. Pillars can't break blocks above the head yet; it needs open sky
+  or a separate tunnel step.
+- The planner doesn't track its own edits. It assumes cells it's standing in are clear, which covers chained
+  digging, but it may over-estimate some costs.
+- If your mouse cursor is over a UI element (inventory, a menu), the game blocks item use. Move the mouse away
+  while the bot mines or builds.
 - Slopes and half blocks are treated as full blocks.
 - The bot pauses while you are dead, mounted, grappling, on a rope, or in reversed gravity.
 - Single-player first. On a multiplayer client, unreceived world sections look like empty air.
