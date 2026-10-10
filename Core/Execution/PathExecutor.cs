@@ -38,7 +38,7 @@ public sealed class PathExecutor
 	/// <summary>How far ahead an unexpected landing node is looked up before declaring OffPath.</summary>
 	public const int ResyncLookahead = 12;
 
-	private readonly MoveContext ctx;
+	private MoveContext ctx;
 	private readonly List<PathStep> steps;
 	private int ticksInStep;
 	private int totalTicks;
@@ -76,6 +76,47 @@ public sealed class PathExecutor
 	{
 		this.ctx = ctx;
 		steps = new List<PathStep>(path);
+	}
+
+	/// <summary>
+	/// Switch to a new move context (physics changed a little) without re-planning: every remaining jump gets
+	/// the template the new physics would use for the same (dx, dy), as long as one still fits the terrain. A
+	/// jump already in the air keeps its template. Returns false (nothing changed) if some remaining jump is no
+	/// longer possible; the caller should re-plan.
+	/// </summary>
+	public bool TryAdopt(MoveContext next, out int refitted, out string reason)
+	{
+		refitted = 0;
+		reason = "";
+		var updated = new List<PathStep>(steps);
+		for (int i = StepIndex; i < updated.Count; i++) {
+			PathStep s = updated[i];
+			if (s.Kind != MoveKind.Jump || (i == StepIndex && jumpPhase == JumpPhase.Air))
+				continue;
+			JumpTemplate fit = null;
+			foreach (JumpLibrary.Entry e in next.Jumps.Entries) {
+				if (e.Dx != s.To.X - s.From.X || e.Dy != s.To.Y - s.From.Y)
+					continue;
+				foreach (JumpTemplate v in e.Variants)
+					if (v.Fits(next.Grid, s.From)) {
+						fit = v;
+						break;
+					}
+				break;
+			}
+			if (fit == null) {
+				reason = $"step {i} {s} is not possible with the new physics";
+				return false;
+			}
+			if (!ReferenceEquals(fit, s.Template)) {
+				updated[i] = s with { Template = fit, Cost = fit.Cost };
+				refitted++;
+			}
+		}
+		steps.Clear();
+		steps.AddRange(updated);
+		ctx = next;
+		return true;
 	}
 
 	public MoveInput Tick(in BodyState s)

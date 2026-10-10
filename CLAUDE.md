@@ -107,6 +107,8 @@ Gotchas already hit:
   - `WalkTo start: target -> StandAt(goal)`.
   - `Plan #n start -> goal: <Status>: N steps, cost, expanded, ms :: step | step | ...` (first 40 steps).
   - `Re-plan #n: Stuck|OffPath|Blocked: <reason>`: the reason names the step, expected node and actual node.
+  - `Physics changed slightly (...); keeping the plan, re-fitted N jump(s)`: a small speed change was absorbed.
+    `Physics changed (...): ... re-planning` means the change was material, or a remaining jump stopped fitting.
   - `WalkTo reached ...`, `WalkTo ... failed: ...`, `Skill finished: ...`, and `Physics params changed: ...`.
   - `resync: settled at <node> during step ...; skipping to step n`: the bot overshot onto a later path node
     and carried on without re-planning.

@@ -104,7 +104,13 @@ Re-plan triggers:
 * Stuck: a direction is held for 45 ticks without the body moving, or a step exceeds its tick budget.
 * Off-path: the bot settles on a node more than 1 tile from the current step's start and end.
 * Blocked: the next 8 steps are re-validated every 15 ticks, and one fails.
-* The physics params change.
+* The physics params change materially (`PhysicsParams.MateriallyDiffers`): jump height/speed, gravity, the
+  hitbox, the safe fall height, or run stats by more than ±25%.
+  * Smaller speed drift keeps the path. `PathExecutor.TryAdopt` re-fits the remaining jumps to templates
+    simulated with the new physics, and only re-plans if a jump no longer fits.
+  * This came from the self-test: the test character's +21% speed toggle used to force a re-plan each time.
+    At 0.8× speed a 6-tile jump would land one tile short, which is why jumps are re-fitted rather than
+    replayed unchanged.
 
 `WalkToSkill` fails after 3 consecutive `NoPath` results or 25 re-plans.
 

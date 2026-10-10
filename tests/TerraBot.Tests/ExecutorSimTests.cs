@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using TerraBot.Bot;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Execution;
@@ -30,9 +31,10 @@ public class ExecutorSimTests
 		public void Debug(string m) => o.WriteLine("DEBUG " + m);
 	}
 
-	private (SkillStatus status, WalkToSkill skill, SimWorld sim) Run(ArrayTileGrid g, int maxTicks = 2000, bool trace = false)
+	/// <param name="actual">Physics the simulated player really has; the planner always sees Default.</param>
+	private (SkillStatus status, WalkToSkill skill, SimWorld sim) Run(ArrayTileGrid g, int maxTicks = 2000, bool trace = false, PhysicsParams actual = null)
 	{
-		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		var sim = new SimWorld(g, actual ?? PhysicsParams.Default, g.Markers['S']);
 		var ctx = new BotContext { Grid = g, Log = new TestLog(output), Trace = trace };
 		var skill = new WalkToSkill(g.Markers['G']);
 		ctx.Body = sim.State;
@@ -172,6 +174,162 @@ public class ExecutorSimTests
 		var (status, skill, _) = Run(g, 4000);
 		Assert.Equal(SkillStatus.Succeeded, status);
 		Assert.Equal(0, skill.Replans);
+	}
+
+	/// <summary>The in-game player's speed toggled to these values (moveSpeed +21%) during the self-test runs.</summary>
+	private static readonly PhysicsParams Faster = PhysicsParams.Default with { MaxRunSpeed = 3.63f, RunAcceleration = 0.097f };
+
+	public static TheoryData<string> Courses => new() { "flat", "stairs", "ledge", "gap", "shaft", "uneven" };
+
+	private static ArrayTileGrid Course(string name) => name switch {
+		"flat" => ArrayTileGrid.Parse(
+			"..............................", "..............................", "..............................",
+			"..............................", "..S......................G....", "##############################"),
+		"stairs" => ArrayTileGrid.Parse(
+			"..........................", "..........................", "..........................",
+			"..........................", "..........................", "..........................",
+			"....................G.....", "................##########", "............##############",
+			"..S.....##################", "##########################"),
+		"ledge" => ArrayTileGrid.Parse(
+			"......................", "......................", "......................", "......................",
+			"......................", "......................", "......................", "..............G.......",
+			"..........############", "..........############", "..........############", "..........############",
+			"..S.......############", "######################"),
+		"gap" => ArrayTileGrid.Parse(
+			"....................", "....................", "....................", "....................",
+			"....................", "....................", "....................", "....................",
+			"....................", "....................", "..S.............G...", "#######....#########",
+			"#######!!!!#########", "####################"),
+		"shaft" => ArrayTileGrid.Parse(
+			"..................", "..................", "..................", "..S...............",
+			"#######..#########", "#######..#########", "#######..#########", "#######..#########",
+			"#######..#########", "#######..#########", "#######..#########", "#######.G#########",
+			"##################"),
+		_ => ArrayTileGrid.Parse(
+			"................................................", "................................................",
+			"................................................", "................................................",
+			"................................................", "................................................",
+			"................................................", "...........................####.................",
+			"......................#....####.........G.......", "..S.........###.......#....####.......#######...",
+			"#######....#####.....####..####...#.############", "#######....######...#####..####..##.############",
+			"################################################"),
+	};
+
+	[Theory]
+	[MemberData(nameof(Courses))]
+	public void PlanAtNormalSpeed_ExecutesAtPlus21PercentSpeed(string course)
+	{
+		var (status, skill, _) = Run(Course(course), 4000, actual: Faster);
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.Equal(0, skill.Replans);
+	}
+
+	public static TheoryData<string, float> CoursesAtThreshold()
+	{
+		var d = new TheoryData<string, float>();
+		foreach (string c in new[] { "flat", "stairs", "ledge", "gap", "shaft", "uneven" })
+			foreach (float f in new[] { 1f + PhysicsParams.HorizontalTolerance, 1f / (1f + PhysicsParams.HorizontalTolerance) })
+				d.Add(c, f);
+		return d;
+	}
+
+	/// <summary>
+	/// The largest speed change the skill keeps its plan for: the bot sees the new physics (like in game), the
+	/// remaining jumps are re-fitted, and the run must finish without landing off-path or getting stuck.
+	/// </summary>
+	[Theory]
+	[MemberData(nameof(CoursesAtThreshold))]
+	public void SpeedChangeMidRun_AtIgnoreThreshold_IsAbsorbed(string course, float factor)
+	{
+		PhysicsParams d = PhysicsParams.Default;
+		var changed = d with { MaxRunSpeed = d.MaxRunSpeed * factor, AccRunSpeed = d.AccRunSpeed * factor, RunAcceleration = d.RunAcceleration * factor };
+		Assert.False(changed.MateriallyDiffers(d));
+
+		ArrayTileGrid g = Course(course);
+		var sim = new SimWorld(g, d, g.Markers['S']);
+		var log = new System.Collections.Generic.List<string>();
+		var ctx = new BotContext { Grid = g, Log = new ListLog(log) };
+		var skill = new WalkToSkill(g.Markers['G']);
+		ctx.Body = sim.State;
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		for (int t = 0; t < 4000 && status == SkillStatus.Running; t++) {
+			if (t == 30)
+				sim.Physics = ctx.Physics = changed;
+			ctx.Body = sim.State;
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+		}
+		foreach (string l in log)
+			output.WriteLine(l);
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.DoesNotContain(log, l => l.Contains("OffPath") || l.Contains("Stuck"));
+	}
+
+	[Theory]
+	[MemberData(nameof(Courses))]
+	public void PlanAtPlus21PercentSpeed_ExecutesAtNormalSpeed(string course)
+	{
+		ArrayTileGrid g = Course(course);
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		var ctx = new BotContext { Grid = g, Physics = Faster, Log = new TestLog(output) };
+		var skill = new WalkToSkill(g.Markers['G']);
+		ctx.Body = sim.State;
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		for (int t = 0; t < 4000 && status == SkillStatus.Running; t++) {
+			ctx.Body = sim.State;
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+		}
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.Equal(0, skill.Replans);
+	}
+
+	private (WalkToSkill skill, System.Collections.Generic.List<string> log) RunWithPhysicsChange(PhysicsParams changeTo)
+	{
+		ArrayTileGrid g = Course("uneven");
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		var log = new System.Collections.Generic.List<string>();
+		var ctx = new BotContext { Grid = g, Log = new ListLog(log) };
+		var skill = new WalkToSkill(g.Markers['G']);
+		ctx.Body = sim.State;
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		for (int t = 0; t < 4000 && status == SkillStatus.Running; t++) {
+			ctx.Physics = t >= 60 && t < 160 ? changeTo : PhysicsParams.Default; // a buff that comes and goes
+			ctx.Body = sim.State;
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+		}
+		Assert.Equal(SkillStatus.Succeeded, status);
+		return (skill, log);
+	}
+
+	[Fact]
+	public void SmallSpeedBuff_KeepsThePlan()
+	{
+		var (_, log) = RunWithPhysicsChange(Faster);
+		Assert.Single(log, l => l.StartsWith("Plan #"));
+		Assert.Contains(log, l => l.Contains("keeping the plan"));
+	}
+
+	[Fact]
+	public void JumpChange_Replans()
+	{
+		var (_, log) = RunWithPhysicsChange(PhysicsParams.Default with { JumpHeight = 20, JumpSpeed = 6.51f });
+		Assert.True(log.Count(l => l.StartsWith("Plan #")) >= 2);
+		Assert.Contains(log, l => l.StartsWith("Physics changed ("));
+	}
+
+	private sealed class ListLog : IBotLog
+	{
+		private readonly System.Collections.Generic.List<string> lines;
+		public ListLog(System.Collections.Generic.List<string> lines) => this.lines = lines;
+		public void Info(string m) => lines.Add(m);
+		public void Warn(string m) => lines.Add(m);
+		public void Error(string m, Exception ex = null) => lines.Add(m);
+		public void Debug(string m) { }
 	}
 
 	[Fact]

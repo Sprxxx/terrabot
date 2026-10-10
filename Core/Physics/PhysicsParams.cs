@@ -41,6 +41,32 @@ public sealed record PhysicsParams
 	/// <summary>Deceleration when pressing against the current motion (slowdown + acceleration, same in air).</summary>
 	public float BrakeDecel => RunSlowdown + RunAcceleration;
 
+	/// <summary>Relative change in run speed/acceleration/slowdown that a running plan tolerates (25%).</summary>
+	public const float HorizontalTolerance = 0.25f;
+
+	/// <summary>
+	/// Would a plan made with <paramref name="planned"/> become unreliable under these params? Horizontal stats
+	/// may drift by up to <see cref="HorizontalTolerance"/>: arrive steering is closed-loop and the closed-loop
+	/// tests run jumps fine at ±25% speed. Anything that changes jump height, fall behaviour or the hitbox counts:
+	/// those define which jumps and drops exist at all. Fall speed gets 10% (vanilla flickers 10 / 10.01).
+	/// </summary>
+	public bool MateriallyDiffers(PhysicsParams planned)
+	{
+		if (planned == null)
+			return true;
+		return JumpHeight != planned.JumpHeight || Width != planned.Width || Height != planned.Height
+			|| SafeFallTiles != planned.SafeFallTiles
+			|| Rel(JumpSpeed, planned.JumpSpeed) > 0.02f || Rel(Gravity, planned.Gravity) > 0.02f
+			|| Rel(MaxFallSpeed, planned.MaxFallSpeed) > 0.10f
+			|| Rel(MaxRunSpeed, planned.MaxRunSpeed) > HorizontalTolerance + 1e-4f
+			|| Rel(AccRunSpeed, planned.AccRunSpeed) > HorizontalTolerance + 1e-4f
+			|| Rel(RunAcceleration, planned.RunAcceleration) > HorizontalTolerance + 1e-4f
+			|| Rel(RunSlowdown, planned.RunSlowdown) > HorizontalTolerance + 1e-4f;
+	}
+
+	/// <summary>Relative difference of a against the planned value b.</summary>
+	private static float Rel(float a, float b) => b == 0f ? (a == 0f ? 0f : float.PositiveInfinity) : Math.Abs(a - b) / Math.Abs(b);
+
 	public override string ToString() =>
 		$"run {MaxRunSpeed:0.###}/{AccRunSpeed:0.###} acc {RunAcceleration:0.###} slow {RunSlowdown:0.###} " +
 		$"grav {Gravity:0.###} fall {MaxFallSpeed:0.###} jump {JumpSpeed:0.###}x{JumpHeight} " +

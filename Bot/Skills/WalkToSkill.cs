@@ -81,10 +81,8 @@ public sealed class WalkToSkill : ISkill
 			return SkillStatus.Succeeded;
 		}
 
-		if (Executor != null && !ReferenceEquals(ctx.Moves, searchMoves)) {
-			ctx.Log.Info($"Physics or dig/build settings changed ({ctx.Physics}; dig {ctx.AllowBreak}, build {ctx.AllowPlace}); re-planning");
-			Executor = null;
-		}
+		if (Executor != null && !ReferenceEquals(ctx.Moves, searchMoves))
+			CheckPlanStillFits(ctx);
 
 		if (Executor == null) {
 			if (search == null) {
@@ -170,6 +168,33 @@ public sealed class WalkToSkill : ISkill
 		State = $"no path ({LastPlan.Status}), retry {NoPathCount}/{MaxNoPath}";
 		waitTicks = NoPathRetryDelay;
 		return false;
+	}
+
+	/// <summary>
+	/// Physics or settings changed since the plan was made. Dig/build switches and material physics changes
+	/// (jump, gravity, hitbox, more than ±25% run speed) mean re-planning. Small speed drift (e.g. a +21%
+	/// movement-speed buff toggling) keeps the path: the remaining jumps are re-fitted to templates simulated
+	/// with the new physics, and only if one no longer fits do we re-plan.
+	/// </summary>
+	private void CheckPlanStillFits(BotContext ctx)
+	{
+		MoveContext now = ctx.Moves;
+		bool settingsChanged = !ReferenceEquals(now.Blocks, searchMoves.Blocks)
+			|| now.AllowBreak != searchMoves.AllowBreak || now.AllowPlace != searchMoves.AllowPlace;
+		if (settingsChanged || ctx.Physics.MateriallyDiffers(searchMoves.Physics)) {
+			ctx.Log.Info($"{(settingsChanged ? "Dig/build settings" : "Physics")} changed ({ctx.Physics}; dig {ctx.AllowBreak}, build {ctx.AllowPlace}); re-planning");
+			Executor = null;
+			return;
+		}
+		PhysicsParams planned = searchMoves.Physics;
+		if (!Executor.TryAdopt(now, out int refitted, out string reason)) {
+			ctx.Log.Info($"Physics changed ({ctx.Physics}): {reason}; re-planning");
+			Executor = null;
+			return;
+		}
+		searchMoves = now;
+		if (ctx.Physics != planned)
+			ctx.Log.Info($"Physics changed slightly ({ctx.Physics}, was {planned}); keeping the plan, re-fitted {refitted} jump(s)");
 	}
 
 	private SkillStatus Fail(BotContext ctx, string reason)

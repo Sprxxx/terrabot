@@ -18,7 +18,10 @@ public sealed class SimWorld
 {
 	private const int T = Body.TileSize;
 	private readonly ITileGrid grid;
-	private readonly PhysicsParams p;
+	private PhysicsParams p;
+
+	/// <summary>The simulated player's movement stats; may change mid-run (buffs).</summary>
+	public PhysicsParams Physics { get => p; set => p = value; }
 	private readonly ArrayTileGrid editable;
 	private readonly TestBlockActions blocks;
 	private readonly System.Collections.Generic.Dictionary<TilePos, int> hits = new();

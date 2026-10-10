@@ -58,6 +58,21 @@ public class PhysicsTests
 	}
 
 	[Fact]
+	public void MateriallyDiffers_IgnoresSmallSpeedDrift_ButNotJumpOrHitboxChanges()
+	{
+		PhysicsParams d = TestUtil.P;
+		Assert.False(d.MateriallyDiffers(d));
+		Assert.False((d with { MaxRunSpeed = 3.63f, RunAcceleration = 0.097f }).MateriallyDiffers(d)); // the in-game +21% toggle
+		Assert.False((d with { MaxFallSpeed = 10.01f }).MateriallyDiffers(d));                       // vanilla flicker
+		Assert.True((d with { MaxRunSpeed = 4.5f }).MateriallyDiffers(d));                            // +50%
+		Assert.True((d with { AccRunSpeed = 6f }).MateriallyDiffers(d));                              // running boots
+		Assert.True((d with { JumpHeight = 20, JumpSpeed = 6.51f }).MateriallyDiffers(d));            // jump boost
+		Assert.True((d with { Gravity = 0.2f, MaxFallSpeed = 5.01f, JumpSpeed = 6.01f, JumpHeight = 30 }).MateriallyDiffers(d)); // water
+		Assert.True((d with { SafeFallTiles = 35 }).MateriallyDiffers(d));
+		Assert.True(d.MateriallyDiffers(null));
+	}
+
+	[Fact]
 	public void NodeMappingRoundTrips()
 	{
 		var n = new TilePos(123, 456);
