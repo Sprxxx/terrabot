@@ -136,7 +136,11 @@ Open question: why vanilla StepDown sometimes doesn't snap at running speed (nee
 
 Milestone 2 (mining and placing) is implemented: 52 unit tests pass, including closed-loop tunnel, dig-down,
 pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-game testing is pending (README,
-"Test script: Milestone 2").
+"Test script: Milestone 2"). (Since verified by the self-test.)
+
+Current (2026-10-10): Milestones 1–4 are done, plus platform drop-through and melee combat. 100 unit tests
+pass and the in-game self-test passes 23/23. Next: M5, the first night (shelter, torches, ores and a better
+pickaxe).
 
 ## Milestone 1 checklist
 1. Scaffold (csproj, build.txt, description, localization), builds with `dotnet build`, loads.
@@ -222,12 +226,77 @@ pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-g
 * Library build is about 130 ms (was 80) per distinct physics set; it's cached.
 * Later: flying starts, i.e. taking off from a walk chain without stopping at the run-up start.
 
-## Out of scope for M1 (noted for later)
-Running-jump templates (currently standing jumps only), dropping through platforms, ropes/ladders, liquids
-physics (water is only penalised, lava avoided), slopes/half-blocks modelled as full blocks, doors,
-break/place moves, async/time-sliced A*, combat, crafting, real brain.
+## Dropping through platforms
+`DropThroughMove`: when the body stands on platforms only, hold Down to fall through, then land like a normal
+drop (same landing and fall-damage rules). Vanilla passes `fallThrough = controlDown` to collision, which ignores
+solid-top tiles while falling slower than 1 px/tick. The executor holds Down only until the feet pass the
+platform row, so it doesn't also fall through a platform it means to land on.
 
-Automated in-game self-test (`tools/selftest.ps1`, `Game/SelfTest/`) added 2026-10-10. It runs 14 scenarios in
-the real game with copies of the user's player and world. First full run: 14/14 passed, deterministic across
-runs. Milestone 2 is now verified in game, including the earlier failures: bridging over drop-and-pillar, running
-out of blocks, sand safety.
+## Combat (`FightSkill`)
+* Perception: hostiles are NPCs that pass vanilla `NPC.CanBeChasedBy` (the check homing projectiles use).
+  The snapshot gives position, size, life and velocity.
+* Target: keep the current target while alive, else the nearest within 25 tiles. An enemy that once came
+  within 25 stays a target out to 50 (the "leash"), so a second slime that wandered off still gets chased.
+* Approach with a quiet `WalkToSkill` to the target's feet (re-targeted every 30 ticks); close and level,
+  steer straight.
+* Swing: melee direction comes from `player.direction`, which vanilla sets from the movement keys and only
+  while `itemAnimation == 0`, so the skill presses towards the enemy between swings. Aim uses the virtual
+  mouse (`Main.mouseX/Y` set in `PreItemCheck`, restored in `PostItemCheck`).
+* Quick-heal below 40% life, pulsed so vanilla sees a fresh key press.
+* Done after 90 ticks with no hostile in range.
+
+## Milestone 4: early-game loop (auto mode)
+`/bot auto` runs `EarlyGamePlanner` through `BotBrain`. Whenever no skill is running, the planner looks at
+the inventory and what it has seen, and returns the next skill:
+1. no bench placed or carried: `GatherWood` to 10, then `Craft` a work bench;
+2. bench carried: `PlaceItem` it beside the bot;
+3. no wooden sword: gather to 7, walk back within 3 tiles of the bench, `Craft` the sword;
+4. stockpile 30 wood;
+5. done.
+
+Skills:
+* `ChopTreeSkill`: stand beside the trunk base, aim at it with the axe until the trunk is gone. Axe damage per
+  hit is `axe × 1.2`, and a tree falls at 100 (copper axe: 13 hits).
+* `CollectDropsSkill`: walk over item drops of a type until none is left in range.
+* `GatherWoodSkill`: chop the nearest tree, collect, repeat; with no tree in sight, walk 40 tiles to look, alternating
+  left and right, and give up after 6 tries.
+* `CraftSkill`: one recipe click every 10 ticks until the count is reached; fails with the crafter's
+  reason (`Missing`, `NeedsStation`, `NoRecipe`).
+* `PlaceItemSkill`: the nearest floor cell beside the body that `TileObject.CanPlace` accepts and whose
+  footprint doesn't overlap the hitbox.
+
+Brain rules:
+* A hostile within 12 tiles (when carrying a weapon) pre-empts any skill but a fight.
+* Three failures in a row stop auto mode.
+* `KnownStations` remembers stations while out of sight and forgets one only when within 20 tiles and not
+  seen. A bench the bot just placed is trusted for 120 ticks, because the scan runs every 20.
+
+Hotbar housekeeping: tools are only used from the hotbar, but crafted items land in the backpack. Every
+30 ticks, the best pickaxe/axe/weapon/block stack in slots 11–50 is swapped onto the hotbar if it beats the
+hotbar's.
+
+### Actions that stand in for UI clicks (deliberate; flag if unwanted)
+The bot otherwise acts only through controls. These four have no control to press, so they call what the
+UI click would call:
+* **Crafting**: `Main.CraftItem(recipe)`, the crafting menu's click handler. It only works for recipes that
+  `Recipe.FindRecipes` lists as available (ingredients carried, station in range), consumes the ingredients
+  and puts the result on the cursor. Then `Player.GetItem` moves it into the inventory like clicking an empty
+  slot.
+* **Station range**: `Player.AdjTiles()` normally runs only while the inventory screen is open. The crafter
+  calls it right before `FindRecipes`, which is the same range check.
+* **Moving items** between backpack and hotbar is a slot swap, like dragging.
+* **Pointing**: the tile target (`tileTargetX/Y`) and the mouse position (`Main.mouseX/Y`) are overridden for
+  the duration of `ItemCheck`. Range, tool power and speed are vanilla's.
+
+## Not yet (noted for later)
+Ropes/ladders, swimming (water only penalised, lava avoided), slopes/half-blocks (modelled as full blocks),
+doors, breaking above the head while pillaring, flying jump starts, ranged/magic combat, dodging,
+housing/NPCs, ore mining, chests, night shelter, bosses.
+
+## Self-test history
+Automated in-game self-test (`tools/selftest.ps1`, `Game/SelfTest/`) added 2026-10-10. It runs scenarios in
+the real game with copies of the user's player and world.
+* First run: 14/14 passed, deterministic across runs. Milestone 2 is verified in game, including the earlier
+  failures: bridging over drop-and-pillar, running out of blocks, sand safety.
+* After running jumps, drop-through, combat and M4: 22/22 passed, plus `early_game_full_hotbar` (23
+  scenarios). There are 100 unit tests.

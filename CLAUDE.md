@@ -30,10 +30,10 @@ dotnet test tests/TerraBot.Tests              # pure unit tests (pathfinder, phy
 |---|---|---|
 | `Core/Grid` | no | `TilePos`, `CellKind` flags, `ITileGrid`, `ArrayTileGrid` (ASCII parser), `GridWindow` cache |
 | `Core/Physics` | no | `PhysicsParams`, `BodyState`, `MoveInput`, `PlayerPhysics` (vanilla tick replica), `Arrive` steering |
-| `Core/Pathfinding` | no | `Body` (2×3 node model), `IMoveType` + `Moves/` (Walk, StepUp, Drop, Jump, DigMove, BuildMove), `BlockActions` (`IBlockActions`, `BlockAction`, `BlockRules`), `JumpLibrary`/`JumpTemplate`, `Goals`, `PathSearch`/`AStarPathfinder` |
-| `Core/Execution` | no | `PathExecutor`: path + live `BodyState` → `MoveInput`; reports Finished/Stuck/OffPath/Blocked |
-| `Bot/` | no | `BotContext`, `IBotLog`, `Skills/` (`ISkill`, `WalkToSkill`), `Brain/BotBrain` (stub: one target) |
-| `Game/` | **yes** | `TerraBotPlayer` (ModPlayer), `TerrariaTileGrid`, `TerrariaBlockActions` (hotbar pickaxe/blocks, vanilla pickaxe-damage mirror), `PhysicsReader`, `BotKeybinds`, `BotCommand` (/bot), `DebugOverlaySystem`, `Perception/` snapshot |
+| `Core/Pathfinding` | no | `Body` (2×3 node model), `IMoveType` + `Moves/` (Walk, StepUp, Drop, DropThrough, Jump, DigMove, BuildMove), `BlockActions` (`IBlockActions`, `BlockAction`, `BlockRules`), `JumpLibrary`/`JumpTemplate`/`JumpController` (standing and running jumps), `Goals`, `PathSearch`/`AStarPathfinder` |
+| `Core/Execution` | no | `PathExecutor`: path + live `BodyState` → `MoveInput`; reports Finished/Stuck/OffPath/Blocked; re-fits jumps on small physics changes (`TryAdopt`) |
+| `Bot/` | no | `BotContext`, `IBotLog`, `Perception.cs` (`EntityInfo`, `DropInfo`, `CombatInfo`), `World.cs` (`IWorldInfo`, `IInventory`, `ICrafter`, `GameIds`, `Surroundings`), `Skills/` (`WalkToSkill`, `FightSkill`, `ChopTreeSkill`, `CollectDropsSkill`, `GatherWoodSkill`, `CraftSkill`, `PlaceItemSkill`), `Brain/` (`BotBrain`: manual target/skill or auto mode; `EarlyGamePlanner`: next-goal chain) |
+| `Game/` | **yes** | `TerraBotPlayer` (ModPlayer: perception, controls, aim, hotbar stocking), `TerrariaTileGrid`, `TerrariaBlockActions` (hotbar pickaxe/axe/weapon/blocks, vanilla pickaxe-damage mirror, `StockHotbar`), `TerrariaGameInfo` (trees, stations, placement checks, inventory counts, crafting), `PhysicsReader`, `BotKeybinds`, `BotCommand` (/bot), `DebugOverlaySystem`, `Perception/` snapshot, `SelfTest/` (in-game scenarios) |
 
 **Rule:** `Core/` and `Bot/` must not reference Terraria, tModLoader or XNA. The test project compiles those
 folders directly without tModLoader references, so a violation breaks `dotnet test`.
@@ -44,14 +44,19 @@ Control flow per tick (local player): `ProcessTriggers` (keybinds) → `SetContr
 `Player.controlLeft/Right/Up/Down/Jump`; if the `MoveInput` requests a tool, also `selectedItem` (only when
 `itemAnimation == 0`), `controlUseItem` (released between swings for non-autoReuse items) and `controlTorch = false`.
 The aim cell is written to `Player.tileTargetX/Y` in `PreItemCheck`, because vanilla recomputes the tile target
-from the mouse *after* `SetControls`. When the bot is disabled, nothing is written.
+from the mouse *after* `SetControls`. Weapons aim with a virtual mouse: `Main.mouseX/Y` is pointed at the
+target in `PreItemCheck` and restored in `PostItemCheck`. When the bot is disabled, nothing is written.
+
+Things with no control to press go through the function the UI click would call; they're listed in PLAN.md
+under "Actions that stand in for UI clicks". Keep that list current, since it's the exception to the rule
+that the bot acts only through controls. The items are `Main.CraftItem`, `Player.AdjTiles`, inventory slot
+swaps, and the tile-target and mouse overrides.
 
 ### Pathfinding model
 - Node `(x, y)`: body = columns `x..x+1`, rows `y-2..y`, `y` = feet row. Canonical hitbox left = `x*16+6`.
   `Body.NodeOf` maps pixels back to nodes; the rounding is deliberate (half blocks map to the full-block node).
 - Edge costs are in **ticks**. Each move type implements `Expand` (generate edges) and `IsValid` (re-check while
   executing). Add a move = add an `IMoveType` + register in `MoveContext.DefaultMoves` + executor handling.
-  Planned next moves: BreakBlock/PlaceBlock (cost = mine/place time), DropThroughPlatform (hold Down), running jumps.
 - Jumps are **simulated, not hand-tuned**:
   - `JumpLibrary.Build` runs `PlayerPhysics` with `JumpController`, the same object `PathExecutor` uses to
     replay jumps. It simulates from start offsets −3/0/+3 px and records the swept `BodyCells` and the
@@ -125,6 +130,12 @@ Gotchas already hit:
   - Plans that change the world end with `, breaks N, places M`. Steps print their actions as
     `{break(x,y) place(x,y)}`. The executor phases `Mining (x,y) (i/n)`, `Placing ...` and `Pillar t<n>` show up in TRACE lines.
   - `Digging allowed/disabled`, `Building allowed/disabled` when toggled.
+  - Auto mode: `Auto mode ON/OFF`, `Auto: <why> -> <Skill>` for each planner decision, `Danger: pausing <Skill>
+    to fight`, `Auto: 3 failures in a row, stopping auto mode (...)`, and `Auto: early-game chain complete ...`.
+  - Skills: `Fight start/target/gone (kill #n)/quick-heal/over`; `ChopTree start` / `... is down after N ticks`;
+    `GatherWood start/done` and `GatherWood: no trees in sight, exploring towards (x,y)`; `Craft start: item N,
+    needs <recipe>`, `Craft done`, `Craft item N failed: Missing|NeedsStation|NoRecipe ...`; `Placed item N at (x,y)`.
+  - `Hotbar: moved <kind> <item> from inventory slot a to hotbar slot b (swapped out <item>)`.
 - To debug a failed run, find the `Plan` line, then the `Re-plan` reasons. If needed, ask the user to repeat it
   with `/bot trace` on and `/bot dump` at the start.
 

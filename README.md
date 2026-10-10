@@ -4,13 +4,14 @@ A tModLoader mod with a bot that plays Terraria by pressing the same controls yo
 item, hotbar slot, and pointing at a tile. It never teleports, spawns items or edits tiles directly; blocks
 change only because its pickaxe or block swing does it, with vanilla's range, tool power and speed.
 
-What it can do so far: walk to a target tile across uneven ground. Moves:
-- walking and 1-tile step-ups;
-- jumps up to 6 tiles high, about 5 tiles across from a standstill, or 9 tiles across with a 2–4 tile
-  running start;
-- drops of up to 23 tiles;
-- since Milestone 2: tunnelling through blocks, digging down, bridging over gaps and pillaring up, using the
-  pickaxe and blocks in your hotbar.
+What it can do so far:
+- **Get around** (`/bot goto`, `O`): walking and 1-tile step-ups; jumps up to 6 tiles high, about 5 tiles
+  across from a standstill or 9 tiles with a 2–4 tile running start; drops of up to 23 tiles; dropping through
+  platforms; tunnelling, digging down, bridging gaps and pillaring up with the pickaxe and blocks it carries.
+- **Fight** (`/bot fight`): melee with the best sword or shortsword it has, chasing enemies over the same
+  paths, and quick-healing when low.
+- **Play the first minutes on its own** (`/bot auto`): chop trees and pick up the wood, craft and place a work
+  bench, craft a wooden sword at it, and stockpile 30 wood, breaking off to fight anything that comes close.
 
 ## Build
 From this folder:
@@ -30,7 +31,9 @@ Reload. You can also use **Workshop → Develop Mods → TerraBot → Build + Re
 | `P` (keybind "Toggle Bot") | Bot on/off. Off returns control to you the same tick. |
 | `O` (keybind "Set Bot Target") | Sets the target to the tile under the mouse. |
 | `/bot goto <x> <y>` | Target a tile and switch the bot on. `~` means relative to you: `/bot goto ~20 ~0` is 20 tiles right. |
-| `/bot stop` | Clear the target. The bot stays on but idles. |
+| `/bot auto` | Auto mode: the early-game chain above. Switches the bot on. `/bot stop` ends it; `P` pauses it, and pressing `P` again resumes it. |
+| `/bot fight` | Fight nearby enemies until none has been close for 1.5 s. Switches the bot on. |
+| `/bot stop` | Clear the target and leave auto mode. The bot stays on but idles. |
 | `/bot on`, `/bot off` | Same as the keybind. |
 | `/bot status` | One-line status in chat and in the log. |
 | `/bot dump` | Writes a JSON snapshot (player, path, nearby tiles as ASCII, NPCs, items, inventory) to client.log. |
@@ -39,9 +42,12 @@ Reload. You can also use **Workshop → Develop Mods → TerraBot → Build + Re
 | `/bot build [on\|off]` | Allow or forbid placing blocks (default on). No argument toggles. |
 
 If `P` or `O` clashes with another mod, rebind them under **Settings → Controls → Keybindings → Mod Controls**.
-While the bot is on, it owns your movement keys. The mouse button stays yours except while the bot is mining or
-placing; then it also switches your hotbar slot. It only uses items from the hotbar (slots 1–10): the best
-pickaxe there, and plain blocks such as dirt, stone or wood. It never spends ores, gems, sand or seeds.
+While the bot is on, it owns your movement keys. The mouse button stays yours except while the bot is using an
+item (mining, placing, chopping, swinging a sword); then it also switches your hotbar slot and points its own
+"virtual mouse" for the swing. It uses items from the hotbar (slots 1–10): the best pickaxe, axe and melee
+weapon there, and plain blocks such as dirt, stone or wood. It never spends ores, gems, sand or seeds. If a
+better one of those is in your backpack (a freshly crafted sword lands there when the hotbar is full), it
+swaps it onto the hotbar, into an empty slot or one holding none of its tools.
 
 Coordinates are tile coordinates: x to the right, y downward. The HUD shows your current tile.
 
@@ -67,15 +73,32 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1
 ```
 This opens tModLoader in a separate, throw-away save folder, using copies of your `Pepi` character and the
-`Enchanting Outskirts` world; your real saves are only read. It plays 14 scenarios in an arena above the
+`Enchanting Outskirts` world; your real saves are only read. It plays 23 scenarios in an arena above the
 spawn and prints PASS/FAIL for each:
-- walking, ledge jump, gap jump, a drop without fall damage, an unreachable target;
+- walking, ledge jump, gap jump, running jump over an 8-tile gap (and refusing one with no run-up room),
+  dropping through platforms, a drop without fall damage, an unreachable target;
 - tunnel, dig down, pillar, bridging a wide pit;
-- sand in the path, a sand roof, a lava neighbour, running out of blocks, a wall appearing mid-walk.
+- sand in the path, a sand roof, a lava neighbour, running out of blocks, a wall appearing mid-walk;
+- killing a green slime, two slimes on both sides, chopping trees;
+- the auto chain from an empty inventory, with slimes arriving midway, and with a hotbar full of junk and the
+  axe in the backpack.
 
-Then it quits. It takes about two minutes. Keep the game window in front, because Terraria pauses while it's
-in the background. Claude can run this on its own; the manual scripts below are for things the self-test
-can't see, such as how the overlay looks.
+Then it quits. It takes about seven minutes. Keep the game window in front, because Terraria pauses while it's
+in the background. Run a subset with `-Scenarios "name1,name2"`. Claude can run this on its own; the manual
+scripts below are for things the self-test can't see, such as how the overlay looks or a real world's trees.
+
+## Test script: auto mode (Milestone 4)
+Start a fresh character (copper shortsword, pickaxe and axe) in a forest. Daytime is easiest.
+
+1. `/bot auto`. Expected: it walks to the nearest tree, chops it from the base and walks around picking up the
+   wood. The HUD shows `auto: GatherWood ...`.
+2. With 10 wood it crafts a work bench (no menu opens; the log says `Craft done`) and places it beside itself,
+   then crafts a wooden sword at it (`Craft start: item 24 ... @ Work Bench`).
+3. It gathers until it carries 30 wood, then the HUD shows `auto: early-game chain complete ...` and it idles.
+4. Danger: let a slime come near (or spawn one) while it chops. Expected: `Danger: pausing GatherWood to fight`,
+   the slime dies, and the chain carries on where it left off.
+5. Leave the area and come back, or break the bench: it remembers the bench while out of sight, and makes a new
+   one if it sees the old one is gone.
 
 ## Test script: Milestone 2 (mining and placing)
 Give the character a pickaxe and a stack of dirt or stone blocks (99+) in the hotbar. Say what pickaxe it was.
@@ -142,15 +165,15 @@ help me find it in the log.
 Then just tell me "done". I can read `client.log` from the tModLoader install folder myself.
 
 ## Known limits
-- Jumps are standing jumps only: the bot stops, aligns and jumps. Running jumps (longer gaps) come later.
-- No platform drop-through, ropes, doors or swimming physics. Water is only avoided by cost, and lava is never
-  entered.
-- Mining and placing use hotbar items only. Pillars can't break blocks above the head yet; it needs open sky
-  or a separate tunnel step.
-- The planner doesn't track its own edits. It assumes cells it's standing in are clear, which covers chained
-  digging, but it may over-estimate some costs.
+- Every jump starts from a standstill on its start tile (running jumps sprint from there), so the bot pauses
+  briefly before each jump.
+- No ropes, doors or swimming physics. Water is only avoided by cost, and lava is never entered.
+- Pillars can't break blocks above the head yet; it needs open sky or a separate tunnel step.
+- Combat is melee only (swords and shortswords). No ranged or magic weapons, no dodging projectiles, no
+  retreating. Auto mode stops after three failures in a row, e.g. when there are no trees to be found.
+- Auto mode only knows the first chain (wood, bench, sword). No houses, ores, chests or night shelter yet.
 - If your mouse cursor is over a UI element (inventory, a menu), the game blocks item use. Move the mouse away
-  while the bot mines or builds.
+  while the bot uses items.
 - Slopes and half blocks are treated as full blocks.
 - The bot pauses while you are dead, mounted, grappling, on a rope, or in reversed gravity.
 - Single-player first. On a multiplayer client, unreceived world sections look like empty air.
