@@ -24,6 +24,8 @@ public sealed class SimWorld
 	private readonly System.Collections.Generic.Dictionary<TilePos, int> hits = new();
 
 	public int Broken { get; private set; }
+	/// <summary>Breaks that left a falling block (sand) unsupported: in the game it would drop onto the bot.</summary>
+	public int Undermined { get; private set; }
 	public int Placed { get; private set; }
 
 	public BodyState State;
@@ -74,6 +76,8 @@ public sealed class SimWorld
 				editable.Set(cell.X, cell.Y, k & ~(CellKind.Solid | CellKind.Falling));
 				hits.Remove(cell);
 				Broken++;
+				if (grid.Get(cell.X, cell.Y - 1).IsFalling())
+					Undermined++;
 			}
 			return;
 		}

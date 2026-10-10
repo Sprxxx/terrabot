@@ -35,8 +35,20 @@ public sealed class MoveContext
 	public float BreakCostMultiplier { get; init; } = 1.5f;
 	/// <summary>Per broken block: switching tools, aiming, and picking the drop up.</summary>
 	public float BreakOverheadTicks { get; init; } = 8f;
-	/// <summary>Per placed block, on top of the swing time: blocks are a limited resource.</summary>
-	public float PlacePenaltyTicks { get; init; } = 20f;
+	/// <summary>Extra cost per pillar step. A pillar is a 1-wide tower: knockback can throw the bot off, and a mistimed
+	/// placement means landing back down and jumping again. It also keeps the bot from preferring to drop into a pit
+	/// and climb out over bridging across it (first in-game Milestone 2 test).</summary>
+	public float PillarRiskTicks { get; init; } = 30f;
+
+	/// <summary>
+	/// Cost per placed block on top of the swing time, scaled by how many blocks we carry. With a big stack,
+	/// blocks are cheap and a straight bridge beats dropping into a pit and pillaring out. When scarce, the
+	/// planner prefers routes that spend fewer blocks.
+	/// </summary>
+	public float PlacePenaltyTicks => PlacePenaltyFor(Blocks?.BlockCount ?? 0);
+
+	public static float PlacePenaltyFor(int blockCount) =>
+		blockCount >= 100 ? 3f : blockCount >= 30 ? 8f : 25f;
 
 	/// <summary>Per-context scratch buffer for moves (move types are shared singletons and must stay stateless).
 	/// A MoveContext is therefore not thread-safe; use one per search thread.</summary>

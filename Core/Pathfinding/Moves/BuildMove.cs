@@ -34,8 +34,13 @@ public sealed class BuildMove : IMoveType
 
 	public bool IsValid(MoveContext ctx, in PathStep step)
 	{
-		if (step.Kind == MoveKind.Pillar)
-			return PillarHeadroomClear(ctx.Grid, step.From);
+		if (step.Kind == MoveKind.Pillar) {
+			// Fine if the block is already under us, otherwise we must still be able to place one.
+			ITileGrid g = ctx.Grid;
+			bool placed = g.Get(step.From.X, step.From.Y).IsSolid() || g.Get(step.From.X + 1, step.From.Y).IsSolid();
+			TilePos pillarCell = PillarCell(g, step.From);
+			return PillarHeadroomClear(g, step.From) && (placed || (ctx.CanPlace && ctx.Blocks.CanPlaceAt(pillarCell.X, pillarCell.Y)));
+		}
 		// Bridge: fine if the block is already there (placed by us) or can still be placed.
 		TilePos cell = BridgeCell(step.From, step.Dir);
 		return Body.IsClear(ctx.Grid, step.To)
@@ -92,7 +97,7 @@ public sealed class BuildMove : IMoveType
 		if (k.CanStandOn() || k.HasLava() || !ctx.Blocks.CanPlaceAt(cell.X, cell.Y))
 			return false;
 		var to = new TilePos(from.X, from.Y - 1);
-		float cost = ctx.PillarAirTicks + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks;
+		float cost = ctx.PillarAirTicks + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks + ctx.PillarRiskTicks;
 		step = new PathStep(MoveKind.Pillar, from, to, ctx.Adjust(cost, to),
 			Actions: new[] { new BlockAction(ActionKind.Place, cell) }, Source: this);
 		return true;

@@ -74,13 +74,21 @@ Give the character a pickaxe and a stack of dirt or stone blocks (99+) in the ho
 4. **Pillar.** `/bot dig off`, then target the top of a cliff or a block tower 8+ tiles high. Expected: it jumps and
    places a block under its feet each time (purple steps), then walks or jumps onto the top. `/bot dig on` afterwards.
 5. **Bridge.** `/bot dig off`. Dig a dry pit 10+ tiles wide and 5+ deep (or find a chasm) and target the other side.
-   Expected: it places blocks under its leading foot and walks across (green outlines), maybe finishing with a jump.
+   Expected with 100+ blocks in the hotbar: it places blocks under its leading foot and walks across (green
+   outlines), maybe finishing with a jump. With only a few blocks it may instead drop in and pillar out, because
+   that spends fewer blocks.
 6. **Prefers walking.** Target something over a small hill. Expected: it walks over; digging costs more than a
    short detour.
 7. **Off switches.** `/bot dig off` and `/bot build off`, then repeat test 2. Expected: `no path` (or a long way
    round). The log shows `breaks 0, places 0` on plans.
-8. **Safety.** Put sand on top of the wall from test 2 (or try a desert). Expected: it won't mine a block that has sand
-   resting on it, so the sand never falls on it. It also won't mine next to lava.
+8. **Safety (sand).** The rule is "never undermine sand", not "never mine sand". If sand is in the way, the bot mines
+   it first, top-down, so nothing can fall.
+   - To test the rule itself, the sand must sit **above** the tunnel: build a 3-tall corridor whose roof, right
+     above the wall, is sand, and wall it off with a 3-high wall of dirt or stone.
+   - Expected: the bot never mines the wall block directly under the sand. It digs a way around (under the wall,
+     or over it through the dirt) or reports `no path`. The game logs `Hurt ... (projectile type 31)` if sand
+     ever lands on you, so the log tells us.
+   - It also won't mine a block next to lava.
 9. **Out of blocks.** Put only 3 blocks in the hotbar and repeat test 4. Expected: it pillars until it runs out,
    then re-plans (`Blocked ... no longer valid`) and reports no path if there's no other way.
 

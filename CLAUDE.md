@@ -64,7 +64,13 @@ from the mouse *after* `SetControls`. When the bot is disabled, nothing is writt
   what lets chained digging plan at all. `DigMove` also emits action-less "dug-earlier" walks for moves that
   only the stale grid would reject. Costs can be over-estimated; the executor skips actions whose cell is
   already done.
-- Cost knobs live on `MoveContext`: `BreakCostMultiplier` (1.5), `BreakOverheadTicks` (8), `PlacePenaltyTicks` (20).
+- Cost knobs live on `MoveContext`:
+  - `BreakCostMultiplier` (1.5) and `BreakOverheadTicks` (8).
+  - `PlacePenaltyTicks`: scaled by the hotbar stack, see `PlacePenaltyFor`.
+  - `PillarRiskTicks` (30).
+  - Tune them with regression tests on concrete shapes; `BlockMoveTests.WideDryPit` is the bridge-vs-pillar case.
+- Safety rule semantics: *never undermine* a falling block. Mining sand top-down as part of the path is fine,
+  and intended.
 
 ## Verifying game behaviour (don't trust memory)
 tModLoader's API and vanilla physics change between versions. Before relying on a hook, field or constant, check:

@@ -188,8 +188,13 @@ pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-g
     underfoot). Pillar picks its column at run time, from whichever cell below is solid.
 * Costs:
   * Breaking: mining ticks × 1.5 + 8 ticks overhead per block.
-  * Placing: place ticks + 20 ticks penalty.
-  * So the bot prefers existing routes and only digs or builds when that's clearly cheaper.
+  * Placing: place ticks + a penalty that depends on the hotbar stack (3 ticks at ≥ 100 blocks, 8 at ≥ 30,
+    25 below).
+  * Pillar steps add 30 ticks of risk.
+  * So the bot prefers existing routes, and only digs or builds when that's clearly cheaper.
+  * The scaled penalty and the pillar risk came from the first Milestone 2 run. With 9,991 wood, the bot
+    dropped into a 27-wide pit and pillared out instead of bridging, because a flat 20-tick penalty made each
+    bridge tile cost 35 ticks.
 * Safety rules (Core):
   * Never break a cell with a falling block (sand family) directly above it, unless that cell is also being
     broken in the same move.

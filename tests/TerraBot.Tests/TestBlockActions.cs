@@ -12,7 +12,8 @@ public sealed class TestBlockActions : IBlockActions
 	public HashSet<TilePos> Unbreakable { get; } = new();
 	public float TicksPerBlock { get; set; } = 20f;
 	public int BlockCount { get; set; } = 50;
-	public float PlaceTicks => 15f;
+	/// <summary>Matches the in-game value logged for wood/dirt blocks (useTime 10 at tileSpeed 1).</summary>
+	public float PlaceTicks => 10f;
 
 	public TestBlockActions(ITileGrid grid) => this.grid = grid;
 
