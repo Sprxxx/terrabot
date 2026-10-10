@@ -12,6 +12,12 @@ public interface IWorldInfo
 	/// <summary>Could the item (furniture, block) be placed with its placement tile at (x, y) right now, ignoring
 	/// the player's own hitbox (the skill keeps clear of it)?</summary>
 	bool CanPlaceItem(int itemType, int x, int y);
+
+	/// <summary>Tile type at the cell, or -1 when there is no tile.</summary>
+	int TileTypeAt(int x, int y);
+
+	/// <summary>Cells holding <paramref name="tileType"/> within <paramref name="radius"/> tiles (Chebyshev) of <paramref name="around"/>, nearest first.</summary>
+	IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius);
 }
 
 /// <summary>Read-only view of the player's items.</summary>
@@ -58,6 +64,12 @@ public sealed class GameIds
 	public int WoodenSword { get; init; }
 	public int WoodenHammer { get; init; }
 	public int Acorn { get; init; }
+	public int Gel { get; init; }
+	public int Torch { get; init; }
+	public int FurnaceTile { get; init; }
+	public int AnvilTile { get; init; }
+	/// <summary>The pickaxe of this world's iron tier (Iron or Lead Pickaxe, set per world).</summary>
+	public int IronTierPickaxe { get; init; }
 
 	public static readonly GameIds None = new();
 }

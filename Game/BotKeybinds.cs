@@ -21,10 +21,19 @@ public sealed class BotKeybinds : ModSystem
 		SetTarget = null;
 	}
 
-	/// <summary>Display name of the first key bound to <paramref name="bind"/>, for the HUD.</summary>
+	/// <summary>
+	/// Display name of the first key bound to <paramref name="bind"/>, for the HUD. GetAssignedKeys throws
+	/// KeyNotFoundException while the current input profile has no entry for the keybind yet (seen on the first
+	/// frames with a fresh save folder), so fall back to "?" instead of failing the whole HUD draw.
+	/// </summary>
 	public static string KeyName(ModKeybind bind)
 	{
-		var keys = bind?.GetAssignedKeys(InputMode.Keyboard);
-		return keys == null || keys.Count == 0 ? "unbound" : keys[0];
+		try {
+			var keys = bind?.GetAssignedKeys(InputMode.Keyboard);
+			return keys == null || keys.Count == 0 ? "unbound" : keys[0];
+		}
+		catch (System.Collections.Generic.KeyNotFoundException) {
+			return "?";
+		}
 	}
 }

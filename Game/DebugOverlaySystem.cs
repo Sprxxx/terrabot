@@ -98,7 +98,7 @@ public sealed class DebugOverlaySystem : ModSystem
 			}
 		}
 
-		if (walk?.Goal is { } goal)
+		if (walk?.Goal is GoalStandAt goal)
 			DrawWorldRectOutline(sb, (goal.Feet.X - 1) * T, (goal.Feet.Y - 2) * T, 3 * T, 3 * T, Color.Cyan * 0.7f, 1);
 		if (bot.Brain.Target is TilePos target)
 			DrawWorldRectOutline(sb, target.X * T, target.Y * T, T, T, Color.Yellow, 2);

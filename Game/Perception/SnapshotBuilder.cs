@@ -131,7 +131,7 @@ public static class SnapshotBuilder
 			Height = 2 * TileRadiusY + 1,
 		};
 		TilePos? target = bot.Brain.Target;
-		TilePos? goal = (bot.Brain.Current as WalkToSkill)?.Goal?.Feet;
+		TilePos? goal = (bot.Brain.Current as WalkToSkill)?.Goal?.Anchor;
 		var grid = TerrariaTileGrid.Instance;
 		var sb = new StringBuilder(win.Width);
 		for (int y = win.Top; y < win.Top + win.Height; y++) {

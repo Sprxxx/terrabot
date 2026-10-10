@@ -56,6 +56,13 @@ public sealed class BotContext
 	public GameIds Ids { get; set; } = GameIds.None;
 	/// <summary>Best axe power in the hotbar (0 = none).</summary>
 	public int AxePower { get; set; }
+	/// <summary>Best pickaxe power in the hotbar (0 = none) and its tileBoost (tool range bonus).</summary>
+	public int PickPower { get; set; }
+	public int PickRangeBoost { get; set; }
+	/// <summary>Recipes, raw-material sources and station items.</summary>
+	public IGameKnowledge Knowledge { get; set; }
+	/// <summary>Vanilla night (Main.dayTime == false): zombies and demon eyes on the surface.</summary>
+	public bool IsNight { get; set; }
 
 	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
 	public IBlockActions Blocks { get; set; }

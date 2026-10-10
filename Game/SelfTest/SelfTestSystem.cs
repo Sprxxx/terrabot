@@ -104,6 +104,10 @@ public sealed class SelfTestSystem : ModSystem
 				bot.StopAll("selftest setup");
 				Main.dayTime = true;
 				Main.time = 27000;
+				if (s.Night) {
+					Main.dayTime = false;
+					Main.time = 0;
+				}
 				// Every NPC goes, town NPCs included: the Guide shoots arrows at hostiles and would help the bot.
 				// (This is the throw-away copy of the world in the self-test save folder.)
 				for (int i = 0; i < Main.maxNPCs; i++)
@@ -151,7 +155,7 @@ public sealed class SelfTestSystem : ModSystem
 					bot.Brain.StartSkill(new Bot.Skills.GatherWoodSkill(Terraria.ID.ItemID.Wood, 5), bot.Context);
 				}
 				else if (s.Mode == "auto") {
-					bot.Brain.SetAuto(true, bot.Context);
+					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
 				}
 				else {
 					TilePos goal = Arena.Find(s.Rows, 'G');
@@ -234,6 +238,8 @@ public sealed class SelfTestSystem : ModSystem
 		bot.GameInfo.Bind(Main.LocalPlayer);
 		result.Wood = bot.GameInfo.Count(ItemID.Wood);
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
+		bot.Blocks.Refresh(Main.LocalPlayer);
+		result.PickPower = bot.Blocks.PickPower;
 		result.BenchPlaced = bot.GameInfo.ScanStations(bot.FeetTile()).ContainsKey(TileID.WorkBenches) || bot.Brain.Planner.KnownStations.ContainsKey(TileID.WorkBenches);
 		result.FallDamageHits = bot.FallDamageHits;
 		result.FallingBlockHits = bot.FallingBlockHits;

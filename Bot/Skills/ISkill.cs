@@ -8,7 +8,7 @@ public enum SkillStatus
 }
 
 /// <summary>
-/// A small tick-driven behaviour (WalkTo now; Mine, Fight, Craft later). Skills write controls into
+/// A small tick-driven behaviour (walk, fight, chop, mine, craft...). Skills write controls into
 /// <see cref="BotContext.Output"/> and never touch the world directly. Composite skills run children by
 /// ticking them and forwarding their status.
 /// </summary>
@@ -25,4 +25,7 @@ public interface ISkill
 
 	/// <summary>Called when the skill finishes or is interrupted. Must leave no controls pressed.</summary>
 	void Stop(BotContext ctx);
+
+	/// <summary>Why the skill failed (empty while running or after success).</summary>
+	string FailureReason => "";
 }

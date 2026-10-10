@@ -46,6 +46,8 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// <summary>How often (ticks) the bot moves better tools from the inventory onto the hotbar.</summary>
 	public const int StockHotbarInterval = 30;
 	private int stockTicks;
+	/// <summary>Scan trees and stations on the next tick instead of waiting for the 20-tick cycle.</summary>
+	private bool rescanNow;
 
 	private bool IsLocal => Player.whoAmI == Main.myPlayer && Main.netMode != NetmodeID.Server;
 
@@ -57,7 +59,8 @@ public sealed class TerraBotPlayer : ModPlayer
 			World = GameInfo,
 			Inventory = GameInfo,
 			Crafter = GameInfo,
-			Ids = TerrariaGameInfo.Ids,
+			Knowledge = GameInfo,
+			Ids = TerrariaGameInfo.CreateIds(),
 			Log = new ModLog(Mod.Logger),
 		};
 	}
@@ -66,6 +69,7 @@ public sealed class TerraBotPlayer : ModPlayer
 	{
 		Enabled = false;
 		Brain.Clear(Context);
+		Context.Ids = TerrariaGameInfo.CreateIds(); // the iron tier differs per world
 		LastOutput = MoveInput.None;
 		Mod.Logger.Info($"Entered world '{Main.worldName}' ({Main.maxTilesX}x{Main.maxTilesY}) as '{Player.name}'. Physics: {LivePhysics}");
 	}
@@ -188,6 +192,7 @@ public sealed class TerraBotPlayer : ModPlayer
 			return;
 		Enabled = on;
 		stockTicks = StockHotbarInterval; // tidy the hotbar on the first tick, before any skill reads the tools
+		rescanNow = true; // the world may have changed while the bot was off: don't plan from an old scan
 		if (!on) {
 			Brain.Interrupt(Context); // keeps the target; re-enabling plans afresh
 			LastOutput = MoveInput.None;
@@ -205,6 +210,7 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	public void StopAll(string source)
 	{
+		rescanNow = true;
 		Brain.Clear(Context);
 		LastOutput = MoveInput.None;
 		Mod.Logger.Info($"Stopped ({source})");
@@ -253,7 +259,11 @@ public sealed class TerraBotPlayer : ModPlayer
 	{
 		GameInfo.Bind(Player);
 		Context.AxePower = Blocks.AxePower;
-		if (Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
+		Context.PickPower = Blocks.PickPower;
+		Context.PickRangeBoost = Blocks.PickSlot >= 0 ? Player.inventory[Blocks.PickSlot].tileBoost : 0;
+		Context.IsNight = !Main.dayTime;
+		if (rescanNow || Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
+			rescanNow = false;
 			TilePos feet = FeetTile();
 			Context.Seen = new Surroundings { Trees = GameInfo.ScanTrees(feet), Stations = GameInfo.ScanStations(feet) };
 		}
@@ -264,7 +274,7 @@ public sealed class TerraBotPlayer : ModPlayer
 			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > PerceptionRadiusPx)
 				continue;
 			hostiles.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
-				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage));
+				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle));
 		}
 		hostiles.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
 		Context.Hostiles = hostiles;

@@ -30,6 +30,10 @@ public sealed class SimWorld
 	/// <summary>Breaks that left a falling block (sand) unsupported: in the game it would drop onto the bot.</summary>
 	public int Undermined { get; private set; }
 	public int Placed { get; private set; }
+	/// <summary>Called with each mined cell (before it is cleared), e.g. to drop the block's item.</summary>
+	public event Action<TilePos> Mined;
+	/// <summary>Item uses on cells out of vanilla tool range (Player.IsTargetTileInItemRange, tileBoost 0) that were ignored.</summary>
+	public int OutOfRange { get; private set; }
 
 	public BodyState State;
 	public int Ticks { get; private set; }
@@ -70,12 +74,17 @@ public sealed class SimWorld
 			return;
 		var cell = new TilePos(c.AimX, c.AimY);
 		CellKind k = grid.Get(cell.X, cell.Y);
+		if (!InToolRange(cell)) {
+			OutOfRange++;
+			return;
+		}
 		if (c.Tool == ToolRequest.Pickaxe) {
 			if (!k.IsSolid())
 				return;
 			hits.TryGetValue(cell, out int n);
 			hits[cell] = ++n;
 			if (n >= blocks.BreakTicks(cell.X, cell.Y)) {
+				Mined?.Invoke(cell);
 				editable.Set(cell.X, cell.Y, k & ~(CellKind.Solid | CellKind.Falling));
 				hits.Remove(cell);
 				Broken++;
@@ -97,6 +106,11 @@ public sealed class SimWorld
 		blocks.BlockCount--;
 		Placed++;
 	}
+
+	/// <summary>Vanilla Player.IsTargetTileInItemRange with tileRangeX 5, tileRangeY 4 and no tileBoost.</summary>
+	public bool InToolRange(TilePos cell) =>
+		State.X / T - 5f <= cell.X && (State.X + p.Width) / T + 5f - 1f >= cell.X
+		&& State.Y / T - 4f <= cell.Y && (State.Y + p.Height) / T + 4f - 2f >= cell.Y;
 
 	private bool SolidAt(int x, int y) => grid.Get(x, y).IsSolid();
 

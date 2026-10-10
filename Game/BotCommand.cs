@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using TerraBot.Bot.Brain;
 using Microsoft.Xna.Framework;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
@@ -34,11 +36,19 @@ public sealed class BotCommand : ModCommand
 				case "goto":
 					Goto(caller, bot, args);
 					break;
-				case "auto":
-					bot.Brain.SetAuto(true, bot.Context);
+				case "auto": {
+					string plan = args.Length > 1 ? args[1].ToLowerInvariant() : ProgressionPlanner.Plans.Iron;
+					if (!ProgressionPlanner.Plans.All.Contains(plan)) {
+						caller.Reply($"Unknown plan {plan}. Plans: {string.Join(", ", ProgressionPlanner.Plans.All)}", Color.OrangeRed);
+						break;
+					}
+					bot.Brain.SetAuto(true, bot.Context, plan);
 					bot.SetEnabled(true, "/bot auto");
-					caller.Reply("TerraBot auto mode: gather wood, work bench, wooden sword, stockpile (fights anything that comes close).", Color.LightGray);
+					caller.Reply(plan == ProgressionPlanner.Plans.Early
+						? "TerraBot auto (early): work bench, wooden sword, 30 wood. Fights anything that comes close."
+						: "TerraBot auto (iron): work bench, wooden sword, furnace, anvil, iron-tier pickaxe. Fights, hides at night.", Color.LightGray);
 					break;
+				}
 				case "fight":
 					bot.Brain.StartSkill(new Bot.Skills.FightSkill(), bot.Context);
 					bot.SetEnabled(true, "/bot fight");

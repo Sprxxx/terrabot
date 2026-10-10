@@ -18,7 +18,7 @@ namespace TerraBot.Game;
 /// the inventory, required stations in range), consumes the ingredients and puts the result on the cursor, which
 /// is then moved into the inventory like a click on an empty slot does.
 /// </summary>
-public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter
+public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 {
 	public const int MainInventorySlots = 50;
 	public const int TreeScanX = 50, TreeScanUp = 25, TreeScanDown = 15;
@@ -28,17 +28,21 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter
 	/// <summary>The bound player, or the local player before the first Bind (skills may start before the bot ticks).</summary>
 	private Player player => bound ?? Main.LocalPlayer;
 
-	public static readonly GameIds Ids = new() {
+	/// <summary>IDs for the current world: the iron tier (iron or lead) is chosen at world generation.</summary>
+	public static GameIds CreateIds() => new() {
 		Wood = ItemID.Wood,
 		WorkBenchItem = ItemID.WorkBench,
 		WorkBenchTile = TileID.WorkBenches,
 		WoodenSword = ItemID.WoodenSword,
 		WoodenHammer = ItemID.WoodenHammer,
 		Acorn = ItemID.Acorn,
+		Gel = ItemID.Gel,
+		Torch = ItemID.Torch,
+		FurnaceTile = TileID.Furnaces,
+		AnvilTile = TileID.Anvils,
+		IronTierPickaxe = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadPickaxe : ItemID.IronPickaxe,
 	};
 
-	/// <summary>Station tile types the planner may ask about.</summary>
-	private static readonly int[] StationTiles = { TileID.WorkBenches };
 
 	public void Bind(Player p) => bound = p;
 
@@ -123,29 +127,25 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter
 			Recipe.FindRecipes();
 			return CraftResult.Crafted;
 		}
-		Recipe recipe = RecipeFor(itemType);
-		if (recipe == null)
+		IReadOnlyList<RecipeInfo> all = RecipesFor(itemType);
+		if (all.Count == 0)
 			return CraftResult.NoRecipe;
-		bool haveAll = recipe.requiredItem.All(req => Count(req.type) >= req.stack);
+		// Not craftable now: if any recipe's ingredients are all carried, what is missing is a station in range.
+		bool haveAll = all.Any(r => r.Ingredients.All(i => this.CountAny(i.Accepts) >= i.Stack));
 		return haveAll ? CraftResult.NeedsStation : CraftResult.Missing;
 	}
 
+	/// <summary>All (unconditional) recipes for the item, e.g. "3 Iron Ore @ Furnaces | 4 Iron Fence by hand".</summary>
 	public string Describe(int itemType)
 	{
-		Recipe r = RecipeFor(itemType);
-		if (r == null)
+		IReadOnlyList<RecipeInfo> all = RecipesFor(itemType);
+		if (all.Count == 0)
 			return "no recipe";
-		string items = string.Join(", ", r.requiredItem.Select(i => $"{i.stack} {i.Name}"));
-		string tiles = r.requiredTile.Count == 0 ? "by hand" : "@ " + string.Join(", ", r.requiredTile.Select(t => TileID.Search.GetName(t)));
-		return $"{items} {tiles}";
-	}
-
-	private static Recipe RecipeFor(int itemType)
-	{
-		for (int i = 0; i < Recipe.numRecipes; i++)
-			if (Main.recipe[i].createItem.type == itemType && !Main.recipe[i].Disabled)
-				return Main.recipe[i];
-		return null;
+		return string.Join(" | ", all.Take(4).Select(r => {
+			string items = string.Join(", ", r.Ingredients.Select(i => $"{i.Stack} {ItemName(i.Item)}"));
+			string tiles = r.Stations.Count == 0 ? "by hand" : "@ " + string.Join(", ", r.Stations.Select(TileName));
+			return $"{items} {tiles}";
+		})) + (all.Count > 4 ? $" | ... ({all.Count} recipes)" : "");
 	}
 
 	// ---------- Surroundings ----------
@@ -181,4 +181,130 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter
 		}
 		return found;
 	}
+
+	// ---------- IWorldInfo: tile queries ----------
+
+	public int TileTypeAt(int x, int y)
+	{
+		if (!WorldGen.InWorld(x, y, 1))
+			return -1;
+		Tile t = Main.tile[x, y];
+		return t.HasTile ? t.TileType : -1;
+	}
+
+	public IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius)
+	{
+		var found = new List<TilePos>();
+		for (int x = around.X - radius; x <= around.X + radius; x++)
+			for (int y = around.Y - radius; y <= around.Y + radius; y++)
+				if (WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == tileType)
+					found.Add(new TilePos(x, y));
+		found.Sort((a, b) => a.ChebyshevTo(around).CompareTo(b.ChebyshevTo(around)));
+		return found;
+	}
+
+	// ---------- IGameKnowledge (built once from the loaded recipes and items, mods included) ----------
+
+	/// <summary>Natural tiles worth mining for their block/ore (the item that places the tile is what it drops).</summary>
+	private static readonly HashSet<int> MineableTiles = new() {
+		TileID.Stone, TileID.Dirt, TileID.ClayBlock, TileID.Mud, TileID.SnowBlock, TileID.Granite, TileID.Marble,
+		TileID.Copper, TileID.Tin, TileID.Iron, TileID.Lead, TileID.Silver, TileID.Tungsten, TileID.Gold, TileID.Platinum,
+	};
+
+	/// <summary>Ore pairs: a world generates only one ore of each tier (WorldGen.SavedOreTiers).</summary>
+	private static readonly (int a, int b, Func<int> chosen)[] OreTiers = {
+		(TileID.Copper, TileID.Tin, () => WorldGen.SavedOreTiers.Copper),
+		(TileID.Iron, TileID.Lead, () => WorldGen.SavedOreTiers.Iron),
+		(TileID.Silver, TileID.Tungsten, () => WorldGen.SavedOreTiers.Silver),
+		(TileID.Gold, TileID.Platinum, () => WorldGen.SavedOreTiers.Gold),
+	};
+
+	private static Dictionary<int, List<RecipeInfo>> recipeIndex;
+	private static Dictionary<int, List<int>> placingIndex;
+	private static HashSet<int> stationTiles;
+
+	/// <summary>Every tile type some recipe needs as a station (looked for in the surroundings).</summary>
+	private static HashSet<int> StationTiles
+	{
+		get {
+			BuildIndex();
+			return stationTiles;
+		}
+	}
+
+	private static void BuildIndex()
+	{
+		if (recipeIndex != null)
+			return;
+		recipeIndex = new Dictionary<int, List<RecipeInfo>>();
+		stationTiles = new HashSet<int>();
+		for (int i = 0; i < Recipe.numRecipes; i++) {
+			Recipe r = Main.recipe[i];
+			if (r == null || r.Disabled || r.createItem.IsAir || r.Conditions.Count > 0)
+				continue; // conditional recipes (near water, biome, ...) are left out for now
+			var ingredients = new List<Ingredient>();
+			foreach (Item req in r.requiredItem) {
+				var accepts = new List<int> { req.type };
+				foreach (int g in r.acceptedGroups)
+					if (RecipeGroup.recipeGroups.TryGetValue(g, out RecipeGroup group) && group.ContainsItem(req.type))
+						accepts.AddRange(group.ValidItems.Where(t => t != req.type).OrderBy(t => t));
+				ingredients.Add(new Ingredient(req.stack, accepts.ToArray()));
+			}
+			var info = new RecipeInfo {
+				Result = r.createItem.type,
+				ResultStack = Math.Max(1, r.createItem.stack),
+				Ingredients = ingredients,
+				Stations = r.requiredTile.ToArray(),
+			};
+			if (!recipeIndex.TryGetValue(info.Result, out List<RecipeInfo> list))
+				recipeIndex[info.Result] = list = new List<RecipeInfo>();
+			list.Add(info);
+			foreach (int t in r.requiredTile)
+				stationTiles.Add(t);
+		}
+		placingIndex = new Dictionary<int, List<int>>();
+		foreach (var (type, item) in ContentSamples.ItemsByType) {
+			if (item == null || item.createTile <= -1)
+				continue;
+			if (!placingIndex.TryGetValue(item.createTile, out List<int> list))
+				placingIndex[item.createTile] = list = new List<int>();
+			list.Add(type);
+		}
+		foreach (List<int> list in placingIndex.Values)
+			list.Sort();
+	}
+
+	public IReadOnlyList<RecipeInfo> RecipesFor(int itemType)
+	{
+		BuildIndex();
+		return recipeIndex.TryGetValue(itemType, out List<RecipeInfo> list) ? list : Array.Empty<RecipeInfo>();
+	}
+
+	public IReadOnlyList<int> ItemsPlacing(int tileType)
+	{
+		BuildIndex();
+		return placingIndex.TryGetValue(tileType, out List<int> list) ? list : Array.Empty<int>();
+	}
+
+	public int TilePlacedBy(int itemType) =>
+		ContentSamples.ItemsByType.TryGetValue(itemType, out Item it) && it.createTile > -1 ? it.createTile : -1;
+
+	public ItemSource SourceOf(int itemType)
+	{
+		if (itemType == ItemID.Wood)
+			return new ItemSource(SourceKind.Tree);
+		if (itemType == ItemID.Gel)
+			return new ItemSource(SourceKind.Hunt, NpcAiStyle: NPCAIStyleID.Slime);
+		int tile = TilePlacedBy(itemType);
+		if (tile < 0 || !(MineableTiles.Contains(tile) || TileID.Sets.Ore[tile]))
+			return ItemSource.None;
+		foreach (var (a, b, chosen) in OreTiers)
+			if ((tile == a || tile == b) && tile != chosen())
+				return ItemSource.None; // the other ore of the pair: not in this world
+		return new ItemSource(SourceKind.Mine, tile);
+	}
+
+	public string ItemName(int itemType) => Lang.GetItemNameValue(itemType);
+
+	public string TileName(int tileType) => TileID.Search.TryGetName(tileType, out string name) ? name : $"tile {tileType}";
 }

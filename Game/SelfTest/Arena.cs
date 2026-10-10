@@ -12,7 +12,7 @@ namespace TerraBot.Game.SelfTest;
 /// Only reachable when tModLoader was launched with -terrabotselftest (tools/selftest.ps1, isolated save dir).
 ///
 /// Legend (same as the unit tests): '.' air, '#' dirt (breakable), '@' Lihzahrd brick (needs pick power 210, so
-/// unbreakable for pre-hardmode tools), '%' sand, '=' wood platform, '!' lava, '~' water,
+/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, '=' wood platform, '!' lava, '~' water,
 /// 'S' start node (left body column, feet row), 'G' target tile.
 /// </summary>
 public sealed class Arena
@@ -58,6 +58,9 @@ public sealed class Arena
 					case ',': t.ResetToType(TileID.Grass); break;
 					case '@': t.ResetToType(TileID.LihzahrdBrick); break;
 					case '%': t.ResetToType(TileID.Sand); break;
+					case 's': t.ResetToType(TileID.Stone); break;
+					case 'i': t.ResetToType((ushort)WorldGen.SavedOreTiers.Iron); break;
+					case 'c': t.ResetToType((ushort)WorldGen.SavedOreTiers.Copper); break;
 					case '=': t.ResetToType(TileID.Platforms); break;
 					case '!': t.LiquidType = LiquidID.Lava; t.LiquidAmount = 255; break;
 					case '~': t.LiquidType = LiquidID.Water; t.LiquidAmount = 255; break;

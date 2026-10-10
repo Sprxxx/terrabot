@@ -21,6 +21,8 @@ public sealed class RunResult
 	public int Wood;
 	public int Swords;
 	public bool BenchPlaced;
+	/// <summary>Best hotbar pickaxe power at the end.</summary>
+	public int PickPower;
 	public List<string> Log = new();
 
 	public bool LogHas(string s) => Log.Any(l => l.Contains(s));
@@ -47,6 +49,10 @@ public sealed class Scenario
 	public int SpawnAtTick { get; init; }
 	/// <summary>"walk" (to 'G'), "fight" (FightSkill), "chop" (gather 5 wood) or "auto" (early-game brain).</summary>
 	public string Mode { get; init; } = "walk";
+	/// <summary>Planner plan for Mode "auto" (ProgressionPlanner.Plans).</summary>
+	public string AutoPlan { get; init; } = Bot.Brain.ProgressionPlanner.Plans.Early;
+	/// <summary>Start at nightfall instead of mid-morning.</summary>
+	public bool Night { get; init; }
 	public bool ExpectSuccess { get; init; } = true;
 	public int TimeoutTicks { get; init; } = 60 * 45;
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
@@ -170,6 +176,64 @@ public sealed class Scenario
 				TimeoutTicks = 60 * 60 * 4,
 				Check = r => !r.BenchPlaced ? "no work bench placed" : r.Swords < 1 ? "no wooden sword"
 					: r.EnemiesLeft > 0 ? $"{r.EnemiesLeft} slime(s) left" : !r.LogHas("to fight") && !r.LogHas("Fight start") ? "never fought" : null,
+			},
+			new() {
+				// Milestone 5 from a fresh character's kit: wood, bench, sword, gel from the slimes for torches, stone
+				// for a furnace, ore smelted into bars for an anvil and an iron-tier pickaxe (iron or lead: whatever
+				// this world has; 'i' places that ore).
+				Name = "iron_age_auto",
+				Rows = Grid(Repeat(new string('.', 100), 17),
+					"..S.........T.........T......E..T.........T.........T.........T.........T.E.......T.........T.......",
+					Repeat(new string(',', 100), 1),
+					Repeat(new string('#', 100), 1),
+					Repeat(new string('s', 100), 2),
+					Repeat(new string('s', 15) + new string('i', 31) + new string('s', 54), 3),
+					Repeat(new string('s', 100), 1),
+					new string('@', 100)),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Iron,
+				Dig = true,
+				Build = true,
+				Pickaxe = false,
+				Weapon = Terraria.ID.ItemID.CopperShortsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				Inventory = p => p.inventory[0] = new Terraria.Item(Terraria.ID.ItemID.CopperPickaxe),
+				EnemyType = Terraria.ID.NPCID.BlueSlime,
+				TimeoutTicks = 60 * 60 * 12,
+				Check = r => r.PickPower < Bot.Brain.ProgressionPlanner.IronTierPickPower ? $"pick power {r.PickPower}"
+					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
+			},
+			new() {
+				// Nightfall with nothing built yet: dig in and seal the hole, ignore the zombie that turns up, open up in
+				// the morning and get on with the early chain.
+				Name = "night_shelter",
+				Rows = Grid(Repeat(new string('.', 90), 16),
+					"..S......................E..............T.........T.........T.........T...................",
+					Repeat(new string(',', 90), 1),
+					Repeat(new string('#', 90), 6),
+					new string('@', 90)),
+				Mode = "auto",
+				Night = true,
+				Dig = true,
+				Build = true,
+				Pickaxe = false,
+				Weapon = Terraria.ID.ItemID.CopperShortsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				Inventory = p => p.inventory[0] = new Terraria.Item(Terraria.ID.ItemID.CopperPickaxe),
+				EnemyType = Terraria.ID.NPCID.Zombie,
+				SpawnAtTick = 500,
+				During = (a, t) => {
+					if (t == 1500) {
+						Terraria.Main.dayTime = true;
+						Terraria.Main.time = 0;
+					}
+				},
+				TimeoutTicks = 60 * 60 * 5,
+				Check = r => !r.LogHas("Shelter: sealed in") ? "never sealed in"
+					: !r.LogHas("Shelter: morning") ? "never opened up"
+					: r.LogHas("Danger: pausing Shelter") && r.Log.FindIndex(l => l.Contains("Danger: pausing Shelter")) > r.Log.FindIndex(l => l.Contains("Shelter: sealed in"))
+						&& r.Log.FindIndex(l => l.Contains("Danger: pausing Shelter")) < r.Log.FindIndex(l => l.Contains("Shelter: morning")) ? "left the sealed shelter to fight"
+					: !r.BenchPlaced ? "no work bench placed" : null,
 			},
 			new() {
 				Name = "walk_flat",

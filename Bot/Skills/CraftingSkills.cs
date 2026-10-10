@@ -68,17 +68,27 @@ public sealed class CraftSkill : ISkill
 }
 
 /// <summary>
-/// Place one item (e.g. a work bench) on the floor next to the bot: pick the nearest cell on the feet row that
-/// the game accepts and that does not overlap the body, aim at it and use the item until the stack shrinks.
+/// Place one item (work bench, furnace, anvil...) near the bot: find the nearest cell within
+/// <see cref="SearchX"/> columns and <see cref="SearchY"/> rows that the game accepts, walk until it is in tool
+/// range if needed (<see cref="GoalReachTile"/>), aim at it and use the item until the stack shrinks. Cells the
+/// bot could not reach, or that stayed refused once in range, are skipped. The game check also refuses cells
+/// whose footprint overlaps the player, so a spot is re-picked when the bot ends up standing on it.
 /// </summary>
 public sealed class PlaceItemSkill : ISkill
 {
-	public const int MaxTicks = 60 * 6;
-	private static readonly int[] Offsets = { 2, -1, 3, -2, 4, -3, 5, -4 };
+	public const int MaxTicks = 60 * 20;
+	public const int SearchX = 10;
+	public const int SearchY = 3;
+	/// <summary>Ticks of using the item on an in-range spot before giving up on that spot.</summary>
+	public const int MaxUseTicksPerSpot = 60;
+	public const int MaxBadSpots = 6;
 
+	private readonly System.Collections.Generic.HashSet<TilePos> bad = new();
 	private int startCount = -1;
 	private int ticks;
+	private int useTicks;
 	private TilePos? spot;
+	private WalkToSkill walk;
 
 	public int ItemType { get; }
 	public string FailureReason { get; private set; } = "";
@@ -87,9 +97,14 @@ public sealed class PlaceItemSkill : ISkill
 
 	public PlaceItemSkill(int itemType) => ItemType = itemType;
 
-	public string Describe() => $"Place item {ItemType} at {spot?.ToString() ?? "?"}";
+	public string Describe() => $"Place item {ItemType} at {spot?.ToString() ?? "?"}" + (walk != null ? " > " + walk.Describe() : "");
 	public void Start(BotContext ctx) => startCount = ctx.Inventory.Count(ItemType);
-	public void Stop(BotContext ctx) { }
+
+	public void Stop(BotContext ctx)
+	{
+		walk?.Stop(ctx);
+		walk = null;
+	}
 
 	public SkillStatus Tick(BotContext ctx)
 	{
@@ -105,27 +120,71 @@ public sealed class PlaceItemSkill : ISkill
 			return Fail(ctx, "no such item in the inventory");
 		if (++ticks > MaxTicks)
 			return Fail(ctx, $"could not place it (last spot {spot?.ToString() ?? "none"})");
-		if (!ctx.Body.Grounded)
-			return SkillStatus.Running;
+		if (bad.Count >= MaxBadSpots)
+			return Fail(ctx, $"{bad.Count} spots tried, none worked");
 
 		TilePos node = ctx.Node;
-		if (spot == null || !ctx.World.CanPlaceItem(ItemType, spot.Value.X, spot.Value.Y)) {
-			spot = null;
-			foreach (int dx in Offsets) {
-				int x = dx > 0 ? node.X + Body.WidthTiles - 1 + dx : node.X + dx;
-				if (ctx.World.CanPlaceItem(ItemType, x, node.Y)) {
-					spot = new TilePos(x, node.Y);
-					break;
+		if (spot == null) {
+			spot = FindSpot(ctx, node);
+			useTicks = 0;
+			if (spot == null)
+				return ticks > 30 ? Fail(ctx, $"no free floor within {SearchX} tiles") : SkillStatus.Running;
+		}
+		TilePos s = spot.Value;
+		var reach = new GoalReachTile(s, ctx.Physics);
+		if (walk == null && ctx.Body.Grounded && reach.InRange(node)) {
+			if (!ctx.World.CanPlaceItem(ItemType, s.X, s.Y)) {
+				// Refused from here (e.g. we stand where it would go): pick another spot.
+				bad.Add(s);
+				spot = null;
+				return SkillStatus.Running;
+			}
+			if (++useTicks > MaxUseTicksPerSpot) {
+				ctx.Log.Info($"Place: {s} accepted by the check but nothing was placed; trying elsewhere");
+				bad.Add(s);
+				spot = null;
+				return SkillStatus.Running;
+			}
+			ctx.Output.Tool = ToolRequest.Item;
+			ctx.Output.ToolItem = ItemType;
+			ctx.Output.UseItem = true;
+			ctx.Output.Aim(s.X, s.Y);
+			return SkillStatus.Running;
+		}
+		if (walk == null) {
+			walk = new WalkToSkill(reach) { Quiet = true, MaxNoPathAttempts = 1 };
+			walk.Start(ctx);
+		}
+		SkillStatus w = walk.Tick(ctx);
+		if (w != SkillStatus.Running) {
+			walk.Stop(ctx);
+			walk = null;
+			if (w == SkillStatus.Failed) {
+				bad.Add(s);
+				spot = null;
+			}
+		}
+		return SkillStatus.Running;
+	}
+
+	/// <summary>Nearest acceptable cell (same row first, then rows above/below), skipping spots that failed.</summary>
+	private TilePos? FindSpot(BotContext ctx, TilePos node)
+	{
+		TilePos? best = null;
+		int bestScore = int.MaxValue;
+		for (int dy = -SearchY; dy <= SearchY; dy++) {
+			for (int dx = -SearchX; dx <= SearchX; dx++) {
+				var c = new TilePos(node.X + dx, node.Y + dy);
+				if (bad.Contains(c) || !ctx.World.CanPlaceItem(ItemType, c.X, c.Y))
+					continue;
+				int score = Math.Abs(dx) + 3 * Math.Abs(dy);
+				if (score < bestScore) {
+					bestScore = score;
+					best = c;
 				}
 			}
-			if (spot == null)
-				return ticks > 30 ? Fail(ctx, "no free floor next to the bot") : SkillStatus.Running;
 		}
-		ctx.Output.Tool = ToolRequest.Item;
-		ctx.Output.ToolItem = ItemType;
-		ctx.Output.UseItem = true;
-		ctx.Output.Aim(spot.Value.X, spot.Value.Y);
-		return SkillStatus.Running;
+		return best;
 	}
 
 	private SkillStatus Fail(BotContext ctx, string reason)

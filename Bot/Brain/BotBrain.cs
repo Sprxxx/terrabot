@@ -8,8 +8,9 @@ namespace TerraBot.Bot.Brain;
 /// Chooses what to do and sequences skills.
 /// <list type="bullet">
 /// <item>Manual: one movement target (<see cref="SetTarget"/>) or one explicit skill (<see cref="StartSkill"/>).</item>
-/// <item>Auto (<see cref="SetAuto"/>): asks <see cref="EarlyGamePlanner"/> for the next skill whenever nothing runs,
-/// and pre-empts anything but a fight when a hostile comes close (then re-plans from the new situation).
+/// <item>Auto (<see cref="SetAuto"/>): asks <see cref="ProgressionPlanner"/> for the next skill whenever nothing runs,
+/// and pre-empts anything but a fight (or a sealed shelter) when a hostile comes close; after a fight it picks up
+/// the loot, then re-plans from the new situation.
 /// A skill that fails three times in a row stops auto mode, so a stuck goal cannot loop forever.</item>
 /// </list>
 /// </summary>
@@ -23,7 +24,9 @@ public sealed class BotBrain
 	public ISkill Current { get; private set; }
 	public string LastResult { get; private set; } = "";
 	public bool Auto { get; private set; }
-	public EarlyGamePlanner Planner { get; } = new();
+	public ProgressionPlanner Planner { get; } = new();
+	/// <summary>Pick up what a fight dropped (gel, coins...) before going back to the plan.</summary>
+	public const int LootRadiusTiles = 15;
 
 	public void SetTarget(TilePos target, BotContext ctx)
 	{
@@ -44,15 +47,15 @@ public sealed class BotBrain
 		skill.Start(ctx);
 	}
 
-	public void SetAuto(bool on, BotContext ctx)
+	public void SetAuto(bool on, BotContext ctx, string plan = null)
 	{
 		Interrupt(ctx);
 		Target = null;
 		Auto = on;
 		failures = 0;
-		Planner.Reset();
+		Planner.Reset(plan);
 		LastResult = "";
-		ctx.Log.Info($"Auto mode {(on ? "ON" : "OFF")}");
+		ctx.Log.Info($"Auto mode {(on ? "ON" : "OFF")}" + (on ? $", plan '{Planner.Plan}'" : ""));
 	}
 
 	/// <summary>Forget the target, leave auto mode and stop the running skill.</summary>
@@ -73,7 +76,7 @@ public sealed class BotBrain
 	public void Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
-		if (Auto && Current is not FightSkill && EarlyGamePlanner.InDanger(ctx)) {
+		if (Auto && Current is not FightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
 			Interrupt(ctx);
@@ -88,6 +91,11 @@ public sealed class BotBrain
 					ctx.Log.Info("Auto: " + Planner.Status);
 					LastResult = "auto: done";
 				}
+				else if (Planner.Stuck) {
+					ctx.Log.Warn("Auto: " + Planner.Status + "; stopping auto mode");
+					LastResult = "auto: " + Planner.Status;
+					Auto = false;
+				}
 				return;
 			}
 			ctx.Log.Info($"Auto: {Planner.Status} -> {next.Name}");
@@ -100,22 +108,20 @@ public sealed class BotBrain
 		if (status == SkillStatus.Running)
 			return;
 
-		string why = Current switch {
-			WalkToSkill w => w.FailureReason,
-			FightSkill f => f.FailureReason,
-			ChopTreeSkill c => c.FailureReason,
-			GatherWoodSkill g => g.FailureReason,
-			CraftSkill c => c.FailureReason,
-			PlaceItemSkill p => p.FailureReason,
-			_ => "",
-		};
+		string why = Current.FailureReason;
 		LastResult = $"{Current.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
 		ctx.Log.Info($"Skill finished: {LastResult}");
+		bool wasFight = Current is FightSkill;
 		if (Auto)
 			Planner.OnSkillFinished(Current, status, ctx);
 		Current.Stop(ctx);
 		Current = null;
 		Target = null;
+		if (Auto && wasFight && ctx.Drops.Count > 0) {
+			ctx.Log.Info("Auto: picking up loot after the fight");
+			Begin(new CollectDropsSkill(_ => true, LootRadiusTiles), ctx);
+			return;
+		}
 		if (Auto) {
 			failures = status == SkillStatus.Failed ? failures + 1 : 0;
 			if (failures >= MaxConsecutiveFailures) {

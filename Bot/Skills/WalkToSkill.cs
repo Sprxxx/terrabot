@@ -29,7 +29,7 @@ public sealed class WalkToSkill : ISkill
 	private int plans;
 
 	public TilePos Target { get; }
-	public GoalStandAt Goal { get; private set; }
+	public IGoal Goal { get; private set; }
 	public PathResult LastPlan { get; private set; }
 	public PathExecutor Executor { get; private set; }
 	public int Replans { get; private set; }
@@ -45,10 +45,22 @@ public sealed class WalkToSkill : ISkill
 	/// <summary>Accept any standing node within this many tiles (Chebyshev) of the goal feet tile.</summary>
 	public int Tolerance { get; init; }
 
+	/// <summary>"No path" results before giving up (sub-skills that have alternatives use 1).</summary>
+	public int MaxNoPathAttempts { get; init; } = MaxNoPath;
+
 	public WalkToSkill(TilePos target)
 	{
 		Target = target;
 	}
+
+	/// <summary>Walk to any node satisfying <paramref name="goal"/> (e.g. <see cref="GoalReachTile"/>).</summary>
+	public WalkToSkill(IGoal goal)
+	{
+		Target = goal.Anchor;
+		fixedGoal = goal;
+	}
+
+	private readonly IGoal fixedGoal;
 
 	private void Info(BotContext ctx, string message)
 	{
@@ -61,14 +73,17 @@ public sealed class WalkToSkill : ISkill
 	public string Describe()
 	{
 		string path = Executor == null ? "" : $" step {Executor.StepIndex + 1}/{Executor.Steps.Count}";
-		return $"WalkTo {Target} goal {Goal?.Feet} [{State}]{path} replans {Replans}";
+		return $"WalkTo {Target} goal {Goal} [{State}]{path} replans {Replans}";
 	}
 
 	public void Start(BotContext ctx)
 	{
-		Goal = GoalResolver.StandNear(ctx.Grid, Target, ctx.Physics, ctx.Moves.CanBreak);
-		if (Tolerance > 0)
-			Goal = new GoalStandAt(Goal.Feet, ctx.Physics) { Tolerance = Tolerance };
+		if (fixedGoal != null)
+			Goal = fixedGoal;
+		else {
+			GoalStandAt stand = GoalResolver.StandNear(ctx.Grid, Target, ctx.Physics, ctx.Moves.CanBreak);
+			Goal = Tolerance > 0 ? new GoalStandAt(stand.Feet, ctx.Physics) { Tolerance = Tolerance } : stand;
+		}
 		Info(ctx, $"WalkTo start: target {Target} -> {Goal}, bot at {ctx.Node}");
 		State = "planning";
 	}
@@ -118,7 +133,7 @@ public sealed class WalkToSkill : ISkill
 				return SkillStatus.Running;
 			}
 			if (!FinishSearch(ctx))
-				return NoPathCount >= MaxNoPath ? Fail(ctx, $"no path after {NoPathCount} attempts ({LastPlan})") : SkillStatus.Running;
+				return NoPathCount >= MaxNoPathAttempts ? Fail(ctx, $"no path after {NoPathCount} attempts ({LastPlan})") : SkillStatus.Running;
 		}
 
 		MoveInput input = Executor.Tick(ctx.Body);
