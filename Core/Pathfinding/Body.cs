@@ -1,0 +1,66 @@
+using System;
+using TerraBot.Core.Grid;
+using TerraBot.Core.Physics;
+
+namespace TerraBot.Core.Pathfinding;
+
+/// <summary>
+/// Maps between pathfinding nodes and the 20x42 px player hitbox.
+/// Node (x, y): body occupies columns x..x+1 and rows y-2..y; y is the FEET row (the row just above the ground).
+/// </summary>
+public static class Body
+{
+	public const int TileSize = 16;
+	public const int WidthTiles = 2;
+	public const int HeightTiles = 3;
+
+	public static bool IsClear(ITileGrid g, int x, int y)
+	{
+		for (int dy = -HeightTiles + 1; dy <= 0; dy++)
+			for (int dx = 0; dx < WidthTiles; dx++)
+				if (!g.Get(x + dx, y + dy).IsPassable())
+					return false;
+		return true;
+	}
+
+	public static bool IsClear(ITileGrid g, TilePos n) => IsClear(g, n.X, n.Y);
+
+	public static bool HasSupport(ITileGrid g, int x, int y) =>
+		g.Get(x, y + 1).CanStandOn() || g.Get(x + 1, y + 1).CanStandOn();
+
+	public static bool IsStandable(ITileGrid g, int x, int y) => IsClear(g, x, y) && HasSupport(g, x, y);
+
+	public static bool IsStandable(ITileGrid g, TilePos n) => IsStandable(g, n.X, n.Y);
+
+	/// <summary>Does any body cell touch liquid (used for cost penalties).</summary>
+	public static bool InLiquid(ITileGrid g, TilePos n)
+	{
+		for (int dy = -HeightTiles + 1; dy <= 0; dy++)
+			for (int dx = 0; dx < WidthTiles; dx++)
+				if (g.Get(n.X + dx, n.Y + dy).IsLiquid())
+					return true;
+		return false;
+	}
+
+	/// <summary>Horizontal offset that centres the hitbox on its two columns (6 px for a 20 px wide body).</summary>
+	public static float CenterOffset(PhysicsParams p) => (WidthTiles * TileSize - p.Width) * 0.5f;
+
+	/// <summary>Hitbox left edge (px) when standing centred on node column <paramref name="nodeX"/>.</summary>
+	public static float CanonicalLeft(int nodeX, PhysicsParams p) => nodeX * TileSize + CenterOffset(p);
+
+	/// <summary>Hitbox top (px) when standing on the ground below feet row <paramref name="nodeY"/>.</summary>
+	public static float StandingTop(int nodeY, PhysicsParams p) => (nodeY + 1) * TileSize - p.Height;
+
+	/// <summary>
+	/// The node a hitbox at (left, top) belongs to. X rounds to the nearest node column; the feet row rounds the
+	/// bottom edge to the nearest tile boundary so standing on a half block or slope maps to the full-block node.
+	/// </summary>
+	public static TilePos NodeOf(float left, float top, PhysicsParams p)
+	{
+		int x = (int)Math.Floor((left - CenterOffset(p) + TileSize / 2f) / TileSize);
+		int y = (int)Math.Floor((top + p.Height + TileSize / 2f - 1f) / TileSize) - 1;
+		return new TilePos(x, y);
+	}
+
+	public static TilePos NodeOf(in BodyState s, PhysicsParams p) => NodeOf(s.X, s.Y, p);
+}
