@@ -73,9 +73,10 @@ Layers (bottom-up): **Perception** (snapshot + live grid adapter) → **Pathfind
 **Skills** (tick-driven, `Running/Succeeded/Failed`) → **Brain** (stub) → **Debug** (overlay, logs, dump).
 
 ### Control model
-The bot only writes `Player.controlLeft/Right/Up/Down/Jump/UseItem` (and later `selectedItem`) inside
-`ModPlayer.SetControls()`, and only while enabled. Disabling happens in `ProcessTriggers` of the same tick, so the
-player's own input applies that very tick. No teleporting, tile edits or item spawning.
+The bot only writes `Player.controlLeft/Right/Up/Down/Jump` inside `ModPlayer.SetControls()` (later also
+`controlUseItem` and `selectedItem`), and only while enabled. Disabling happens in `ProcessTriggers` of the same
+tick, so the player's own input applies that very tick. M1 leaves the mouse to the player. No teleporting, tile
+edits or item spawning.
 
 ### Pathfinding model
 * Node `(x, y)` = body occupies columns `x..x+1`, rows `y-2..y` (`y` = feet row). Standable = body cells
@@ -93,13 +94,23 @@ player's own input applies that very tick. No teleporting, tile edits or item sp
     Templates are rebuilt when the live physics params change (boots, buffs).
 * A*: tick costs, admissible heuristic from max horizontal speed / max fall speed / jump rise speed,
   node budget; returns `Found`, `Partial` (budget hit → best node so far, execute then replan) or `NoPath`.
+  The search is resumable (`PathSearch.Step(budgetMs)`): the skill spends ≤ 4 ms per tick on it while the bot
+  stands still, so an unreachable target (40k expansions ≈ 2 s of CPU) never freezes the game.
 
 ### Execution and re-planning
 `PathExecutor` runs one step at a time: walking runs are chained without stopping; jumps first align on the
 start node (±3 px, |vx| small), then replay the template's controller; drops arrive slowly over the edge.
-Re-plan triggers: step timeout / no progress for N ticks (stuck), grounded on a node that is neither the step's
-start nor end (off-path), periodic re-validation of upcoming steps failing (path blocked), physics params changed.
-`WalkToSkill` fails after repeated `NoPath` or too many replans without progress.
+Re-plan triggers:
+* Stuck: a direction is held for 45 ticks without the body moving, or a step exceeds its tick budget.
+* Off-path: the bot settles on a node more than 1 tile from the current step's start and end.
+* Blocked: the next 8 steps are re-validated every 15 ticks, and one fails.
+* The physics params change.
+
+`WalkToSkill` fails after 3 consecutive `NoPath` results or 25 re-plans.
+
+## Status
+Milestone 1 is implemented: `dotnet build` passes with 0 warnings, and the 30 unit tests pass, including
+closed-loop executor runs in `tests/TerraBot.Tests/SimWorld.cs`. In-game testing is pending (README test script).
 
 ## Milestone 1 checklist
 1. Scaffold (csproj, build.txt, description, localization), builds with `dotnet build`, loads.
