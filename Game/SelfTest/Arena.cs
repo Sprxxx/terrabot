@@ -55,6 +55,7 @@ public sealed class Arena
 				Tile t = Main.tile[w.X, w.Y];
 				switch (rows[gy][gx]) {
 					case '#': t.ResetToType(TileID.Dirt); break;
+					case ',': t.ResetToType(TileID.Grass); break;
 					case '@': t.ResetToType(TileID.LihzahrdBrick); break;
 					case '%': t.ResetToType(TileID.Sand); break;
 					case '=': t.ResetToType(TileID.Platforms); break;
@@ -64,6 +65,11 @@ public sealed class Arena
 			}
 		}
 		WorldGen.RangeFrame(Left - 1, Top - 1, Left + Width + 1, FloorY + 5);
+		// Trees: 'T' marks the base cell; vanilla GrowTree wants grass ground with grass beside it and room above.
+		foreach (TilePos m in FindAll(rows, 'T')) {
+			TilePos w = ToWorld(m.X, m.Y, rows.Length);
+			for (int attempt = 0; attempt < 20 && !WorldGen.GrowTree(w.X, w.Y + 1); attempt++) { }
+		}
 	}
 
 	public static System.Collections.Generic.IEnumerable<TilePos> FindAll(string[] rows, char marker)
@@ -119,13 +125,15 @@ public sealed class Arena
 	}
 
 	/// <summary>Hotbar for a scenario: optional iron pickaxe (slot 1) and a dirt stack (slot 2); slots 3-10 emptied.</summary>
-	public static void SetHotbar(Player p, bool pickaxe, int blocks, int weapon = 0)
+	public static void SetHotbar(Player p, bool pickaxe, int blocks, int weapon = 0, int axe = 0)
 	{
+		// The whole main inventory is cleared so counts (wood, benches...) start from zero.
+		for (int i = 0; i < 50; i++)
+			p.inventory[i] = new Item();
 		p.inventory[0] = pickaxe ? new Item(ItemID.IronPickaxe) : new Item();
 		p.inventory[1] = blocks > 0 ? new Item(ItemID.DirtBlock, blocks) : new Item();
 		p.inventory[2] = weapon > 0 ? new Item(weapon) : new Item();
-		for (int i = 3; i < 10; i++)
-			p.inventory[i] = new Item();
+		p.inventory[3] = axe > 0 ? new Item(axe) : new Item();
 		p.selectedItem = 0;
 	}
 }

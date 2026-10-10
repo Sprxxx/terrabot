@@ -1,0 +1,73 @@
+using System.Collections.Generic;
+using TerraBot.Core.Grid;
+
+namespace TerraBot.Bot;
+
+/// <summary>Tile facts the skills need beyond the pathfinding grid (implemented by the game adapter).</summary>
+public interface IWorldInfo
+{
+	/// <summary>Is there a tree trunk tile (any tree kind) at this cell?</summary>
+	bool IsTreeTrunk(int x, int y);
+
+	/// <summary>Could the item (furniture, block) be placed with its placement tile at (x, y) right now, ignoring
+	/// the player's own hitbox (the skill keeps clear of it)?</summary>
+	bool CanPlaceItem(int itemType, int x, int y);
+}
+
+/// <summary>Read-only view of the player's items.</summary>
+public interface IInventory
+{
+	/// <summary>Total stack of this item type across the main inventory (hotbar included).</summary>
+	int Count(int itemType);
+
+	/// <summary>Is there a free main-inventory slot (or a stack this item can join)?</summary>
+	bool HasRoomFor(int itemType);
+}
+
+public enum CraftResult
+{
+	Crafted,
+	/// <summary>Not enough ingredients.</summary>
+	Missing,
+	/// <summary>Ingredients are there, but a required crafting station is not in range.</summary>
+	NeedsStation,
+	/// <summary>No recipe makes this item.</summary>
+	NoRecipe,
+	/// <summary>Cannot right now (cursor holds an item, inventory full...).</summary>
+	Busy,
+}
+
+/// <summary>Crafting the way the crafting menu does it (one recipe click per call).</summary>
+public interface ICrafter
+{
+	CraftResult TryCraft(int itemType);
+
+	/// <summary>Human-readable recipe needs for logs ("10 Wood @ Work Bench").</summary>
+	string Describe(int itemType);
+}
+
+/// <summary>
+/// Game IDs the pure layers need, filled by the game adapter from ItemID/TileID so Bot/ never references
+/// Terraria.
+/// </summary>
+public sealed class GameIds
+{
+	public int Wood { get; init; }
+	public int WorkBenchItem { get; init; }
+	public int WorkBenchTile { get; init; }
+	public int WoodenSword { get; init; }
+	public int WoodenHammer { get; init; }
+	public int Acorn { get; init; }
+
+	public static readonly GameIds None = new();
+}
+
+/// <summary>Things the bot noticed in the world this tick, beyond NPCs and drops.</summary>
+public sealed class Surroundings
+{
+	/// <summary>Base trunk tile of each tree near the player (nearest first).</summary>
+	public IReadOnlyList<TilePos> Trees { get; set; } = System.Array.Empty<TilePos>();
+
+	/// <summary>Placed crafting-station tiles near the player, by tile type (top-left tile of each).</summary>
+	public IReadOnlyDictionary<int, TilePos> Stations { get; set; } = new Dictionary<int, TilePos>();
+}

@@ -13,6 +13,8 @@ public enum ToolRequest : byte
 	Weapon,
 	/// <summary>Best axe in the hotbar.</summary>
 	Axe,
+	/// <summary>A specific item (<see cref="MoveInput.ToolItem"/>), e.g. a work bench to place.</summary>
+	Item,
 }
 
 /// <summary>
@@ -29,6 +31,8 @@ public struct MoveInput
 
 	/// <summary>Item to hold. With <see cref="ToolRequest.None"/> the bot does not touch item use at all.</summary>
 	public ToolRequest Tool;
+	/// <summary>Item type for <see cref="ToolRequest.Item"/>.</summary>
+	public int ToolItem;
 	/// <summary>Hold the use button (only honoured once <see cref="Tool"/> is the selected item).</summary>
 	public bool UseItem;
 	public bool HasAim;

@@ -18,7 +18,7 @@ public sealed class BotCommand : ModCommand
 	public override string Description => "Control TerraBot";
 	public override string Usage =>
 		"/bot goto <x> <y>   (tile coords; ~dx ~dy = relative to you)\n" +
-		"/bot stop | on | off | status | fight\n" +
+		"/bot stop | on | off | status | fight | auto\n" +
 		"/bot dig [on|off]   /bot build [on|off]   (allow mining / placing blocks)\n" +
 		"/bot dump   (JSON snapshot to client.log)\n" +
 		"/bot trace [on|off|<seconds>]   (per-tick log)";
@@ -33,6 +33,11 @@ public sealed class BotCommand : ModCommand
 			switch (args[0]) {
 				case "goto":
 					Goto(caller, bot, args);
+					break;
+				case "auto":
+					bot.Brain.SetAuto(true, bot.Context);
+					bot.SetEnabled(true, "/bot auto");
+					caller.Reply("TerraBot auto mode: gather wood, work bench, wooden sword, stockpile (fights anything that comes close).", Color.LightGray);
 					break;
 				case "fight":
 					bot.Brain.StartSkill(new Bot.Skills.FightSkill(), bot.Context);

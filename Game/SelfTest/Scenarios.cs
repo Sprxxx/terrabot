@@ -18,6 +18,9 @@ public sealed class RunResult
 	public int FallingBlocksSeen;
 	public int EnemiesLeft;
 	public int LifeLost;
+	public int Wood;
+	public int Swords;
+	public bool BenchPlaced;
 	public List<string> Log = new();
 
 	public bool LogHas(string s) => Log.Any(l => l.Contains(s));
@@ -34,9 +37,13 @@ public sealed class Scenario
 	public int Blocks { get; init; }
 	/// <summary>Item type for hotbar slot 3 (a weapon), 0 = none.</summary>
 	public int Weapon { get; init; }
+	/// <summary>Item type for hotbar slot 4 (an axe), 0 = none.</summary>
+	public int Axe { get; init; }
 	/// <summary>NPC type spawned at each 'E' marker once the scenario starts.</summary>
 	public int EnemyType { get; init; }
-	/// <summary>"walk" (to 'G') or "fight" (FightSkill).</summary>
+	/// <summary>Running tick at which the 'E' enemies spawn (0 = at the start).</summary>
+	public int SpawnAtTick { get; init; }
+	/// <summary>"walk" (to 'G'), "fight" (FightSkill), "chop" (gather 5 wood) or "auto" (early-game brain).</summary>
 	public string Mode { get; init; } = "walk";
 	public bool ExpectSuccess { get; init; } = true;
 	public int TimeoutTicks { get; init; } = 60 * 45;
@@ -102,6 +109,45 @@ public sealed class Scenario
 				Weapon = Terraria.ID.ItemID.CopperBroadsword,
 				EnemyType = Terraria.ID.NPCID.BlueSlime,
 				Check = r => r.EnemiesLeft > 0 ? $"{r.EnemiesLeft} enemy left alive" : null,
+			},
+			new() {
+				Name = "chop_trees",
+				Rows = Grid(Repeat("..............................................", 20),
+					"..S..........T...........T....................",
+					",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "chop",
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				TimeoutTicks = 60 * 90,
+				Check = r => r.Wood < 5 ? $"only {r.Wood} wood" : null,
+			},
+			new() {
+				Name = "early_game_auto",
+				Rows = Grid(Repeat("....................................................................................................", 20),
+					"..S.......T........T........T........T........T........T........T........T.........................",
+					",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+					"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "auto",
+				Pickaxe = false,
+				Weapon = Terraria.ID.ItemID.CopperShortsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				TimeoutTicks = 60 * 60 * 4,
+				Check = r => !r.BenchPlaced ? "no work bench placed" : r.Swords < 1 ? "no wooden sword" : r.Wood < 30 ? $"only {r.Wood} wood" : null,
+			},
+			new() {
+				Name = "early_game_with_slimes",
+				Rows = Grid(Repeat("....................................................................................................", 20),
+					"..S...E...T........T.E......T........T........T........T........T........T.........................",
+					",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+					"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "auto",
+				Pickaxe = false,
+				Weapon = Terraria.ID.ItemID.CopperShortsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				EnemyType = Terraria.ID.NPCID.BlueSlime,
+				SpawnAtTick = 420,
+				TimeoutTicks = 60 * 60 * 4,
+				Check = r => !r.BenchPlaced ? "no work bench placed" : r.Swords < 1 ? "no wooden sword"
+					: r.EnemiesLeft > 0 ? $"{r.EnemiesLeft} slime(s) left" : !r.LogHas("to fight") && !r.LogHas("Fight start") ? "never fought" : null,
 			},
 			new() {
 				Name = "walk_flat",

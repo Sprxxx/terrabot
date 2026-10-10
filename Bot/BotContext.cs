@@ -49,6 +49,13 @@ public sealed class BotContext
 	/// <summary>Items lying near the player this tick (nearest first).</summary>
 	public System.Collections.Generic.IReadOnlyList<DropInfo> Drops { get; set; } = Array.Empty<DropInfo>();
 	public CombatInfo Combat { get; set; } = new();
+	public Surroundings Seen { get; set; } = new();
+	public IWorldInfo World { get; set; }
+	public IInventory Inventory { get; set; }
+	public ICrafter Crafter { get; set; }
+	public GameIds Ids { get; set; } = GameIds.None;
+	/// <summary>Best axe power in the hotbar (0 = none).</summary>
+	public int AxePower { get; set; }
 
 	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
 	public IBlockActions Blocks { get; set; }

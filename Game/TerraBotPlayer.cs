@@ -30,6 +30,8 @@ public sealed class TerraBotPlayer : ModPlayer
 	public int TraceTicksLeft { get; set; }
 	/// <summary>Hotbar-derived mining/placing capabilities, refreshed every tick.</summary>
 	public TerrariaBlockActions Blocks { get; } = new();
+	/// <summary>World queries, inventory counts and crafting for the skills.</summary>
+	public TerrariaGameInfo GameInfo { get; } = new();
 
 	/// <summary>Hits taken (any cause) and fall-damage hits, for the self-test harness. Reset by the harness.</summary>
 	public int HurtCount { get; set; }
@@ -49,6 +51,10 @@ public sealed class TerraBotPlayer : ModPlayer
 		Context = new BotContext {
 			Grid = TerrariaTileGrid.Instance,
 			Blocks = Blocks,
+			World = GameInfo,
+			Inventory = GameInfo,
+			Crafter = GameInfo,
+			Ids = TerrariaGameInfo.Ids,
 			Log = new ModLog(Mod.Logger),
 		};
 	}
@@ -235,6 +241,12 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// <summary>Hostile NPCs, dropped items and combat state for the skills (nearest first).</summary>
 	private void RefreshPerception()
 	{
+		GameInfo.Bind(Player);
+		Context.AxePower = Blocks.AxePower;
+		if (Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
+			TilePos feet = FeetTile();
+			Context.Seen = new Surroundings { Trees = GameInfo.ScanTrees(feet), Stations = GameInfo.ScanStations(feet) };
+		}
 		Vector2 c = Player.Center;
 		var hostiles = new List<EntityInfo>();
 		for (int i = 0; i < Main.maxNPCs; i++) {
@@ -267,6 +279,24 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.WeaponName = Blocks.WeaponName;
 	}
 
+	/// <summary>
+	/// Hotbar slot holding this item. If it is elsewhere in the inventory, swap it into slot 10 first, like
+	/// dragging it onto the hotbar (only between swings).
+	/// </summary>
+	private int ItemSlotForUse(int itemType)
+	{
+		GameInfo.Bind(Player);
+		if (GameInfo.FindItem(itemType, out int slot) == null)
+			return -1;
+		if (slot < 10)
+			return slot;
+		if (Player.itemAnimation != 0)
+			return -1;
+		Utils.Swap(ref Player.inventory[slot], ref Player.inventory[9]);
+		Mod.Logger.Info($"Moved {Player.inventory[9].Name} from inventory slot {slot + 1} to hotbar slot 10");
+		return 9;
+	}
+
 	private void Apply(in MoveInput o)
 	{
 		Player.controlLeft = o.Left;
@@ -285,6 +315,7 @@ public sealed class TerraBotPlayer : ModPlayer
 				ToolRequest.Block => Blocks.BlockSlot,
 				ToolRequest.Weapon => Blocks.WeaponSlot,
 				ToolRequest.Axe => Blocks.AxeSlot,
+				ToolRequest.Item => ItemSlotForUse(o.ToolItem),
 				_ => -1,
 			};
 			bool use = false;
