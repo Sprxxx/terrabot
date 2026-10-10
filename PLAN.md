@@ -109,8 +109,24 @@ Re-plan triggers:
 `WalkToSkill` fails after 3 consecutive `NoPath` results or 25 re-plans.
 
 ## Status
-Milestone 1 is implemented: `dotnet build` passes with 0 warnings, and the 30 unit tests pass, including
-closed-loop executor runs in `tests/TerraBot.Tests/SimWorld.cs`. In-game testing is pending (README test script).
+Milestone 1 is implemented: `dotnet build` passes with 0 warnings, and the unit tests pass, including
+closed-loop executor runs in `tests/TerraBot.Tests/SimWorld.cs`.
+
+First in-game test (2026-10-10, two worlds, ~30 walks) confirmed the following:
+* Toggle and hand-back, walking, step-ups and step-downs, drops (up to 15 tiles, no damage), and gap and
+  ledge jumps all worked.
+* Blocked re-planning against a player-built wall worked.
+* "No path" was correct for the pillar and the walled-off areas.
+* The overlay and HUD rendered correctly.
+
+Fixed after that run:
+* Overshooting a 1-tile drop no longer triggers a re-plan; the executor resyncs to the later path step.
+* Targets inside solid ground now resolve to the surface.
+* Hits are now logged.
+
+Those fixes have not been re-tested in game yet.
+
+Open question: why vanilla StepDown sometimes doesn't snap at running speed (needs a `/bot trace` capture).
 
 ## Milestone 1 checklist
 1. Scaffold (csproj, build.txt, description, localization), builds with `dotnet build`, loads.
