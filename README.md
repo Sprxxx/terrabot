@@ -10,8 +10,11 @@ What it can do so far:
   platforms; tunnelling, digging down, bridging gaps and pillaring up with the pickaxe and blocks it carries.
 - **Fight** (`/bot fight`): melee with the best sword or shortsword it has, chasing enemies over the same
   paths, and quick-healing when low.
-- **Play the first minutes on its own** (`/bot auto`): chop trees and pick up the wood, craft and place a work
-  bench, craft a wooden sword at it, and stockpile 30 wood, breaking off to fight anything that comes close.
+- **Play on its own** (`/bot auto`): from a fresh character's copper tools to an iron (or lead) pickaxe. It chops
+  trees, kills slimes for gel, makes torches, mines stone and ore, builds a work bench, furnace and anvil,
+  smelts bars and crafts the pickaxe, and works out each step from the game's own recipes. It breaks off to
+  fight anything that comes close and digs in for the night. `/bot auto early` stops after the work bench,
+  a wooden sword and 30 wood.
 
 ## Build
 From this folder:
@@ -31,7 +34,7 @@ Reload. You can also use **Workshop → Develop Mods → TerraBot → Build + Re
 | `P` (keybind "Toggle Bot") | Bot on/off. Off returns control to you the same tick. |
 | `O` (keybind "Set Bot Target") | Sets the target to the tile under the mouse. |
 | `/bot goto <x> <y>` | Target a tile and switch the bot on. `~` means relative to you: `/bot goto ~20 ~0` is 20 tiles right. |
-| `/bot auto` | Auto mode: the early-game chain above. Switches the bot on. `/bot stop` ends it; `P` pauses it, and pressing `P` again resumes it. |
+| `/bot auto [iron|early]` | Auto mode, plan `iron` (default) or `early` (see above). Switches the bot on. `/bot stop` ends it; `P` pauses it, and pressing `P` again resumes it. |
 | `/bot fight` | Fight nearby enemies until none has been close for 1.5 s. Switches the bot on. |
 | `/bot stop` | Clear the target and leave auto mode. The bot stays on but idles. |
 | `/bot on`, `/bot off` | Same as the keybind. |
@@ -73,7 +76,7 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1
 ```
 This opens tModLoader in a separate, throw-away save folder, using copies of your `Pepi` character and the
-`Enchanting Outskirts` world; your real saves are only read. It plays 23 scenarios in an arena above the
+`Enchanting Outskirts` world; your real saves are only read. It plays 25 scenarios in an arena above the
 spawn and prints PASS/FAIL for each:
 - walking, ledge jump, gap jump, running jump over an 8-tile gap (and refusing one with no run-up room),
   dropping through platforms, a drop without fall damage, an unreachable target;
@@ -82,10 +85,27 @@ spawn and prints PASS/FAIL for each:
 - killing a green slime, two slimes on both sides, chopping trees;
 - the auto chain from an empty inventory, with slimes arriving midway, and with a hotbar full of junk and the
   axe in the backpack.
+- the iron chain from copper tools to an iron-tier pickaxe, and a night spent sealed in a hole while a zombie
+  waits outside.
 
-Then it quits. It takes about seven minutes. Keep the game window in front, because Terraria pauses while it's
+Then it quits. It takes about ten minutes. Keep the game window in front, because Terraria pauses while it's
 in the background. Run a subset with `-Scenarios "name1,name2"`. Claude can run this on its own; the manual
 scripts below are for things the self-test can't see, such as how the overlay looks or a real world's trees.
+
+## Test script: iron pickaxe (Milestone 5)
+Start a fresh character (copper tools) in a forest at daytime, with stone and ore within about 40 tiles below.
+A normal world's surface is fine.
+
+1. `/bot auto`. Expected: it chops trees for a work bench and sword as in Milestone 4. It kills slimes for gel
+   (`Hunt` in the HUD) unless one already died to it, makes torches, mines 20 stone and places a furnace.
+2. It mines 15 ore of whatever iron tier your world has (iron or lead), smelts 5 bars and places an anvil
+   next to the bench and furnace. Then it mines 30 more ore and crafts the pickaxe.
+3. The HUD ends at `auto: iron-age chain complete ...`, and `/bot status` shows `pick 40` (iron) or `pick 43`
+   (lead).
+4. At night: if it needs wood or gel, it digs a hole about five blocks deep, seals the top and waits
+   (`Shelter [Waiting]`). In the morning it opens up and carries on. Mining and crafting continue at night.
+5. Notes for me: where it got stuck, if anywhere, and the time. The log lines starting `Auto:` show every
+   decision.
 
 ## Test script: auto mode (Milestone 4)
 Start a fresh character (copper shortsword, pickaxe and axe) in a forest. Daytime is easiest.
@@ -171,7 +191,8 @@ Then just tell me "done". I can read `client.log` from the tModLoader install fo
 - Pillars can't break blocks above the head yet; it needs open sky or a separate tunnel step.
 - Combat is melee only (swords and shortswords). No ranged or magic weapons, no dodging projectiles, no
   retreating. Auto mode stops after three failures in a row, e.g. when there are no trees to be found.
-- Auto mode only knows the first chain (wood, bench, sword). No houses, ores, chests or night shelter yet.
+- Auto mode's goals end at an iron-tier pickaxe. No houses, armour, chests or bosses yet. It gathers only
+  forest wood, and recipes with conditions (near water, a biome...) are left out.
 - If your mouse cursor is over a UI element (inventory, a menu), the game blocks item use. Move the mouse away
   while the bot uses items.
 - Slopes and half blocks are treated as full blocks.

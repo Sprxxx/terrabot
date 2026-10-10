@@ -138,9 +138,9 @@ Milestone 2 (mining and placing) is implemented: 52 unit tests pass, including c
 pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-game testing is pending (README,
 "Test script: Milestone 2"). (Since verified by the self-test.)
 
-Current (2026-10-10): Milestones 1–4 are done, plus platform drop-through and melee combat. 100 unit tests
-pass and the in-game self-test passes 23/23. Next: M5, the first night (shelter, torches, ores and a better
-pickaxe).
+Current (2026-10-10): Milestones 1–5 are done, plus platform drop-through and melee combat. `/bot auto`
+takes a fresh character to an iron-tier pickaxe and digs in at night. 113 unit tests pass and the in-game
+self-test passes 25/25.
 
 ## Milestone 1 checklist
 1. Scaffold (csproj, build.txt, description, localization), builds with `dotnet build`, loads.
@@ -246,7 +246,7 @@ platform row, so it doesn't also fall through a platform it means to land on.
 * Done after 90 ticks with no hostile in range.
 
 ## Milestone 4: early-game loop (auto mode)
-`/bot auto` runs `EarlyGamePlanner` through `BotBrain`. Whenever no skill is running, the planner looks at
+`/bot auto early` runs the early plan of `ProgressionPlanner` (below) through `BotBrain`. Whenever no skill is running, the planner looks at
 the inventory and what it has seen, and returns the next skill:
 1. no bench placed or carried: `GatherWood` to 10, then `Craft` a work bench;
 2. bench carried: `PlaceItem` it beside the bot;
@@ -262,8 +262,8 @@ Skills:
   left and right, and give up after 6 tries.
 * `CraftSkill`: one recipe click every 10 ticks until the count is reached; fails with the crafter's
   reason (`Missing`, `NeedsStation`, `NoRecipe`).
-* `PlaceItemSkill`: the nearest floor cell beside the body that `TileObject.CanPlace` accepts and whose
-  footprint doesn't overlap the hitbox.
+* `PlaceItemSkill`: a cell that `TileObject.CanPlace` accepts and whose footprint doesn't overlap the hitbox
+  (rewritten in M5 to search wider and walk).
 
 Brain rules:
 * A hostile within 12 tiles (when carrying a weapon) pre-empts any skill but a fight.
@@ -275,7 +275,65 @@ Hotbar housekeeping: tools are only used from the hotbar, but crafted items land
 30 ticks, the best pickaxe/axe/weapon/block stack in slots 11–50 is swapped onto the hotbar if it beats the
 hotbar's.
 
-### Actions that stand in for UI clicks (deliberate; flag if unwanted)
+## Milestone 5: recipe-driven progression to an iron-tier pickaxe
+`/bot auto` (plan `iron`, the default) gets a fresh character (copper tools) to an iron or lead pickaxe:
+work bench, wooden sword, furnace, anvil, then the pickaxe. `/bot auto early` is the M4 chain. Both are plans
+of `ProgressionPlanner`, which replaced `EarlyGamePlanner`.
+
+### Verified mechanics (decompiled tML 2026.08)
+* Recipes (`Recipe.SetupRecipes`): Torch ×3 = 1 Gel + 1 Wood (any wood). Furnace = 20 Stone + 4 Wood + 3
+  Torch @ Work Bench. Iron Bar = 3 Iron Ore @ Furnace (Lead Bar the same with lead). Iron/Lead Anvil = 5 bars
+  @ Work Bench. Iron/Lead Pickaxe = 10 bars + 3 Wood @ Anvil. From scratch that is 45 ore.
+* tML turns vanilla's `anyWood` flag into the "Wood" recipe group (`acceptedGroups`). It also adds reverse
+  recipes such as 4 Iron Fence → 1 Iron Bar, while fences are made from bars, so the recipe graph has cycles
+  between crafted items.
+* Tool range (`Player.IsTargetTileInItemRange`): tileRangeX 5, tileRangeY 4, plus the item's `tileBoost`.
+  For the canonical standing hitbox of node (x, y) that is dx ∈ [−4−b, 5+b], dy ∈ [−5−b, 3+b]. Pickaxes need
+  no line of sight.
+* Station range (`Player.AdjTiles`): ±4 columns around the hitbox centre, rows from 3 above to 2 below the
+  floor row under the feet.
+* A world has one ore per tier: `WorldGen.SavedOreTiers.Copper/Iron/Silver/Gold` hold the tile type (e.g.
+  Iron 6 or Lead 167).
+* Night = `!Main.dayTime`.
+
+### Planner (`Bot/Brain/ProgressionPlanner.cs`)
+* Stages are needs: `StationPlaced(tile)`, `HaveItem(items, count)`, `PickaxeAtLeast(power, item)`. For the
+  first unmet stage it resolves depth-first and returns the first leaf skill. It is re-evaluated after every
+  skill, so it always works from the current inventory.
+* Raw material, from `IGameKnowledge.SourceOf`: wood → `GatherWoodSkill`, gel → `HuntSkill` (slimes, AI
+  style 1), stone or ore → `MineSkill` on the tile the item places (`createTile`), limited to natural tiles
+  and the world's ore of each tier.
+* Crafted item: the cheapest recipe by a rough gather-time estimate. Unobtainable branches cost infinity,
+  e.g. lead in an iron world, or a recipe that only loops back to the item. A small cost per crafting step
+  keeps a roundabout chain from tying with a direct one. Then it ensures every ingredient (recursively),
+  ensures stations are placed, walks next to them (`GoalNearTile`, beside and not on top), and crafts.
+* Station: if carried, place it, after walking to the work bench so stations stay together. Otherwise
+  obtain the cheapest item that places it.
+* Claims: amounts already counted for one branch are subtracted for its siblings, so torches and the
+  furnace don't both count the same 4 wood.
+* At night, surface gathering (wood, hunting) becomes a `ShelterSkill`; mining and crafting go on.
+* Unresolvable (no recipe or source, too deep): `Stuck`, and the brain stops auto mode with the reason.
+
+### New skills
+* `MineSkill(item, tile, amount)`: collect matching drops; pick the nearest tile that is safe to break (the
+  same `BlockRules` as digging moves) with depth weighted 1.5×; walk until it is in tool range
+  (`GoalReachTile`, one tile of slack, never standing on the tile itself); swing until it is gone. With
+  nothing in sight it digs down 15 rows, zig-zagging, up to 8 times. Each target gets one path attempt.
+  Four unreachable targets in a row fail the skill, saying so if digging is off.
+* `HuntSkill(item, aiStyle, amount)`: fight NPCs of that AI style when in sight (`FightSkill`), collect the
+  drop, otherwise wander ±30 tiles and wait for spawns.
+* `ShelterSkill`: dig a shaft 5 rows down, place blocks in the two cells above the head (the old floor row,
+  where the shaft walls give placement a neighbour), wait for morning, mine the seal open. While sealed,
+  hostiles do not pre-empt it.
+* `PlaceItemSkill` (rewritten): the nearest accepted cell within ±10 columns and ±3 rows. It walks into tool
+  range if needed and skips cells that turn out unreachable or refused.
+
+### Brain changes
+* After a fight in auto mode it picks up all drops within 15 tiles (gel, coins...).
+* Perception rescans trees and stations on the first tick after the bot is switched on or stopped, so it
+  never plans from a scan of a world that changed meanwhile.
+
+### Actions that stand in for UI clicks (approved by the user 2026-10-10)
 The bot otherwise acts only through controls. These four have no control to press, so they call what the
 UI click would call:
 * **Crafting**: `Main.CraftItem(recipe)`, the crafting menu's click handler. It only works for recipes that
@@ -291,7 +349,8 @@ UI click would call:
 ## Not yet (noted for later)
 Ropes/ladders, swimming (water only penalised, lava avoided), slopes/half-blocks (modelled as full blocks),
 doors, breaking above the head while pillaring, flying jump starts, ranged/magic combat, dodging,
-housing/NPCs, ore mining, chests, night shelter, bosses.
+housing/NPCs, chests, torches placed for light, armour, biome woods (only forest Wood is a gather
+source), conditional recipes (near water, biome...), bosses.
 
 ## Self-test history
 Automated in-game self-test (`tools/selftest.ps1`, `Game/SelfTest/`) added 2026-10-10. It runs scenarios in
@@ -300,3 +359,9 @@ the real game with copies of the user's player and world.
   failures: bridging over drop-and-pillar, running out of blocks, sand safety.
 * After running jumps, drop-through, combat and M4: 22/22 passed, plus `early_game_full_hotbar` (23
   scenarios). There are 100 unit tests.
+* M5: `iron_age_auto` (copper tools to an iron pickaxe in about 5,200 ticks, with no re-plans) and
+  `night_shelter`. 25/25 passed, plus 113 unit tests. Bugs the in-game runs found: the scenario had digging
+  off, which led to finding MineSkill had no fail-fast; station placement had too little room beside the bot;
+  the cost cache let the iron bar ↔ iron fence cycle through; and perception was stale right after enabling.
+* Seen once in `night_shelter`: the arena has 4 trees, so the bot left it for real trees, and a pillar step
+  failed to place three times in real terrain (x 2003) before it recovered. Worth a look.

@@ -32,8 +32,8 @@ dotnet test tests/TerraBot.Tests              # pure unit tests (pathfinder, phy
 | `Core/Physics` | no | `PhysicsParams`, `BodyState`, `MoveInput`, `PlayerPhysics` (vanilla tick replica), `Arrive` steering |
 | `Core/Pathfinding` | no | `Body` (2×3 node model), `IMoveType` + `Moves/` (Walk, StepUp, Drop, DropThrough, Jump, DigMove, BuildMove), `BlockActions` (`IBlockActions`, `BlockAction`, `BlockRules`), `JumpLibrary`/`JumpTemplate`/`JumpController` (standing and running jumps), `Goals`, `PathSearch`/`AStarPathfinder` |
 | `Core/Execution` | no | `PathExecutor`: path + live `BodyState` → `MoveInput`; reports Finished/Stuck/OffPath/Blocked; re-fits jumps on small physics changes (`TryAdopt`) |
-| `Bot/` | no | `BotContext`, `IBotLog`, `Perception.cs` (`EntityInfo`, `DropInfo`, `CombatInfo`), `World.cs` (`IWorldInfo`, `IInventory`, `ICrafter`, `GameIds`, `Surroundings`), `Skills/` (`WalkToSkill`, `FightSkill`, `ChopTreeSkill`, `CollectDropsSkill`, `GatherWoodSkill`, `CraftSkill`, `PlaceItemSkill`), `Brain/` (`BotBrain`: manual target/skill or auto mode; `EarlyGamePlanner`: next-goal chain) |
-| `Game/` | **yes** | `TerraBotPlayer` (ModPlayer: perception, controls, aim, hotbar stocking), `TerrariaTileGrid`, `TerrariaBlockActions` (hotbar pickaxe/axe/weapon/blocks, vanilla pickaxe-damage mirror, `StockHotbar`), `TerrariaGameInfo` (trees, stations, placement checks, inventory counts, crafting), `PhysicsReader`, `BotKeybinds`, `BotCommand` (/bot), `DebugOverlaySystem`, `Perception/` snapshot, `SelfTest/` (in-game scenarios) |
+| `Bot/` | no | `BotContext`, `IBotLog`, `Perception.cs` (`EntityInfo`, `DropInfo`, `CombatInfo`), `World.cs` (`IWorldInfo` incl. tile queries, `IInventory`, `ICrafter`, `GameIds`, `Surroundings`), `Knowledge.cs` (`IGameKnowledge`: recipes, raw sources, station items), `Skills/` (`WalkToSkill`, `FightSkill`, gathering: `ChopTreeSkill`/`CollectDropsSkill`/`GatherWoodSkill`, crafting: `CraftSkill`/`PlaceItemSkill`, `MineSkill`, survival: `HuntSkill`/`ShelterSkill`), `Brain/` (`BotBrain`: manual target/skill or auto mode; `ProgressionPlanner`: recipe-driven next-need resolver with plans `early` and `iron`) |
+| `Game/` | **yes** | `TerraBotPlayer` (ModPlayer: perception, controls, aim, hotbar stocking), `TerrariaTileGrid`, `TerrariaBlockActions` (hotbar pickaxe/axe/weapon/blocks, vanilla pickaxe-damage mirror, `StockHotbar`), `TerrariaGameInfo` (trees, stations, tile queries, placement checks, inventory counts, crafting, and `IGameKnowledge` built once from the loaded recipes/items, mods included), `PhysicsReader`, `BotKeybinds`, `BotCommand` (/bot), `DebugOverlaySystem`, `Perception/` snapshot, `SelfTest/` (in-game scenarios) |
 
 **Rule:** `Core/` and `Bot/` must not reference Terraria, tModLoader or XNA. The test project compiles those
 folders directly without tModLoader references, so a violation breaks `dotnet test`.
@@ -136,6 +136,13 @@ Gotchas already hit:
     `GatherWood start/done` and `GatherWood: no trees in sight, exploring towards (x,y)`; `Craft start: item N,
     needs <recipe>`, `Craft done`, `Craft item N failed: Missing|NeedsStation|NoRecipe ...`; `Placed item N at (x,y)`.
   - `Hotbar: moved <kind> <item> from inventory slot a to hotbar slot b (swapped out <item>)`.
+  - Planner (M5): `Auto: <why> -> <Skill>` with reasons like `need 15 more Iron Ore (mining to 15)`, `walking to the
+    Furnaces to craft Iron Bar`, `placing a Iron Anvil`, `night: sheltering instead of GatherWood (...)`;
+    `Auto: stuck on <stage>: <reason>; stopping auto mode` when a need cannot be resolved.
+  - `Mine start/done`, `Mine: no <item> within 40 tiles, digging down towards (x,y)`, `Mine: skipping (x,y): ...`,
+    `Mine <item> failed: 4 <item> tiles in a row unreachable (digging is off)`; `Hunt start/done`, `Hunt: ...
+    wandering towards (x,y)`; `Shelter start`, `Shelter: sealed in at (x,y), waiting for morning`, `Shelter: morning,
+    opening up`, `Shelter done`; `Place: (x,y) accepted by the check but nothing was placed; trying elsewhere`.
 - To debug a failed run, find the `Plan` line, then the `Re-plan` reasons. If needed, ask the user to repeat it
   with `/bot trace` on and `/bot dump` at the start.
 
