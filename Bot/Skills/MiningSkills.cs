@@ -186,7 +186,7 @@ public sealed class MineSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		foreach (TilePos c in ctx.World.FindTiles(TileType, node, SearchRadius)) {
-			if (bad.Contains(c) || ctx.UnreachableTiles.Contains(c) || !SafeToBreak(moves, c))
+			if (bad.Contains(c) || ctx.UnreachableTiles.Contains(c) || !SafeToBreak(ctx, moves, c))
 				continue;
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
 			if (score < bestScore) {
@@ -197,8 +197,9 @@ public sealed class MineSkill : ISkill
 		return best;
 	}
 
-	public static bool SafeToBreak(MoveContext moves, TilePos c) =>
-		moves.Blocks != null && !float.IsInfinity(BlockRules.BreakCost(moves, c, Array.Empty<TilePos>()));
+	public static bool SafeToBreak(BotContext ctx, MoveContext moves, TilePos c) =>
+		moves.Blocks != null && !BlockRules.Unsafe(moves.Grid, c, Array.Empty<TilePos>())
+		&& (!float.IsInfinity(moves.Blocks.BreakTicks(c.X, c.Y)) || ctx.World.CanMineTarget(c.X, c.Y));
 
 	private void Begin(BotContext ctx, ISkill skill, string state)
 	{

@@ -28,6 +28,9 @@ public sealed record HouseBuilt(string Label) : Need(Label);
 /// <summary>The item is worn (armour).</summary>
 public sealed record Wearing(int Item, string Label) : Need(Label);
 
+/// <summary>Max life (from life crystals) is at least <see cref="Life"/>.</summary>
+public sealed record LifeAtLeast(int Life, string Label) : Need(Label);
+
 /// <summary>
 /// Altoclef-style "what is the next thing I need?" planner, re-evaluated whenever a skill ends. Works through a
 /// list of stages (<see cref="Plans"/>); for the first unmet one it resolves the dependency tree from the
@@ -59,6 +62,8 @@ public sealed class ProgressionPlanner
 	public const int ShelterCooldownTicks = 60 * 60;
 	/// <summary>Pickaxe power of the iron tier (Iron Pickaxe 40, Lead Pickaxe 43).</summary>
 	public const int IronTierPickPower = 40;
+	/// <summary>Max life to have before a boss: 5 life crystals (also what vanilla wants before the Eye spawns on its own).</summary>
+	public const int BossLife = 200;
 
 	public static class Plans
 	{
@@ -68,7 +73,9 @@ public sealed class ProgressionPlanner
 		public const string Iron = "iron";
 		/// <summary>Iron plus a house, an iron-tier broadsword and the iron-tier armour set, worn (Milestone 6).</summary>
 		public const string Settle = "settle";
-		public static readonly string[] All = { Early, Iron, Settle };
+		/// <summary>Just max life 200 from life crystals (a building block of the boss plan; handy on its own).</summary>
+		public const string Crystals = "crystals";
+		public static readonly string[] All = { Early, Iron, Settle, Crystals };
 	}
 
 	private readonly Dictionary<int, long> notedAt = new();
@@ -95,6 +102,8 @@ public sealed class ProgressionPlanner
 
 	public static IReadOnlyList<Need> StagesFor(string plan, GameIds ids)
 	{
+		if (plan == Plans.Crystals)
+			return new Need[] { new LifeAtLeast(BossLife, "max life") };
 		var stages = new List<Need> {
 			new StationPlaced(ids.WorkBenchTile, "work bench"),
 			new HaveItem(ids.WoodenSword, 1, "wooden sword"),
@@ -175,6 +184,7 @@ public sealed class ProgressionPlanner
 		Status = Plan switch {
 			Plans.Early => "early-game chain complete: work bench placed, wooden sword, wood stockpiled",
 			Plans.Iron => "iron-age chain complete: work bench, furnace and anvil placed, iron-tier pickaxe in hand",
+			Plans.Crystals => $"max life {ctx.Combat.LifeMaxBase} from life crystals",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
 		Complete = true;
@@ -200,6 +210,9 @@ public sealed class ProgressionPlanner
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Item, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
 			HouseBuilt => ResolveHouse(claims, depth, ctx),
+			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
+				: ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 ? Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new UseItemSkill(ctx.Ids.LifeCrystal))
+				: Resolve(new HaveItem(ctx.Ids.LifeCrystal, 1, "life crystal"), claims, depth + 1, ctx),
 			Wearing wr => ctx.Inventory.IsEquipped(wr.Item) ? null
 				: ctx.Inventory.Count(wr.Item) > 0 ? Do($"putting on the {wr.Label}", new EquipSkill(wr.Item))
 				: Resolve(new HaveItem(wr.Item, 1, wr.Label), claims, depth + 1, ctx),
@@ -444,6 +457,14 @@ public sealed class ProgressionPlanner
 
 	private bool NearStation(BotContext ctx, int tileType) =>
 		KnownStations.TryGetValue(tileType, out TilePos at) && at.ChebyshevTo(ctx.Node) <= StationReach;
+
+	/// <summary>Resolve a single need against the current state (tests).</summary>
+	public ISkill ResolveForTest(Need need, BotContext ctx)
+	{
+		costMemo.Clear();
+		stuck = null;
+		return Resolve(need, new Dictionary<int, int>(), 0, ctx);
+	}
 
 	/// <summary>Hostile close enough that the brain should drop everything and fight.</summary>
 	public static bool InDanger(BotContext ctx)

@@ -25,6 +25,12 @@ public sealed class FightSkill : ISkill
 	public const float LeashRadius = 50 * 16f;
 	public const int CalmTicks = 90;
 	public const float HealBelow = 0.4f;
+	/// <summary>Shoot at targets up to this far (px); arrows lose height beyond.</summary>
+	public const float RangedRange = 40 * 16f;
+	/// <summary>Ground targets this close are fought in melee when a melee weapon is at hand.</summary>
+	public const float MeleePreferredWithin = 6 * 16f;
+	/// <summary>NPC AI styles that fly (vanilla NPCAIStyleID: 2 Demon Eye, 4 Eye of Cthulhu, 5 Flying, 14 Bat).</summary>
+	public static readonly int[] FlyingAiStyles = { 2, 4, 5, 14 };
 	private const int RetargetPathTicks = 30;
 
 	private WalkToSkill approach;
@@ -35,6 +41,7 @@ public sealed class FightSkill : ISkill
 	private string targetName = "";
 	private float targetDistance;
 	private bool healPressedLastTick;
+	private int shotAt = -1;
 	private readonly System.Collections.Generic.HashSet<int> engaged = new();
 
 	public int Kills { get; private set; }
@@ -61,8 +68,8 @@ public sealed class FightSkill : ISkill
 			State = "paused: " + ctx.BodyIssue;
 			return SkillStatus.Running;
 		}
-		if (!ctx.Combat.HasWeapon) {
-			FailureReason = "no melee weapon in the hotbar";
+		if (!ctx.Combat.HasWeapon && !ctx.Combat.HasRanged) {
+			FailureReason = "no weapon in the hotbar (melee, or a bow with arrows)";
 			ctx.Log.Warn("Fight failed: " + FailureReason);
 			return SkillStatus.Failed;
 		}
@@ -88,7 +95,13 @@ public sealed class FightSkill : ISkill
 		float dx = t.CenterX - cx, dy = t.CenterY - cy;
 		float reachX = p.Width * 0.5f + ctx.Combat.WeaponReach + t.Width * 0.5f - 4f;
 		float reachY = p.Height * 0.5f + t.Height * 0.5f + 8f;
-		bool inReach = Math.Abs(dx) <= reachX && Math.Abs(dy) <= reachY;
+		bool inReach = ctx.Combat.HasWeapon && Math.Abs(dx) <= reachX && Math.Abs(dy) <= reachY;
+
+		if (!inReach && UseRanged(ctx, t, cx, cy)) {
+			Shoot(ctx, t, cx, cy);
+			Heal(ctx);
+			return SkillStatus.Running;
+		}
 
 		if (inReach) {
 			approach = null;
@@ -118,15 +131,62 @@ public sealed class FightSkill : ISkill
 		return SkillStatus.Running;
 	}
 
+	/// <summary>
+	/// Shoot rather than close in: with a bow and arrows, at fliers (demon eyes, bosses: chasing them on foot is
+	/// hopeless) and at anything out of melee reach within <see cref="RangedRange"/>, as long as the line of fire
+	/// is clear (arrows stop at blocks). Without a melee weapon, always.
+	/// </summary>
+	private bool UseRanged(BotContext ctx, EntityInfo t, float cx, float cy)
+	{
+		CombatInfo k = ctx.Combat;
+		if (!k.HasRanged)
+			return false;
+		if (t.DistanceTo(cx, cy) > RangedRange)
+			return !k.HasWeapon;
+		bool flier = FlyingAiStyles.Contains(t.AiStyle);
+		return (flier || !k.HasWeapon || t.DistanceTo(cx, cy) > MeleePreferredWithin) && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY);
+	}
+
+	private void Shoot(BotContext ctx, EntityInfo t, float cx, float cy)
+	{
+		approach?.Stop(ctx);
+		approach = null;
+		AimSolution s = Ballistics.Lead(cx, cy, t.CenterX, t.CenterY, t.VX, t.VY, ctx.Combat.Projectile);
+		ctx.Output.Tool = ToolRequest.Ranged;
+		ctx.Output.AimMouse(s.AimX, s.AimY);
+		ctx.Output.UseItem = s.Hits;
+		if (s.Hits && shotAt != t.Id) {
+			shotAt = t.Id;
+			ctx.Log.Info($"Fight: shooting {t.Name} with {ctx.Combat.RangedName} ({ctx.Combat.AmmoCount} arrows), arrival in {s.Ticks} ticks");
+		}
+		State = s.Hits ? $"shooting (arrives in {s.Ticks}t)" : "out of range";
+	}
+
+	/// <summary>No solid cell on the straight line between the two points (sampled every 8 px).</summary>
+	public static bool ClearShot(BotContext ctx, float x0, float y0, float x1, float y1)
+	{
+		float len = MathF.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
+		int steps = Math.Max(1, (int)(len / 8f));
+		for (int i = 1; i < steps; i++) {
+			float f = (float)i / steps;
+			int tx = (int)MathF.Floor((x0 + (x1 - x0) * f) / 16f), ty = (int)MathF.Floor((y0 + (y1 - y0) * f) / 16f);
+			if (ctx.Grid.Get(tx, ty).IsSolid())
+				return false;
+		}
+		return true;
+	}
+
 	private EntityInfo? PickTarget(BotContext ctx, float cx, float cy)
 	{
+		// With a bow, anything within shooting range is a target (a demon eye circling at 30 tiles, a boss).
+		float engage = ctx.Combat.HasRanged ? Math.Max(EngageRadius, RangedRange) : EngageRadius;
 		EntityInfo? current = null, nearest = null;
 		float best = float.MaxValue;
 		foreach (EntityInfo e in ctx.Hostiles) {
 			float d = e.DistanceTo(cx, cy);
-			if (d <= EngageRadius)
+			if (d <= engage)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
-			bool candidate = d <= EngageRadius || (engaged.Contains(e.Id) && d <= LeashRadius);
+			bool candidate = d <= engage || (engaged.Contains(e.Id) && d <= LeashRadius);
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {

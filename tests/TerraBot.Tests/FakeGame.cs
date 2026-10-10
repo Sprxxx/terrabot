@@ -36,6 +36,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int IronBroadsword = 4, IronHelmet = 90, IronChainmail = 81, IronGreaves = 77;
 	public const int TileDirt = 0, TileStone = 1, TileIron = 6, TileLead = 167, TileAnvil = 16, TileFurnace = 17, TileBench = 18;
 	public const int TileTorch = 4, TileDoor = 10, TileTable = 14, TileChair = 15;
+	public const int LifeCrystal = 29, TileHeart = 12;
 	public const int SlimeAi = 1;
 
 	public static readonly GameIds Ids = new() {
@@ -43,6 +44,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Gel = Gel, Torch = Torch, FurnaceTile = TileFurnace, AnvilTile = TileAnvil, IronTierPickaxe = IronPickaxe,
 		IronTierBroadsword = IronBroadsword, IronTierHelmet = IronHelmet, IronTierChainmail = IronChainmail, IronTierGreaves = IronGreaves,
 		WoodWall = WoodWall, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
+		LifeCrystal = LifeCrystal,
 	};
 
 	public readonly ArrayTileGrid Grid;
@@ -64,6 +66,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	private int swingTimer;
 	private int facing = 1;
 	private int placedSeen;
+	private int useTicks;
+	public int LifeMax = 100;
 
 	private readonly Dictionary<int, List<RecipeInfo>> recipes = new();
 
@@ -148,6 +152,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		StoneBlock => new ItemSource(SourceKind.Mine, TileStone),
 		DirtBlock => new ItemSource(SourceKind.Mine, TileDirt),
 		IronOre => new ItemSource(SourceKind.Mine, TileIron),
+		LifeCrystal => new ItemSource(SourceKind.Mine, TileHeart),
 		_ => ItemSource.None, // lead ore: not in this world
 	};
 
@@ -227,6 +232,19 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				if (Grid.InBounds(x, y) && TileTypeAt(x, y) == tileType && !Blocks.Unbreakable.Contains(new TilePos(x, y)))
 					found.Add(new TilePos(x, y));
 		return found.OrderBy(c => c.ChebyshevTo(around)).ToList();
+	}
+
+	/// <summary>Life crystals (2×2 heart objects) are the only frame-important targets worth mining.</summary>
+	public bool CanMineTarget(int x, int y) => TileTypeAt(x, y) == TileHeart;
+
+	/// <summary>Puts a 2×2 life crystal with its top-left cell at (x, y) (cells must be open; it sits on the floor below).</summary>
+	public void AddHeart(int x, int y)
+	{
+		for (int cx = x; cx <= x + 1; cx++)
+			for (int cy = y; cy <= y + 1; cy++) {
+				Grid.Set(cx, cy, CellKind.Empty);
+				Furniture[new TilePos(cx, cy)] = TileHeart;
+			}
 	}
 
 	public bool HasWall(int x, int y) => Walls.Contains(new TilePos(x, y));
@@ -359,6 +377,23 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				}
 			}
 		}
+		// A pickaxe on a heart: 3 hits (copper pickaxe power 35, 100 to break), then the whole 2×2 goes and drops a crystal.
+		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int ft) && ft == TileHeart
+			&& Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
+			var key = new TilePos(o.AimX, o.AimY);
+			chopTicks[key] = chopTicks.GetValueOrDefault(key) + 1;
+			if (chopTicks[key] >= 45) {
+				foreach (TilePos c in Furniture.Where(kv => kv.Value == TileHeart && Math.Abs(kv.Key.X - key.X) <= 1 && Math.Abs(kv.Key.Y - key.Y) <= 1).Select(kv => kv.Key).ToList())
+					Furniture.Remove(c);
+				Drops.Add(new DropInfo(nextDropId++, LifeCrystal, "Life Crystal", 1, key.X * 16f, FallRow(key.X, key.Y) * 16f + 4, 16, 16));
+			}
+		}
+		// Using a life crystal: +20 max life up to 400.
+		if (o.Tool == ToolRequest.Item && o.ToolItem == LifeCrystal && o.UseItem && Count(LifeCrystal) > 0 && LifeMax < 400 && ++useTicks >= 30) {
+			useTicks = 0;
+			Items[LifeCrystal]--;
+			LifeMax += 20;
+		}
 		if (o.Tool == ToolRequest.Item && o.UseItem && o.HasAim && Count(o.ToolItem) > 0 && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
 			if (o.ToolItem == WoodWall) {
 				if (CanPlaceWall(WoodWall, o.AimX, o.AimY)) {
@@ -434,6 +469,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		ctx.PickPower = Count(IronPickaxe) > 0 ? 40 : 35;
 		ctx.Combat.ItemAnimation = swingTimer;
 		ctx.Combat.Facing = facing;
+		ctx.Combat.LifeMax = LifeMax;
+		ctx.Combat.LifeMaxBase = LifeMax;
+		ctx.Combat.Life = LifeMax;
 		Blocks.BlockCount = Count(StoneBlock) + Count(DirtBlock);
 		if (refreshes++ % 20 == 0)
 			seenStations = new Dictionary<int, TilePos>(Stations);

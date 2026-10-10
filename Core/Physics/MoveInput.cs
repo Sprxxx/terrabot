@@ -13,6 +13,8 @@ public enum ToolRequest : byte
 	Weapon,
 	/// <summary>Best axe in the hotbar.</summary>
 	Axe,
+	/// <summary>Best bow (or other arrow-firing weapon) in the hotbar; fires carried arrows.</summary>
+	Ranged,
 	/// <summary>A specific item (<see cref="MoveInput.ToolItem"/>), e.g. a work bench to place.</summary>
 	Item,
 }

@@ -59,6 +59,8 @@ public sealed class Scenario
 	public string AutoPlan { get; init; } = Bot.Brain.ProgressionPlanner.Plans.Early;
 	/// <summary>Start at nightfall instead of mid-morning.</summary>
 	public bool Night { get; init; }
+	/// <summary>Reset the copied character to 100 max life (no life crystals or fruit eaten).</summary>
+	public bool ResetLife { get; init; }
 	/// <summary>Main.time at the start for a day scenario (27000 = mid-morning; 0 = dawn, 15 minutes of daylight).</summary>
 	public double DayTime { get; init; } = 27000;
 	public bool ExpectSuccess { get; init; } = true;
@@ -104,6 +106,21 @@ public sealed class Scenario
 		return copy;
 	}
 
+	/// <summary>Surface over 10 stone rows with five 2×2 life-crystal pockets at different depths ('H' = pocket top-right).</summary>
+	private static string[] CrystalCave()
+	{
+		const int width = 80;
+		var stone = Enumerable.Range(0, 10).Select(_ => new string('s', width).ToCharArray()).ToArray();
+		foreach (var (x, y) in new[] { (21, 2), (36, 4), (51, 1), (63, 6), (13, 7) }) {
+			stone[y][x - 1] = '.';
+			stone[y][x] = 'H';
+			stone[y + 1][x - 1] = '.';
+			stone[y + 1][x] = '.';
+		}
+		return Grid(Repeat(new string('.', width), 14), "..S" + new string('.', width - 3), new string(',', width), new string('#', width),
+			stone.Select(r => new string(r)).ToArray(), new string('@', width));
+	}
+
 	private static string Max(RunResult r, int expected, int actual, string what) =>
 		actual > expected ? $"{what} {actual} > {expected}" : null;
 
@@ -125,6 +142,21 @@ public sealed class Scenario
 				Weapon = Terraria.ID.ItemID.CopperBroadsword,
 				EnemyType = Terraria.ID.NPCID.BlueSlime,
 				Check = r => r.EnemiesLeft > 0 ? $"{r.EnemiesLeft} enemy left alive" : null,
+			},
+			new() {
+				// Milestone 7: a bow and arrows against a flier, at night (demon eyes leave at dawn). No melee weapon.
+				Name = "shoot_demon_eye",
+				Rows = Grid(Repeat(new string('.', 60), 12), "..S........................................E................", new string('@', 60)),
+				Mode = "fight",
+				Night = true,
+				Pickaxe = false,
+				Inventory = p => {
+					p.inventory[0] = new Terraria.Item(Terraria.ID.ItemID.WoodenBow);
+					p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 200);
+				},
+				EnemyType = Terraria.ID.NPCID.DemonEye,
+				TimeoutTicks = 60 * 90,
+				Check = r => r.EnemiesLeft > 0 ? $"{r.EnemiesLeft} demon eye(s) left" : !r.LogHas("shooting") ? "never shot" : null,
 			},
 			new() {
 				Name = "chop_trees",
@@ -262,6 +294,19 @@ public sealed class Scenario
 					: r.Housing != null ? $"housing check: {r.Housing}"
 					: r.ArmourWorn < 3 ? $"{r.ArmourWorn}/3 armour pieces worn"
 					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
+			},
+			new() {
+				// Milestone 7: max life 100 -> 200 from five life crystals in stone pockets below the surface.
+				Name = "life_crystals",
+				Rows = CrystalCave(),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Crystals,
+				ResetLife = true,
+				Dig = true,
+				Build = true,
+				Blocks = 50,
+				TimeoutTicks = 60 * 60 * 6,
+				Check = r => r.LogHas("could not place a life crystal") ? "fixture: a crystal was not placed" : r.FallDamageHits > 0 ? "fall damage" : null,
 			},
 			new() {
 				// Nightfall with nothing built yet: dig in and seal the hole, ignore the zombie that turns up, open up in

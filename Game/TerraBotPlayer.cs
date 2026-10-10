@@ -255,6 +255,10 @@ public sealed class TerraBotPlayer : ModPlayer
 	}
 
 	public const float PerceptionRadiusPx = 50 * 16f;
+	// Arrow flight (Projectile.AI_001 for wooden arrows): PENDING verification against the decompile.
+	public const int ArrowGravityDelay = 15;
+	public const float ArrowGravity = 0.1f;
+	public const float ArrowMaxFallSpeed = 16f;
 
 	/// <summary>Hostile NPCs, dropped items and combat state for the skills (nearest first).</summary>
 	private void RefreshPerception()
@@ -294,11 +298,16 @@ public sealed class TerraBotPlayer : ModPlayer
 		CombatInfo k = Context.Combat;
 		k.Life = Player.statLife;
 		k.LifeMax = Player.statLifeMax2;
+		k.LifeMaxBase = Player.statLifeMax;
 		k.Facing = Player.direction;
 		k.ItemAnimation = Player.itemAnimation;
 		k.CanQuickHeal = Player.potionDelay == 0 && Player.QuickHeal_GetItemToUse() != null;
 		k.WeaponReach = Blocks.WeaponSlot >= 0 ? Blocks.WeaponReach : 0f;
 		k.WeaponName = Blocks.WeaponName;
+		k.HasRanged = Blocks.RangedSlot >= 0 && Blocks.AmmoCount > 0;
+		k.RangedName = Blocks.RangedName;
+		k.AmmoCount = Blocks.AmmoCount;
+		k.Projectile = new ProjectileModel(Blocks.ShotSpeed, ArrowGravityDelay, ArrowGravity, ArrowMaxFallSpeed);
 	}
 
 	/// <summary>
@@ -341,6 +350,7 @@ public sealed class TerraBotPlayer : ModPlayer
 				ToolRequest.Block => Blocks.BlockSlot,
 				ToolRequest.Weapon => Blocks.WeaponSlot,
 				ToolRequest.Axe => Blocks.AxeSlot,
+				ToolRequest.Ranged => Blocks.RangedSlot,
 				ToolRequest.Item => ItemSlotForUse(o.ToolItem),
 				_ => -1,
 			};

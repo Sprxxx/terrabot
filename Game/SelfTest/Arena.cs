@@ -12,7 +12,7 @@ namespace TerraBot.Game.SelfTest;
 /// Only reachable when tModLoader was launched with -terrabotselftest (tools/selftest.ps1, isolated save dir).
 ///
 /// Legend (same as the unit tests): '.' air, '#' dirt (breakable), '@' Lihzahrd brick (needs pick power 210, so
-/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, '=' wood platform, '!' lava, '~' water,
+/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, 'H' life crystal (right column of a 2×2 pocket), '=' wood platform, '!' lava, '~' water,
 /// 'S' start node (left body column, feet row), 'G' target tile.
 /// </summary>
 public sealed class Arena
@@ -74,6 +74,13 @@ public sealed class Arena
 			}
 		}
 		WorldGen.RangeFrame(Left - 1, Top - 1, Left + Width + 1, FloorY + 5);
+		// Life crystals: 'H' marks the right column of a 2×2 air pocket over solid floor (WorldGen.AddLifeCrystal scans
+		// down from it to the floor and places the heart in the two columns ending there).
+		foreach (TilePos m in FindAll(rows, 'H')) {
+			TilePos w = ToWorld(m.X, m.Y, rows.Length);
+			if (!WorldGen.AddLifeCrystal(w.X, w.Y))
+				Terraria.ModLoader.ModContent.GetInstance<TerraBotMod>().Logger.Warn($"SELFTEST could not place a life crystal at {w}");
+		}
 		// Trees: 'T' marks the base cell; vanilla GrowTree wants grass ground with grass beside it and room above.
 		foreach (TilePos m in FindAll(rows, 'T')) {
 			TilePos w = ToWorld(m.X, m.Y, rows.Length);

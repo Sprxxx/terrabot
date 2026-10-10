@@ -47,19 +47,23 @@ public static class BlockRules
 	/// </summary>
 	public static float BreakCost(MoveContext ctx, TilePos cell, IReadOnlyCollection<TilePos> sameMove)
 	{
-		ITileGrid g = ctx.Grid;
-		if (g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
-			|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava())
-			return float.PositiveInfinity;
-
-		var above = new TilePos(cell.X, cell.Y - 1);
-		if (g.Get(above.X, above.Y).IsFalling() && !Contains(sameMove, above))
+		if (Unsafe(ctx.Grid, cell, sameMove))
 			return float.PositiveInfinity;
 
 		float ticks = ctx.Blocks.BreakTicks(cell.X, cell.Y);
 		if (float.IsInfinity(ticks) || float.IsNaN(ticks))
 			return float.PositiveInfinity;
 		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks;
+	}
+
+	/// <summary>Opening this cell would flood lava in or drop an unsupported falling block (not removed by the same move).</summary>
+	public static bool Unsafe(ITileGrid g, TilePos cell, IReadOnlyCollection<TilePos> sameMove)
+	{
+		if (g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
+			|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava())
+			return true;
+		var above = new TilePos(cell.X, cell.Y - 1);
+		return g.Get(above.X, above.Y).IsFalling() && !Contains(sameMove, above);
 	}
 
 	private static bool Contains(IReadOnlyCollection<TilePos> cells, TilePos c)

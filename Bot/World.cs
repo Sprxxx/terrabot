@@ -30,6 +30,12 @@ public interface IWorldInfo
 
 	/// <summary>The game's housing query for the room containing the cell: null if a town NPC could live there, else why not.</summary>
 	string CheckHousing(int x, int y);
+
+	/// <summary>
+	/// Can a mining skill break this tile on purpose although path moves never would? For multi-tile objects worth
+	/// mining for their drop (a life crystal): the current pickaxe can break it and the game allows it.
+	/// </summary>
+	bool CanMineTarget(int x, int y);
 }
 
 /// <summary>Read-only view of the player's items.</summary>
@@ -99,6 +105,8 @@ public sealed class GameIds
 	public int Table { get; init; }
 	/// <summary>Blocks the bot builds frames from (any of them).</summary>
 	public int[] BuildingBlocks { get; init; } = System.Array.Empty<int>();
+	/// <summary>Boss preparation (Milestone 7).</summary>
+	public int LifeCrystal { get; init; }
 
 	public static readonly GameIds None = new();
 }

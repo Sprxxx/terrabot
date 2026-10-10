@@ -49,3 +49,57 @@ public sealed class EquipSkill : ISkill
 		return SkillStatus.Failed;
 	}
 }
+
+/// <summary>
+/// Use one of a consumable item (a life crystal, a boss summon): hold it and press use until the stack shrinks.
+/// Fails after <see cref="MaxTicks"/> (the game refused: max life reached, not night for a summon...).
+/// </summary>
+public sealed class UseItemSkill : ISkill
+{
+	public const int MaxTicks = 60 * 3;
+
+	private int startCount = -1;
+	private int ticks;
+
+	public int ItemType { get; }
+	public string FailureReason { get; private set; } = "";
+	public string Name => "Use";
+
+	public UseItemSkill(int itemType) => ItemType = itemType;
+
+	public string Describe() => $"Use item {ItemType}";
+	public void Start(BotContext ctx)
+	{
+		startCount = ctx.Inventory.Count(ItemType);
+		ctx.Log.Info($"Use start: {ctx.Knowledge?.ItemName(ItemType) ?? $"item {ItemType}"} (have {startCount})");
+	}
+
+	public void Stop(BotContext ctx) { }
+
+	public SkillStatus Tick(BotContext ctx)
+	{
+		ctx.Output = MoveInput.None;
+		if (ctx.BodyIssue != null)
+			return SkillStatus.Running;
+		int have = ctx.Inventory.Count(ItemType);
+		if (have < startCount) {
+			ctx.Log.Info($"Used item {ItemType} ({have} left)");
+			return SkillStatus.Succeeded;
+		}
+		if (have <= 0)
+			return Fail(ctx, "not carried");
+		if (++ticks > MaxTicks)
+			return Fail(ctx, $"not used up after {MaxTicks} ticks (the game refused it)");
+		ctx.Output.Tool = ToolRequest.Item;
+		ctx.Output.ToolItem = ItemType;
+		ctx.Output.UseItem = true;
+		return SkillStatus.Running;
+	}
+
+	private SkillStatus Fail(BotContext ctx, string reason)
+	{
+		FailureReason = reason;
+		ctx.Log.Warn($"Use item {ItemType} failed: {reason}");
+		return SkillStatus.Failed;
+	}
+}

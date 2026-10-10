@@ -50,6 +50,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Chair = ItemID.WoodenChair,
 		Table = ItemID.WoodenTable,
 		BuildingBlocks = new int[] { ItemID.StoneBlock, ItemID.DirtBlock },
+		LifeCrystal = ItemID.LifeCrystal,
 	};
 
 
@@ -298,8 +299,15 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public int TilePlacedBy(int itemType) =>
 		ContentSamples.ItemsByType.TryGetValue(itemType, out Item it) && it.createTile > -1 ? it.createTile : -1;
 
+	/// <summary>Items a tile drops although the item does not place that tile (KillTile_GetItemDrops special cases).</summary>
+	private static readonly Dictionary<int, int> DroppedByTile = new() {
+		[ItemID.LifeCrystal] = TileID.Heart,
+	};
+
 	public ItemSource SourceOf(int itemType)
 	{
+		if (DroppedByTile.TryGetValue(itemType, out int dropTile))
+			return new ItemSource(SourceKind.Mine, dropTile);
 		if (itemType == ItemID.Wood)
 			return new ItemSource(SourceKind.Tree);
 		if (itemType == ItemID.Gel)
@@ -318,6 +326,10 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public string TileName(int tileType) => TileID.Search.TryGetName(tileType, out string name) ? name : $"tile {tileType}";
 
 	// ---------- building (walls, footprints, housing) and armour ----------
+
+	/// <summary>Life crystals are frame-important (2×2) but meant to be mined; any pickaxe breaks them.</summary>
+	public bool CanMineTarget(int x, int y) =>
+		WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == TileID.Heart && WorldGen.CanKillTile(x, y);
 
 	public bool HasWall(int x, int y) => WorldGen.InWorld(x, y, 1) && Main.tile[x, y].WallType > WallID.None;
 

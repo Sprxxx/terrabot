@@ -119,6 +119,11 @@ public sealed class SelfTestSystem : ModSystem
 				arena.Build(s.Rows);
 				Arena.SetHotbar(p, s.Pickaxe, s.Blocks, s.Weapon, s.Axe);
 				s.Inventory?.Invoke(p);
+				if (s.ResetLife) {
+					p.ConsumedLifeCrystals = 0;
+					p.ConsumedLifeFruit = 0;
+					p.statLifeMax = 100;
+				}
 				Arena.StripHelpers(p);
 				TilePos start = Arena.Find(s.Rows, 'S');
 				Arena.PlacePlayer(p, arena.ToWorld(start.X, start.Y, s.Rows.Length));

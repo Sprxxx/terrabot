@@ -30,6 +30,12 @@ public sealed class TerrariaBlockActions : IBlockActions
 	public string WeaponName { get; private set; } = "";
 	/// <summary>Estimated reach in px beyond the hitbox edge (swing arc ≈ item width × scale).</summary>
 	public float WeaponReach { get; private set; }
+	/// <summary>Best arrow-firing weapon in the hotbar (by damage per tick), the arrows carried, and the launch speed
+	/// (weapon shootSpeed + the ammo vanilla would pick, Player.ChooseAmmo).</summary>
+	public int RangedSlot { get; private set; } = -1;
+	public string RangedName { get; private set; } = "";
+	public int AmmoCount { get; private set; }
+	public float ShotSpeed { get; private set; }
 	public int AxeSlot { get; private set; } = -1;
 	public int AxePower { get; private set; }
 
@@ -47,6 +53,11 @@ public sealed class TerrariaBlockActions : IBlockActions
 		WeaponReach = 0f;
 		AxeSlot = -1;
 		AxePower = 0;
+		RangedSlot = -1;
+		RangedName = "";
+		AmmoCount = 0;
+		ShotSpeed = 0f;
+		float bestRanged = 0f;
 		float bestWeapon = 0f;
 		int bestBlockScore = int.MinValue;
 		for (int i = 0; i < HotbarSlots; i++) {
@@ -70,6 +81,11 @@ public sealed class TerrariaBlockActions : IBlockActions
 					WeaponReach = it.useStyle == ItemUseStyleID.Rapier ? 24f : Math.Max(16f, it.width * it.scale);
 				}
 			}
+			if (RangedScore(it) > bestRanged) {
+				bestRanged = RangedScore(it);
+				RangedSlot = i;
+				RangedName = it.Name;
+			}
 			if (IsThrowawayBlock(it)) {
 				int score = (IsCheapBlock(it.createTile) ? 1_000_000 : 0) + it.stack;
 				if (score > bestBlockScore) {
@@ -77,6 +93,14 @@ public sealed class TerrariaBlockActions : IBlockActions
 					BlockSlot = i;
 				}
 			}
+		}
+		if (RangedSlot >= 0) {
+			Item bow = p.inventory[RangedSlot];
+			for (int i = 0; i < 58; i++)
+				if (!p.inventory[i].IsAir && p.inventory[i].ammo == AmmoID.Arrow)
+					AmmoCount += p.inventory[i].stack;
+			Item ammo = AmmoCount > 0 ? p.ChooseAmmo(bow) : null;
+			ShotSpeed = bow.shootSpeed + (ammo?.shootSpeed ?? 0f);
 		}
 		if (PickSlot >= 0) {
 			Item pick = p.inventory[PickSlot];
@@ -99,10 +123,11 @@ public sealed class TerrariaBlockActions : IBlockActions
 	private static float PickScore(Item it) => it.pick;
 	private static float AxeScore(Item it) => it.axe;
 	private static float WeaponScore(Item it) => IsMeleeWeapon(it) ? it.damage * 60f / Math.Max(1, it.useAnimation) : 0f;
+	private static float RangedScore(Item it) => IsArrowWeapon(it) ? it.damage * 60f / Math.Max(1, it.useAnimation) : 0f;
 	private static float BlockScore(Item it) => IsThrowawayBlock(it) ? (IsCheapBlock(it.createTile) ? 1_000_000 : 0) + it.stack : 0f;
 
 	private static readonly (string what, Func<Item, float> score, float margin)[] Kinds = {
-		("pickaxe", PickScore, 0f), ("axe", AxeScore, 0f), ("weapon", WeaponScore, 0f), ("blocks", BlockScore, BlockSwapMargin),
+		("pickaxe", PickScore, 0f), ("axe", AxeScore, 0f), ("weapon", WeaponScore, 0f), ("bow", RangedScore, 0f), ("blocks", BlockScore, BlockSwapMargin),
 	};
 
 	/// <summary>
@@ -145,7 +170,7 @@ public sealed class TerrariaBlockActions : IBlockActions
 		if (superseded >= 0)
 			return superseded;
 		for (int i = HotbarSlots - 1; i >= 0; i--)
-			if (i != PickSlot && i != AxeSlot && i != WeaponSlot && i != BlockSlot && i != p.selectedItem)
+			if (i != PickSlot && i != AxeSlot && i != WeaponSlot && i != RangedSlot && i != BlockSlot && i != p.selectedItem)
 				return i;
 		return -1;
 	}
@@ -166,6 +191,9 @@ public sealed class TerrariaBlockActions : IBlockActions
 		}
 		return best;
 	}
+
+	/// <summary>Bows and repeaters: fire arrows from the ammo carried.</summary>
+	public static bool IsArrowWeapon(Item it) => it.useAmmo == AmmoID.Arrow && it.damage > 0 && !it.consumable && it.ammo == AmmoID.None;
 
 	/// <summary>Swords and shortswords: true melee damage, no ammo/mana, not a tool or a thrown consumable.</summary>
 	public static bool IsMeleeWeapon(Item it) =>

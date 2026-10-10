@@ -33,6 +33,8 @@ public sealed class CombatInfo
 {
 	public int Life { get; set; } = 100;
 	public int LifeMax { get; set; } = 100;
+	/// <summary>Player.statLifeMax: max life from life crystals and fruit, without buffs or accessories.</summary>
+	public int LifeMaxBase { get; set; } = 100;
 	/// <summary>Entity.direction: -1 left, +1 right.</summary>
 	public int Facing { get; set; } = 1;
 	/// <summary>Player.itemAnimation: 0 = free to turn and start a new swing.</summary>
@@ -42,6 +44,12 @@ public sealed class CombatInfo
 	/// <summary>How far (px) in front of the body's edge the best melee weapon reaches; 0 = no weapon.</summary>
 	public float WeaponReach { get; set; }
 	public string WeaponName { get; set; } = "";
+
+	/// <summary>Best bow in the hotbar and whether arrows are carried; the shot as the game will fire it.</summary>
+	public bool HasRanged { get; set; }
+	public string RangedName { get; set; } = "";
+	public int AmmoCount { get; set; }
+	public ProjectileModel Projectile { get; set; } = new(9f, 15, 0.1f, 16f);
 
 	public bool HasWeapon => WeaponReach > 0f;
 	public float LifeFraction => LifeMax <= 0 ? 0f : (float)Life / LifeMax;
