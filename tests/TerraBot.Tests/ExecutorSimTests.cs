@@ -190,6 +190,34 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void InvisibleWall_IsDetectedAsStuck()
+	{
+		// The planner sees flat ground; the "real" world has a wall the planner does not know about.
+		string[] rows = {
+			"..............................",
+			"..............................",
+			"..............................",
+			"..............................",
+			"..S......................G....",
+			"##############################",
+		};
+		var planGrid = ArrayTileGrid.Parse(rows);
+		var realGrid = ArrayTileGrid.Parse(rows);
+		realGrid.Fill(12, 0, 12, 4, CellKind.Solid);
+
+		var ctx = new MoveContext(planGrid, PhysicsParams.Default);
+		PathResult plan = new AStarPathfinder().FindPath(ctx, planGrid.Markers['S'], new GoalStandAt(planGrid.Markers['G'], PhysicsParams.Default));
+		var exec = new PathExecutor(ctx, plan.Steps);
+		var sim = new SimWorld(realGrid, PhysicsParams.Default, planGrid.Markers['S']);
+		int t = 0;
+		for (; t < 400 && exec.Status == ExecStatus.Running; t++)
+			sim.Step(exec.Tick(sim.State));
+		output.WriteLine($"{exec.Status} after {t} ticks: {exec.Reason}");
+		Assert.Equal(ExecStatus.Stuck, exec.Status);
+		Assert.True(t < 120, $"took {t} ticks");
+	}
+
+	[Fact]
 	public void BlockedPath_IsDetected()
 	{
 		var g = ArrayTileGrid.Parse(
@@ -205,7 +233,7 @@ public class ExecutorSimTests
 		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
 		for (int t = 0; t < 10; t++)
 			sim.Step(exec.Tick(sim.State));
-		// Wall up ahead (3 high, can't step or jump... well, it could jump; block the full height instead).
+		// A full-height wall appears on the planned route: re-validation must flag the step as invalid.
 		g.Fill(15, 0, 15, 4, CellKind.Solid);
 		for (int t = 0; t < 40 && exec.Status == ExecStatus.Running; t++)
 			sim.Step(exec.Tick(sim.State));

@@ -152,7 +152,8 @@ public sealed class TerraBotPlayer : ModPlayer
 		Player.controlUp = o.Up;
 		Player.controlDown = o.Down;
 		Player.controlJump = o.Jump;
-		Player.controlUseItem = false; // M1: the bot never uses items, and the player's clicks are ignored too
+		// Milestone 1 never uses items, so the mouse stays with the player (handy for building obstacles in
+		// front of the bot to test re-planning). Once skills use items, set controlUseItem/selectedItem here too.
 		LastOutput = o;
 	}
 }

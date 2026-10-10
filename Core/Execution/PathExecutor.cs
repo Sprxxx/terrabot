@@ -32,6 +32,8 @@ public sealed class PathExecutor
 	public const int RevalidateInterval = 15;
 	/// <summary>How many upcoming steps are re-validated.</summary>
 	public const int RevalidateLookahead = 8;
+	/// <summary>Pressing a direction for this many ticks without the body moving means we are stuck.</summary>
+	public const int NoMovementTicks = 45;
 
 	private readonly MoveContext ctx;
 	private readonly List<PathStep> steps;
@@ -41,10 +43,13 @@ public sealed class PathExecutor
 	private int jumpTick;
 	private int jumpRetries;
 	private bool lastJumpPressed;
+	private int lastHorizontal;
 	private bool prevGrounded;
 	/// <summary>Grounded this tick and last tick. A ceiling bonk zeroes velocity.Y for a single tick mid-air,
 	/// so landing decisions use this instead of <see cref="BodyState.Grounded"/>.</summary>
 	private bool settled;
+	private float prevX, prevY;
+	private int pushingStillTicks;
 
 	public IReadOnlyList<PathStep> Steps => steps;
 	public int StepIndex { get; private set; }
@@ -72,6 +77,13 @@ public sealed class PathExecutor
 		totalTicks++;
 		settled = s.Grounded && prevGrounded;
 		prevGrounded = s.Grounded;
+		bool moved = totalTicks == 1 || Math.Abs(s.X - prevX) > 0.25f || Math.Abs(s.Y - prevY) > 0.25f;
+		prevX = s.X;
+		prevY = s.Y;
+		if (moved)
+			pushingStillTicks = 0;
+		else if (lastHorizontal != 0 && ++pushingStillTicks > NoMovementTicks)
+			return Finish(ExecStatus.Stuck, $"pressing {(lastHorizontal > 0 ? "right" : "left")} for {pushingStillTicks} ticks without moving at {Body.NodeOf(s, ctx.Physics)} (step {StepIndex} {Current})");
 		if (totalTicks % RevalidateInterval == 0 && !Revalidate())
 			return Finish(ExecStatus.Blocked, Reason);
 
@@ -97,9 +109,11 @@ public sealed class PathExecutor
 				continue;
 			}
 			lastJumpPressed = input.Jump;
+			lastHorizontal = input.Horizontal;
 			return input;
 		}
 		lastJumpPressed = false;
+		lastHorizontal = 0;
 		return MoveInput.None;
 	}
 
