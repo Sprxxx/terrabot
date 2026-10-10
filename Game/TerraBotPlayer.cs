@@ -27,6 +27,11 @@ public sealed class TerraBotPlayer : ModPlayer
 	public PhysicsParams LivePhysics { get; private set; } = PhysicsParams.Default;
 	public MoveInput LastOutput { get; private set; }
 	public int TraceTicksLeft { get; set; }
+	/// <summary>Hotbar-derived mining/placing capabilities, refreshed every tick.</summary>
+	public TerrariaBlockActions Blocks { get; } = new();
+
+	/// <summary>Tile the bot points at this tick; applied to Player.tileTargetX/Y in PreItemCheck.</summary>
+	private TilePos? aim;
 
 	private bool IsLocal => Player.whoAmI == Main.myPlayer && Main.netMode != NetmodeID.Server;
 
@@ -34,6 +39,7 @@ public sealed class TerraBotPlayer : ModPlayer
 	{
 		Context = new BotContext {
 			Grid = TerrariaTileGrid.Instance,
+			Blocks = Blocks,
 			Log = new ModLog(Mod.Logger),
 		};
 	}
@@ -84,7 +90,11 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	public override void SetControls()
 	{
-		if (!IsLocal || !Enabled)
+		aim = null;
+		if (!IsLocal)
+			return;
+		Blocks.Refresh(Player);
+		if (!Enabled)
 			return;
 		try {
 			RefreshContext();
@@ -96,6 +106,32 @@ public sealed class TerraBotPlayer : ModPlayer
 			Main.NewText("TerraBot crashed and was disabled. See client.log.", Color.OrangeRed);
 			SetEnabled(false, "exception");
 		}
+	}
+
+	/// <summary>
+	/// Runs inside Player.ItemCheck, after vanilla has set tileTargetX/Y from the mouse (and smart cursor).
+	/// Overriding them here is the bot's way of pointing the mouse at a tile; range, tool power and use speed
+	/// are still enforced by vanilla.
+	/// </summary>
+	public override bool PreItemCheck()
+	{
+		if (IsLocal && Enabled && aim is TilePos a) {
+			Player.tileTargetX = a.X;
+			Player.tileTargetY = a.Y;
+		}
+		return true;
+	}
+
+	public void SetDig(bool on)
+	{
+		Context.AllowBreak = on;
+		Mod.Logger.Info($"Digging {(on ? "allowed" : "disabled")}; {Blocks.Describe()}");
+	}
+
+	public void SetBuild(bool on)
+	{
+		Context.AllowPlace = on;
+		Mod.Logger.Info($"Building {(on ? "allowed" : "disabled")}; {Blocks.Describe()}");
 	}
 
 	public void SetEnabled(bool on, string source)
@@ -167,8 +203,27 @@ public sealed class TerraBotPlayer : ModPlayer
 		Player.controlUp = o.Up;
 		Player.controlDown = o.Down;
 		Player.controlJump = o.Jump;
-		// Milestone 1 never uses items, so the mouse stays with the player (handy for building obstacles in
-		// front of the bot to test re-planning). Once skills use items, set controlUseItem/selectedItem here too.
+		// Without a tool request the mouse button stays the player's (handy for building obstacles to test
+		// re-planning). With one, the bot owns item use: switch hotbar slot when no swing is in progress, then
+		// hold use. Non-autoReuse items need the button released between swings (vanilla releaseUseItem).
+		if (o.Tool != ToolRequest.None) {
+			int slot = o.Tool == ToolRequest.Pickaxe ? Blocks.PickSlot : Blocks.BlockSlot;
+			bool use = false;
+			if (slot >= 0) {
+				if (Player.selectedItem != slot) {
+					if (Player.itemAnimation == 0)
+						Player.selectedItem = slot;
+				}
+				else if (o.UseItem) {
+					Item held = Player.inventory[slot];
+					use = held.autoReuse || Player.itemAnimation > 0 || Player.releaseUseItem;
+				}
+			}
+			Player.controlUseItem = use;
+			Player.controlTorch = false; // smart-select would swap our item
+			if (o.HasAim)
+				aim = new TilePos(o.AimX, o.AimY);
+		}
 		LastOutput = o;
 	}
 }

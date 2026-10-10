@@ -26,7 +26,7 @@ public sealed class TerrariaTileGrid : ITileGrid
 			bool solid = Main.tileSolid[type];
 			bool top = Main.tileSolidTop[type];
 			if (solid && !top)
-				k = CellKind.Solid;
+				k = TileID.Sets.Falling[type] ? CellKind.Solid | CellKind.Falling : CellKind.Solid;
 			else if (top && (solid || t.TileFrameY == 0))
 				k = CellKind.Platform;
 		}

@@ -19,6 +19,7 @@ public sealed class BotCommand : ModCommand
 	public override string Usage =>
 		"/bot goto <x> <y>   (tile coords; ~dx ~dy = relative to you)\n" +
 		"/bot stop | on | off | status\n" +
+		"/bot dig [on|off]   /bot build [on|off]   (allow mining / placing blocks)\n" +
 		"/bot dump   (JSON snapshot to client.log)\n" +
 		"/bot trace [on|off|<seconds>]   (per-tick log)";
 
@@ -55,6 +56,18 @@ public sealed class BotCommand : ModCommand
 				case "trace":
 					Trace(caller, bot, args);
 					break;
+				case "dig": {
+					bool on = Toggle(args, bot.Context.AllowBreak);
+					bot.SetDig(on);
+					caller.Reply($"TerraBot digging {(on ? "ON" : "OFF")}. {bot.Blocks.Describe()}", Color.LightGray);
+					break;
+				}
+				case "build": {
+					bool on = Toggle(args, bot.Context.AllowPlace);
+					bot.SetBuild(on);
+					caller.Reply($"TerraBot building {(on ? "ON" : "OFF")}. {bot.Blocks.Describe()}", Color.LightGray);
+					break;
+				}
 				default:
 					throw new UsageException($"Unknown subcommand '{args[0]}'.\n{Usage}");
 			}
@@ -79,6 +92,13 @@ public sealed class BotCommand : ModCommand
 		bot.SetEnabled(true, "/bot goto");
 	}
 
+	/// <summary>"on"/"off" set the flag; no argument flips it.</summary>
+	private static bool Toggle(string[] args, bool current) =>
+		args.Length < 2 ? !current
+		: args[1] == "on" ? true
+		: args[1] == "off" ? false
+		: throw new UsageException("Expected on or off.");
+
 	private static int ParseCoord(string s, int relativeTo)
 	{
 		if (s.StartsWith('~'))
@@ -89,7 +109,8 @@ public sealed class BotCommand : ModCommand
 	private void Status(CommandCaller caller, TerraBotPlayer bot)
 	{
 		string plan = bot.Brain.Current is WalkToSkill w && w.LastPlan != null ? " | plan " + w.LastPlan : "";
-		string line = $"TerraBot {(bot.Enabled ? "ON" : "OFF")} | {bot.Brain.Describe()}{plan} | you: {bot.DescribePosition()}";
+		string line = $"TerraBot {(bot.Enabled ? "ON" : "OFF")} | {bot.Brain.Describe()}{plan} | you: {bot.DescribePosition()}"
+			+ $" | dig {(bot.Context.AllowBreak ? "on" : "off")}, build {(bot.Context.AllowPlace ? "on" : "off")} | {bot.Blocks.Describe()}";
 		Mod.Logger.Info("STATUS " + line);
 		caller.Reply(line, Color.LightGray);
 	}

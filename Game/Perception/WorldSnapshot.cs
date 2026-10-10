@@ -52,11 +52,14 @@ public sealed class BotInfo
 	public int StepIndex { get; set; }
 	public string Phase { get; set; }
 	public string LastInput { get; set; }
+	public string Tools { get; set; }
+	public bool AllowDig { get; set; }
+	public bool AllowBuild { get; set; }
 	public List<string> Path { get; set; } = new();
 }
 
 /// <summary>
-/// ASCII tile window around the player, top row first. Legend: '#' solid, '=' platform, '.' air, '~' water,
+/// ASCII tile window around the player, top row first. Legend: '#' solid, '%' falling block (sand...), '=' platform, '.' air, '~' water,
 /// '!' lava, 'h' honey, 'P' player body (node cells), 'T' target tile, 'g' goal feet tile.
 /// </summary>
 public sealed class TileWindow

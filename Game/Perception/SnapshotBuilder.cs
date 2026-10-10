@@ -107,6 +107,9 @@ public static class SnapshotBuilder
 			State = bot.Brain.Describe(),
 			LastResult = bot.Brain.LastResult,
 			LastInput = bot.LastOutput.ToString(),
+			Tools = bot.Blocks.Describe(),
+			AllowDig = bot.Context.AllowBreak,
+			AllowBuild = bot.Context.AllowPlace,
 		};
 		if (bot.Brain.Current is WalkToSkill w) {
 			info.LastPlan = w.LastPlan?.ToString();

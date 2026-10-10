@@ -26,6 +26,9 @@ public sealed class DebugOverlaySystem : ModSystem
 	private static readonly Color StepColor = new(80, 255, 120);
 	private static readonly Color DropColor = new(80, 170, 255);
 	private static readonly Color JumpColor = new(255, 170, 40);
+	private static readonly Color PillarColor = new(200, 120, 255);
+	private static readonly Color BreakColor = new(255, 70, 70);
+	private static readonly Color PlaceColor = new(90, 255, 140);
 
 	public override void ModifyInterfaceLayers(List<GameInterfaceLayer> layers)
 	{
@@ -74,6 +77,16 @@ public sealed class DebugOverlaySystem : ModSystem
 				Utils.DrawLine(sb, NodeCenter(s.From), NodeCenter(s.To), c, c, i == exec.StepIndex ? 3f : 2f);
 				FillWorldRect(sb, (int)NodeCenter(s.To).X - 2, (s.To.Y + 1) * T - 4, 4, 4, c);
 			}
+			// Cells to mine (red) / build (green); the current step's are drawn bold.
+			for (int i = exec.StepIndex; i < steps.Count; i++) {
+				if (!steps[i].HasActions)
+					continue;
+				int thickness = i == exec.StepIndex ? 2 : 1;
+				foreach (BlockAction a in steps[i].Actions) {
+					Color ac = a.Kind == ActionKind.Break ? BreakColor : PlaceColor;
+					DrawWorldRectOutline(sb, a.Cell.X * T, a.Cell.Y * T, T, T, ac * (i == exec.StepIndex ? 1f : 0.6f), thickness);
+				}
+			}
 			if (exec.Current is PathStep cur) {
 				DrawNodeBox(sb, cur.To, KindColor(cur.Kind));
 				if (cur.Template != null) {
@@ -115,6 +128,7 @@ public sealed class DebugOverlaySystem : ModSystem
 			if (w.LastPlan != null)
 				Line(sb, $"plan: {w.LastPlan}", x, ref y, Color.LightGray);
 		}
+		Line(sb, $"dig {(bot.Context.AllowBreak ? "on" : "off")}  build {(bot.Context.AllowPlace ? "on" : "off")}  |  {bot.Blocks.Describe()}", x, ref y, Color.LightGray);
 		TilePos node = Body.NodeOf(bot.Player.position.X, bot.Player.position.Y, bot.LivePhysics);
 		Line(sb, $"tile {bot.FeetTile()} node {node} vel ({bot.Player.velocity.X:0.00},{bot.Player.velocity.Y:0.00}) input {bot.LastOutput}"
 			+ (bot.TraceTicksLeft > 0 ? $"  TRACE {bot.TraceTicksLeft / 60}s" : ""), x, ref y, Color.LightGray);
@@ -130,6 +144,7 @@ public sealed class DebugOverlaySystem : ModSystem
 		MoveKind.StepUp => StepColor,
 		MoveKind.Drop => DropColor,
 		MoveKind.Jump => JumpColor,
+		MoveKind.Pillar => PillarColor,
 		_ => WalkColor,
 	};
 
