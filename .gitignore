@@ -6,3 +6,4 @@ obj/
 tests/**/bin/
 tests/**/obj/
 TestResults/
+.selftest/

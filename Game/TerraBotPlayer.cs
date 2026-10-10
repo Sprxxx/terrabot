@@ -30,6 +30,11 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// <summary>Hotbar-derived mining/placing capabilities, refreshed every tick.</summary>
 	public TerrariaBlockActions Blocks { get; } = new();
 
+	/// <summary>Hits taken (any cause) and fall-damage hits, for the self-test harness. Reset by the harness.</summary>
+	public int HurtCount { get; set; }
+	public int FallDamageHits { get; set; }
+	public int FallingBlockHits { get; set; }
+
 	/// <summary>Tile the bot points at this tick; applied to Player.tileTargetX/Y in PreItemCheck.</summary>
 	private TilePos? aim;
 
@@ -85,6 +90,11 @@ public sealed class TerraBotPlayer : ModPlayer
 			: src.SourceProjectileType > 0 ? $"projectile type {src.SourceProjectileType}"
 			: src.SourceOtherIndex == 0 ? "fall damage"
 			: $"other {src.SourceOtherIndex}";
+		HurtCount++;
+		if (src.SourceOtherIndex == 0 && src.SourceNPCIndex < 0 && src.SourceProjectileType <= 0)
+			FallDamageHits++;
+		if (SelfTest.SelfTestSystem.IsFallingBlockProjectile(src.SourceProjectileType))
+			FallingBlockHits++;
 		Mod.Logger.Info($"Hurt {info.Damage} ({cause}), knockback {info.Knockback:0.#} dir {info.HitDirection} at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
 	}
 

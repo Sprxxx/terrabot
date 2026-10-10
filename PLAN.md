@@ -207,3 +207,8 @@ pillar and bridge runs in the simulator, and `dotnet build` has 0 warnings. In-g
 Running-jump templates (currently standing jumps only), dropping through platforms, ropes/ladders, liquids
 physics (water is only penalised, lava avoided), slopes/half-blocks modelled as full blocks, doors,
 break/place moves, async/time-sliced A*, combat, crafting, real brain.
+
+Automated in-game self-test (`tools/selftest.ps1`, `Game/SelfTest/`) added 2026-10-10. It runs 14 scenarios in
+the real game with copies of the user's player and world. First full run: 14/14 passed, deterministic across
+runs. Milestone 2 is now verified in game, including the earlier failures: bridging over drop-and-pillar, running
+out of blocks, sand safety.

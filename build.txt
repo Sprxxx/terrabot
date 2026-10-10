@@ -5,4 +5,4 @@ hideCode = false
 hideResources = false
 includeSource = true
 side = Client
-buildIgnore = *.csproj, *.user, *.md, obj\*, bin\*, .vs\*, tests\*
+buildIgnore = *.csproj, *.user, *.md, obj\*, bin\*, .vs\*, tests\*, tools\*

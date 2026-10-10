@@ -61,6 +61,21 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
     Pillar steps are purple.
 - **HUD** (bot on) also shows `dig on/off build on/off | pick <power> (slot n, <ticks>/hit) | <count> <block> (slot n)`.
 
+## Automated in-game self-test
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1
+```
+This opens tModLoader in a separate, throw-away save folder, using copies of your `Pepi` character and the
+`Enchanting Outskirts` world; your real saves are only read. It plays 14 scenarios in an arena above the
+spawn and prints PASS/FAIL for each:
+- walking, ledge jump, gap jump, a drop without fall damage, an unreachable target;
+- tunnel, dig down, pillar, bridging a wide pit;
+- sand in the path, a sand roof, a lava neighbour, running out of blocks, a wall appearing mid-walk.
+
+Then it quits. It takes about two minutes. Keep the game window in front, because Terraria pauses while it's
+in the background. Claude can run this on its own; the manual scripts below are for things the self-test
+can't see, such as how the overlay looks.
+
 ## Test script: Milestone 2 (mining and placing)
 Give the character a pickaxe and a stack of dirt or stone blocks (99+) in the hotbar. Say what pickaxe it was.
 
