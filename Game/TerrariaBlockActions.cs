@@ -92,6 +92,81 @@ public sealed class TerrariaBlockActions : IBlockActions
 			BlockCount = 0;
 	}
 
+	public const int MainInventorySlots = 50;
+	/// <summary>A block stack outside the hotbar must beat the hotbar's by this much to be worth swapping in.</summary>
+	public const int BlockSwapMargin = 50;
+
+	private static float PickScore(Item it) => it.pick;
+	private static float AxeScore(Item it) => it.axe;
+	private static float WeaponScore(Item it) => IsMeleeWeapon(it) ? it.damage * 60f / Math.Max(1, it.useAnimation) : 0f;
+	private static float BlockScore(Item it) => IsThrowawayBlock(it) ? (IsCheapBlock(it.createTile) ? 1_000_000 : 0) + it.stack : 0f;
+
+	private static readonly (string what, Func<Item, float> score, float margin)[] Kinds = {
+		("pickaxe", PickScore, 0f), ("axe", AxeScore, 0f), ("weapon", WeaponScore, 0f), ("blocks", BlockScore, BlockSwapMargin),
+	};
+
+	/// <summary>
+	/// Hotbar housekeeping, like a player dragging a better tool onto the hotbar: if the best pickaxe, axe, melee
+	/// weapon or block stack in the main inventory (slots 11-50) beats the hotbar's best of that kind, swap it
+	/// into the hotbar. One swap per call; only between swings and with an empty cursor. Returns a log line or null.
+	/// </summary>
+	public string StockHotbar(Player p)
+	{
+		if (p.itemAnimation != 0 || !Main.mouseItem.IsAir)
+			return null;
+		foreach (var (what, score, margin) in Kinds) {
+			int hotbarBest = BestSlot(p, score, 0, HotbarSlots);
+			int invBest = BestSlot(p, score, HotbarSlots, MainInventorySlots);
+			if (invBest < 0)
+				continue;
+			float have = hotbarBest >= 0 ? score(p.inventory[hotbarBest]) : 0f;
+			if (score(p.inventory[invBest]) <= have + margin)
+				continue;
+			int to = HotbarSlotFor(p, superseded: hotbarBest);
+			if (to < 0)
+				return null;
+			string moved = p.inventory[invBest].Name, swappedOut = p.inventory[to].IsAir ? "" : $" (swapped out {p.inventory[to].Name})";
+			Utils.Swap(ref p.inventory[invBest], ref p.inventory[to]);
+			Refresh(p);
+			return $"Hotbar: moved {what} {moved} from inventory slot {invBest + 1} to hotbar slot {to + 1}{swappedOut}";
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Hotbar slot to put an item from the inventory into: an empty one, else the item it supersedes, else the
+	/// right-most slot that holds none of the tools the bot uses (best pickaxe, axe, weapon, block stack).
+	/// </summary>
+	public int HotbarSlotFor(Player p, int superseded = -1)
+	{
+		for (int i = 0; i < HotbarSlots; i++)
+			if (p.inventory[i].IsAir)
+				return i;
+		if (superseded >= 0)
+			return superseded;
+		for (int i = HotbarSlots - 1; i >= 0; i--)
+			if (i != PickSlot && i != AxeSlot && i != WeaponSlot && i != BlockSlot && i != p.selectedItem)
+				return i;
+		return -1;
+	}
+
+	private static int BestSlot(Player p, Func<Item, float> score, int from, int to)
+	{
+		int best = -1;
+		float bestScore = 0f;
+		for (int i = from; i < to; i++) {
+			Item it = p.inventory[i];
+			if (it == null || it.IsAir)
+				continue;
+			float s = score(it);
+			if (s > bestScore) {
+				bestScore = s;
+				best = i;
+			}
+		}
+		return best;
+	}
+
 	/// <summary>Swords and shortswords: true melee damage, no ammo/mana, not a tool or a thrown consumable.</summary>
 	public static bool IsMeleeWeapon(Item it) =>
 		it.damage > 0 && it.pick == 0 && it.axe == 0 && it.hammer == 0 && !it.consumable && it.ammo == 0

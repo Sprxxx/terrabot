@@ -113,6 +113,7 @@ public sealed class SelfTestSystem : ModSystem
 					Main.item[i].active = false;
 				arena.Build(s.Rows);
 				Arena.SetHotbar(p, s.Pickaxe, s.Blocks, s.Weapon, s.Axe);
+				s.Inventory?.Invoke(p);
 				Arena.StripHelpers(p);
 				TilePos start = Arena.Find(s.Rows, 'S');
 				Arena.PlacePlayer(p, arena.ToWorld(start.X, start.Y, s.Rows.Length));

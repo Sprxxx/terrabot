@@ -39,6 +39,8 @@ public sealed class Scenario
 	public int Weapon { get; init; }
 	/// <summary>Item type for hotbar slot 4 (an axe), 0 = none.</summary>
 	public int Axe { get; init; }
+	/// <summary>Extra inventory setup after the hotbar is set (e.g. tools stashed outside the hotbar).</summary>
+	public Action<Terraria.Player> Inventory { get; init; }
 	/// <summary>NPC type spawned at each 'E' marker once the scenario starts.</summary>
 	public int EnemyType { get; init; }
 	/// <summary>Running tick at which the 'E' enemies spawn (0 = at the start).</summary>
@@ -132,6 +134,26 @@ public sealed class Scenario
 				Axe = Terraria.ID.ItemID.CopperAxe,
 				TimeoutTicks = 60 * 60 * 4,
 				Check = r => !r.BenchPlaced ? "no work bench placed" : r.Swords < 1 ? "no wooden sword" : r.Wood < 30 ? $"only {r.Wood} wood" : null,
+			},
+			new() {
+				// Hotbar full of gel, the axe in the backpack and no weapon: the bot has to drag the axe onto the
+				// hotbar, the hand-crafted bench too (to place it), and the crafted sword (which lands in the backpack).
+				Name = "early_game_full_hotbar",
+				Rows = Grid(Repeat("....................................................................................................", 20),
+					"..S.......T........T........T........T........T........T........T........T.........................",
+					",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+					"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "auto",
+				Pickaxe = false,
+				Inventory = p => {
+					for (int i = 0; i < 10; i++)
+						p.inventory[i] = new Terraria.Item(Terraria.ID.ItemID.Gel, 5);
+					p.inventory[27] = new Terraria.Item(Terraria.ID.ItemID.CopperAxe);
+				},
+				TimeoutTicks = 60 * 60 * 4,
+				Check = r => !r.BenchPlaced ? "no work bench placed" : r.Swords < 1 ? "no wooden sword"
+					: !r.LogHas("Hotbar: moved axe Copper Axe") ? "axe never moved to the hotbar"
+					: !r.LogHas("Hotbar: moved weapon Wooden Sword") ? "sword never moved to the hotbar" : null,
 			},
 			new() {
 				Name = "early_game_with_slimes",

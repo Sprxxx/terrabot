@@ -43,6 +43,9 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// <summary>World point the virtual mouse points at during this tick's ItemCheck.</summary>
 	private Vector2? mouseAim;
 	private (int, int)? savedMouse;
+	/// <summary>How often (ticks) the bot moves better tools from the inventory onto the hotbar.</summary>
+	public const int StockHotbarInterval = 30;
+	private int stockTicks;
 
 	private bool IsLocal => Player.whoAmI == Main.myPlayer && Main.netMode != NetmodeID.Server;
 
@@ -118,6 +121,12 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (!Enabled)
 			return;
 		try {
+			if (++stockTicks >= StockHotbarInterval) {
+				stockTicks = 0;
+				string moved = Blocks.StockHotbar(Player);
+				if (moved != null)
+					Context.Log.Info(moved);
+			}
 			RefreshContext();
 			Brain.Tick(Context);
 			Apply(Context.Output);
@@ -178,6 +187,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (on == Enabled)
 			return;
 		Enabled = on;
+		stockTicks = StockHotbarInterval; // tidy the hotbar on the first tick, before any skill reads the tools
 		if (!on) {
 			Brain.Interrupt(Context); // keeps the target; re-enabling plans afresh
 			LastOutput = MoveInput.None;
@@ -280,21 +290,25 @@ public sealed class TerraBotPlayer : ModPlayer
 	}
 
 	/// <summary>
-	/// Hotbar slot holding this item. If it is elsewhere in the inventory, swap it into slot 10 first, like
-	/// dragging it onto the hotbar (only between swings).
+	/// Hotbar slot holding this item. If it is elsewhere in the inventory, swap it onto the hotbar first, like
+	/// dragging it there (only between swings), into a slot that holds none of the bot's tools.
 	/// </summary>
 	private int ItemSlotForUse(int itemType)
 	{
 		GameInfo.Bind(Player);
 		if (GameInfo.FindItem(itemType, out int slot) == null)
 			return -1;
-		if (slot < 10)
+		if (slot < TerrariaBlockActions.HotbarSlots)
 			return slot;
-		if (Player.itemAnimation != 0)
+		if (Player.itemAnimation != 0 || !Main.mouseItem.IsAir)
 			return -1;
-		Utils.Swap(ref Player.inventory[slot], ref Player.inventory[9]);
-		Mod.Logger.Info($"Moved {Player.inventory[9].Name} from inventory slot {slot + 1} to hotbar slot 10");
-		return 9;
+		int to = Blocks.HotbarSlotFor(Player);
+		if (to < 0)
+			return -1;
+		Utils.Swap(ref Player.inventory[slot], ref Player.inventory[to]);
+		Context.Log.Info($"Hotbar: moved {Player.inventory[to].Name} from inventory slot {slot + 1} to hotbar slot {to + 1}");
+		Blocks.Refresh(Player);
+		return to;
 	}
 
 	private void Apply(in MoveInput o)
