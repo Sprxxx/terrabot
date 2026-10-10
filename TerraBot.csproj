@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Imports tModLoader's build setup (net8.0, references, BuildMod packaging step). -->
+  <Import Project="..\tModLoader.targets" />
+
+  <PropertyGroup>
+    <AssemblyName>TerraBot</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <!-- The unit-test project lives under tests/ and must never be compiled into the mod.
+       (The in-game Build button ignores this file; build.txt's buildIgnore covers that path.) -->
+  <ItemGroup>
+    <Compile Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+    <None Remove="tests\**" />
+    <AdditionalFiles Remove="tests\**" />
+  </ItemGroup>
+
+</Project>

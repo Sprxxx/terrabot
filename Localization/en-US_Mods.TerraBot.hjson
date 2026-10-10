@@ -1,0 +1,4 @@
+Keybinds: {
+	ToggleBot.DisplayName: Toggle Bot
+	SetTarget.DisplayName: Set Bot Target (tile under cursor)
+}

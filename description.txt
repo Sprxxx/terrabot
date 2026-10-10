@@ -1,0 +1,5 @@
+TerraBot: an autonomous bot that plays Terraria by pressing the same controls a player would.
+
+Milestone 1: toggle the bot, pick a target tile, and watch it path there by walking, jumping and dropping.
+Keybinds (rebind under Controls > Mod Controls): toggle bot, set target to tile under cursor.
+Chat: /bot goto <x> <y>, /bot stop, /bot dump, /bot trace, /bot status.
