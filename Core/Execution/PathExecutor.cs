@@ -34,6 +34,8 @@ public sealed class PathExecutor
 	public const int RevalidateLookahead = 8;
 	/// <summary>Pressing a direction for this many ticks without the body moving means we are stuck.</summary>
 	public const int NoMovementTicks = 45;
+	/// <summary>How far ahead an unexpected landing node is looked up before declaring OffPath.</summary>
+	public const int ResyncLookahead = 12;
 
 	private readonly MoveContext ctx;
 	private readonly List<PathStep> steps;
@@ -50,6 +52,8 @@ public sealed class PathExecutor
 	private bool settled;
 	private float prevX, prevY;
 	private int pushingStillTicks;
+	private int resyncIndex = -1;
+	private string notice;
 
 	public IReadOnlyList<PathStep> Steps => steps;
 	public int StepIndex { get; private set; }
@@ -58,6 +62,8 @@ public sealed class PathExecutor
 	public string Reason { get; private set; } = "";
 	/// <summary>Short description of what the current step is doing, for the overlay and traces.</summary>
 	public string Phase { get; private set; } = "";
+	/// <summary>Times the executor skipped ahead after landing on a later node of the path.</summary>
+	public int Resyncs { get; private set; }
 	/// <summary>Number of steps fully completed.</summary>
 	public int Completed => StepIndex;
 
@@ -105,6 +111,10 @@ public sealed class PathExecutor
 			if (!ok)
 				return MoveInput.None; // Finish() already called
 			if (advanced) {
+				if (resyncIndex >= 0) {
+					StepIndex = resyncIndex - 1;
+					resyncIndex = -1;
+				}
 				Advance();
 				continue;
 			}
@@ -130,6 +140,33 @@ public sealed class PathExecutor
 			}
 		}
 		return true;
+	}
+
+	/// <summary>
+	/// The body settled on a node the current step does not explain. If that node is on the path a few steps
+	/// ahead (typical after overshooting a short drop at running speed), skip forward instead of re-planning.
+	/// </summary>
+	private bool TryResync(TilePos node)
+	{
+		int end = Math.Min(steps.Count, StepIndex + ResyncLookahead);
+		for (int i = StepIndex + 1; i < end; i++) {
+			int target = steps[i].From == node ? i : steps[i].To == node ? i + 1 : -1;
+			if (target < 0)
+				continue;
+			Resyncs++;
+			notice = $"resync: settled at {node} during step {StepIndex} {steps[StepIndex]}; skipping to step {target}";
+			resyncIndex = target;
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>Returns and clears the latest informational message (e.g. a resync) for the caller to log.</summary>
+	public string PopNotice()
+	{
+		string n = notice;
+		notice = null;
+		return n;
 	}
 
 	private void Advance()
@@ -184,6 +221,10 @@ public sealed class PathExecutor
 			return true;
 		}
 		if (settled && ticksInStep > 3 && node.ChebyshevTo(step.From) > 1 && node.ChebyshevTo(step.To) > 1) {
+			if (TryResync(node)) {
+				advanced = true;
+				return true;
+			}
 			Finish(ExecStatus.OffPath, $"step {StepIndex} {step.Kind} {step.From}->{step.To}: standing at {node}");
 			return false;
 		}
@@ -212,6 +253,10 @@ public sealed class PathExecutor
 		if (jumpPhase == JumpPhase.Align) {
 			float startX = Body.CanonicalLeft(step.From.X, p);
 			if (settled && node.ChebyshevTo(step.From) > 1) {
+				if (TryResync(node)) {
+					advanced = true;
+					return true;
+				}
 				Finish(ExecStatus.OffPath, $"step {StepIndex} jump: expected to start at {step.From}, standing at {node}");
 				return false;
 			}
@@ -234,7 +279,7 @@ public sealed class PathExecutor
 			return true;
 		}
 		if (jumpTick > 1 && settled) {
-			if (node == step.To) {
+			if (node == step.To || TryResync(node)) {
 				advanced = true;
 				return true;
 			}

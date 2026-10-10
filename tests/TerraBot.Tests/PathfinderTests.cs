@@ -237,6 +237,21 @@ public class PathfinderTests
 		Assert.Equal(-5, jump.To.Y - jump.From.Y);
 	}
 
+	[Theory]
+	[InlineData(5, 8, 7)]   // surface block: stand on it
+	[InlineData(5, 12, 7)]  // buried block: climb the column to the surface
+	[InlineData(5, 2, 7)]   // air above the ground: drop to the floor below
+	[InlineData(12, 1, 4)]  // air above a pillar: stand on the pillar
+	[InlineData(12, 6, 4)]  // inside the pillar: stand on top of it
+	public void GoalResolver_PicksStandingSpot(int tx, int ty, int expectedFeetY)
+	{
+		var g = new ArrayTileGrid(16, 14);
+		g.Fill(0, 8, 15, 13, CellKind.Solid);  // ground: top row 8
+		g.Fill(12, 5, 12, 7, CellKind.Solid);  // pillar at x = 12, top row 5
+		GoalStandAt goal = GoalResolver.StandNear(g, new TilePos(tx, ty), TestUtil.P);
+		Assert.Equal(new TilePos(tx, expectedFeetY), goal.Feet);
+	}
+
 	[Fact]
 	public void IncrementalSearch_MatchesOneShot()
 	{

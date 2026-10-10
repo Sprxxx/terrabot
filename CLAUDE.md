@@ -84,6 +84,10 @@ Gotchas already hit:
   - `Plan #n start -> goal: <Status>: N steps, cost, expanded, ms :: step | step | ...` (first 40 steps).
   - `Re-plan #n: Stuck|OffPath|Blocked: <reason>`: the reason names the step, expected node and actual node.
   - `WalkTo reached ...`, `WalkTo ... failed: ...`, `Skill finished: ...`, and `Physics params changed: ...`.
+  - `resync: settled at <node> during step ...; skipping to step n`: the bot overshot onto a later path node
+    and carried on without re-planning.
+  - `Hurt <dmg> (<cause>: NPC name / projectile / fall damage), knockback ...`, logged whether or not the bot is on.
+    Knockback is the usual cause of `OffPath`.
   - `SNAPSHOT {json}` from `/bot dump`: player, physics, bot state/path, an ASCII tile window (legend in
     `Game/Perception/WorldSnapshot.cs`: `#` solid, `=` platform, `.` air, `~` water, `!` lava, `P` body,
     `T` target, `g` goal feet), NPCs, items, inventory.

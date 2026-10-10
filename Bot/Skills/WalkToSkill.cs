@@ -109,6 +109,8 @@ public sealed class WalkToSkill : ISkill
 		}
 
 		MoveInput input = Executor.Tick(ctx.Body);
+		if (Executor.PopNotice() is string notice)
+			ctx.Log.Info(notice);
 		if (ctx.Trace)
 			ctx.Log.Debug($"TRACE t{ctx.Tick} node {node} {ctx.Body} step {Executor.StepIndex} {Executor.Current} [{Executor.Phase}] in {input}");
 

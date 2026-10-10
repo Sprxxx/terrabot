@@ -5,6 +5,7 @@ using TerraBot.Bot.Brain;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Physics;
 using Terraria;
+using Terraria.DataStructures;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -65,6 +66,20 @@ public sealed class TerraBotPlayer : ModPlayer
 			Mod.Logger.Info($"Physics params changed: {p}");
 			LivePhysics = p;
 		}
+	}
+
+	/// <summary>Logs every hit so test runs show fall damage and knockback (which explains OffPath re-plans).</summary>
+	public override void OnHurt(Player.HurtInfo info)
+	{
+		if (!IsLocal)
+			return;
+		PlayerDeathReason src = info.DamageSource;
+		string cause =
+			src.SourceNPCIndex >= 0 && src.SourceNPCIndex < Main.maxNPCs ? $"NPC {Main.npc[src.SourceNPCIndex].FullName}"
+			: src.SourceProjectileType > 0 ? $"projectile type {src.SourceProjectileType}"
+			: src.SourceOtherIndex == 0 ? "fall damage"
+			: $"other {src.SourceOtherIndex}";
+		Mod.Logger.Info($"Hurt {info.Damage} ({cause}), knockback {info.Knockback:0.#} dir {info.HitDirection} at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
 	}
 
 	public override void SetControls()

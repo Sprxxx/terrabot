@@ -190,6 +190,30 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void OvershootOntoLaterPathNode_ResyncsInsteadOfReplanning()
+	{
+		var g = ArrayTileGrid.Parse(
+			"..............................",
+			"..............................",
+			"..............................",
+			"..............................",
+			"..S......................G....",
+			"##############################");
+		var ctx = new MoveContext(g, PhysicsParams.Default);
+		PathResult plan = new AStarPathfinder().FindPath(ctx, g.Markers['S'], new GoalStandAt(g.Markers['G'], PhysicsParams.Default));
+		var exec = new PathExecutor(ctx, plan.Steps);
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		for (int t = 0; t < 20; t++)
+			sim.Step(exec.Tick(sim.State));
+		sim.State.X += 4 * 16; // as if it skidded 4 tiles further than the current step expects
+		for (int t = 0; t < 400 && exec.Status == ExecStatus.Running; t++)
+			sim.Step(exec.Tick(sim.State));
+		output.WriteLine($"{exec.Status}: {exec.Reason}; resyncs {exec.Resyncs}");
+		Assert.Equal(ExecStatus.Finished, exec.Status);
+		Assert.Equal(1, exec.Resyncs);
+	}
+
+	[Fact]
 	public void InvisibleWall_IsDetectedAsStuck()
 	{
 		// The planner sees flat ground; the "real" world has a wall the planner does not know about.
