@@ -321,6 +321,26 @@ public class PathfinderTests
 	}
 
 	[Fact]
+	public void PlatformFloor_IsDroppedThrough()
+	{
+		var g = ArrayTileGrid.Parse(
+			"..................",
+			"..................",
+			"..................",
+			"......S...........",
+			"====================",
+			"..................",
+			"..................",
+			"..................",
+			"......G...........",
+			"##################");
+		PathResult r = TestUtil.Plan(g, output);
+		Assert.Equal(PathStatus.Found, r.Status);
+		PathStep drop = Assert.Single(r.Steps, s => s.Kind == MoveKind.DropThrough);
+		Assert.Equal(5, drop.To.Y - drop.From.Y);
+	}
+
+	[Fact]
 	public void SearchBudget_ReturnsPartialTowardGoal()
 	{
 		var g = new ArrayTileGrid(400, 12);

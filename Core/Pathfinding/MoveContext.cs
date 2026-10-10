@@ -89,6 +89,7 @@ public sealed class MoveContext
 		new WalkMove(),
 		new StepUpMove(),
 		new DropMove(),
+		new DropThroughMove(),
 		new JumpMove(),
 		new DigMove(),
 		new BuildMove(),

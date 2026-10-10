@@ -235,7 +235,7 @@ public sealed class PathExecutor
 
 	private int Budget(in PathStep step) => step.Kind switch {
 		MoveKind.Jump => 150 + (step.Template?.Ticks ?? 60) * 2,
-		MoveKind.Drop => 120 + (int)(step.Cost * 3),
+		MoveKind.Drop or MoveKind.DropThrough => 120 + (int)(step.Cost * 3),
 		MoveKind.Pillar => 180 + (int)(step.Cost * 3),
 		_ => 60 + (int)(step.Cost * 4),
 	};
@@ -274,7 +274,7 @@ public sealed class PathExecutor
 		}
 
 		// Walking passes through To while grounded every tick; a drop must actually have landed.
-		bool landed = step.Kind == MoveKind.Drop ? settled : s.Grounded;
+		bool landed = step.Kind is MoveKind.Drop or MoveKind.DropThrough ? settled : s.Grounded;
 		if (landed && node == step.To) {
 			advanced = true;
 			return true;
@@ -297,7 +297,12 @@ public sealed class PathExecutor
 			input.Horizontal = Arrive.Steer(s.X, s.VX, targetX, p, 2f);
 			Phase = step.Kind == MoveKind.Drop ? (s.Grounded ? "Drop edge" : "Drop fall") : $"{step.Kind} arrive";
 		}
-		// Never hold Down: it disables StepUp and drops through platforms.
+		// Down disables StepUp and drops through platforms: only for DropThrough, and only until the feet have
+		// passed the platform row (holding it longer would also fall through a platform we mean to land on).
+		if (step.Kind == MoveKind.DropThrough) {
+			input.Down = s.Y + p.Height <= (step.From.Y + 1) * Body.TileSize + 4f;
+			Phase = input.Down ? "DropThrough (holding Down)" : "DropThrough fall";
+		}
 		return true;
 	}
 

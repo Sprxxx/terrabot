@@ -110,6 +110,13 @@ public sealed class Scenario
 				TimeoutTicks = 60 * 20,
 			},
 			new() {
+				Name = "drop_through_platforms",
+				Rows = Grid(Repeat("....................", 3), "......S.............", "====================",
+					Repeat("....................", 4), "====================", Repeat("....................", 2),
+					"......G.............", "@@@@@@@@@@@@@@@@@@@@"),
+				Check = r => !r.LogHas("DropThrough") ? "no DropThrough in the plan" : null,
+			},
+			new() {
 				Name = "drop_6_no_damage",
 				Rows = Grid(Repeat("......................", 3), "..S...................", Repeat("@@@@@@@...............", 5),
 					"@@@@@@@.........G.....", "@@@@@@@@@@@@@@@@@@@@@@"),

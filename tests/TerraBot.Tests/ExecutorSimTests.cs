@@ -156,6 +156,30 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void DropsThroughPlatformFloor_LandsOnPlatformBelow()
+	{
+		var g = ArrayTileGrid.Parse(
+			"....................",
+			"....................",
+			"....................",
+			"......S.............",
+			"====================",
+			"....................",
+			"....................",
+			"....................",
+			"....................",
+			"====================",
+			"....................",
+			"....................",
+			"......G.............",
+			"####################");
+		var (status, skill, _) = Run(g);
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.Equal(0, skill.Replans);
+		Assert.Equal(2, skill.LastPlan.Steps.Count(s => s.Kind == MoveKind.DropThrough));
+	}
+
+	[Fact]
 	public void Drops_IntoNarrowShaft()
 	{
 		var g = ArrayTileGrid.Parse(

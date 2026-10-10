@@ -17,6 +17,8 @@ public enum MoveKind
 	Jump,
 	/// <summary>Jump straight up and place a block under the feet (Place action), landing one row higher.</summary>
 	Pillar,
+	/// <summary>Stand on platforms only, hold Down to fall through them, land k rows lower in the same columns.</summary>
+	DropThrough,
 }
 
 /// <summary>One edge of a planned path. Cost is in game ticks.</summary>
