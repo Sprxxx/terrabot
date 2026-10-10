@@ -66,6 +66,14 @@ public sealed class Arena
 		WorldGen.RangeFrame(Left - 1, Top - 1, Left + Width + 1, FloorY + 5);
 	}
 
+	public static System.Collections.Generic.IEnumerable<TilePos> FindAll(string[] rows, char marker)
+	{
+		for (int gy = 0; gy < rows.Length; gy++)
+			for (int gx = 0; gx < rows[gy].Length; gx++)
+				if (rows[gy][gx] == marker)
+					yield return new TilePos(gx, gy);
+	}
+
 	public static TilePos Find(string[] rows, char marker)
 	{
 		for (int gy = 0; gy < rows.Length; gy++) {
@@ -99,12 +107,24 @@ public sealed class Arena
 		p.immuneTime = 30;
 	}
 
+	/// <summary>No minions, pets, sentries or buffs from the copied character: they would fight or move for the bot.</summary>
+	public static void StripHelpers(Player p)
+	{
+		for (int i = 0; i < Main.maxProjectiles; i++)
+			if (Main.projectile[i].active && Main.projectile[i].owner == p.whoAmI)
+				Main.projectile[i].Kill();
+		for (int b = Player.MaxBuffs - 1; b >= 0; b--)
+			if (p.buffType[b] > 0)
+				p.DelBuff(b);
+	}
+
 	/// <summary>Hotbar for a scenario: optional iron pickaxe (slot 1) and a dirt stack (slot 2); slots 3-10 emptied.</summary>
-	public static void SetHotbar(Player p, bool pickaxe, int blocks)
+	public static void SetHotbar(Player p, bool pickaxe, int blocks, int weapon = 0)
 	{
 		p.inventory[0] = pickaxe ? new Item(ItemID.IronPickaxe) : new Item();
 		p.inventory[1] = blocks > 0 ? new Item(ItemID.DirtBlock, blocks) : new Item();
-		for (int i = 2; i < 10; i++)
+		p.inventory[2] = weapon > 0 ? new Item(weapon) : new Item();
+		for (int i = 3; i < 10; i++)
 			p.inventory[i] = new Item();
 		p.selectedItem = 0;
 	}

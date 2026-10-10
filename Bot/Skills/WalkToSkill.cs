@@ -39,9 +39,23 @@ public sealed class WalkToSkill : ISkill
 
 	public string Name => "WalkTo";
 
+	/// <summary>Used as a sub-skill (e.g. chasing a moving enemy): plan/finish lines go to Debug instead of Info.</summary>
+	public bool Quiet { get; init; }
+
+	/// <summary>Accept any standing node within this many tiles (Chebyshev) of the goal feet tile.</summary>
+	public int Tolerance { get; init; }
+
 	public WalkToSkill(TilePos target)
 	{
 		Target = target;
+	}
+
+	private void Info(BotContext ctx, string message)
+	{
+		if (Quiet)
+			ctx.Log.Debug(message);
+		else
+			ctx.Log.Info(message);
 	}
 
 	public string Describe()
@@ -53,7 +67,9 @@ public sealed class WalkToSkill : ISkill
 	public void Start(BotContext ctx)
 	{
 		Goal = GoalResolver.StandNear(ctx.Grid, Target, ctx.Physics, ctx.Moves.CanBreak);
-		ctx.Log.Info($"WalkTo start: target {Target} -> {Goal}, bot at {ctx.Node}");
+		if (Tolerance > 0)
+			Goal = new GoalStandAt(Goal.Feet, ctx.Physics) { Tolerance = Tolerance };
+		Info(ctx, $"WalkTo start: target {Target} -> {Goal}, bot at {ctx.Node}");
 		State = "planning";
 	}
 
@@ -76,7 +92,7 @@ public sealed class WalkToSkill : ISkill
 
 		TilePos node = ctx.Node;
 		if (ctx.Body.Grounded && Goal.IsGoal(node)) {
-			ctx.Log.Info($"WalkTo reached {Goal} at {node} after {plans} plan(s), {Replans} replan(s)");
+			Info(ctx, $"WalkTo reached {Goal} at {node} after {plans} plan(s), {Replans} replan(s)");
 			State = "arrived";
 			return SkillStatus.Succeeded;
 		}
@@ -118,7 +134,7 @@ public sealed class WalkToSkill : ISkill
 				break;
 			case ExecStatus.Finished:
 				// Either the goal check above succeeds next tick, or this was a partial path: plan the next leg.
-				ctx.Log.Info($"Path finished at {node} ({LastPlan.Status})");
+				Info(ctx, $"Path finished at {node} ({LastPlan.Status})");
 				Executor = null;
 				break;
 			default:
@@ -156,7 +172,7 @@ public sealed class WalkToSkill : ISkill
 		int breaks = LastPlan.Steps.Sum(s => s.CountActions(ActionKind.Break));
 		int places = LastPlan.Steps.Sum(s => s.CountActions(ActionKind.Place));
 		string world = breaks + places > 0 ? $", breaks {breaks}, places {places}" : "";
-		ctx.Log.Info($"Plan #{plans} {LastPlan.Start} -> {Goal}: {LastPlan}{world}{(steps.Length > 0 ? " :: " + steps : "")}");
+		Info(ctx, $"Plan #{plans} {LastPlan.Start} -> {Goal}: {LastPlan}{world}{(steps.Length > 0 ? " :: " + steps : "")}");
 
 		if (LastPlan.Status is PathStatus.Found or PathStatus.Partial && LastPlan.Steps.Count > 0) {
 			Executor = new PathExecutor(searchMoves, LastPlan.Steps);

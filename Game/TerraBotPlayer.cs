@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
@@ -37,6 +38,9 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	/// <summary>Tile the bot points at this tick; applied to Player.tileTargetX/Y in PreItemCheck.</summary>
 	private TilePos? aim;
+	/// <summary>World point the virtual mouse points at during this tick's ItemCheck.</summary>
+	private Vector2? mouseAim;
+	private (int, int)? savedMouse;
 
 	private bool IsLocal => Player.whoAmI == Main.myPlayer && Main.netMode != NetmodeID.Server;
 
@@ -101,6 +105,7 @@ public sealed class TerraBotPlayer : ModPlayer
 	public override void SetControls()
 	{
 		aim = null;
+		mouseAim = null;
 		if (!IsLocal)
 			return;
 		Blocks.Refresh(Player);
@@ -125,11 +130,29 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// </summary>
 	public override bool PreItemCheck()
 	{
-		if (IsLocal && Enabled && aim is TilePos a) {
+		if (!IsLocal || !Enabled)
+			return true;
+		if (aim is TilePos a) {
 			Player.tileTargetX = a.X;
 			Player.tileTargetY = a.Y;
 		}
+		// Virtual mouse: vanilla reads Main.mouseX/Y (+ screenPosition = MouseWorld) for weapon aim and facing.
+		// Point it at the bot's aim for the duration of ItemCheck only; PostItemCheck puts the real cursor back.
+		if (mouseAim is Vector2 m) {
+			savedMouse = (Main.mouseX, Main.mouseY);
+			Main.mouseX = (int)(m.X - Main.screenPosition.X);
+			Main.mouseY = (int)(m.Y - Main.screenPosition.Y);
+		}
 		return true;
+	}
+
+	public override void PostItemCheck()
+	{
+		if (savedMouse is (int x, int y)) {
+			Main.mouseX = x;
+			Main.mouseY = y;
+			savedMouse = null;
+		}
 	}
 
 	public void SetDig(bool on)
@@ -201,9 +224,47 @@ public sealed class TerraBotPlayer : ModPlayer
 			: Player.pulley ? "on a rope"
 			: Player.CCed ? "crowd-controlled"
 			: null;
+		RefreshPerception();
 		Context.Trace = TraceTicksLeft > 0;
 		if (TraceTicksLeft > 0 && --TraceTicksLeft == 0)
 			Mod.Logger.Info("Trace finished");
+	}
+
+	public const float PerceptionRadiusPx = 50 * 16f;
+
+	/// <summary>Hostile NPCs, dropped items and combat state for the skills (nearest first).</summary>
+	private void RefreshPerception()
+	{
+		Vector2 c = Player.Center;
+		var hostiles = new List<EntityInfo>();
+		for (int i = 0; i < Main.maxNPCs; i++) {
+			NPC n = Main.npc[i];
+			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > PerceptionRadiusPx)
+				continue;
+			hostiles.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
+				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage));
+		}
+		hostiles.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
+		Context.Hostiles = hostiles;
+
+		var drops = new List<DropInfo>();
+		for (int i = 0; i < Main.maxItems; i++) {
+			Item it = Main.item[i];
+			if (!it.active || it.IsAir || Vector2.Distance(it.Center, c) > PerceptionRadiusPx)
+				continue;
+			drops.Add(new DropInfo(i, it.type, it.Name, it.stack, it.position.X, it.position.Y, it.width, it.height));
+		}
+		drops.Sort((a, b) => Vector2.DistanceSquared(new Vector2(a.CenterX, a.CenterY), c).CompareTo(Vector2.DistanceSquared(new Vector2(b.CenterX, b.CenterY), c)));
+		Context.Drops = drops;
+
+		CombatInfo k = Context.Combat;
+		k.Life = Player.statLife;
+		k.LifeMax = Player.statLifeMax2;
+		k.Facing = Player.direction;
+		k.ItemAnimation = Player.itemAnimation;
+		k.CanQuickHeal = Player.potionDelay == 0 && Player.QuickHeal_GetItemToUse() != null;
+		k.WeaponReach = Blocks.WeaponSlot >= 0 ? Blocks.WeaponReach : 0f;
+		k.WeaponName = Blocks.WeaponName;
 	}
 
 	private void Apply(in MoveInput o)
@@ -213,11 +274,19 @@ public sealed class TerraBotPlayer : ModPlayer
 		Player.controlUp = o.Up;
 		Player.controlDown = o.Down;
 		Player.controlJump = o.Jump;
+		if (o.QuickHeal)
+			Player.controlQuickHeal = true; // vanilla needs releaseQuickHeal, so the skill pulses this
 		// Without a tool request the mouse button stays the player's (handy for building obstacles to test
 		// re-planning). With one, the bot owns item use: switch hotbar slot when no swing is in progress, then
 		// hold use. Non-autoReuse items need the button released between swings (vanilla releaseUseItem).
 		if (o.Tool != ToolRequest.None) {
-			int slot = o.Tool == ToolRequest.Pickaxe ? Blocks.PickSlot : Blocks.BlockSlot;
+			int slot = o.Tool switch {
+				ToolRequest.Pickaxe => Blocks.PickSlot,
+				ToolRequest.Block => Blocks.BlockSlot,
+				ToolRequest.Weapon => Blocks.WeaponSlot,
+				ToolRequest.Axe => Blocks.AxeSlot,
+				_ => -1,
+			};
 			bool use = false;
 			if (slot >= 0) {
 				if (Player.selectedItem != slot) {
@@ -233,6 +302,8 @@ public sealed class TerraBotPlayer : ModPlayer
 			Player.controlTorch = false; // smart-select would swap our item
 			if (o.HasAim)
 				aim = new TilePos(o.AimX, o.AimY);
+			if (o.HasMouseAim)
+				mouseAim = new Vector2(o.MouseX, o.MouseY);
 		}
 		LastOutput = o;
 	}

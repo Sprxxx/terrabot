@@ -25,6 +25,14 @@ public sealed class TerrariaBlockActions : IBlockActions
 	/// <summary>Player.noBuilding (e.g. some events/areas forbid building): no mining or placing at all.</summary>
 	public bool NoBuilding { get; private set; }
 
+	/// <summary>Best melee weapon in the hotbar (swing or shortsword thrust), by damage per tick.</summary>
+	public int WeaponSlot { get; private set; } = -1;
+	public string WeaponName { get; private set; } = "";
+	/// <summary>Estimated reach in px beyond the hitbox edge (swing arc ≈ item width × scale).</summary>
+	public float WeaponReach { get; private set; }
+	public int AxeSlot { get; private set; } = -1;
+	public int AxePower { get; private set; }
+
 	/// <summary>Re-reads the hotbar. Cheap (10 slots); called every tick for the local player.</summary>
 	public void Refresh(Player p)
 	{
@@ -34,6 +42,12 @@ public sealed class TerrariaBlockActions : IBlockActions
 		BlockCount = 0;
 		BlockName = "";
 		NoBuilding = p.noBuilding;
+		WeaponSlot = -1;
+		WeaponName = "";
+		WeaponReach = 0f;
+		AxeSlot = -1;
+		AxePower = 0;
+		float bestWeapon = 0f;
 		int bestBlockScore = int.MinValue;
 		for (int i = 0; i < HotbarSlots; i++) {
 			Item it = p.inventory[i];
@@ -42,6 +56,19 @@ public sealed class TerrariaBlockActions : IBlockActions
 			if (it.pick > PickPower) {
 				PickPower = it.pick;
 				PickSlot = i;
+			}
+			if (it.axe > AxePower) {
+				AxePower = it.axe;
+				AxeSlot = i;
+			}
+			if (IsMeleeWeapon(it)) {
+				float score = it.damage * 60f / Math.Max(1, it.useAnimation);
+				if (score > bestWeapon) {
+					bestWeapon = score;
+					WeaponSlot = i;
+					WeaponName = it.Name;
+					WeaponReach = it.useStyle == ItemUseStyleID.Rapier ? 24f : Math.Max(16f, it.width * it.scale);
+				}
 			}
 			if (IsThrowawayBlock(it)) {
 				int score = (IsCheapBlock(it.createTile) ? 1_000_000 : 0) + it.stack;
@@ -65,8 +92,15 @@ public sealed class TerrariaBlockActions : IBlockActions
 			BlockCount = 0;
 	}
 
+	/// <summary>Swords and shortswords: true melee damage, no ammo/mana, not a tool or a thrown consumable.</summary>
+	public static bool IsMeleeWeapon(Item it) =>
+		it.damage > 0 && it.pick == 0 && it.axe == 0 && it.hammer == 0 && !it.consumable && it.ammo == 0
+		&& it.useAmmo == 0 && it.mana == 0 && !it.channel && it.CountsAsClass(DamageClass.Melee)
+		&& (it.useStyle == ItemUseStyleID.Swing || it.useStyle == ItemUseStyleID.Rapier);
+
 	public string Describe() =>
-		(PickSlot >= 0 ? $"pick {PickPower} (slot {PickSlot + 1}, {HitTicks:0}t/hit)" : "no pickaxe in hotbar")
+		(WeaponSlot >= 0 ? $"weapon {WeaponName} (slot {WeaponSlot + 1}) | " : "no weapon | ")
+		+ (PickSlot >= 0 ? $"pick {PickPower} (slot {PickSlot + 1}, {HitTicks:0}t/hit)" : "no pickaxe in hotbar")
 		+ " | " + (BlockSlot >= 0 ? $"{BlockCount} {BlockName} (slot {BlockSlot + 1})" : "no blocks in hotbar")
 		+ (NoBuilding ? " | NO BUILDING here" : "");
 

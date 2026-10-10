@@ -31,13 +31,18 @@ public sealed class GoalStandAt : IGoal
 		riseTicksPerTile = Body.TileSize / Math.Max(0.5f, p.JumpSpeed);
 	}
 
-	/// <summary>Node x may be Feet.X-1 or Feet.X: both put a body column over Feet.X.</summary>
-	public bool IsGoal(TilePos n) => n.Y == Feet.Y && (n.X == Feet.X || n.X == Feet.X - 1);
+	/// <summary>Extra slack in tiles (Chebyshev) around the exact standing spot; 0 = exact.</summary>
+	public int Tolerance { get; init; }
+
+	/// <summary>Node x may be Feet.X-1 or Feet.X: both put a body column over Feet.X (± Tolerance).</summary>
+	public bool IsGoal(TilePos n) =>
+		Math.Abs(n.Y - Feet.Y) <= Tolerance && n.X >= Feet.X - 1 - Tolerance && n.X <= Feet.X + Tolerance;
 
 	public float Heuristic(TilePos n)
 	{
-		int dx = n.X < Feet.X - 1 ? Feet.X - 1 - n.X : n.X > Feet.X ? n.X - Feet.X : 0;
+		int dx = n.X < Feet.X - 1 - Tolerance ? Feet.X - 1 - Tolerance - n.X : n.X > Feet.X + Tolerance ? n.X - Feet.X - Tolerance : 0;
 		int dy = Feet.Y - n.Y;
+		dy = dy > Tolerance ? dy - Tolerance : dy < -Tolerance ? dy + Tolerance : 0;
 		float h = dx * horizontalTicksPerTile;
 		float v = dy > 0 ? dy * fallTicksPerTile : -dy * riseTicksPerTile;
 		return Math.Max(h, v);

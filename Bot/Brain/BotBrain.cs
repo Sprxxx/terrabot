@@ -21,6 +21,16 @@ public sealed class BotBrain
 		LastResult = "";
 	}
 
+	/// <summary>Run <paramref name="skill"/> now (replacing whatever runs, and forgetting any walk target).</summary>
+	public void StartSkill(ISkill skill, BotContext ctx)
+	{
+		Interrupt(ctx);
+		Target = null;
+		LastResult = "";
+		Current = skill;
+		skill.Start(ctx);
+	}
+
 	/// <summary>Forget the target and stop the running skill.</summary>
 	public void Clear(BotContext ctx)
 	{
@@ -49,7 +59,12 @@ public sealed class BotBrain
 		if (status == SkillStatus.Running)
 			return;
 
-		LastResult = $"{Current.Name} {status}" + (Current is WalkToSkill w && status == SkillStatus.Failed ? $": {w.FailureReason}" : "");
+		string why = Current switch {
+			WalkToSkill w => w.FailureReason,
+			FightSkill f => f.FailureReason,
+			_ => "",
+		};
+		LastResult = $"{Current.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
 		ctx.Log.Info($"Skill finished: {LastResult}");
 		Current.Stop(ctx);
 		Current = null;

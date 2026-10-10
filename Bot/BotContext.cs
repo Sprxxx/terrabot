@@ -44,6 +44,12 @@ public sealed class BotContext
 	/// <summary>Controls to press this tick. Reset to None by the brain before each tick.</summary>
 	public MoveInput Output;
 
+	/// <summary>Hostile NPCs near the player this tick (nearest first).</summary>
+	public System.Collections.Generic.IReadOnlyList<EntityInfo> Hostiles { get; set; } = Array.Empty<EntityInfo>();
+	/// <summary>Items lying near the player this tick (nearest first).</summary>
+	public System.Collections.Generic.IReadOnlyList<DropInfo> Drops { get; set; } = Array.Empty<DropInfo>();
+	public CombatInfo Combat { get; set; } = new();
+
 	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
 	public IBlockActions Blocks { get; set; }
 	/// <summary>Player-controlled switches (/bot dig, /bot build).</summary>

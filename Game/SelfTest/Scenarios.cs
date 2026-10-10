@@ -16,6 +16,8 @@ public sealed class RunResult
 	public int FallDamageHits;
 	public int FallingBlockHits;
 	public int FallingBlocksSeen;
+	public int EnemiesLeft;
+	public int LifeLost;
 	public List<string> Log = new();
 
 	public bool LogHas(string s) => Log.Any(l => l.Contains(s));
@@ -30,6 +32,12 @@ public sealed class Scenario
 	public bool Build { get; init; }
 	public bool Pickaxe { get; init; } = true;
 	public int Blocks { get; init; }
+	/// <summary>Item type for hotbar slot 3 (a weapon), 0 = none.</summary>
+	public int Weapon { get; init; }
+	/// <summary>NPC type spawned at each 'E' marker once the scenario starts.</summary>
+	public int EnemyType { get; init; }
+	/// <summary>"walk" (to 'G') or "fight" (FightSkill).</summary>
+	public string Mode { get; init; } = "walk";
 	public bool ExpectSuccess { get; init; } = true;
 	public int TimeoutTicks { get; init; } = 60 * 45;
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
@@ -79,6 +87,22 @@ public sealed class Scenario
 	private static IReadOnlyList<Scenario> CreateAll()
 	{
 		var list = new List<Scenario> {
+			new() {
+				Name = "fight_green_slime",
+				Rows = Grid(Repeat("..............................", 6), "..S..............E............", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "fight",
+				Weapon = Terraria.ID.ItemID.CopperBroadsword,
+				EnemyType = Terraria.ID.NPCID.GreenSlime,
+				Check = r => r.EnemiesLeft > 0 ? $"{r.EnemiesLeft} enemy left alive" : null,
+			},
+			new() {
+				Name = "fight_two_slimes_both_sides",
+				Rows = Grid(Repeat("........................................", 6), "......E...........S..............E......", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "fight",
+				Weapon = Terraria.ID.ItemID.CopperBroadsword,
+				EnemyType = Terraria.ID.NPCID.BlueSlime,
+				Check = r => r.EnemiesLeft > 0 ? $"{r.EnemiesLeft} enemy left alive" : null,
+			},
 			new() {
 				Name = "walk_flat",
 				Rows = Grid(Repeat("..............................", 4), "..S......................G....", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),

@@ -45,6 +45,9 @@ public sealed class SelfTestSystem : ModSystem
 	private TeeLog tee;
 	private IBotLog originalLog;
 	private readonly HashSet<int> seenFalling = new();
+	private readonly List<int> spawned = new();
+	private bool spawnFailed;
+	private int lifeAtStart;
 	private readonly List<string> summary = new();
 	private int passed;
 
@@ -101,13 +104,16 @@ public sealed class SelfTestSystem : ModSystem
 				bot.StopAll("selftest setup");
 				Main.dayTime = true;
 				Main.time = 27000;
+				// Every NPC goes, town NPCs included: the Guide shoots arrows at hostiles and would help the bot.
+				// (This is the throw-away copy of the world in the self-test save folder.)
 				for (int i = 0; i < Main.maxNPCs; i++)
-					if (Main.npc[i].active && !Main.npc[i].friendly)
+					if (Main.npc[i].active)
 						Main.npc[i].active = false;
 				for (int i = 0; i < Main.maxItems; i++)
 					Main.item[i].active = false;
 				arena.Build(s.Rows);
-				Arena.SetHotbar(p, s.Pickaxe, s.Blocks);
+				Arena.SetHotbar(p, s.Pickaxe, s.Blocks, s.Weapon);
+				Arena.StripHelpers(p);
 				TilePos start = Arena.Find(s.Rows, 'S');
 				Arena.PlacePlayer(p, arena.ToWorld(start.X, start.Y, s.Rows.Length));
 				Next(Phase.Settle);
@@ -131,9 +137,29 @@ public sealed class SelfTestSystem : ModSystem
 				originalLog = bot.Context.Log;
 				tee = new TeeLog(originalLog);
 				bot.Context.Log = tee;
-				TilePos goal = Arena.Find(s.Rows, 'G');
-				Mod.Logger.Info($"SELFTEST start {s.Name} (dig {s.Dig}, build {s.Build}, pick {s.Pickaxe}, blocks {s.Blocks}); {bot.Blocks.Describe()}");
-				bot.SetTarget(arena.ToWorld(goal.X, goal.Y, s.Rows.Length), "selftest");
+				Mod.Logger.Info($"SELFTEST start {s.Name} (mode {s.Mode}, dig {s.Dig}, build {s.Build}, pick {s.Pickaxe}, blocks {s.Blocks}); {bot.Blocks.Describe()}");
+				spawned.Clear();
+				if (s.EnemyType != 0)
+					foreach (TilePos e in Arena.FindAll(s.Rows, 'E')) {
+						TilePos w = arena.ToWorld(e.X, e.Y, s.Rows.Length);
+						// Negative types are net-ID variants (Green Slime = -3): spawn the base type, then SetDefaults.
+						int baseType = s.EnemyType < 0 ? NPCID.BlueSlime : s.EnemyType;
+						int idx = NPC.NewNPC(new Terraria.DataStructures.EntitySource_DebugCommand("TerraBot selftest"), w.X * 16 + 8, (w.Y + 1) * 16, baseType);
+						if (idx >= 0 && idx < Main.maxNPCs && s.EnemyType < 0)
+							Main.npc[idx].SetDefaults(s.EnemyType);
+						spawned.Add(idx);
+					}
+				spawnFailed = spawned.Any(i => i < 0 || i >= Main.maxNPCs || !Main.npc[i].active);
+				if (spawned.Count > 0)
+					Mod.Logger.Info($"SELFTEST spawned {string.Join(", ", spawned.Where(i => i >= 0 && i < Main.maxNPCs).Select(i => $"{Main.npc[i].FullName} #{i}"))}{(spawnFailed ? " (SPAWN FAILED)" : "")}");
+				lifeAtStart = p.statLife;
+				if (s.Mode == "fight") {
+					bot.Brain.StartSkill(new Bot.Skills.FightSkill(), bot.Context);
+				}
+				else {
+					TilePos goal = Arena.Find(s.Rows, 'G');
+					bot.SetTarget(arena.ToWorld(goal.X, goal.Y, s.Rows.Length), "selftest");
+				}
 				bot.SetEnabled(true, "selftest");
 				Next(Phase.Running);
 				return;
@@ -142,6 +168,11 @@ public sealed class SelfTestSystem : ModSystem
 			case Phase.Running: {
 				Scenario s = queue[index];
 				s.During?.Invoke(arena, phaseTicks);
+				if (spawned.Count > 0 && phaseTicks % 30 == 0)
+					Mod.Logger.Info($"SELFTEST t{phaseTicks} npcs: " + string.Join("; ", spawned.Where(i => i >= 0 && i < Main.maxNPCs).Select(i => {
+						NPC n = Main.npc[i];
+						return $"#{i} {n.FullName} active {n.active} life {n.life} at ({n.Center.X / 16f:0},{n.Center.Y / 16f:0}) chase {n.CanBeChasedBy()}";
+					})) + $" | bot sees {bot.Context.Hostiles.Count} | {bot.Brain.Describe()}");
 				TrackRun(p, bot, s);
 				bool finished = bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > 2;
 				if (!finished && phaseTicks < s.TimeoutTicks)
@@ -184,12 +215,16 @@ public sealed class SelfTestSystem : ModSystem
 		result.Succeeded = finished && bot.Brain.LastResult.Contains("Succeeded");
 		result.FallDamageHits = bot.FallDamageHits;
 		result.FallingBlockHits = bot.FallingBlockHits;
+		result.EnemiesLeft = spawned.Count(i => i >= 0 && i < Main.maxNPCs && Main.npc[i].active && Main.npc[i].life > 0);
+		result.LifeLost = Math.Max(0, lifeAtStart - Main.LocalPlayer.statLife);
 		result.Log = tee.Lines;
 		bot.SetEnabled(false, "selftest evaluate");
 		bot.Context.Log = originalLog;
 
 		string reason = null;
-		if (!finished)
+		if (spawnFailed)
+			reason = "fixture could not spawn the enemies";
+		else if (!finished)
 			reason = "timeout";
 		else if (result.Succeeded != s.ExpectSuccess)
 			reason = $"expected {(s.ExpectSuccess ? "success" : "failure")}, got: {result.Outcome}";
@@ -203,7 +238,7 @@ public sealed class SelfTestSystem : ModSystem
 		int replans = result.Log.Count(l => l.StartsWith("Re-plan"));
 		string line = $"SELFTEST {(ok ? "PASS" : "FAIL")} {s.Name}{(ok ? "" : " -- " + reason)} | {result.Outcome} | ticks {result.Ticks}, " +
 			$"plans {plans}, replans {replans}, broken {result.Broken}, placed {result.Placed}, lowest feet row {result.MaxFeetRow}, " +
-			$"fall hits {result.FallDamageHits}, falling blocks {result.FallingBlocksSeen}";
+			$"fall hits {result.FallDamageHits}, falling blocks {result.FallingBlocksSeen}, life lost {result.LifeLost}, enemies left {result.EnemiesLeft}";
 		summary.Add(line);
 		Mod.Logger.Info(line);
 	}

@@ -9,6 +9,10 @@ public enum ToolRequest : byte
 	None,
 	Pickaxe,
 	Block,
+	/// <summary>Best melee weapon in the hotbar.</summary>
+	Weapon,
+	/// <summary>Best axe in the hotbar.</summary>
+	Axe,
 }
 
 /// <summary>
@@ -30,6 +34,12 @@ public struct MoveInput
 	public bool HasAim;
 	public int AimX;
 	public int AimY;
+	/// <summary>Point the (virtual) mouse at this world position during item use (ranged aim, facing tools).</summary>
+	public bool HasMouseAim;
+	public float MouseX;
+	public float MouseY;
+	/// <summary>Press quick-heal (vanilla H): drink the best healing potion.</summary>
+	public bool QuickHeal;
 
 	public static MoveInput None => default;
 
@@ -50,6 +60,13 @@ public struct MoveInput
 		AimY = y;
 	}
 
+	public void AimMouse(float worldX, float worldY)
+	{
+		HasMouseAim = true;
+		MouseX = worldX;
+		MouseY = worldY;
+	}
+
 	public override readonly string ToString()
 	{
 		var sb = new StringBuilder();
@@ -58,8 +75,9 @@ public struct MoveInput
 		if (Up) sb.Append('U');
 		if (Down) sb.Append('D');
 		if (Jump) sb.Append('J');
+		if (QuickHeal) sb.Append(" heal");
 		if (Tool != ToolRequest.None) {
-			sb.Append(Tool == ToolRequest.Pickaxe ? " pick" : " block");
+			sb.Append(' ').Append(Tool.ToString().ToLowerInvariant());
 			if (UseItem) sb.Append(" use");
 			if (HasAim) sb.Append($"@({AimX},{AimY})");
 		}
