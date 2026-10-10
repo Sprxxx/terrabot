@@ -13,7 +13,7 @@ public sealed class WalkMove : IMoveType
 		for (int dir = -1; dir <= 1; dir += 2) {
 			var to = new TilePos(from.X + dir, from.Y);
 			if (Body.IsStandable(ctx.Grid, to))
-				output.Add(new PathStep(Kind, from, to, ctx.Adjust(ctx.WalkTileCost, to)));
+				output.Add(new PathStep(Kind, from, to, ctx.Adjust(ctx.WalkTileCost, to), Source: this));
 		}
 	}
 

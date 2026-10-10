@@ -49,13 +49,16 @@ public sealed class GoalStandAt : IGoal
 public static class GoalResolver
 {
 	/// <summary>
-	/// Turns a clicked/typed tile into a standing goal. A solid tile means "stand on it"; if it is buried, climb
-	/// the column (≤ <paramref name="maxScan"/> tiles) to the surface first. An empty tile means "stand here":
+	/// Turns a clicked/typed tile into a standing goal. A solid tile means "stand on it". If it is buried and
+	/// <paramref name="canDig"/> is false, climb the column (≤ <paramref name="maxScan"/> tiles) to the surface;
+	/// with digging allowed the bot digs down to stand on that very block. An empty tile means "stand here":
 	/// scan down to the first floor. Falls back to the raw tile.
 	/// </summary>
-	public static GoalStandAt StandNear(ITileGrid g, TilePos target, PhysicsParams p, int maxScan = 40)
+	public static GoalStandAt StandNear(ITileGrid g, TilePos target, PhysicsParams p, bool canDig = false, int maxScan = 40)
 	{
 		if (g.Get(target.X, target.Y).CanStandOn()) {
+			if (canDig)
+				return new GoalStandAt(new TilePos(target.X, target.Y - 1), p);
 			for (int y = target.Y; y > target.Y - maxScan; y--) {
 				if (!g.Get(target.X, y - 1).CanStandOn())
 					return new GoalStandAt(new TilePos(target.X, y - 1), p);

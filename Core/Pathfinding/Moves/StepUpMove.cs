@@ -20,7 +20,7 @@ public sealed class StepUpMove : IMoveType
 	{
 		for (int dir = -1; dir <= 1; dir += 2) {
 			if (Check(ctx.Grid, from, dir, out TilePos to))
-				output.Add(new PathStep(Kind, from, to, ctx.Adjust(ctx.WalkTileCost + Penalty, to)));
+				output.Add(new PathStep(Kind, from, to, ctx.Adjust(ctx.WalkTileCost + Penalty, to), Source: this));
 		}
 	}
 

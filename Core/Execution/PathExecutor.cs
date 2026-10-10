@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Pathfinding;
+using TerraBot.Core.Pathfinding.Moves;
 using TerraBot.Core.Physics;
 
 namespace TerraBot.Core.Execution;
@@ -54,6 +55,8 @@ public sealed class PathExecutor
 	private int pushingStillTicks;
 	private int resyncIndex = -1;
 	private string notice;
+	private int actionIndex;
+	private bool actionsStarted;
 
 	public IReadOnlyList<PathStep> Steps => steps;
 	public int StepIndex { get; private set; }
@@ -105,9 +108,11 @@ public sealed class PathExecutor
 
 			MoveInput input;
 			bool advanced;
-			bool ok = step.Kind == MoveKind.Jump
-				? TickJump(s, step, out input, out advanced)
-				: TickGroundMove(s, step, out input, out advanced);
+			bool ok = step.Kind switch {
+				MoveKind.Jump => TickJump(s, step, out input, out advanced),
+				MoveKind.Pillar => TickPillar(s, step, out input, out advanced),
+				_ => TickGroundMove(s, step, out input, out advanced),
+			};
 			if (!ok)
 				return MoveInput.None; // Finish() already called
 			if (advanced) {
@@ -173,6 +178,8 @@ public sealed class PathExecutor
 	{
 		StepIndex++;
 		ticksInStep = 0;
+		actionIndex = 0;
+		actionsStarted = false;
 		jumpPhase = JumpPhase.Align;
 		jumpTick = 0;
 		jumpRetries = 0;
@@ -190,13 +197,15 @@ public sealed class PathExecutor
 	private int Budget(in PathStep step) => step.Kind switch {
 		MoveKind.Jump => 150 + (step.Template?.Ticks ?? 60) * 2,
 		MoveKind.Drop => 120 + (int)(step.Cost * 3),
+		MoveKind.Pillar => 180 + (int)(step.Cost * 3),
 		_ => 60 + (int)(step.Cost * 4),
 	};
 
 	/// <summary>Moves that can be taken at running speed. A one-tile drop is vanilla StepDown: it snaps while
 	/// walking. Longer drops must approach the edge slowly so the fall stays inside the destination columns.</summary>
 	private static bool IsRunnable(in PathStep s) =>
-		s.Kind == MoveKind.Walk || s.Kind == MoveKind.StepUp || (s.Kind == MoveKind.Drop && s.To.Y - s.From.Y == 1);
+		!s.HasActions && s.Dir != 0
+		&& (s.Kind == MoveKind.Walk || s.Kind == MoveKind.StepUp || (s.Kind == MoveKind.Drop && s.To.Y - s.From.Y == 1));
 
 	/// <summary>Can we keep running through the end of this step into the next one without stopping?</summary>
 	private bool ChainsIntoNext(in PathStep step)
@@ -213,6 +222,17 @@ public sealed class PathExecutor
 		input = MoveInput.None;
 		advanced = false;
 		TilePos node = Body.NodeOf(s, p);
+
+		// Break/place actions come first; the movement starts once they are all done.
+		int actions = TickActions(s, step, ref input);
+		if (actions < 0)
+			return false;
+		if (actions == 0)
+			return true;
+		if (actions == 2) {
+			advanced = true;
+			return true;
+		}
 
 		// Walking passes through To while grounded every tick; a drop must actually have landed.
 		bool landed = step.Kind == MoveKind.Drop ? settled : s.Grounded;
@@ -289,6 +309,127 @@ public sealed class PathExecutor
 
 		input = JumpLibrary.ControllerInput(s, jumpTick, t.HoldTicks, t.DelayTicks, Body.CanonicalLeft(step.To.X, p), p);
 		Phase = $"Jump t{jumpTick}/{t.Ticks}";
+		jumpTick++;
+		return true;
+	}
+
+	/// <summary>
+	/// Performs the step's break/place actions in order. Returns 1 when all are done (or there are none),
+	/// 0 while working (<paramref name="input"/> filled in), 2 after resyncing to a later step, -1 after Finish().
+	/// Before the first action the bot settles on the step's start node; after that it keeps working wherever
+	/// it ends up (e.g. when mining its own floor drops it a row), because every target cell stays in reach.
+	/// </summary>
+	private int TickActions(in BodyState s, in PathStep step, ref MoveInput input)
+	{
+		if (!step.HasActions || actionIndex >= step.Actions.Count)
+			return 1;
+
+		PhysicsParams p = ctx.Physics;
+		TilePos node = Body.NodeOf(s, p);
+		float startX = Body.CanonicalLeft(step.From.X, p);
+		if (!actionsStarted) {
+			if (settled && node.ChebyshevTo(step.From) > 1) {
+				if (TryResync(node))
+					return 2;
+				Finish(ExecStatus.OffPath, $"step {StepIndex} {step}: expected to start at {step.From}, standing at {node}");
+				return -1;
+			}
+			if (!settled || node != step.From) {
+				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 2f);
+				Phase = "Actions: positioning";
+				return 0;
+			}
+			actionsStarted = true;
+		}
+
+		while (actionIndex < step.Actions.Count) {
+			BlockAction a = step.Actions[actionIndex];
+			CellKind k = ctx.Grid.Get(a.Cell.X, a.Cell.Y);
+			bool done = a.Kind == ActionKind.Break ? !k.IsSolid() : k.IsSolid();
+			if (done) {
+				actionIndex++;
+				continue;
+			}
+			input.Tool = a.Kind == ActionKind.Break ? ToolRequest.Pickaxe : ToolRequest.Block;
+			input.UseItem = true;
+			input.Aim(a.Cell.X, a.Cell.Y);
+			if (s.Grounded)
+				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 3f);
+			Phase = $"{(a.Kind == ActionKind.Break ? "Mining" : "Placing")} {a.Cell} ({actionIndex + 1}/{step.Actions.Count})";
+			return 0;
+		}
+		return 1;
+	}
+
+	/// <summary>
+	/// Pillar: settle centred on the start node with a block in hand, jump, place under the feet as soon as the
+	/// hitbox has cleared the cell (vanilla refuses to place into a hitbox), and land on it.
+	/// </summary>
+	private bool TickPillar(in BodyState s, in PathStep step, out MoveInput input, out bool advanced)
+	{
+		PhysicsParams p = ctx.Physics;
+		input = new MoveInput { Tool = ToolRequest.Block };
+		advanced = false;
+		TilePos node = Body.NodeOf(s, p);
+		float startX = Body.CanonicalLeft(step.From.X, p);
+		ITileGrid g = ctx.Grid;
+		bool placed = g.Get(step.From.X, step.From.Y).IsSolid() || g.Get(step.From.X + 1, step.From.Y).IsSolid();
+
+		if (settled && node == step.To && placed) {
+			advanced = true;
+			return true;
+		}
+
+		if (jumpPhase == JumpPhase.Align) {
+			if (settled && node.ChebyshevTo(step.From) > 1) {
+				if (TryResync(node)) {
+					advanced = true;
+					return true;
+				}
+				Finish(ExecStatus.OffPath, $"step {StepIndex} pillar: expected to start at {step.From}, standing at {node}");
+				return false;
+			}
+			bool aligned = settled && node == step.From && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
+				&& Math.Abs(s.VX) <= 0.1f && !lastJumpPressed && s.ReleaseJump;
+			if (!aligned) {
+				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);
+				Phase = "Pillar align";
+				return true;
+			}
+			jumpPhase = JumpPhase.Air;
+			jumpTick = 0;
+		}
+
+		if (jumpTick == 1 && s.Grounded && node == step.From && jumpRetries < 3) {
+			jumpRetries++;
+			jumpPhase = JumpPhase.Align;
+			Phase = "Pillar retry";
+			return true;
+		}
+		if (jumpTick > 1 && settled) {
+			if (node == step.To && placed) {
+				advanced = true;
+				return true;
+			}
+			if (node == step.From && jumpRetries < 3) {
+				jumpRetries++; // came down without the block (placement refused: NPC in the way, out of blocks...)
+				jumpPhase = JumpPhase.Align;
+				Phase = "Pillar retry";
+				return true;
+			}
+			Finish(ExecStatus.OffPath, $"step {StepIndex} pillar {step.From}->{step.To} landed at {node} (placed {placed})");
+			return false;
+		}
+
+		TilePos cell = BuildMove.PillarCell(g, step.From);
+		input.Jump = jumpTick < BuildMove.PillarHoldTicks(p) && !placed;
+		input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);
+		// Vanilla compares the cell against Rectangle((int)X, (int)Y, w, h): place once the feet are above it.
+		if (!placed && (float)Math.Floor(s.Y) + p.Height <= cell.Y * Body.TileSize - BuildMove.PillarClearance) {
+			input.UseItem = true;
+			input.Aim(cell.X, cell.Y);
+		}
+		Phase = placed ? "Pillar landing" : $"Pillar t{jumpTick}";
 		jumpTick++;
 		return true;
 	}

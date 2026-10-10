@@ -25,7 +25,6 @@ public sealed class WalkToSkill : ISkill
 
 	private PathSearch search;
 	private MoveContext searchMoves;
-	private PhysicsParams plannedPhysics;
 	private int waitTicks;
 	private int plans;
 
@@ -53,7 +52,7 @@ public sealed class WalkToSkill : ISkill
 
 	public void Start(BotContext ctx)
 	{
-		Goal = GoalResolver.StandNear(ctx.Grid, Target, ctx.Physics);
+		Goal = GoalResolver.StandNear(ctx.Grid, Target, ctx.Physics, ctx.Moves.CanBreak);
 		ctx.Log.Info($"WalkTo start: target {Target} -> {Goal}, bot at {ctx.Node}");
 		State = "planning";
 	}
@@ -82,8 +81,8 @@ public sealed class WalkToSkill : ISkill
 			return SkillStatus.Succeeded;
 		}
 
-		if (Executor != null && ctx.Physics != plannedPhysics) {
-			ctx.Log.Info($"Physics changed ({ctx.Physics}); re-planning");
+		if (Executor != null && !ReferenceEquals(ctx.Moves, searchMoves)) {
+			ctx.Log.Info($"Physics or dig/build settings changed ({ctx.Physics}; dig {ctx.AllowBreak}, build {ctx.AllowPlace}); re-planning");
 			Executor = null;
 		}
 
@@ -146,7 +145,6 @@ public sealed class WalkToSkill : ISkill
 			}
 		}
 		plans++;
-		plannedPhysics = ctx.Physics;
 		searchMoves = moves;
 		search = new PathSearch(moves, start, Goal);
 		State = "planning";
@@ -157,7 +155,10 @@ public sealed class WalkToSkill : ISkill
 		LastPlan = search.Result;
 		search = null;
 		string steps = string.Join(" | ", LastPlan.Steps.Take(40).Select(s => s.ToString()));
-		ctx.Log.Info($"Plan #{plans} {LastPlan.Start} -> {Goal}: {LastPlan}{(steps.Length > 0 ? " :: " + steps : "")}");
+		int breaks = LastPlan.Steps.Sum(s => s.CountActions(ActionKind.Break));
+		int places = LastPlan.Steps.Sum(s => s.CountActions(ActionKind.Place));
+		string world = breaks + places > 0 ? $", breaks {breaks}, places {places}" : "";
+		ctx.Log.Info($"Plan #{plans} {LastPlan.Start} -> {Goal}: {LastPlan}{world}{(steps.Length > 0 ? " :: " + steps : "")}");
 
 		if (LastPlan.Status is PathStatus.Found or PathStatus.Partial && LastPlan.Steps.Count > 0) {
 			Executor = new PathExecutor(searchMoves, LastPlan.Steps);

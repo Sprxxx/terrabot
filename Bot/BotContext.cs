@@ -44,12 +44,19 @@ public sealed class BotContext
 	/// <summary>Controls to press this tick. Reset to None by the brain before each tick.</summary>
 	public MoveInput Output;
 
-	/// <summary>Move context for the current grid and physics; rebuilt (with jump templates) when physics change.</summary>
+	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
+	public IBlockActions Blocks { get; set; }
+	/// <summary>Player-controlled switches (/bot dig, /bot build).</summary>
+	public bool AllowBreak { get; set; } = true;
+	public bool AllowPlace { get; set; } = true;
+
+	/// <summary>Move context for the current grid, physics and settings; rebuilt (with jump templates) on change.</summary>
 	public MoveContext Moves
 	{
 		get {
-			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics)
-				moves = new MoveContext(Grid, Physics);
+			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
+				|| !ReferenceEquals(moves.Blocks, Blocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace)
+				moves = new MoveContext(Grid, Physics) { Blocks = Blocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace };
 			return moves;
 		}
 	}

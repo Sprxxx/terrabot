@@ -10,20 +10,31 @@ namespace TerraBot.Tests;
 /// AABB collision against Solid cells, platforms that only collide from above, Collision.StepUp's 1-tile lift
 /// and Collision.StepDown's snap. Not bit-exact with the game; the point is to exercise the executor's control
 /// loop on the same terrain the planner saw.
+/// With an editable grid and <see cref="TestBlockActions"/> it also mines (one hit counter per cell, broken after
+/// BreakTicks ticks of use) and places blocks with vanilla's rules: free cell, a solid 4-neighbour, and no
+/// overlap with the player's integer hitbox. Like the game, item use happens after movement in the same tick.
 /// </summary>
 public sealed class SimWorld
 {
 	private const int T = Body.TileSize;
 	private readonly ITileGrid grid;
 	private readonly PhysicsParams p;
+	private readonly ArrayTileGrid editable;
+	private readonly TestBlockActions blocks;
+	private readonly System.Collections.Generic.Dictionary<TilePos, int> hits = new();
+
+	public int Broken { get; private set; }
+	public int Placed { get; private set; }
 
 	public BodyState State;
 	public int Ticks { get; private set; }
 
-	public SimWorld(ITileGrid grid, PhysicsParams p, TilePos startNode)
+	public SimWorld(ITileGrid grid, PhysicsParams p, TilePos startNode, TestBlockActions blocks = null)
 	{
 		this.grid = grid;
 		this.p = p;
+		this.blocks = blocks;
+		editable = grid as ArrayTileGrid;
 		State = new BodyState {
 			X = Body.CanonicalLeft(startNode.X, p),
 			Y = Body.StandingTop(startNode.Y, p),
@@ -45,6 +56,39 @@ public sealed class SimWorld
 
 		MoveX();
 		MoveY(c.Down);
+		UseItem(c);
+	}
+
+	private void UseItem(in MoveInput c)
+	{
+		if (blocks == null || editable == null || c.Tool == ToolRequest.None || !c.UseItem || !c.HasAim)
+			return;
+		var cell = new TilePos(c.AimX, c.AimY);
+		CellKind k = grid.Get(cell.X, cell.Y);
+		if (c.Tool == ToolRequest.Pickaxe) {
+			if (!k.IsSolid())
+				return;
+			hits.TryGetValue(cell, out int n);
+			hits[cell] = ++n;
+			if (n >= blocks.BreakTicks(cell.X, cell.Y)) {
+				editable.Set(cell.X, cell.Y, k & ~(CellKind.Solid | CellKind.Falling));
+				hits.Remove(cell);
+				Broken++;
+			}
+			return;
+		}
+		// Place: vanilla needs an empty cell, a solid neighbour, and Collision.EmptyTile (no hitbox overlap).
+		if (k.CanStandOn() || blocks.BlockCount <= 0)
+			return;
+		bool neighbour = SolidAt(cell.X - 1, cell.Y) || SolidAt(cell.X + 1, cell.Y)
+			|| SolidAt(cell.X, cell.Y - 1) || grid.Get(cell.X, cell.Y + 1).CanStandOn();
+		int left = (int)State.X, top = (int)State.Y;
+		bool overlaps = cell.X * T < left + p.Width && left < cell.X * T + T && cell.Y * T < top + p.Height && top < cell.Y * T + T;
+		if (!neighbour || overlaps)
+			return;
+		editable.Set(cell.X, cell.Y, CellKind.Solid);
+		blocks.BlockCount--;
+		Placed++;
 	}
 
 	private bool SolidAt(int x, int y) => grid.Get(x, y).IsSolid();

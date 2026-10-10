@@ -54,6 +54,24 @@ public class PerformanceTests
 		Assert.True(r.ElapsedMs < 1000, $"took {r.ElapsedMs} ms");
 	}
 
+	[Fact]
+	public void TunnelThroughSolidRock_StaysWithinBudget()
+	{
+		// 60 tiles of solid stone between two pockets: every node is reachable by digging, the worst case for A*.
+		var g = new ArrayTileGrid(90, 40);
+		g.Fill(0, 0, 89, 39, CellKind.Solid);
+		g.Fill(2, 18, 6, 20, CellKind.Empty);
+		g.Fill(80, 18, 85, 20, CellKind.Empty);
+		var blocks = new TestBlockActions(g);
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = blocks, AllowPlace = false };
+		var goal = new GoalStandAt(new TilePos(83, 20), PhysicsParams.Default);
+		new AStarPathfinder().FindPath(ctx, new TilePos(3, 20), goal); // JIT warm-up
+		PathResult r = new AStarPathfinder().FindPath(ctx, new TilePos(3, 20), goal);
+		output.WriteLine(r.ToString());
+		Assert.True(r.Status is PathStatus.Found or PathStatus.Partial, r.ToString());
+		Assert.True(r.ElapsedMs < 5000, $"took {r.ElapsedMs} ms");
+	}
+
 	private static TilePos FindStand(ArrayTileGrid g, int x)
 	{
 		for (int y = 3; y < g.Height - 1; y++)

@@ -1,0 +1,72 @@
+using System.Collections.Generic;
+using TerraBot.Core.Grid;
+
+namespace TerraBot.Core.Pathfinding;
+
+/// <summary>
+/// What the planner may know about changing the world, answered by the game adapter from the player's
+/// hotbar (TerrariaBlockActions) or by tests. Implementations must not mutate anything.
+/// </summary>
+public interface IBlockActions
+{
+	/// <summary>Ticks to mine the (solid) cell with the best usable pickaxe; +∞ if it cannot or must not be mined.</summary>
+	float BreakTicks(int x, int y);
+
+	/// <summary>
+	/// Can a solid block be placed into this cell as far as its contents go (empty, or a plant that gets cut)?
+	/// Adjacency is guaranteed by the moves themselves; player/NPC overlap is handled by the executor's timing.
+	/// </summary>
+	bool CanPlaceAt(int x, int y);
+
+	/// <summary>Placeable blocks available right now (0 disables placing moves).</summary>
+	int BlockCount { get; }
+
+	/// <summary>Ticks for one placement swing.</summary>
+	float PlaceTicks { get; }
+}
+
+public enum ActionKind
+{
+	Break,
+	Place,
+}
+
+/// <summary>A world change the executor performs as part of a step.</summary>
+public readonly record struct BlockAction(ActionKind Kind, TilePos Cell)
+{
+	public override string ToString() => $"{(Kind == ActionKind.Break ? "break" : "place")}{Cell}";
+}
+
+/// <summary>Planner-side rules for breaking cells safely, shared by all digging moves.</summary>
+public static class BlockRules
+{
+	/// <summary>
+	/// Planner cost (ticks) of breaking <paramref name="cell"/> as part of a move that also breaks
+	/// <paramref name="sameMove"/>; +∞ when not allowed. Rules: never open a cell next to lava (it would flood);
+	/// never undermine a falling block (sand) unless that block is removed by the same move.
+	/// </summary>
+	public static float BreakCost(MoveContext ctx, TilePos cell, IReadOnlyCollection<TilePos> sameMove)
+	{
+		ITileGrid g = ctx.Grid;
+		if (g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
+			|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava())
+			return float.PositiveInfinity;
+
+		var above = new TilePos(cell.X, cell.Y - 1);
+		if (g.Get(above.X, above.Y).IsFalling() && !Contains(sameMove, above))
+			return float.PositiveInfinity;
+
+		float ticks = ctx.Blocks.BreakTicks(cell.X, cell.Y);
+		if (float.IsInfinity(ticks) || float.IsNaN(ticks))
+			return float.PositiveInfinity;
+		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks;
+	}
+
+	private static bool Contains(IReadOnlyCollection<TilePos> cells, TilePos c)
+	{
+		foreach (TilePos p in cells)
+			if (p == c)
+				return true;
+		return false;
+	}
+}

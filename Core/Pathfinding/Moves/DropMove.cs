@@ -17,7 +17,7 @@ public sealed class DropMove : IMoveType
 	{
 		for (int dir = -1; dir <= 1; dir += 2) {
 			if (Find(ctx, from, dir, out TilePos to, out int k))
-				output.Add(new PathStep(Kind, from, to, Cost(ctx, k, to)));
+				output.Add(new PathStep(Kind, from, to, Cost(ctx, k, to), Source: this));
 		}
 	}
 

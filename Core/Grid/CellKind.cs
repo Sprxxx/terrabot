@@ -14,12 +14,16 @@ public enum CellKind : byte
 	Water = 4,
 	Lava = 8,
 	Honey = 16,
+	/// <summary>Set together with Solid for blocks that fall when unsupported (TileID.Sets.Falling: sand, silt, slush...).</summary>
+	Falling = 32,
 }
 
 public static class CellKindExtensions
 {
 	public static bool IsSolid(this CellKind k) => (k & CellKind.Solid) != 0;
 	public static bool IsPlatform(this CellKind k) => (k & CellKind.Platform) != 0;
+	public static bool IsFalling(this CellKind k) => (k & CellKind.Falling) != 0;
+	public static bool HasLava(this CellKind k) => (k & CellKind.Lava) != 0;
 
 	/// <summary>Something the player can stand on.</summary>
 	public static bool CanStandOn(this CellKind k) => (k & (CellKind.Solid | CellKind.Platform)) != 0;
@@ -32,7 +36,7 @@ public static class CellKindExtensions
 	/// <summary>One-character legend used by ASCII grids, dumps and tests.</summary>
 	public static char ToChar(this CellKind k)
 	{
-		if (k.IsSolid()) return '#';
+		if (k.IsSolid()) return k.IsFalling() ? '%' : '#';
 		if (k.IsPlatform()) return '=';
 		if ((k & CellKind.Lava) != 0) return '!';
 		if ((k & CellKind.Honey) != 0) return 'h';
@@ -40,8 +44,10 @@ public static class CellKindExtensions
 		return '.';
 	}
 
+	/// <summary>Inverse of <see cref="ToChar"/>. '@' is also Solid (tests use it for unbreakable blocks).</summary>
 	public static CellKind FromChar(char c) => c switch {
-		'#' => CellKind.Solid,
+		'#' or '@' => CellKind.Solid,
+		'%' => CellKind.Solid | CellKind.Falling,
 		'=' => CellKind.Platform,
 		'~' => CellKind.Water,
 		'!' => CellKind.Lava,

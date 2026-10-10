@@ -253,6 +253,15 @@ public class PathfinderTests
 	}
 
 	[Fact]
+	public void GoalResolver_WithDigging_StandsOnBuriedBlock()
+	{
+		var g = new ArrayTileGrid(16, 14);
+		g.Fill(0, 8, 15, 13, CellKind.Solid);
+		Assert.Equal(new TilePos(5, 11), GoalResolver.StandNear(g, new TilePos(5, 12), TestUtil.P, canDig: true).Feet);
+		Assert.Equal(new TilePos(5, 7), GoalResolver.StandNear(g, new TilePos(5, 12), TestUtil.P, canDig: false).Feet);
+	}
+
+	[Fact]
 	public void IncrementalSearch_MatchesOneShot()
 	{
 		var g = new ArrayTileGrid(200, 30);

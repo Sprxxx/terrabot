@@ -14,6 +14,14 @@ public sealed class MoveContext
 	public JumpLibrary Jumps { get; }
 	public IReadOnlyList<IMoveType> Moves { get; }
 
+	/// <summary>Mining/placing capabilities; null disables digging and building moves.</summary>
+	public IBlockActions Blocks { get; init; }
+	public bool AllowBreak { get; init; } = true;
+	public bool AllowPlace { get; init; } = true;
+
+	public bool CanBreak => Blocks != null && AllowBreak;
+	public bool CanPlace => Blocks != null && AllowPlace && Blocks.BlockCount > 0;
+
 	/// <summary>Ticks to walk one tile at full speed.</summary>
 	public float WalkTileCost { get; }
 
@@ -22,6 +30,13 @@ public sealed class MoveContext
 
 	/// <summary>Cost multiplier for edges ending with the body in liquid (water physics are not modelled yet).</summary>
 	public float LiquidCostMultiplier { get; init; } = 3f;
+
+	/// <summary>Mining time is multiplied by this, so existing routes win unless digging is clearly shorter.</summary>
+	public float BreakCostMultiplier { get; init; } = 1.5f;
+	/// <summary>Per broken block: switching tools, aiming, and picking the drop up.</summary>
+	public float BreakOverheadTicks { get; init; } = 8f;
+	/// <summary>Per placed block, on top of the swing time: blocks are a limited resource.</summary>
+	public float PlacePenaltyTicks { get; init; } = 20f;
 
 	/// <summary>Per-context scratch buffer for moves (move types are shared singletons and must stay stateless).
 	/// A MoveContext is therefore not thread-safe; use one per search thread.</summary>
@@ -40,6 +55,22 @@ public sealed class MoveContext
 		fallTicks = new int[MaxDrop + 1];
 		for (int k = 1; k <= MaxDrop; k++)
 			fallTicks[k] = PlayerPhysics.FallTicks(physics, k * Body.TileSize);
+		PillarAirTicks = ComputePillarAirTicks(physics) + 8f; // + settle/align
+	}
+
+	/// <summary>Ticks from jumping for a pillar until landing one tile higher.</summary>
+	public float PillarAirTicks { get; }
+
+	private static int ComputePillarAirTicks(PhysicsParams p)
+	{
+		int hold = BuildMove.PillarHoldTicks(p);
+		var s = new BodyState { ReleaseJump = true };
+		for (int t = 0; t < 200; t++) {
+			PlayerPhysics.StepFreeSpace(ref s, new MoveInput { Jump = t < hold }, p);
+			if (s.VY > 0f && s.Y >= -Body.TileSize)
+				return t + 1; // falling back past the new floor (one tile above the start)
+		}
+		return 60;
 	}
 
 	public static readonly IReadOnlyList<IMoveType> DefaultMoves = new IMoveType[] {
@@ -47,6 +78,8 @@ public sealed class MoveContext
 		new StepUpMove(),
 		new DropMove(),
 		new JumpMove(),
+		new DigMove(),
+		new BuildMove(),
 	};
 
 	public int FallTicks(int tiles) => fallTicks[Math.Clamp(tiles, 0, MaxDrop)];
@@ -61,7 +94,7 @@ public sealed class MoveContext
 
 	public bool IsStepValid(in PathStep step)
 	{
-		IMoveType m = MoveFor(step.Kind);
+		IMoveType m = step.Source ?? MoveFor(step.Kind);
 		return m != null && m.IsValid(this, step);
 	}
 

@@ -28,7 +28,7 @@ public sealed class JumpMove : IMoveType
 				continue;
 			foreach (JumpTemplate v in e.Variants) {
 				if (v.Fits(window, from)) {
-					output.Add(new PathStep(Kind, from, to, ctx.Adjust(v.Cost, to), v));
+					output.Add(new PathStep(Kind, from, to, ctx.Adjust(v.Cost, to), v, Source: this));
 					break;
 				}
 			}
