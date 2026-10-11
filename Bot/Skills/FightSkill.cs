@@ -44,6 +44,10 @@ public sealed class FightSkill : ISkill
 	private int sinceCloser;
 	/// <summary>Ticks without getting closer before an enemy is left alone.</summary>
 	public const int MaxTicksNoCloser = 600;
+	/// <summary>An enemy given up on is left alone this long (also by later fights and the danger check).</summary>
+	public const int IgnoreTicks = 60 * 30;
+	/// <summary>An ignored enemy this close (px) is fought anyway: it is biting.</summary>
+	public const float IgnoredStillFoughtWithin = 3 * 16f;
 	private const int RetargetDistance = 6;
 	private const int RetargetAnywayTicks = 180;
 
@@ -115,6 +119,7 @@ public sealed class FightSkill : ISkill
 		}
 		else if (++sinceCloser > MaxTicksNoCloser && targetDistance > MeleePreferredWithin) {
 			unreachable.Add(t.Id);
+			ctx.Ignore(t.Id, IgnoreTicks);
 			ctx.Log.Info($"Fight: no closer to {t.Name} in {MaxTicksNoCloser} ticks ({targetDistance / 16f:0.0} tiles); leaving it");
 			targetId = -1;
 			sinceCloser = 0;
@@ -240,7 +245,7 @@ public sealed class FightSkill : ISkill
 			if (d <= engage)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
-			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= Leash)) && !unreachable.Contains(e.Id);
+			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= Leash)) && !unreachable.Contains(e.Id) && (!ctx.Ignored(e.Id) || d <= IgnoredStillFoughtWithin);
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {
@@ -325,6 +330,7 @@ public sealed class FightSkill : ISkill
 		SkillStatus s = approach.Tick(ctx);
 		if (s == SkillStatus.Failed && !ClearShot(ctx, ctx.Body.CenterX(p), ctx.Body.CenterY(p), t.CenterX, t.CenterY)) {
 			unreachable.Add(t.Id);
+			ctx.Ignore(t.Id, IgnoreTicks);
 			ctx.Log.Info($"Fight: {t.Name} is out of sight and there is no way to it; leaving it");
 			targetId = -1;
 		}

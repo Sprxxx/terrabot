@@ -39,6 +39,15 @@ public sealed class BotContext
 	public long Tick { get; set; }
 	/// <summary>Times the player died since the context was made (the bot does not tick while dead).</summary>
 	public int Deaths { get; set; }
+	/// <summary>
+	/// Enemies (NPC whoAmI) given up on, until the tick given: not fought and not counted as danger meanwhile. Kept here,
+	/// not in one fight: a new fight forgot, and chased the same slime back into the water again and again.
+	/// </summary>
+	public System.Collections.Generic.Dictionary<int, long> IgnoredEnemies { get; } = new();
+
+	public bool Ignored(int npcId) => IgnoredEnemies.TryGetValue(npcId, out long until) && Tick < until;
+
+	public void Ignore(int npcId, int ticks) => IgnoredEnemies[npcId] = Tick + ticks;
 	/// <summary>Chests already looted (or given up on), by top-left tile: not visited again.</summary>
 	public System.Collections.Generic.HashSet<TilePos> OpenedChests { get; } = new();
 	/// <summary>Where exploring legs went (kept across restarts, so a fight or replan does not send it back over old ground).</summary>
