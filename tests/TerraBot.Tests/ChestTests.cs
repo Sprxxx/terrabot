@@ -77,3 +77,41 @@ public class ChestTests
 		Assert.Contains($"item{FakeGame.HermesBoots}", loot.Loot);
 	}
 }
+
+/// <summary>Life crystals are mined and used on sight, whatever stage the plan is at.</summary>
+public class LifeCrystalOnSightTests
+{
+	private readonly ITestOutputHelper output;
+	public LifeCrystalOnSightTests(ITestOutputHelper output) => this.output = output;
+
+	[Fact]
+	public void SeenCrystal_IsMinedAndUsed_DuringTheEarlyPlan()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		g.AddHeart(20, 29);
+		BotContext ctx = g.CreateContext(output);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Early); // the early plan has no life stage at all
+		for (int t = 0; t < 60 * 90 && g.LifeMax == 100; t++) {
+			g.Refresh(ctx);
+			ctx.Tick = t;
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"max life {g.LifeMax}; {brain.Describe()}");
+		Assert.Equal(120, g.LifeMax);
+	}
+
+	[Fact]
+	public void UnseenCrystal_IsNotKnown()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		g.AddHeart(20, 29);
+		g.Unrevealed.Add(new TilePos(20, 29));
+		g.Unrevealed.Add(new TilePos(21, 29));
+		g.Unrevealed.Add(new TilePos(20, 30));
+		g.Unrevealed.Add(new TilePos(21, 30));
+		BotContext ctx = g.CreateContext(output);
+		Assert.Null(ProgressionPlanner.SeenLifeCrystal(ctx));
+	}
+}

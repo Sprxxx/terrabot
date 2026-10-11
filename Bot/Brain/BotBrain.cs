@@ -122,6 +122,12 @@ public sealed class BotBrain
 				ctx.Log.Info($"Auto: a chest at {seen.TopLeft} came into sight; pausing {Current.Name} to loot it");
 				Interrupt(ctx);
 			}
+			else if (Current is ExploreSkill or HuntSkill || Current is MineSkill m && m.ItemType != ctx.Ids.LifeCrystal) {
+				if (ProgressionPlanner.LifeCrystalUseful(ctx) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart) {
+					ctx.Log.Info($"Auto: a life crystal at {heart} came into sight; pausing {Current.Name} to get it");
+					Interrupt(ctx);
+				}
+			}
 		}
 		if (Auto && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
 			if (Current != null)

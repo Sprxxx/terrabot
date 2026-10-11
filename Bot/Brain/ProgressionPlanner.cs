@@ -196,6 +196,25 @@ public sealed class ProgressionPlanner
 		arenaFailures = 0;
 	}
 
+	/// <summary>Max life from life crystals stops at 400 (vanilla: 15 crystals).</summary>
+	public const int MaxCrystalLife = 400;
+	/// <summary>Life crystals seen within this many tiles are mined right away.</summary>
+	public const int CrystalRadius = 25;
+
+	public static bool LifeCrystalUseful(BotContext ctx) => ctx.Ids.LifeCrystal > 0 && ctx.Combat.LifeMaxBase > 0 && ctx.Combat.LifeMaxBase < MaxCrystalLife;
+
+	/// <summary>The nearest life crystal (heart tile) the player has seen within <see cref="CrystalRadius"/> that can be mined.</summary>
+	public static TilePos? SeenLifeCrystal(BotContext ctx)
+	{
+		int heart = ctx.Knowledge?.SourceOf(ctx.Ids.LifeCrystal).TileType ?? -1;
+		if (heart <= 0)
+			return null;
+		foreach (TilePos c in ctx.World.FindTiles(heart, ctx.Node, CrystalRadius))
+			if (!ctx.UnreachableTiles.Contains(c) && ctx.World.CanMineTarget(c.X, c.Y))
+				return c;
+		return null;
+	}
+
 	/// <summary>Chests closer than this (tiles) that are seen and not looted yet are looted before anything else.</summary>
 	public const int LootRadius = 40;
 
@@ -270,6 +289,14 @@ public sealed class ProgressionPlanner
 		// A chest in sight comes first, as for a player: healing potions, accessories, better weapons.
 		if (NextChest(ctx) is ChestInfo chest)
 			return Do($"looting the chest at {chest.TopLeft}", new LootChestSkill(chest.TopLeft));
+		// Likewise a life crystal: mined and used on sight, whatever stage the plan is at.
+		if (LifeCrystalUseful(ctx)) {
+			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0)
+				return Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase})", new UseItemSkill(ctx.Ids.LifeCrystal));
+			if (SeenLifeCrystal(ctx) is TilePos heart)
+				return Do($"mining the life crystal seen at {heart}",
+					new MineSkill(ctx.Ids.LifeCrystal, ctx.Knowledge.SourceOf(ctx.Ids.LifeCrystal).TileType, ctx.Inventory.Count(ctx.Ids.LifeCrystal) + 1));
+		}
 		costs.Clear();
 		costEvaluations = 0;
 		stuck = null;
