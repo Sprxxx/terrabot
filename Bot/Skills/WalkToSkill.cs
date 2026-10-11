@@ -174,7 +174,7 @@ public sealed class WalkToSkill : ISkill
 				lastStuckStep = stuckStep;
 				if (sameStuck >= MaxSameStuck) {
 					if (Executor.Current is PathStep bad && ctx.BadEdges.Add((bad.From, bad.To)))
-						ctx.Log.Info($"WalkTo: never planning {bad.Kind} {bad.From}->{bad.To} again");
+						ctx.Log.Info($"WalkTo: never planning {bad.Kind} {bad.From}->{bad.To} again; around it (F from, T to, / slope or half block):\n{Around(ctx, bad.From, bad.To)}");
 					Executor = null;
 					return Fail(ctx, $"the same step failed {sameStuck} times: {stuckStep}");
 				}
@@ -204,6 +204,22 @@ public sealed class WalkToSkill : ISkill
 			if (n >= MaxActionFailures && (place ? ctx.NoPlace.Add(a.Cell) : ctx.NoBreak.Add(a.Cell)))
 				ctx.Log.Info($"WalkTo: {(place ? "placing a block at" : "breaking")} {a.Cell} failed {n} times; planning round it from now on");
 		}
+	}
+
+	/// <summary>A small map of the cells round a failed step, for the log.</summary>
+	private static string Around(BotContext ctx, TilePos from, TilePos to)
+	{
+		var sb = new System.Text.StringBuilder();
+		int x0 = System.Math.Min(from.X, to.X) - 3, x1 = System.Math.Max(from.X, to.X) + 4;
+		int y0 = System.Math.Min(from.Y, to.Y) - 4, y1 = System.Math.Max(from.Y, to.Y) + 2;
+		for (int y = y0; y <= y1; y++) {
+			sb.Append("    ");
+			for (int x = x0; x <= x1; x++)
+				sb.Append(x == from.X && y == from.Y ? 'F' : x == to.X && y == to.Y ? 'T' : ctx.Grid.Get(x, y).ToChar());
+			if (y < y1)
+				sb.Append('\n');
+		}
+		return sb.ToString();
 	}
 
 	private string lastStuckStep;

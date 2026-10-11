@@ -62,6 +62,11 @@ public static class BlockRules
 		if (g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
 			|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava())
 			return true;
+		// Water too: opening a block next to it floods the tunnel (seen in game: a shaft dug down into a water pocket
+		// filled up, and the bot drowned in it).
+		if (g.Get(cell.X - 1, cell.Y).IsLiquid() || g.Get(cell.X + 1, cell.Y).IsLiquid()
+			|| g.Get(cell.X, cell.Y - 1).IsLiquid() || g.Get(cell.X, cell.Y + 1).IsLiquid())
+			return true;
 		var above = new TilePos(cell.X, cell.Y - 1);
 		return g.Get(above.X, above.Y).IsFalling() && !Contains(sameMove, above);
 	}

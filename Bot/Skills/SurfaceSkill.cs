@@ -5,7 +5,7 @@ using TerraBot.Core.Physics;
 namespace TerraBot.Bot.Skills;
 
 /// <summary>
-/// Out of breath under water: swim up (hold jump) towards the nearest column with air above the head, until
+/// Out of breath under water: pillar up (jump, block under the feet) towards the nearest column with air above the head, until
 /// breath is back near full and the head is out. Seen in game: the bot chased a slime into a flooded cave and
 /// drowned (vanilla takes 2 life per breath tick at 0 breath, without a hurt event: nothing showed in the log).
 /// </summary>
@@ -16,6 +16,7 @@ public sealed class SurfaceSkill : ISkill
 
 	private int ticks;
 	private int? column;
+	private bool jumpedLastTick;
 
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
@@ -53,10 +54,28 @@ public sealed class SurfaceSkill : ISkill
 		if (column == null || ticks % 30 == 0)
 			column = AirColumn(ctx);
 		TilePos n = ctx.Node;
-		ctx.Output.Jump = true; // holding jump swims up
+		// Vanilla has no swimming up without flippers or a float: a new jump needs footing (Player.JumpMovement wants
+		// velocity.Y == 0). Seen in game: holding jump in a flooded shaft moved the bot 6 tiles in 15 s and it drowned.
+		// So pillar up like a player: jump off whatever is underfoot, and put a block under the feet on the way up.
+		bool footing = Math.Abs(ctx.Body.VY) < 0.05f;
+		if (footing) {
+			ctx.Output.Jump = !jumpedLastTick; // a fresh press each time (releaseJump)
+			jumpedLastTick = ctx.Output.Jump;
+		}
+		else {
+			ctx.Output.Jump = ctx.Body.VY < 0f; // keep the jump going while rising
+			jumpedLastTick = ctx.Output.Jump;
+			var below = new TilePos(n.X, n.Y + 1);
+			bool clearOfIt = ctx.Body.Y + ctx.Physics.Height <= below.Y * 16f - 1f;
+			if (ctx.Body.VY < 0f && clearOfIt && !ctx.Grid.Get(below.X, below.Y).IsSolid() && ctx.Blocks != null && ctx.Blocks.BlockCount > 0) {
+				ctx.Output.Tool = ToolRequest.Block;
+				ctx.Output.UseItem = true;
+				ctx.Output.Aim(below.X, below.Y);
+			}
+		}
 		if (column is int cx && cx != n.X)
 			ctx.Output.Horizontal = Math.Sign(cx - n.X);
-		State = column != null ? $"swimming up towards column {column}" : "swimming up";
+		State = column != null ? $"pillaring up towards column {column}" : "pillaring up";
 		return SkillStatus.Running;
 	}
 

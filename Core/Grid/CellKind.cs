@@ -45,6 +45,7 @@ public static class CellKindExtensions
 	public static char ToChar(this CellKind k)
 	{
 		if (k.IsSolid()) return k.IsFalling() ? '%' : '#';
+		if (k.IsShaped()) return '/';
 		if (k.IsPlatform()) return '=';
 		if ((k & CellKind.Lava) != 0) return '!';
 		if ((k & CellKind.Honey) != 0) return 'h';
