@@ -40,6 +40,10 @@ public sealed class ExploreSkill : ISkill
 	private bool lastFallbackFailed;
 	private bool legWasFallback;
 	private bool legDown;
+	private int legStart;
+	private int pauseUntil;
+	/// <summary>A leg failing within this many ticks did not really start; wait <see cref="RetryPauseTicks"/> and try again.</summary>
+	public const int InstantFailTicks = 10, RetryPauseTicks = 30;
 	private bool downBlocked;
 	/// <summary>Leg targets closer than this to an earlier one are not picked again.</summary>
 	public const int VisitedRadius = 10;
@@ -103,6 +107,12 @@ public sealed class ExploreSkill : ISkill
 		if (++ticks > MaxTicks)
 			return Fail(ctx, $"no {What} after {ticks} ticks of exploring");
 		if (walk == null) {
+			// Only from solid footing, and not straight after a leg failed at once: in game, knocked about in a fight, every
+			// leg failed instantly ("invalid start") and all 16 were gone in a third of a second.
+			if (!ctx.Body.Grounded || ticks < pauseUntil) {
+				State = "waiting for footing";
+				return SkillStatus.Running;
+			}
 			if (legs >= MaxLegs)
 				return Fail(ctx, $"no {What} after {legs} legs of exploring");
 			TilePos node = ctx.Node;
@@ -128,11 +138,20 @@ public sealed class ExploreSkill : ISkill
 			ctx.Log.Info($"Explore: leg {legs} to {t} ({(frontier != null ? "frontier" : "digging on")}) from {node}");
 			walk = new WalkToSkill(t) { Quiet = true, Tolerance = 3, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			walk.Start(ctx);
+			legStart = ticks;
 		}
 		SkillStatus s = walk.Tick(ctx);
 		State = $"leg {legs} to {legTarget}";
 		if (s == SkillStatus.Running)
 			return SkillStatus.Running;
+		if (s == SkillStatus.Failed && ticks - legStart < InstantFailTicks) {
+			// Failed before it got going (no footing, start not standable): not a real leg; try again shortly.
+			legs--;
+			pauseUntil = ticks + RetryPauseTicks;
+			walk.Stop(ctx);
+			walk = null;
+			return SkillStatus.Running;
+		}
 		if (s == SkillStatus.Failed) {
 			// Down blocked (the bottom, lava): tunnel sideways from now on; a sideways tunnel blocked: turn round.
 			ctx.Log.Info($"Explore: leg {legs} to {legTarget} failed ({walk.FailureReason})"
