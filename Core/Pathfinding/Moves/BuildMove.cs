@@ -105,5 +105,5 @@ public sealed class BuildMove : IMoveType
 
 	/// <summary>The row above the head must be free (the body ends one row higher).</summary>
 	private static bool PillarHeadroomClear(ITileGrid g, TilePos from) =>
-		g.Get(from.X, from.Y - Body.HeightTiles).IsPassable() && g.Get(from.X + 1, from.Y - Body.HeightTiles).IsPassable();
+		g.Get(from.X, from.Y - Body.HeightTiles).IsHeadroom() && g.Get(from.X + 1, from.Y - Body.HeightTiles).IsHeadroom();
 }

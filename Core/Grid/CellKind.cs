@@ -29,6 +29,9 @@ public static class CellKindExtensions
 	public static bool IsPlatform(this CellKind k) => (k & CellKind.Platform) != 0;
 	public static bool IsFalling(this CellKind k) => (k & CellKind.Falling) != 0;
 	public static bool IsShaped(this CellKind k) => (k & CellKind.Shaped) != 0;
+	/// <summary>Room for the body above the feet: passable and not a slope or half block (those only open at the feet).</summary>
+	public static bool IsHeadroom(this CellKind k) => k.IsPassable() && !k.IsShaped();
+
 	/// <summary>A tile that has to be mined to get rid of it: solid, or a slope / half block.</summary>
 	public static bool IsBlockTile(this CellKind k) => (k & (CellKind.Solid | CellKind.Shaped)) != 0;
 	public static bool HasLava(this CellKind k) => (k & CellKind.Lava) != 0;
