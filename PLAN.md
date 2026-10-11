@@ -594,6 +594,9 @@ STALL after 60 s without a log line.
 * `boss_auto` on Classic with everything above and the 96-wide arena: won in 25,551 ticks (14,133 of fight).
   - 13 hits (163 damage), all from the Eye; no deaths.
   - 200/200 life at the end; 42 dodges.
+  - With the final edge rules (turn 4 tiles before an end, dodges avoid ending within 10 tiles of one): won in
+    23,723 ticks (13,862 of fight). 1 hit in the whole run (21 damage), never off the arena, no deaths,
+    200/200 at the end.
   - Demon eyes now come only while the bot hunts for lenses. Sent from the first tick, they met a sword-only bot
     building its house, and on Classic took most of the night.
 
