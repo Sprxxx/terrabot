@@ -102,6 +102,13 @@ Then it quits. It takes about 40 minutes, most of it the settle and boss chains.
 in the background. Run a subset with `-Scenarios "name1,name2"`. Claude can run this on its own; the manual
 scripts below are for things the self-test can't see, such as how the overlay looks or a real world's trees.
 
+`Enchanting Outskirts` is a Journey world, where the Eye of Cthulhu has half its life and hits for 1–4. To test
+on Classic, use the `Peppe` character and the `Noxious Vision of Organs` world:
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1 -Scenarios eye_of_cthulhu -Player Peppe -World "Noxious Vision of Organs" -WorldFile Noxious_Vision_of_Organs
+```
+Each result line reports hits taken, total damage and deaths.
+
 ## Test script: the Eye of Cthulhu (Milestone 7)
 A world with a corruption or crimson nearby, so a demon altar is within 150 tiles. Start from the Milestone 6
 state, or let `/bot auto` do everything.
