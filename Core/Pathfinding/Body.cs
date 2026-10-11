@@ -14,12 +14,19 @@ public static class Body
 	public const int WidthTiles = 2;
 	public const int HeightTiles = 3;
 
+	/// <summary>
+	/// Can the body stand with its feet in row <paramref name="y"/>? Slopes and half blocks (Shaped) only count as open
+	/// at the feet (the player steps up onto them and stands partly inside); at chest or head height they block like any
+	/// block (seen in game: a walk into a half block at head height, failing over and over).
+	/// </summary>
 	public static bool IsClear(ITileGrid g, int x, int y)
 	{
 		for (int dy = -HeightTiles + 1; dy <= 0; dy++)
-			for (int dx = 0; dx < WidthTiles; dx++)
-				if (!g.Get(x + dx, y + dy).IsPassable())
+			for (int dx = 0; dx < WidthTiles; dx++) {
+				CellKind k = g.Get(x + dx, y + dy);
+				if (!k.IsPassable() || dy < 0 && k.IsShaped())
 					return false;
+			}
 		return true;
 	}
 

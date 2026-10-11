@@ -98,6 +98,8 @@ public sealed class BotContext
 	private VetoedBlocks vetoedBlocks;
 	/// <summary>Cells where placing a block failed twice in the world: path moves do not plan to place there again.</summary>
 	public System.Collections.Generic.HashSet<TilePos> NoPlace { get; } = new();
+	/// <summary>Path edges that failed <see cref="Skills.WalkToSkill.MaxSameStuck"/> times in a row: the planner skips them.</summary>
+	public System.Collections.Generic.HashSet<(TilePos From, TilePos To)> BadEdges { get; } = new();
 	/// <summary>Cells where breaking failed twice in the world: path moves do not plan to break them again.</summary>
 	public System.Collections.Generic.HashSet<TilePos> NoBreak { get; } = new();
 	/// <summary>Failures so far per (cell, place?) before a veto.</summary>
@@ -134,7 +136,7 @@ public sealed class BotContext
 		get {
 			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
 				|| !ReferenceEquals(moves.Blocks, PathBlocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace)
-				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace };
+				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges };
 			return moves;
 		}
 	}

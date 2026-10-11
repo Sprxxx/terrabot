@@ -173,6 +173,8 @@ public sealed class WalkToSkill : ISkill
 				sameStuck = stuckStep != null && stuckStep == lastStuckStep ? sameStuck + 1 : 1;
 				lastStuckStep = stuckStep;
 				if (sameStuck >= MaxSameStuck) {
+					if (Executor.Current is PathStep bad && ctx.BadEdges.Add((bad.From, bad.To)))
+						ctx.Log.Info($"WalkTo: never planning {bad.Kind} {bad.From}->{bad.To} again");
 					Executor = null;
 					return Fail(ctx, $"the same step failed {sameStuck} times: {stuckStep}");
 				}

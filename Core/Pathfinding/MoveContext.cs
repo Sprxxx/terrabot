@@ -20,6 +20,12 @@ public sealed class MoveContext
 	public bool AllowPlace { get; init; } = true;
 
 	public bool CanBreak => Blocks != null && AllowBreak;
+
+	/// <summary>
+	/// Edges (from, to) that kept failing in the world: never planned again. Live set, filled while playing (seen in game:
+	/// one Walk step failed over and over, walk after walk, each new walk planning through it again).
+	/// </summary>
+	public IReadOnlySet<(TilePos From, TilePos To)> BadEdges { get; init; }
 	public bool CanPlace => Blocks != null && AllowPlace && Blocks.BlockCount > 0;
 
 	/// <summary>Ticks to walk one tile at full speed.</summary>

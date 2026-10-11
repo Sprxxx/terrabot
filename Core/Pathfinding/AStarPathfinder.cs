@@ -157,6 +157,8 @@ public sealed class PathSearch
 		foreach (PathStep e in edges) {
 			if (e.To.ChebyshevTo(start) > limits.MaxRadius)
 				continue;
+			if (ctx.BadEdges != null && ctx.BadEdges.Contains((e.From, e.To)))
+				continue;
 			float g = g0 + e.Cost;
 			long k = e.To.Key;
 			if (nodes.TryGetValue(k, out NodeRec existing) && (existing.Closed || existing.G <= g))

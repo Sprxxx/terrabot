@@ -112,8 +112,8 @@ public sealed class DigMove : IMoveType
 			}
 			if (k.HasLava())
 				return false;
-			if (k.IsSolid() || v == Variant.DigDown && k.IsShaped())
-				breaks.Add(c); // digging down through a slope or half block mines it like any block
+			if (k.IsSolid() || k.IsShaped() && (v == Variant.DigDown || c.Y < to.Y))
+				breaks.Add(c); // a slope or half block in the way (below when digging down, above the feet otherwise) is mined
 			else if (v == Variant.DigDown && k.IsPlatform())
 				return false; // standing on a platform: would need Down to fall through (not yet supported)
 		}
