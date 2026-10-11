@@ -30,6 +30,11 @@ public sealed class MoveContext
 
 	/// <summary>Cost multiplier for edges ending with the body in liquid (water physics are not modelled yet).</summary>
 	public float LiquidCostMultiplier { get; init; } = 3f;
+	/// <summary>
+	/// For edges ending with the head under: breath runs out in about 7 s (200 breath, one per 2 ticks), and the bot
+	/// drowned twice in the same flooded cave going for ore under the water.
+	/// </summary>
+	public float HeadUnderCostMultiplier { get; init; } = 15f;
 
 	/// <summary>Mining time is multiplied by this, so existing routes win unless digging is clearly shorter.</summary>
 	public float BreakCostMultiplier { get; init; } = 1.5f;
@@ -112,5 +117,6 @@ public sealed class MoveContext
 	}
 
 	/// <summary>Applies liquid penalty to an edge ending at <paramref name="to"/>.</summary>
-	public float Adjust(float cost, TilePos to) => Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
+	public float Adjust(float cost, TilePos to) =>
+		Body.HeadInLiquid(Grid, to) ? cost * HeadUnderCostMultiplier : Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
 }

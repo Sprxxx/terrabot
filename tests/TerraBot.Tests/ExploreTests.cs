@@ -54,3 +54,33 @@ public class ExploreTests
 		Assert.True(g.Count(FakeGame.IronOre) >= 3);
 	}
 }
+
+/// <summary>Water: ore beside it is left alone, swimming with the head under costs a lot.</summary>
+public class WaterTests
+{
+	private readonly ITestOutputHelper output;
+	public WaterTests(ITestOutputHelper output) => this.output = output;
+
+	[Fact]
+	public void OreBesideWater_IsLeftAlone()
+	{
+		FakeGame g = ProgressionTests.Mine(); // iron at columns 10-30, rows 29-31
+		for (int x = 14; x <= 20; x++)
+			g.Grid.Set(x, 28, CellKind.Water | CellKind.Empty); // a flooded pocket over part of the vein
+		BotContext ctx = g.CreateContext(output);
+		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, mine, 60 * 120));
+		for (int x = 13; x <= 21; x++)
+			Assert.Equal(FakeGame.TileIron, g.TileTypeAt(x, 29));
+	}
+
+	[Fact]
+	public void HeadUnderWater_CostsFarMoreThanWading()
+	{
+		var grid = ArrayTileGrid.Parse("......", "~~~~~~", "~~~~~~", "~~~~~~", "######");
+		var moves = new TerraBot.Core.Pathfinding.MoveContext(grid, TerraBot.Core.Physics.PhysicsParams.Default);
+		float wading = moves.Adjust(10f, new TilePos(1, 1)); // body rows -1..1: the head (row -1) is out
+		float under = moves.Adjust(10f, new TilePos(1, 3)); // body rows 1..3, all water
+		Assert.True(under >= wading * 4f, $"under {under}, wading {wading}");
+	}
+}

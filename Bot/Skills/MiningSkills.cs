@@ -187,7 +187,7 @@ public sealed class MineSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		foreach (TilePos c in ctx.World.FindTiles(TileType, node, SearchRadius)) {
-			if (bad.Contains(c) || ctx.UnreachableTiles.Contains(c) || !SafeToBreak(ctx, moves, c))
+			if (bad.Contains(c) || ctx.UnreachableTiles.Contains(c) || !SafeToBreak(ctx, moves, c) || NextToLiquid(ctx.Grid, c))
 				continue;
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
 			if (score < bestScore) {
@@ -196,6 +196,16 @@ public sealed class MineSkill : ISkill
 			}
 		}
 		return best;
+	}
+
+	/// <summary>Liquid on a side or corner: mining it means swimming (or flooding the tunnel). Players leave such ore without gear to breathe.</summary>
+	public static bool NextToLiquid(ITileGrid g, TilePos c)
+	{
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++)
+				if (g.Get(c.X + dx, c.Y + dy).IsLiquid())
+					return true;
+		return false;
 	}
 
 	public static bool SafeToBreak(BotContext ctx, MoveContext moves, TilePos c) =>

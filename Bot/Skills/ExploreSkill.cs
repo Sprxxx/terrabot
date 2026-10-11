@@ -163,7 +163,7 @@ public sealed class ExploreSkill : ISkill
 					continue;
 				if (aheadOnly && Math.Sign(x - n.X) != heading)
 					continue;
-				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || !NearUnseen(w, x, y) || NearVisited(ctx, x, y))
+				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y) || NearVisited(ctx, x, y))
 					continue;
 				float score = d;
 				if (Math.Sign(x - n.X) != heading)

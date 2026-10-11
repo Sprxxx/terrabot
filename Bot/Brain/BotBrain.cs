@@ -76,6 +76,8 @@ public sealed class BotBrain
 
 	/// <summary>Hurt this badly with no potion to drink and enemies about: dig in and recover instead of fighting on.</summary>
 	public const float RetreatBelow = 0.3f;
+	/// <summary>Tiles round a spot where the bot ran out of breath that it no longer mines.</summary>
+	public const int DrownAvoidRadius = 6;
 	/// <summary>How often (ticks) the brain checks for accessories to put on and chests in sight.</summary>
 	public const int HabitEvery = 60;
 
@@ -109,7 +111,13 @@ public sealed class BotBrain
 		}
 		// Out of breath under water comes before everything: drowning skips the hurt event and kills in seconds.
 		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax / 2 && SurfaceSkill.HeadUnder(ctx)) {
-			ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}");
+			ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}, and avoiding this water from now on");
+			// Remember the spot: no ore around here, no exploring legs here (seen in game: back to the same flooded cave until it drowned).
+			TilePos here = ctx.Node;
+			for (int dx = -DrownAvoidRadius; dx <= DrownAvoidRadius; dx++)
+				for (int dy = -DrownAvoidRadius; dy <= DrownAvoidRadius; dy++)
+					ctx.UnreachableTiles.Add(new TilePos(here.X + dx, here.Y + dy));
+			ctx.Explored.Add(here);
 			Interrupt(ctx);
 			Begin(new SurfaceSkill(), ctx);
 		}

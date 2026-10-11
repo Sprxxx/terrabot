@@ -42,6 +42,13 @@ public static class Body
 		return false;
 	}
 
+	/// <summary>Is the top row of the body (the head) in liquid?</summary>
+	public static bool HeadInLiquid(ITileGrid g, TilePos n)
+	{
+		int head = n.Y - HeightTiles + 1;
+		return g.Get(n.X, head).IsLiquid() || g.Get(n.X + 1, head).IsLiquid();
+	}
+
 	/// <summary>Horizontal offset that centres the hitbox on its two columns (6 px for a 20 px wide body).</summary>
 	public static float CenterOffset(PhysicsParams p) => (WidthTiles * TileSize - p.Width) * 0.5f;
 
