@@ -27,7 +27,8 @@ public sealed class DropThroughMove : IMoveType
 		to = default;
 		k = 0;
 		CellKind a = g.Get(from.X, from.Y + 1), b = g.Get(from.X + 1, from.Y + 1);
-		if (a.IsSolid() || b.IsSolid() || !(a.IsPlatform() || b.IsPlatform()))
+		// Only real platforms: a slope or half block is a block (seen in game: 14 re-plans holding Down on a slope).
+		if (a.IsSolid() || b.IsSolid() || a.IsShaped() || b.IsShaped() || !(a.IsPlatform() || b.IsPlatform()))
 			return false;
 		// The platform row itself is passable; the first floor below it (rows > from.Y + 1) ends the fall.
 		for (k = 1; k <= ctx.MaxDrop; k++) {

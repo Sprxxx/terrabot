@@ -30,7 +30,7 @@ public sealed class TerrariaTileGrid : ITileGrid
 			bool top = Main.tileSolidTop[type];
 			bool shaped = t.IsHalfBlock || t.Slope != SlopeType.Solid;
 			if (solid && !top && shaped)
-				k = CellKind.Platform;
+				k = CellKind.Platform | CellKind.Shaped;
 			else if (solid && !top)
 				k = TileID.Sets.Falling[type] ? CellKind.Solid | CellKind.Falling : CellKind.Solid;
 			else if (top && (solid || t.TileFrameY == 0))

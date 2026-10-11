@@ -404,7 +404,7 @@ public sealed class PathExecutor
 		while (actionIndex < step.Actions.Count) {
 			BlockAction a = step.Actions[actionIndex];
 			CellKind k = ctx.Grid.Get(a.Cell.X, a.Cell.Y);
-			bool done = a.Kind == ActionKind.Break ? !k.IsSolid() : k.IsSolid();
+			bool done = a.Kind == ActionKind.Break ? !k.IsBlockTile() : k.IsSolid();
 			if (done) {
 				actionIndex++;
 				continue;

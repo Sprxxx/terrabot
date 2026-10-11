@@ -16,6 +16,11 @@ public enum CellKind : byte
 	Honey = 16,
 	/// <summary>Set together with Solid for blocks that fall when unsupported (TileID.Sets.Falling: sand, silt, slush...).</summary>
 	Falling = 32,
+	/// <summary>
+	/// Set together with Platform for slopes and half blocks: stood on and walked into like a platform, but a real
+	/// block underneath (no dropping through it; digging breaks it).
+	/// </summary>
+	Shaped = 64,
 }
 
 public static class CellKindExtensions
@@ -23,6 +28,9 @@ public static class CellKindExtensions
 	public static bool IsSolid(this CellKind k) => (k & CellKind.Solid) != 0;
 	public static bool IsPlatform(this CellKind k) => (k & CellKind.Platform) != 0;
 	public static bool IsFalling(this CellKind k) => (k & CellKind.Falling) != 0;
+	public static bool IsShaped(this CellKind k) => (k & CellKind.Shaped) != 0;
+	/// <summary>A tile that has to be mined to get rid of it: solid, or a slope / half block.</summary>
+	public static bool IsBlockTile(this CellKind k) => (k & (CellKind.Solid | CellKind.Shaped)) != 0;
 	public static bool HasLava(this CellKind k) => (k & CellKind.Lava) != 0;
 
 	/// <summary>Something the player can stand on.</summary>

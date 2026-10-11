@@ -167,6 +167,15 @@ public sealed class WalkToSkill : ISkill
 				Replans++;
 				ctx.Log.Warn($"Re-plan #{Replans}: {Executor.Status}: {Executor.Reason}");
 				NoteFailedActions(ctx);
+				// The same step stuck again and again: the plan keeps asking for something the world will not do (seen in game:
+				// 26 re-plans holding Down on a slope). Give up; the skill above picks something else.
+				string stuckStep = Executor.Current?.ToString();
+				sameStuck = stuckStep != null && stuckStep == lastStuckStep ? sameStuck + 1 : 1;
+				lastStuckStep = stuckStep;
+				if (sameStuck >= MaxSameStuck) {
+					Executor = null;
+					return Fail(ctx, $"the same step failed {sameStuck} times: {stuckStep}");
+				}
 				Executor = null;
 				if (Replans > MaxReplans)
 					return Fail(ctx, $"too many re-plans ({Replans})");
@@ -184,8 +193,8 @@ public sealed class WalkToSkill : ISkill
 			return;
 		foreach (BlockAction a in new[] { current }) {
 			bool place = a.Kind == ActionKind.Place;
-			bool solid = ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsSolid();
-			if (place == solid)
+			CellKind cell = ctx.Grid.Get(a.Cell.X, a.Cell.Y);
+			if (place ? cell.IsSolid() : !cell.IsBlockTile())
 				continue; // it did happen
 			var key = (a.Cell, place);
 			int n = ctx.ActionFailures.TryGetValue(key, out int k) ? k + 1 : 1;
@@ -194,6 +203,11 @@ public sealed class WalkToSkill : ISkill
 				ctx.Log.Info($"WalkTo: {(place ? "placing a block at" : "breaking")} {a.Cell} failed {n} times; planning round it from now on");
 		}
 	}
+
+	private string lastStuckStep;
+	private int sameStuck;
+	/// <summary>The identical step failing this many re-plans in a row ends the walk.</summary>
+	public const int MaxSameStuck = 3;
 
 	/// <summary>Failures of the same action at a cell before path moves stop planning it.</summary>
 	public const int MaxActionFailures = 2;
