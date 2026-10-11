@@ -95,6 +95,13 @@ public sealed class BotContext
 	/// </summary>
 	public System.Collections.Generic.IReadOnlySet<TilePos> Protected { get; set; }
 	private ReservedBlocks protectedBlocks;
+	private VetoedBlocks vetoedBlocks;
+	/// <summary>Cells where placing a block failed twice in the world: path moves do not plan to place there again.</summary>
+	public System.Collections.Generic.HashSet<TilePos> NoPlace { get; } = new();
+	/// <summary>Cells where breaking failed twice in the world: path moves do not plan to break them again.</summary>
+	public System.Collections.Generic.HashSet<TilePos> NoBreak { get; } = new();
+	/// <summary>Failures so far per (cell, place?) before a veto.</summary>
+	public System.Collections.Generic.Dictionary<(TilePos, bool), int> ActionFailures { get; } = new();
 
 	/// <summary>
 	/// <see cref="Blocks"/> as path moves see it, with <see cref="Protected"/> and <see cref="Reserved"/> applied
@@ -105,10 +112,12 @@ public sealed class BotContext
 		get {
 			if (Blocks == null)
 				return null;
-			IBlockActions inner = Blocks;
+			if (vetoedBlocks == null || !ReferenceEquals(vetoedBlocks.Inner, Blocks))
+				vetoedBlocks = new VetoedBlocks(Blocks, NoPlace, NoBreak);
+			IBlockActions inner = vetoedBlocks;
 			if (Protected != null && Protected.Count > 0) {
-				if (protectedBlocks == null || !ReferenceEquals(protectedBlocks.Inner, Blocks) || !ReferenceEquals(protectedBlocks.Reserved, Protected))
-					protectedBlocks = new ReservedBlocks(Blocks, Protected);
+				if (protectedBlocks == null || !ReferenceEquals(protectedBlocks.Inner, vetoedBlocks) || !ReferenceEquals(protectedBlocks.Reserved, Protected))
+					protectedBlocks = new ReservedBlocks(vetoedBlocks, Protected);
 				inner = protectedBlocks;
 			}
 			if (Reserved == null || Reserved.Count == 0)

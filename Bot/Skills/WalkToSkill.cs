@@ -166,6 +166,7 @@ public sealed class WalkToSkill : ISkill
 			default:
 				Replans++;
 				ctx.Log.Warn($"Re-plan #{Replans}: {Executor.Status}: {Executor.Reason}");
+				NoteFailedActions(ctx);
 				Executor = null;
 				if (Replans > MaxReplans)
 					return Fail(ctx, $"too many re-plans ({Replans})");
@@ -173,6 +174,27 @@ public sealed class WalkToSkill : ISkill
 		}
 		return SkillStatus.Running;
 	}
+
+	/// <summary>Actions of the step that got stuck which did not happen: twice at a cell, and path moves stop planning them there.</summary>
+	private void NoteFailedActions(BotContext ctx)
+	{
+		if (Executor.Current is not PathStep step || !step.HasActions)
+			return;
+		foreach (BlockAction a in step.Actions) {
+			bool place = a.Kind == ActionKind.Place;
+			bool solid = ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsSolid();
+			if (place == solid)
+				continue; // it did happen
+			var key = (a.Cell, place);
+			int n = ctx.ActionFailures.TryGetValue(key, out int k) ? k + 1 : 1;
+			ctx.ActionFailures[key] = n;
+			if (n >= MaxActionFailures && (place ? ctx.NoPlace.Add(a.Cell) : ctx.NoBreak.Add(a.Cell)))
+				ctx.Log.Info($"WalkTo: {(place ? "placing a block at" : "breaking")} {a.Cell} failed {n} times; planning round it from now on");
+		}
+	}
+
+	/// <summary>Failures of the same action at a cell before path moves stop planning it.</summary>
+	public const int MaxActionFailures = 2;
 
 	private void StartSearch(BotContext ctx, TilePos node)
 	{
