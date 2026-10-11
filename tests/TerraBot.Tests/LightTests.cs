@@ -78,10 +78,10 @@ public class BreathTests
 		var brain = new Bot.Brain.BotBrain();
 		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
 		g.Refresh(ctx);
-		ctx.Combat.Breath = 60;
+		ctx.Combat.Breath = 100; // below three quarters
 		brain.Tick(ctx);
 		output.WriteLine(brain.Describe());
-		Assert.IsType<Bot.Skills.SurfaceSkill>(brain.Current);
-		Assert.True(ctx.Output.Jump);
+		var surface = Assert.IsType<Bot.Skills.SurfaceSkill>(brain.Current);
+		Assert.Contains("air", surface.Describe()); // walking to the nearest dry spot (or pillaring up)
 	}
 }

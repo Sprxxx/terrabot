@@ -17,6 +17,10 @@ public sealed class SurfaceSkill : ISkill
 	private int ticks;
 	private int? column;
 	private bool jumpedLastTick;
+	private WalkToSkill walk;
+	private bool walkFailed;
+	/// <summary>How far (cells, through water and air) to look for a dry place to stand.</summary>
+	public const int AirSearchCells = 600;
 
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
@@ -25,7 +29,34 @@ public sealed class SurfaceSkill : ISkill
 	public string Describe() => $"Surface [{State}]";
 
 	public void Start(BotContext ctx) => ctx.Log.Info($"Surface start: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} at {ctx.Node}");
-	public void Stop(BotContext ctx) { }
+	public void Stop(BotContext ctx)
+	{
+		walk?.Stop(ctx);
+		walk = null;
+	}
+
+	/// <summary>
+	/// The nearest node (breadth-first through passable cells: water, air, slopes) where the body can stand with no part
+	/// of it in liquid; null if none within <see cref="AirSearchCells"/>.
+	/// </summary>
+	private static TilePos? NearestAir(BotContext ctx)
+	{
+		TilePos start = ctx.Node;
+		var seen = new System.Collections.Generic.HashSet<TilePos> { start };
+		var queue = new System.Collections.Generic.Queue<TilePos>();
+		queue.Enqueue(start);
+		while (queue.Count > 0 && seen.Count < AirSearchCells) {
+			TilePos c = queue.Dequeue();
+			if (c != start && Core.Pathfinding.Body.IsStandable(ctx.Grid, c) && !Core.Pathfinding.Body.InLiquid(ctx.Grid, c))
+				return c;
+			foreach (TilePos d in new[] { new TilePos(0, -1), new TilePos(-1, 0), new TilePos(1, 0), new TilePos(0, 1) }) {
+				TilePos nx = new(c.X + d.X, c.Y + d.Y);
+				if (seen.Add(nx) && ctx.Grid.Get(nx.X, nx.Y).IsPassable())
+					queue.Enqueue(nx);
+			}
+		}
+		return null;
+	}
 
 	/// <summary>Is the head cell (top of the 2×3 body) in liquid?</summary>
 	public static bool HeadUnder(BotContext ctx)
@@ -51,12 +82,32 @@ public sealed class SurfaceSkill : ISkill
 			State = "catching breath";
 			return SkillStatus.Running; // head out: just wait here for breath to come back
 		}
+		TilePos n = ctx.Node;
+		// First choice: walk (the pathfinder digs through a ceiling and pillars) to the nearest spot where the head is out.
+		if (walk == null && !walkFailed && ctx.Body.Grounded) {
+			if (NearestAir(ctx) is TilePos air) {
+				ctx.Log.Info($"Surface: heading for air at {air}");
+				walk = new WalkToSkill(air) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
+				walk.Start(ctx);
+			}
+			else
+				walkFailed = true;
+		}
+		if (walk != null) {
+			SkillStatus ws = walk.Tick(ctx);
+			State = "walking to air";
+			if (ws == SkillStatus.Running)
+				return SkillStatus.Running;
+			walk.Stop(ctx);
+			walk = null;
+			walkFailed = ws == SkillStatus.Failed;
+			return SkillStatus.Running;
+		}
 		if (column == null || ticks % 30 == 0)
 			column = AirColumn(ctx);
-		TilePos n = ctx.Node;
-		// Vanilla has no swimming up without flippers or a float: a new jump needs footing (Player.JumpMovement wants
-		// velocity.Y == 0). Seen in game: holding jump in a flooded shaft moved the bot 6 tiles in 15 s and it drowned.
-		// So pillar up like a player: jump off whatever is underfoot, and put a block under the feet on the way up.
+		// Fallback: vanilla has no swimming up without flippers or a float (a new jump needs footing: Player.JumpMovement
+		// wants velocity.Y == 0). Seen in game: holding jump in a flooded shaft moved the bot 6 tiles in 15 s and it
+		// drowned. So pillar up like a player: jump off whatever is underfoot, a block under the feet on the way up.
 		bool footing = Math.Abs(ctx.Body.VY) < 0.05f;
 		if (footing) {
 			ctx.Output.Jump = !jumpedLastTick; // a fresh press each time (releaseJump)

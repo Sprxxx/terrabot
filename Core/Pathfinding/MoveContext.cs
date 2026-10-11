@@ -40,7 +40,7 @@ public sealed class MoveContext
 	/// For edges ending with the head under: breath runs out in about 7 s (200 breath, one per 2 ticks), and the bot
 	/// drowned twice in the same flooded cave going for ore under the water.
 	/// </summary>
-	public float HeadUnderCostMultiplier { get; init; } = 15f;
+	public float HeadUnderCostMultiplier { get; init; } = 200f; // 15 still sent the bot through a flooded cave
 
 	/// <summary>Mining time is multiplied by this, so existing routes win unless digging is clearly shorter.</summary>
 	public float BreakCostMultiplier { get; init; } = 1.5f;
