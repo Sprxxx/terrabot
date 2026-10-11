@@ -33,7 +33,7 @@ public sealed class BossFightSkill : ISkill
 	/// <summary>Past this many tiles from the start, turn round even when it is not safe.</summary>
 	public const int HardHalfWidth = 40;
 	/// <summary>In an arena, turn when safe this many columns before its ends, and anyway this many before.</summary>
-	public const int ArenaSoftMargin = 10, ArenaHardMargin = 2;
+	public const int ArenaSoftMargin = 10, ArenaHardMargin = 4; // hard: a hit knocks the bot a tile or two (4.5 px/tick)
 	/// <summary>Extra room (px) kept from an arena end when braking.</summary>
 	public const float BrakeMarginPx = 8f;
 	/// <summary>Walking back to the arena ends within this many columns of its middle.</summary>

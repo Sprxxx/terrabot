@@ -559,6 +559,28 @@ It is now a fixpoint, `SolveCosts`:
 Passes over 50 ms are logged. The self-test logs a heartbeat every 30 s and `tools/watch_selftest.sh` reports
 STALL after 60 s without a log line.
 
+### Surviving a Classic night (found by the `boss_auto` runs)
+* **Fliers with only a sword:** FightSkill held its ground and met demon eyes as they came, instead of chasing
+  their "feet tile"; chasing had cost 150 life. Drops close by are picked up while the next flier is still far
+  off, because with fliers coming one after another the fight never ends and "loot after the fight" never came.
+* **Retreat:** below 30% life with no potion and enemies in sight, the brain digs in with
+  `ShelterSkill.Recover(0.8)`. It is never interrupted to fight and is capped at 2 minutes.
+  - The dig column is one whose cells down to 5 deep can all be mined. Straight down was under the work bench
+    once, and a 40,000-node search ran for 2.7 s while demon eyes killed the bot.
+  - Its walk has a small limit and one attempt.
+* **Protected cells:** `BotContext.Protected` keeps every house cell and the arena floor off limits to path
+  moves (never broken or filled). A retreat had dug through the house's doorway.
+* **After a death** the brain drops the running skill (stale, at the old spot) and plans again from the spawn.
+  The boss fight notices "died" itself.
+* **Night left:** a night boss is summoned only with at least 4.5 minutes of night left. Late summons saw the
+  Eye fly off at dawn at 1275/2800.
+* **Arena edges:**
+  - Turn anyway 4 columns before an end; a hit knocks the bot a tile or two.
+  - Brake within the stopping distance (v²/2a + 8 px).
+  - Walk back to the middle if off the arena.
+  - Dodge plans that end within 10 tiles of an end lose points.
+  - Knock-offs still happen; the bot is back within 1-3 s.
+
 ### In-game results
 * `arena_auto` (rough ground: mound, pit, two trees; wood and gel only): it crafted torches and a campfire,
   felled the tree, mined the mound and built the arena in about 2,100 ticks.
@@ -569,6 +591,11 @@ STALL after 60 s without a log line.
   - It walked to the arena and won: 14,829 ticks of fight, finishing at 200/200 life.
   - Its hits came from the scenario's demon eyes and from the forced turns at the arena's left end, both fixed
     since.
+* `boss_auto` on Classic with everything above and the 96-wide arena: won in 25,551 ticks (14,133 of fight).
+  - 13 hits (163 damage), all from the Eye; no deaths.
+  - 200/200 life at the end; 42 dodges.
+  - Demon eyes now come only while the bot hunts for lenses. Sent from the first tick, they met a sword-only bot
+    building its house, and on Classic took most of the night.
 
 ### Actions that stand in for UI clicks (approved by the user 2026-10-10)
 The bot otherwise acts only through controls. These four have no control to press, so they call what the
@@ -590,8 +617,8 @@ UI click would call:
 Ropes/ladders, swimming (water only penalised, lava avoided), slopes/half-blocks (modelled as full blocks),
 doors, breaking above the head while pillaring, flying jump starts, magic combat, chests, accessories (Hermes
 Boots), healing and buff potions, better arrows, biome woods (only forest Wood is a gather source),
-conditional recipes (near water, biome...), bosses after the Eye. When badly hurt without potions the bot keeps
-fighting (Classic demon eyes took it to 53/200 in `boss_auto`); it should retreat or shelter.
+conditional recipes (near water, biome...), bosses after the Eye. Hiding in the house rather than a hole needs
+doors in the pathfinder.
 
 ## Self-test history
 Automated in-game self-test (`tools/selftest.ps1`, `Game/SelfTest/`) added 2026-10-10. It runs scenarios in
@@ -611,3 +638,9 @@ the real game with copies of the user's player and world.
   `early_game_full_hotbar` checking for a "moved" log line; the sword had legitimately been crafted straight
   onto the hotbar, so the check now looks at the hotbar. The scenarios touched by the final hotbar-stocking fix
   (5 of them) were re-run on the final build and pass. 124 unit tests. Arena walls since this milestone.
+* M8 (2026-10-11):
+  - `arena_auto` and `boss_auto` on Classic pass.
+  - The affected scenarios pass on the final build: `build_house`, `settle_auto`, `eye_of_cthulhu`,
+    `life_crystals`, `night_shelter`, plus 8 early ones. That is 5/5 targeted plus 8/8 before the full run was
+    stopped.
+  - 178 unit tests. No more full 40-minute suites for routine regressions; only the scenarios a change touches.

@@ -55,7 +55,7 @@ public static class Dodge
 	/// <summary>Gaps wider than this (px) count as equally safe, so the caller's preferred direction decides.</summary>
 	public const float SafeGap = 48f;
 	/// <summary>Plans ending closer than this (px) to a wall lose up to <see cref="CorneredPx"/> × <see cref="CorneredWeight"/> points.</summary>
-	public const float CorneredPx = 64f, CorneredWeight = 0.4f;
+	public const float CorneredPx = 160f, CorneredWeight = 0.3f;
 
 	public static readonly (int Dir, int JumpHold)[] Plans = {
 		(1, 0), (-1, 0), (0, 0),

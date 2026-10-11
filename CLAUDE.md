@@ -144,7 +144,11 @@ Gotchas already hit:
     (x,y) (wall|far end), next dash in t ticks`, `Quick-heal: life a -> b, potion sickness t ticks`, `Died (...)`.
   - Arena (M8): `Auto: arena site (x,y) (N edits)`, `Build start: boss arena ...`, `ChopTree start` inside it,
     `Auto: walking to the arena to summon ...`, `Auto: resting to 90% life before summoning ...`, `fighting ... in the arena`.
+  - Survival: `Danger: life a/b and no potion; retreating from <Skill>`, `Shelter start at (x,y): digging in to recover to
+    80% life at column x`, `Shelter: done waiting (...)`, `Died during <Skill>; starting afresh from (x,y)`,
+    `Boss fight: off the arena at (x,y), walking back` / `back in the arena`, `Auto: too little night left for the ...`.
   - Self-test: `SELFTEST heartbeat <scenario> t<ticks> ...` every 30 s; `Planner: slow pass, N ms` over 50 ms.
+    Watch runs with `tools/watch_selftest.sh` (prints STALL after 60 s without a log line).
   - Building (M6): `Auto: house site (x,y) (N edits)`, `Build start: small house at (x,y)`, `Build: <Kind> (x,y) failed (...),
     attempt n/3`, `Build done: ... is valid housing` or `Build ... failed: built, but the housing check says: <reason>`;
     `Equip start` / `Equipped item N`.
