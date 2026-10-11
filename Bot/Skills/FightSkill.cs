@@ -23,6 +23,13 @@ public sealed class FightSkill : ISkill
 	public const float EngageRadius = 25 * 16f;
 	/// <summary>Enemies that once came within <see cref="EngageRadius"/> stay targets out to this distance.</summary>
 	public const float LeashRadius = 50 * 16f;
+	/// <summary>
+	/// How far (px) an engaged enemy is chased. Defending (the brain's danger response) keeps it short: seen in game, a
+	/// slime pulled the bot from 30 tiles underground back to the surface and 55 tiles away from its mining. Hunting
+	/// for drops uses <see cref="LeashRadius"/>.
+	/// </summary>
+	public float Leash { get; init; } = DefendLeashTiles * 16f;
+	public const float DefendLeashTiles = 24f;
 	public const int CalmTicks = 90;
 	public const float HealBelow = 0.4f;
 	/// <summary>Shoot at targets up to this far (px); arrows lose height beyond.</summary>
@@ -212,7 +219,7 @@ public sealed class FightSkill : ISkill
 			if (d <= engage)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
-			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= LeashRadius)) && !unreachable.Contains(e.Id);
+			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= Leash)) && !unreachable.Contains(e.Id);
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {

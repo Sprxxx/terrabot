@@ -23,8 +23,8 @@ public enum ExploreBias
 /// <item>frontiers <see cref="MinLegTiles"/>–<see cref="MaxLegTiles"/> tiles away are scored by distance, keeping on in
 /// the same heading (no zig-zag), and the bias (deeper for <see cref="ExploreBias.Down"/>);</item>
 /// <item>spots near earlier legs' targets are skipped;</item>
-/// <item>with no frontier in view, dig: <see cref="FallbackStep"/> tiles on in the heading (and down for
-/// <see cref="ExploreBias.Down"/>).</item>
+/// <item>with no frontier in view, dig: <see cref="FallbackDepth"/> tiles straight down for <see cref="ExploreBias.Down"/>,
+/// <see cref="FallbackStep"/> tiles on in the heading for <see cref="ExploreBias.Sideways"/>.</item>
 /// </list>
 /// Fails after <see cref="MaxLegs"/> legs or <see cref="MaxTicks"/> ticks without finding it.
 /// </summary>
@@ -36,16 +36,19 @@ public sealed class ExploreSkill : ISkill
 	public const int FrontierReach = 3;
 	public const int MaxLegs = 16;
 	public const int MaxTicks = 60 * 60 * 5;
-	public const int FallbackStep = 25, FallbackDepth = 12;
+	public const int FallbackStep = 25, FallbackDepth = 20, FallbackSideways = 2;
 	private bool lastFallbackFailed;
 	private bool legWasFallback;
+	private bool legDown;
+	private bool downBlocked;
 	/// <summary>Leg targets closer than this to an earlier one are not picked again.</summary>
 	public const int VisitedRadius = 10;
 	/// <summary>The found check is a tile search: every this many ticks.</summary>
 	public const int FoundCheckEvery = 15;
+	/// <summary>Leg targets remembered in <see cref="BotContext.Explored"/>.</summary>
+	public const int MaxRemembered = 300;
 
 	private readonly Func<BotContext, bool> found;
-	private readonly List<TilePos> visited = new();
 	private WalkToSkill walk;
 	private TilePos? legTarget;
 	private int legs;
@@ -108,10 +111,18 @@ public sealed class ExploreSkill : ISkill
 			if (frontier == null && lastFallbackFailed)
 				frontier = PickFrontier(ctx, node, aheadOnly: false);
 			legWasFallback = frontier == null;
-			TilePos t = frontier ?? new TilePos(node.X + heading * FallbackStep, node.Y + (Bias == ExploreBias.Down ? FallbackDepth : 0));
+			// Digging on: straight down for ores and caves (2 blocks a tile; a diagonal through stone was 60-70 blocks a
+			// leg in game), a level tunnel along the surface.
+			bool down = Bias == ExploreBias.Down && !downBlocked;
+			legDown = frontier == null && down;
+			TilePos t = frontier ?? (down
+				? new TilePos(node.X + heading * FallbackSideways, node.Y + FallbackDepth)
+				: new TilePos(node.X + heading * FallbackStep, node.Y));
 			legs++;
 			legTarget = t;
-			visited.Add(t);
+			ctx.Explored.Add(t);
+			if (ctx.Explored.Count > MaxRemembered)
+				ctx.Explored.RemoveAt(0);
 			if (t.X != node.X)
 				heading = Math.Sign(t.X - node.X);
 			ctx.Log.Info($"Explore: leg {legs} to {t} ({(frontier != null ? "frontier" : "digging on")}) from {node}");
@@ -123,11 +134,15 @@ public sealed class ExploreSkill : ISkill
 		if (s == SkillStatus.Running)
 			return SkillStatus.Running;
 		if (s == SkillStatus.Failed) {
-			ctx.Log.Info($"Explore: leg {legs} to {legTarget} failed ({walk.FailureReason}){(legWasFallback ? "; turning round" : "")}");
-			if (legWasFallback)
+			// Down blocked (the bottom, lava): tunnel sideways from now on; a sideways tunnel blocked: turn round.
+			ctx.Log.Info($"Explore: leg {legs} to {legTarget} failed ({walk.FailureReason})"
+				+ (legDown ? "; going sideways instead" : legWasFallback ? "; turning round" : ""));
+			if (legDown)
+				downBlocked = true;
+			else if (legWasFallback)
 				heading = -heading;
 		}
-		lastFallbackFailed = legWasFallback && s == SkillStatus.Failed;
+		lastFallbackFailed = legWasFallback && !legDown && s == SkillStatus.Failed;
 		walk.Stop(ctx);
 		walk = null;
 		return SkillStatus.Running;
@@ -148,7 +163,7 @@ public sealed class ExploreSkill : ISkill
 					continue;
 				if (aheadOnly && Math.Sign(x - n.X) != heading)
 					continue;
-				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || !NearUnseen(w, x, y) || NearVisited(x, y))
+				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || !NearUnseen(w, x, y) || NearVisited(ctx, x, y))
 					continue;
 				float score = d;
 				if (Math.Sign(x - n.X) != heading)
@@ -179,9 +194,9 @@ public sealed class ExploreSkill : ISkill
 		return false;
 	}
 
-	private bool NearVisited(int x, int y)
+	private static bool NearVisited(BotContext ctx, int x, int y)
 	{
-		foreach (TilePos v in visited)
+		foreach (TilePos v in ctx.Explored)
 			if (Math.Abs(v.X - x) <= VisitedRadius && Math.Abs(v.Y - y) <= VisitedRadius)
 				return true;
 		return false;

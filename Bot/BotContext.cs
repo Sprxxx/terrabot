@@ -41,6 +41,8 @@ public sealed class BotContext
 	public int Deaths { get; set; }
 	/// <summary>Chests already looted (or given up on), by top-left tile: not visited again.</summary>
 	public System.Collections.Generic.HashSet<TilePos> OpenedChests { get; } = new();
+	/// <summary>Where exploring legs went (kept across restarts, so a fight or replan does not send it back over old ground).</summary>
+	public System.Collections.Generic.List<TilePos> Explored { get; } = new();
 	/// <summary>Expert or Master world (Main.expertMode): bosses attack faster.</summary>
 	public bool Expert { get; set; }
 	public IBotLog Log { get; set; } = NullLog.Instance;

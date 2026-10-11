@@ -74,7 +74,7 @@ public sealed class HuntSkill : ISkill
 			return SkillStatus.Running;
 		}
 		if (PreyInSight(ctx)) {
-			Begin(ctx, new FightSkill(), "fighting");
+			Begin(ctx, new FightSkill { Leash = FightSkill.LeashRadius }, "fighting"); // hunting: the prey is the point
 			return SkillStatus.Running;
 		}
 		if (waitTicks-- > 0) {
