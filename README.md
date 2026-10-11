@@ -82,7 +82,7 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1
 ```
 This opens tModLoader in a separate, throw-away save folder, using copies of your `Pepi` character and the
-`Enchanting Outskirts` world; your real saves are only read. It plays 31 scenarios in an arena above the
+`Enchanting Outskirts` world; your real saves are only read. It plays 32 scenarios in an arena above the
 spawn and prints PASS/FAIL for each:
 - walking, ledge jump, gap jump, running jump over an 8-tile gap (and refusing one with no run-up room),
   dropping through platforms, a drop without fall damage, an unreachable target;
@@ -96,7 +96,10 @@ spawn and prints PASS/FAIL for each:
 - building a house from a kit (checked with the game's housing query), and the whole settle chain from copper
   tools to a house, a broadsword and full iron armour.
 - shooting a demon eye with a wooden bow, eating five life crystals, beating the Eye of Cthulhu with iron gear,
-  and the boss chain from a settled character (stations, house, arrows, lenses, altar, summon, fight).
+  and the boss chain from a settled character (stations, house, arrows, arena, heart lantern, lenses, altar,
+  summon, fight).
+- a boss arena on rough ground: felling trees, mining a mound, filling a pit, crafting and placing torches and a
+  campfire.
 
 Then it quits. It takes about 40 minutes, most of it the settle and boss chains. Keep the game window in front, because Terraria pauses while it's
 in the background. Run a subset with `-Scenarios "name1,name2"`. Claude can run this on its own; the manual
@@ -109,6 +112,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1 -Scenario
 ```
 Each result line reports hits taken, total damage and deaths.
 
+To watch a run as it goes, `tools/watch_selftest.sh` prints the interesting log lines. It reports STALL when the
+log stops growing for a minute: the self-test logs a heartbeat every 30 seconds, so silence means a frozen game.
+
+## Test script: the boss arena (Milestone 8)
+Start from the Milestone 7 state, or let `/bot auto` do everything. `/bot auto arena` builds just the arena.
+
+1. After the arrows, it picks a site near the house, keeping 4 tiles clear of it (`Auto: arena site ... (N edits)`).
+   The site is 96 tiles wide, about a screen.
+2. It crafts torches and a campfire, then builds:
+   - fells trees in the way (`ChopTree start`);
+   - mines bumps, fills pits;
+   - places torches every 12 tiles and the campfire in the middle.
+3. It crafts chains and a heart lantern and hangs it under the house's roof (`small house with a heart lantern`).
+4. At night it walks to the arena's middle and rests to 90% life (`resting to 90% life`). Then it summons and
+   kites inside the arena, never past its ends.
+5. Notes for me: where it put the arena on real terrain, how long the build took, whether anything looked odd
+   (a floor across a valley, a felled tree it should have left), and how the fight went.
+
 ## Test script: the Eye of Cthulhu (Milestone 7)
 A world with a corruption or crimson nearby, so a demon altar is within 150 tiles. Start from the Milestone 6
 state, or let `/bot auto` do everything.
@@ -118,10 +139,14 @@ state, or let `/bot auto` do everything.
 3. By day it waits for night to hunt (`Wait for night`). At night it shoots demon eyes until it has 6 lenses.
 4. It walks to the nearest demon altar (`Auto: found a DemonAltar at ...`) and crafts the Suspicious Looking Eye.
    If there is none within 150 tiles it stops and says so.
-5. At night it summons the Eye and fights: it runs back and forth about 20 tiles each way, hops, and shoots.
+5. At night it summons the Eye and fights:
+   - it runs back and forth, turning only when the Eye's next dash is far enough off;
+   - it dodges when a dash or the hovering Eye would hit (`Boss fight: dodge ...`);
+   - it shoots.
+
    The log shows `Boss fight: ...` with the boss's life about every 10%.
-6. Notes for me: whether it won, how long it took and how much life it lost. In a classic (non-Journey) world
-   the Eye hits harder: it is untested there.
+6. Notes for me: whether it won, how long it took and how much life it lost. On Classic it has won with 5 hits
+   taken.
 
 ## Test script: house and armour (Milestone 6)
 Continue from Milestone 5, or start fresh: `/bot auto` runs everything.

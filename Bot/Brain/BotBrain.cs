@@ -74,10 +74,36 @@ public sealed class BotBrain
 		Current = null;
 	}
 
+	/// <summary>Hurt this badly with no potion to drink and enemies about: dig in and recover instead of fighting on.</summary>
+	public const float RetreatBelow = 0.3f;
+	private int deathsSeen;
+	/// <summary>Life to recover to before coming out of a retreat.</summary>
+	public const float RetreatUntil = 0.8f;
+
 	public void Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
-		if (Auto && Current is not FightSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
+		// After a death the bot is back at the spawn: whatever it was doing (a retreat, a walk) is stale. A boss fight
+		// is left to notice it itself ("died").
+		if (ctx.Deaths != deathsSeen) {
+			deathsSeen = ctx.Deaths;
+			if (Current != null && Current is not BossFightSkill) {
+				ctx.Log.Info($"Died during {Current.Name}; starting afresh from {ctx.Node}");
+				LastResult = $"{Current.Name} Failed: died";
+				if (Auto)
+					Planner.OnSkillFinished(Current, SkillStatus.Failed, ctx);
+				Interrupt(ctx);
+			}
+		}
+		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
+		// would hide and regenerate; demon eyes cannot get through blocks.
+		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true }
+			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatBelow && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)) {
+			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
+			Interrupt(ctx);
+			Begin(ShelterSkill.Recover(RetreatUntil), ctx);
+		}
+		if (Auto && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
 			Interrupt(ctx);

@@ -86,6 +86,18 @@ public class DodgeTests
 	}
 
 	[Fact]
+	public void WithRoomBothWays_DoesNotDodgeIntoTheWall()
+	{
+		// A slow threat from above, a wall 40 px to the left: running either way clears it, but left ends cornered.
+		BodyState s = Standing(100f);
+		var threat = new Threat(s.X - 40f, s.Y - 300f, 100, 110, 0f, 1f);
+		DodgePlan best = Dodge.Best(s, P, Floor, 60f, 10000, new[] { threat }, preferDir: -1);
+		output.WriteLine(best.ToString());
+		Assert.False(best.Hits);
+		Assert.NotEqual(-1, best.Dir);
+	}
+
+	[Fact]
 	public void WallStopsTheRun()
 	{
 		// Pinned against a wall on the right, a dash from the left-above: running right gains nothing.

@@ -455,7 +455,8 @@ and the Eye of Cthulhu defeated. Plan `crystals` is just the life part.
 ### Boss fight (`BossFightSkill`)
 * Summon (UseItemSkill), then wait up to 5 s for the boss to appear: the item is used up before the boss is
   visible.
-* Kite: run to ±20 tiles of the start and back, hopping every 50 ticks.
+* Kite: run to ±20 tiles of the start and back (hopping every 50 ticks until the dodge planner replaced it, see
+  "Classic difficulty" below).
 * Shoot servants within 8 tiles first, then the boss. Quick-heal below 45%.
 * Bosses are perceived out to 200 tiles. The brain never pre-empts a boss fight.
 * Done when `IWorldInfo.BossDefeated` (NPC.downedBoss1 and friends) is true.
@@ -481,6 +482,94 @@ and the Eye of Cthulhu defeated. Plan `crystals` is just the life part.
 * Final full suite on the finished milestone: 31/31 passed, 141 unit tests. `boss_auto` won in 12,371 ticks and
   `eye_of_cthulhu` in 6,093.
 
+## Classic difficulty (2026-10-11)
+On Classic (character Peppe, world "Noxious Vision of Organs"; `selftest.ps1 -Player/-World/-WorldFile`) the
+Eye has 2800 life and dashes properly. The first try: 18 hits, a death at 94 boss life. What changed:
+
+* **Quick-heal never worked.** Vanilla reads `controlQuickHeal` in Player.Update *before*
+  `PlayerLoader.SetControls`, and ResetControls clears it next tick. The bot now calls `Player.QuickHeal()`
+  (what the key does; same checks and potion sickness). The Journey fights never dropped below 45%, so nobody
+  noticed.
+* **Deaths** are counted in `ModPlayer.Kill`: SetControls does not run while dead, so the bot never saw
+  "dead". The boss fight fails with "died".
+* **Dodge planner** (`Core/Physics/Dodge.cs`): every tick, 8 plans (left/right/stand × no jump/full/short
+  jump) are simulated for 50 ticks with the real player physics against the threats; the plan hit latest (or
+  never, widest gap) wins, ties going to the kite direction. It takes over from kiting when kiting comes within
+  16 px, and hands back at 32.
+* **Eye model** (`EyePattern`, from NPC.AI style 4): ai[0] phase, ai[1] step, ai[2] timer, ai[3] dash count.
+  - First form: hover 200 px above (accel 0.04, speed 5) for 600 ticks, then 3 dashes at 6 px/tick, 150 apart,
+    braking ×0.98 after 40.
+  - Second form: hover 120 px above (0.07, 6) for 200 ticks, dashes at 6.8, 130 apart, ×0.97.
+  - Expert numbers are in too.
+  - Threats are predicted with this behaviour, including the next dash aimed at where the simulated player
+    will be. A straight-line model missed both the hover that follows the player (jumps into it) and dashes
+    about to start.
+* **Turning is the danger.** A dash aimed at a standing player cannot be escaped: a 100 × 110 eye, 0.08 px/tick²
+  acceleration (DodgeTests shows it). The kite turns only when the next dash is ≥ 60 ticks away; past the hard
+  end it turns anyway.
+* Result: `eye_of_cthulhu` on Classic won in 7955 ticks, 5 hits, no deaths, 157/200 life left.
+
+## Milestone 8: a boss arena
+From the guides (docs/RESEARCH.md): build an arena before the fight, keep it away from the house, add
+regeneration.
+
+### Verified (decompiled Recipe.cs / Item.cs)
+* Campfire: 10 any wood + 5 torches, by hand; tile 215, 3×2. Cozy Fire within 170×125 tiles.
+* Heart Lantern: 1 life crystal + 4 chain, by hand. Tile 42 style 9, 1×2, hangs from a solid tile above.
+  Heart Lamp: +1 HP/s within 170×125 tiles.
+* Chain: 1 iron-tier bar → 15 at an anvil.
+
+### Design
+* `Blueprint.Arena`: 96 wide, a floor row of blocks and 7 rows of open air above. Torches every 12 tiles on the
+  floor, a campfire in the middle.
+  - The width was 64 at first. In game that left only 9 tiles between "turn when safe" and the end, less than
+    one gap between dashes, so turns were often forced with a dash coming.
+* `SiteFinder`: limits per blueprint (arena: 600 edits, 80 columns), keep-out rectangles (the house plus 4), and
+  trees count as edits when the blueprint fells them.
+* `BuildSkill` for the arena:
+  - **Chop phase first:** a tree in the open cells is felled with `ChopTreeSkill` at its base, which may be a
+    neighbouring column; in game, axing a branch or root did nothing.
+  - **No housing check.**
+  - **Reserves only the floor and item cells,** so walking may dig open cells that get mined anyway.
+* The heart lantern hangs in the house: `SmallHouse(ids, heartLantern: true)` adds it under the roof at (2,1).
+  The bot places it from outside; placing needs no line of sight.
+* The planner:
+  - `ArenaBuilt`, plus the plan `arena`.
+  - In the boss plan, after the arrows: `PrepFor(Eye, ArenaBuilt)` and `PrepFor(Eye, HouseBuilt(heartLantern))`.
+  - Before summoning:
+    - walk to the arena middle;
+    - rest to 90% life, once per summon attempt (the lantern and campfire refill it);
+    - fight with `BossFightSkill { Arena = columns }`.
+* The fight in the arena:
+  - Turn when safe 10 columns before an end, and anyway 2 before.
+  - The ends are walls to the dodge planner.
+  - The bot never presses towards an end it stands at; a dodge into the end once ran it out of the arena.
+
+### The cost estimate froze the game
+The lantern chain (lantern → chain → anvil → iron bar → furnace → torch → gel) is 12 deep, past the recursive
+cost estimate's depth limit of 10. Raising the limit to 24 made it exponential on the real recipe graph, because
+only raw costs were cached. The game hung for 4.5 minutes; the fake world's few recipes never showed it.
+
+It is now a fixpoint, `SolveCosts`:
+* Collect everything an item can depend on: ingredients, and the items that place missing stations.
+* Iterate "cheapest recipe" until nothing changes.
+* The result is exact, handles cycles (a way round one is never cheaper), and takes 3,393 recipe evaluations on
+  the 40-level test graph.
+
+Passes over 50 ms are logged. The self-test logs a heartbeat every 30 s and `tools/watch_selftest.sh` reports
+STALL after 60 s without a log line.
+
+### In-game results
+* `arena_auto` (rough ground: mound, pit, two trees; wood and gel only): it crafted torches and a campfire,
+  felled the tree, mined the mound and built the arena in about 2,100 ticks.
+* `boss_auto` on Classic, with a 64-wide arena:
+  - It placed the stations, built the house and crafted 500 arrows.
+  - It built the arena (0 edits on flat ground), crafted chains and the heart lantern and hung it, hunted
+    lenses and crafted the summon.
+  - It walked to the arena and won: 14,829 ticks of fight, finishing at 200/200 life.
+  - Its hits came from the scenario's demon eyes and from the forced turns at the arena's left end, both fixed
+    since.
+
 ### Actions that stand in for UI clicks (approved by the user 2026-10-10)
 The bot otherwise acts only through controls. These four have no control to press, so they call what the
 UI click would call:
@@ -499,9 +588,10 @@ UI click would call:
 
 ## Not yet (noted for later)
 Ropes/ladders, swimming (water only penalised, lava avoided), slopes/half-blocks (modelled as full blocks),
-doors, breaking above the head while pillaring, flying jump starts, ranged/magic combat, dodging,
-chests, torches placed for light, accessories, biome woods (only forest Wood is a gather
-source), conditional recipes (near water, biome...), bosses.
+doors, breaking above the head while pillaring, flying jump starts, magic combat, chests, accessories (Hermes
+Boots), healing and buff potions, better arrows, biome woods (only forest Wood is a gather source),
+conditional recipes (near water, biome...), bosses after the Eye. When badly hurt without potions the bot keeps
+fighting (Classic demon eyes took it to 53/200 in `boss_auto`); it should retreat or shelter.
 
 ## Self-test history
 Automated in-game self-test (`tools/selftest.ps1`, `Game/SelfTest/`) added 2026-10-10. It runs scenarios in

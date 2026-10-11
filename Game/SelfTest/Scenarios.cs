@@ -34,6 +34,10 @@ public sealed class RunResult
 	public bool SwordOnHotbar;
 	/// <summary>NPC.downedBoss1 at the end (the Eye of Cthulhu).</summary>
 	public bool EyeDefeated;
+	/// <summary>The planner's arena: null = finished (floor, open air, torches, campfire), else why not.</summary>
+	public string Arena = "no arena";
+	/// <summary>A heart lantern hangs where the house blueprint puts it.</summary>
+	public bool HeartLanternHung;
 	public List<string> Log = new();
 
 	public bool LogHas(string s) => Log.Any(l => l.Contains(s));
@@ -118,6 +122,28 @@ public sealed class Scenario
 	}
 
 	/// <summary>Surface over 10 stone rows with five 2×2 life-crystal pockets at different depths ('H' = pocket top-right).</summary>
+	/// <summary>
+	/// Rough ground for an arena, 110 wide: a dirt mound 5 wide and 2 high (48-52), a pit 4 wide and 2 deep (55-58),
+	/// trees at 45 and 70. Any 96-wide site in the field (the side walls are 20 columns out) covers columns 33-76, so the mound and pit are always in it.
+	/// </summary>
+	private static string[] ArenaField()
+	{
+		const int width = 110;
+		string feet = "..S" + new string('.', width - 3), above = new string('.', width);
+		string ground = new string(',', width), under = new string('#', width);
+		for (int x = 48; x <= 52; x++) { // columns every 96-wide site in the field includes
+			above = Set(above, x, '#');
+			feet = Set(feet, x, '#');
+		}
+		feet = Set(Set(feet, 45, 'T'), 70, 'T');
+		for (int x = 55; x <= 58; x++) {
+			ground = Set(ground, x, '.');
+			under = Set(under, x, '.');
+		}
+		return Grid(Repeat(new string('.', width), 13), above, feet, ground, under, new string('#', width),
+			Repeat(new string('s', width), 2), new string('@', width));
+	}
+
 	private static string[] CrystalCave()
 	{
 		const int width = 80;
@@ -255,6 +281,24 @@ public sealed class Scenario
 					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
 			},
 			new() {
+				// Milestone 8: a boss arena on rough ground (mound, pit, two trees): fell the trees, mine the mound, fill the
+				// pit, craft torches and a campfire from wood and gel, place them.
+				Name = "arena_auto",
+				Rows = ArenaField(),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Arena,
+				Dig = true,
+				Build = true,
+				Blocks = 20,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				Inventory = p => {
+					p.inventory[10] = new Terraria.Item(Terraria.ID.ItemID.Wood, 30);
+					p.inventory[11] = new Terraria.Item(Terraria.ID.ItemID.Gel, 6);
+				},
+				TimeoutTicks = 60 * 60 * 5,
+				Check = r => r.Arena != null ? $"arena: {r.Arena}" : r.FallDamageHits > 0 ? "fall damage" : null,
+			},
+			new() {
 				// Milestone 6: a house from a kit (dirt, wood walls, door, chair, table, torches) on flat ground, checked
 				// with the game's own housing query.
 				Name = "build_house",
@@ -309,12 +353,15 @@ public sealed class Scenario
 			new() {
 				// Milestone 7 end to end from a settled character (iron gear worn, 200 life, stations and a house kit as
 				// items, an iron bow, wood and stone for arrows, 3 lenses), at nightfall: place the stations, build the house,
-				// craft 500 arrows, hunt demon eyes for the other lenses, find the altar, craft the Suspicious Looking Eye,
-				// summon and win. Spawns are off in the arena, so the scenario sends demon eyes while lenses are wanted.
+				// craft 500 arrows, build the arena (Milestone 8) and hang a heart lantern in the house, hunt demon eyes for
+				// the other lenses, find the altar, craft the Suspicious Looking Eye, walk to the arena, summon and win.
+				// Spawns are off in the arena, so the scenario sends demon eyes while lenses are wanted.
 				Name = "boss_auto",
-				Rows = Grid(Repeat(new string('.', 100), 14),
-					"..S..............................................................A..................................",
-					new string(',', 100), Repeat(new string('#', 100), 2), Repeat(new string('s', 100), 4), new string('@', 100)),
+				// 150 wide: the house near the start, the 96-wide arena beside it, and the altar off to the left (an altar
+				// inside the arena's open air would rule the site out).
+				Rows = Grid(Repeat(new string('.', 150), 14),
+					Set(Set(new string('.', 150), 6, 'A'), 40, 'S'),
+					new string(',', 150), Repeat(new string('#', 150), 2), Repeat(new string('s', 150), 4), new string('@', 150)),
 				Mode = "auto",
 				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Boss,
 				Night = true,
@@ -334,7 +381,10 @@ public sealed class Scenario
 					Give(Terraria.ID.ItemID.Furnace);
 					Give(Terraria.ID.ItemID.IronAnvil);
 					Give(Terraria.ID.ItemID.IronBow);
-					Give(Terraria.ID.ItemID.Wood, 30);
+					Give(Terraria.ID.ItemID.Wood, 45); // arrows 20, campfire 10, torches
+					Give(Terraria.ID.ItemID.Gel, 4);
+					Give(Terraria.ID.ItemID.LifeCrystal); // the heart lantern (max life is already 200)
+					Give(Terraria.ID.ItemID.IronBar); // chains for it
 					Give(Terraria.ID.ItemID.StoneBlock, 30);
 					Give(Terraria.ID.ItemID.Lens, 3);
 					Give(Terraria.ID.ItemID.WoodWall, 40);
@@ -345,18 +395,23 @@ public sealed class Scenario
 				},
 				During = (a, t) => {
 					Terraria.Player pl = Terraria.Main.LocalPlayer;
+					// Only while the bot is out for lenses (hunting, or fighting what came): sent from the first tick, the eyes
+					// met a bot with only a sword, building its house, and on Classic wore it down for most of the night.
+					var current = pl.GetModPlayer<TerraBotPlayer>().Brain.Current;
 					bool wantLenses = pl.CountItem(Terraria.ID.ItemID.Lens) < 6 && pl.CountItem(Terraria.ID.ItemID.SuspiciousLookingEye) == 0
-						&& !Terraria.NPC.AnyNPCs(Terraria.ID.NPCID.EyeofCthulhu) && !Terraria.NPC.downedBoss1;
+						&& !Terraria.NPC.AnyNPCs(Terraria.ID.NPCID.EyeofCthulhu) && !Terraria.NPC.downedBoss1
+						&& current is Bot.Skills.HuntSkill or Bot.Skills.FightSkill;
 					if (!wantLenses || t % 300 != 0 || Terraria.Main.npc.Count(n => n.active && n.type == Terraria.ID.NPCID.DemonEye) >= 2)
 						return;
 					int side = (t / 300) % 2 == 0 ? 1 : -1;
 					// Inside the arena walls (an eye spawned outside was fought through the wall).
-					int x = Math.Clamp((int)(pl.Center.X / 16) + side * 25, a.Left + 4, a.Left + Arena.Width - 5);
+					int x = Math.Clamp((int)(pl.Center.X / 16) + side * 25, a.Left + 4, a.Left + a.Width - 5);
 					Terraria.NPC.NewNPC(new Terraria.DataStructures.EntitySource_DebugCommand("TerraBot selftest"),
 						x * 16, (int)pl.Center.Y - 10 * 16, Terraria.ID.NPCID.DemonEye);
 				},
 				TimeoutTicks = 60 * 60 * 15,
-				Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : r.Housing != null ? $"housing: {r.Housing}" : null,
+				Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : r.Housing != null ? $"housing: {r.Housing}"
+					: r.Arena != null ? $"arena: {r.Arena}" : !r.HeartLanternHung ? "no heart lantern in the house" : !r.LogHas("in the arena") ? "did not fight in the arena" : null,
 			},
 			new() {
 				// Milestone 7: the Eye of Cthulhu, with the gear the boss plan collects: iron bow, wooden arrows, iron armour,

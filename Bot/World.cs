@@ -118,6 +118,9 @@ public sealed class GameIds
 	/// <summary>Eye of Cthulhu and its Servants (NPC types).</summary>
 	public int EyeBoss { get; init; }
 	public int EyeServant { get; init; }
+	/// <summary>Arena regeneration: a campfire (Cozy Fire) on the floor, a heart lantern (Heart Lamp) hung in the house.</summary>
+	public int Campfire { get; init; }
+	public int HeartLantern { get; init; }
 
 	public static readonly GameIds None = new();
 }

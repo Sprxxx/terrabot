@@ -20,11 +20,16 @@ public static class SiteFinder
 	public const int MaxEdits = 40;
 	public const int GroundScan = 15;
 
-	public static TilePos? Find(BotContext ctx, Blueprint bp, TilePos around, IReadOnlyCollection<TilePos> avoid = null)
+	/// <summary>
+	/// Best site within <see cref="Blueprint.SearchRadius"/> of <paramref name="around"/>. <paramref name="avoid"/>:
+	/// origins that failed before; <paramref name="keepOut"/>: rectangles (min, max) the plan must not overlap.
+	/// </summary>
+	public static TilePos? Find(BotContext ctx, Blueprint bp, TilePos around, IReadOnlyCollection<TilePos> avoid = null,
+		IReadOnlyList<(TilePos Min, TilePos Max)> keepOut = null)
 	{
 		TilePos? best = null;
 		int bestScore = int.MaxValue;
-		for (int x0 = around.X - SearchRadius; x0 <= around.X + SearchRadius; x0++) {
+		for (int x0 = around.X - bp.SearchRadius; x0 <= around.X + bp.SearchRadius; x0++) {
 			int mid = x0 + bp.Width / 2;
 			int? ground = GroundAt(ctx.Grid, mid, around.Y);
 			if (ground == null)
@@ -32,8 +37,11 @@ public static class SiteFinder
 			var origin = new TilePos(x0, ground.Value - (bp.Height - 1));
 			if (avoid != null && avoid.Contains(origin))
 				continue;
+			if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X
+				&& origin.Y <= r.Max.Y && origin.Y + bp.Height - 1 >= r.Min.Y))
+				continue;
 			int edits = Edits(ctx, bp, origin);
-			if (edits < 0 || edits > MaxEdits)
+			if (edits < 0 || edits > bp.MaxEdits)
 				continue;
 			int score = edits * 10 + Math.Abs(x0 - around.X);
 			if (score < bestScore) {
@@ -65,8 +73,14 @@ public static class SiteFinder
 					continue;
 				int wx = origin.X + x, wy = origin.Y + y;
 				CellKind k = g.Get(wx, wy);
-				if (k.IsLiquid() || ctx.World.IsTreeTrunk(wx, wy))
+				if (k.IsLiquid())
 					return -1;
+				if (ctx.World.IsTreeTrunk(wx, wy)) {
+					if (!bp.ChopTrees || c == PlanCell.Block)
+						return -1;
+					edits++; // felled with the axe
+					continue;
+				}
 				if (c == PlanCell.Block) {
 					if (k.IsPlatform())
 						return -1;
@@ -74,7 +88,9 @@ public static class SiteFinder
 						edits++;
 				}
 				else if (k.IsSolid()) {
-					if (float.IsInfinity(ctx.Blocks?.BreakTicks(wx, wy) ?? float.PositiveInfinity))
+					// A block under a tree cannot be mined while the tree stands; once it is felled, it can.
+					bool underTree = bp.ChopTrees && ctx.World.IsTreeTrunk(wx, wy - 1);
+					if (!underTree && float.IsInfinity(ctx.Blocks?.BreakTicks(wx, wy) ?? float.PositiveInfinity))
 						return -1;
 					edits += 2;
 				}
@@ -90,12 +106,13 @@ public static class SiteFinder
 /// <summary>
 /// Builds a <see cref="Blueprint"/> at a site, the way a player would, one swing at a time:
 /// <list type="number">
+/// <item>fell trees in the plan's open cells (arenas);</item>
 /// <item>mine everything solid where the room, doorway and furniture go (top-down);</item>
 /// <item>place blocks for the frame (bottom-up, each next to an existing tile);</item>
 /// <item>put walls behind the room;</item>
 /// <item>place the furniture (table, chair, torch), never standing where it goes;</item>
 /// <item>step outside and place the door;</item>
-/// <item>run the game's housing check on the room.</item>
+/// <item>run the game's housing check on the room (houses).</item>
 /// </list>
 /// While it runs, every cell of the plan is reserved (<see cref="BotContext.Reserved"/>), so walking there never
 /// digs through the frame or pillars up inside the room. An action that has no effect after
@@ -110,7 +127,7 @@ public sealed class BuildSkill : ISkill
 	public const int MaxWaitForBlocks = 90;
 	private int waitForBlocks;
 
-	private enum Kind { Mine, Block, Wall, Item, Wait }
+	private enum Kind { Chop, Mine, Block, Wall, Item, Wait }
 
 	private readonly record struct Action(Kind Kind, TilePos Cell, TilePos Aim, int Item, (TilePos Min, TilePos Max)? Keep, bool Outside);
 
@@ -118,10 +135,12 @@ public sealed class BuildSkill : ISkill
 	private readonly Dictionary<TilePos, int> failures = new();
 	private HashSet<TilePos> reserved;
 	private WalkToSkill walk;
+	private ChopTreeSkill chop;
 	private Action? current;
 	private int actionTicks;
 
 	public TilePos Origin { get; }
+	public Blueprint Blueprint => bp;
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Build";
@@ -138,9 +157,12 @@ public sealed class BuildSkill : ISkill
 	{
 		reserved = new HashSet<TilePos>();
 		for (int y = 0; y < bp.Height; y++)
-			for (int x = 0; x < bp.Width; x++)
-				if (bp.At(x, y) != PlanCell.None)
+			for (int x = 0; x < bp.Width; x++) {
+				PlanCell c = bp.At(x, y);
+				bool itemCell = bp.Items.Any(it => it.Covers(x, y));
+				if (c != PlanCell.None && (!bp.ReserveBlocksOnly || c == PlanCell.Block || itemCell))
 					reserved.Add(new TilePos(Origin.X + x, Origin.Y + y));
+			}
 		ctx.Reserved = reserved;
 		ctx.Log.Info($"Build start: {bp.Name} at {Origin} ({bp.Width}x{bp.Height})");
 	}
@@ -149,6 +171,8 @@ public sealed class BuildSkill : ISkill
 	{
 		walk?.Stop(ctx);
 		walk = null;
+		chop?.Stop(ctx);
+		chop = null;
 		if (ReferenceEquals(ctx.Reserved, reserved))
 			ctx.Reserved = null;
 	}
@@ -164,10 +188,12 @@ public sealed class BuildSkill : ISkill
 		if (problem != null)
 			return Fail(ctx, problem);
 		if (next == null) {
-			string why = ctx.World.CheckHousing(Origin.X + bp.Inside.X, Origin.Y + bp.Inside.Y);
-			if (why != null)
-				return Fail(ctx, "built, but the housing check says: " + why);
-			ctx.Log.Info($"Build done: {bp.Name} at {Origin} is valid housing");
+			if (bp.IsHouse) {
+				string why = ctx.World.CheckHousing(Origin.X + bp.Inside.X, Origin.Y + bp.Inside.Y);
+				if (why != null)
+					return Fail(ctx, "built, but the housing check says: " + why);
+			}
+			ctx.Log.Info($"Build done: {bp.Name} at {Origin}{(bp.IsHouse ? " is valid housing" : "")}");
 			State = "done";
 			Stop(ctx);
 			return SkillStatus.Succeeded;
@@ -184,6 +210,23 @@ public sealed class BuildSkill : ISkill
 			walk = null;
 		}
 
+		if (a.Kind == Kind.Chop) {
+			// Trees take several swings (and their own reach rules): the tree-felling skill does it.
+			if (chop == null || chop.Base != a.Cell) {
+				chop?.Stop(ctx);
+				chop = new ChopTreeSkill(a.Cell);
+				chop.Start(ctx);
+			}
+			State = $"felling the tree at {a.Cell}";
+			SkillStatus cs = chop.Tick(ctx);
+			if (cs == SkillStatus.Running)
+				return SkillStatus.Running;
+			string why = chop.FailureReason;
+			chop.Stop(ctx);
+			chop = null;
+			return cs == SkillStatus.Failed ? Failed(ctx, a.Cell, why) : SkillStatus.Running;
+		}
+
 		var reach = new GoalReachTile(a.Aim, ctx.Physics) { Exclude = n => Excluded(a, n) };
 		TilePos node = ctx.Node;
 		if (walk == null && ctx.Body.Grounded && reach.IsGoal(node)) {
@@ -193,7 +236,7 @@ public sealed class BuildSkill : ISkill
 			ctx.Output.UseItem = true;
 			ctx.Output.Aim(a.Aim.X, a.Aim.Y);
 			switch (a.Kind) {
-				case Kind.Mine: ctx.Output.Tool = ToolRequest.Pickaxe; break;
+					case Kind.Mine: ctx.Output.Tool = ToolRequest.Pickaxe; break;
 				case Kind.Block: ctx.Output.Tool = ToolRequest.Block; break;
 				default:
 					ctx.Output.Tool = ToolRequest.Item;
@@ -255,6 +298,28 @@ public sealed class BuildSkill : ISkill
 		// step off a cell it stands on, which makes the next cell the nearest one, and so on (oscillation).
 		if (current is Action cur && StillNeeded(ctx, cur, CoveredByPlaced))
 			return cur;
+
+		// 0. Fell trees standing in open cells (at the trunk's lowest tile; the whole tree comes down).
+		if (bp.ChopTrees) {
+			TilePos? tree = null;
+			int treeDist = int.MaxValue;
+			for (int x = 0; x < bp.Width; x++)
+				for (int y = 0; y < bp.Height; y++) {
+					int wx = Origin.X + x, wy = Origin.Y + y;
+					if (bp.At(x, y) is PlanCell.Wall or PlanCell.Clear && w.IsTreeTrunk(wx, wy) && Math.Abs(wx - node.X) < treeDist) {
+						treeDist = Math.Abs(wx - node.X);
+						tree = TreeBase(w, wx, wy);
+						break;
+					}
+				}
+			if (tree is TilePos t) {
+				if (ctx.AxePower <= 0) {
+					problem = $"a tree at {t} is in the way and there is no axe";
+					return null;
+				}
+				return new Action(Kind.Chop, t, t, 0, null, false);
+			}
+		}
 
 		// 1. Mine the room, doorway and furniture cells clear (top-down, nearest first).
 		Action? best = null;
@@ -326,6 +391,7 @@ public sealed class BuildSkill : ISkill
 	}
 
 	private bool StillNeeded(BotContext ctx, Action a, Func<int, int, bool> coveredByPlaced) => a.Kind switch {
+		Kind.Chop => ctx.World.IsTreeTrunk(a.Cell.X, a.Cell.Y),
 		Kind.Mine => ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsSolid() && !coveredByPlaced(a.Cell.X, a.Cell.Y),
 		Kind.Block => !ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsSolid() && ctx.Blocks != null && ctx.Blocks.BlockCount > 0,
 		Kind.Wall => !ctx.World.HasWall(a.Cell.X, a.Cell.Y) && ctx.Inventory.Count(a.Item) > 0,
@@ -356,6 +422,25 @@ public sealed class BuildSkill : ISkill
 				if (bp.At(x, y) == kind)
 					yield return new TilePos(Origin.X + x, Origin.Y + y);
 	}
+
+	/// <summary>
+	/// The base of the tree a tree tile belongs to: the trunk tile with trunk above and none below (what the game
+	/// adapter's tree scan calls a tree). Branches and roots are tree tiles beside the trunk, so the neighbouring
+	/// columns are searched too; seen in game, axing a branch had no effect.
+	/// </summary>
+	private static TilePos TreeBase(IWorldInfo w, int x, int y)
+	{
+		foreach (int dx in new[] { 0, -1, 1, -2, 2 })
+			for (int yy = y - 1; yy <= y + TreeBaseScan; yy++)
+				if (w.IsTreeTrunk(x + dx, yy) && w.IsTreeTrunk(x + dx, yy - 1) && !w.IsTreeTrunk(x + dx, yy + 1))
+					return new TilePos(x + dx, yy);
+		int by = y;
+		while (w.IsTreeTrunk(x, by + 1))
+			by++;
+		return new TilePos(x, by);
+	}
+
+	private const int TreeBaseScan = 30;
 
 	private static bool HasSolidNeighbour(ITileGrid g, TilePos c) =>
 		g.Get(c.X - 1, c.Y).IsSolid() || g.Get(c.X + 1, c.Y).IsSolid() || g.Get(c.X, c.Y - 1).IsSolid() || g.Get(c.X, c.Y + 1).IsSolid();

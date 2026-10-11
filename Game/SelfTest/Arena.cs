@@ -17,7 +17,9 @@ namespace TerraBot.Game.SelfTest;
 /// </summary>
 public sealed class Arena
 {
-	public const int Width = 120;
+	/// <summary>Columns cleared for the grids: at least 120, more for wide grids (a grid starts <see cref="GridOffsetX"/> in).</summary>
+	public int Width { get; }
+	public const int MinWidth = 120;
 	public const int Height = 50;
 	public const int GridOffsetX = 20;
 
@@ -26,8 +28,9 @@ public sealed class Arena
 	public int Top { get; }
 	public int FloorY { get; }
 
-	public Arena(int spawnX, int spawnY)
+	public Arena(int spawnX, int spawnY, int widestGrid = 0)
 	{
+		Width = Math.Max(MinWidth, widestGrid + 2 * GridOffsetX);
 		Left = spawnX - Width / 2;
 		FloorY = spawnY;
 		Top = FloorY - Height + 1;

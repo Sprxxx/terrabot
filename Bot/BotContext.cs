@@ -67,6 +67,8 @@ public sealed class BotContext
 	public IGameKnowledge Knowledge { get; set; }
 	/// <summary>Vanilla night (Main.dayTime == false): zombies and demon eyes on the surface.</summary>
 	public bool IsNight { get; set; }
+	/// <summary>Ticks of night left (Main.nightLength - Main.time at night; 0 by day).</summary>
+	public int NightTicksLeft { get; set; }
 
 	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
 	public IBlockActions Blocks { get; set; }
@@ -82,14 +84,33 @@ public sealed class BotContext
 	public System.Collections.Generic.IReadOnlySet<TilePos> Reserved { get; set; }
 	private ReservedBlocks reservedBlocks;
 
-	/// <summary><see cref="Blocks"/> as path moves see it, with <see cref="Reserved"/> applied (cached, so the move context stays stable).</summary>
+	/// <summary>
+	/// Cells of what the bot has built (the house, the arena floor), kept off limits to path moves for good: walking,
+	/// mining and sheltering never break them or fill them. Set by the planner. Seen in game: a retreat dug its
+	/// hole through the house floor, and the house had to be rebuilt.
+	/// </summary>
+	public System.Collections.Generic.IReadOnlySet<TilePos> Protected { get; set; }
+	private ReservedBlocks protectedBlocks;
+
+	/// <summary>
+	/// <see cref="Blocks"/> as path moves see it, with <see cref="Protected"/> and <see cref="Reserved"/> applied
+	/// (cached, so the move context stays stable).
+	/// </summary>
 	public IBlockActions PathBlocks
 	{
 		get {
-			if (Blocks == null || Reserved == null || Reserved.Count == 0)
-				return Blocks;
-			if (reservedBlocks == null || !ReferenceEquals(reservedBlocks.Inner, Blocks) || !ReferenceEquals(reservedBlocks.Reserved, Reserved))
-				reservedBlocks = new ReservedBlocks(Blocks, Reserved);
+			if (Blocks == null)
+				return null;
+			IBlockActions inner = Blocks;
+			if (Protected != null && Protected.Count > 0) {
+				if (protectedBlocks == null || !ReferenceEquals(protectedBlocks.Inner, Blocks) || !ReferenceEquals(protectedBlocks.Reserved, Protected))
+					protectedBlocks = new ReservedBlocks(Blocks, Protected);
+				inner = protectedBlocks;
+			}
+			if (Reserved == null || Reserved.Count == 0)
+				return inner;
+			if (reservedBlocks == null || !ReferenceEquals(reservedBlocks.Inner, inner) || !ReferenceEquals(reservedBlocks.Reserved, Reserved))
+				reservedBlocks = new ReservedBlocks(inner, Reserved);
 			return reservedBlocks;
 		}
 	}

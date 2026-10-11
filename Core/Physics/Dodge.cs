@@ -33,9 +33,10 @@ public sealed record Threat(float X, float Y, int Width, int Height, float VX, f
 /// <summary>
 /// One short movement plan: run <see cref="Dir"/> (−1, 0, +1) and hold jump for the first <see cref="JumpHold"/> ticks.
 /// <see cref="HitTick"/> is the first tick a threat touches the player (−1: none within the horizon);
-/// <see cref="Clearance"/> the smallest gap in px to any threat over the horizon (negative = overlap).
+/// <see cref="Clearance"/> the smallest gap in px to any threat over the horizon (negative = overlap);
+/// <see cref="RoomLeft"/> how far (px) the player ends up from the nearer wall.
 /// </summary>
-public readonly record struct DodgePlan(int Dir, int JumpHold, int HitTick, float Clearance)
+public readonly record struct DodgePlan(int Dir, int JumpHold, int HitTick, float Clearance, float RoomLeft = float.PositiveInfinity)
 {
 	public bool Hits => HitTick >= 0;
 	public MoveInput InputAt(int tick) => new() { Horizontal = Dir, Jump = tick < JumpHold };
@@ -53,6 +54,8 @@ public static class Dodge
 	public const int Horizon = 50;
 	/// <summary>Gaps wider than this (px) count as equally safe, so the caller's preferred direction decides.</summary>
 	public const float SafeGap = 48f;
+	/// <summary>Plans ending closer than this (px) to a wall lose up to <see cref="CorneredPx"/> × <see cref="CorneredWeight"/> points.</summary>
+	public const float CorneredPx = 64f, CorneredWeight = 0.4f;
 
 	public static readonly (int Dir, int JumpHold)[] Plans = {
 		(1, 0), (-1, 0), (0, 0),
@@ -105,7 +108,7 @@ public static class Dodge
 			if (hit >= 0)
 				break;
 		}
-		return new DodgePlan(dir, jumpHold, hit, clearance);
+		return new DodgePlan(dir, jumpHold, hit, clearance, Math.Min(s.X - minX, maxX - s.X));
 	}
 
 	/// <summary>One tick of a threat's behaviour (see <see cref="Threat"/>), then position += velocity.</summary>
@@ -180,6 +183,10 @@ public static class Dodge
 	private static float Score(DodgePlan plan, int preferDir, int horizon)
 	{
 		float score = plan.Hits ? -1000f * (horizon + 1 - plan.HitTick) : Math.Min(plan.Clearance, SafeGap);
+		// Ending up against a wall (an arena end) leaves no way out of the next dash: seen in game, a dodge ran the bot
+		// into the end of the arena, where the next dash knocked it off.
+		if (plan.RoomLeft < CorneredPx)
+			score -= (CorneredPx - plan.RoomLeft) * CorneredWeight;
 		if (plan.Dir == preferDir)
 			score += 2f;
 		if (plan.JumpHold == 0)

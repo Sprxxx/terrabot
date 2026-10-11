@@ -20,7 +20,7 @@ public sealed class BotCommand : ModCommand
 	public override string Description => "Control TerraBot";
 	public override string Usage =>
 		"/bot goto <x> <y>   (tile coords; ~dx ~dy = relative to you)\n" +
-		"/bot stop | on | off | status | fight | auto [boss|settle|iron|early|crystals]\n" +
+		"/bot stop | on | off | status | fight | auto [boss|settle|iron|early|crystals|arena]\n" +
 		"/bot dig [on|off]   /bot build [on|off]   (allow mining / placing blocks)\n" +
 		"/bot dump   (JSON snapshot to client.log)\n" +
 		"/bot trace [on|off|<seconds>]   (per-tick log)";
@@ -49,7 +49,8 @@ public sealed class BotCommand : ModCommand
 						ProgressionPlanner.Plans.Iron => "TerraBot auto (iron): work bench, wooden sword, furnace, anvil, iron-tier pickaxe. Fights, hides at night.",
 						ProgressionPlanner.Plans.Settle => "TerraBot auto (settle): the iron chain, then a house, an iron-tier broadsword and armour. Fights, hides at night.",
 						ProgressionPlanner.Plans.Crystals => "TerraBot auto (crystals): mine and use life crystals up to 200 max life.",
-						_ => "TerraBot auto (boss): settle, 200 max life, a bow and arrows, lenses and a demon altar, then the Eye of Cthulhu at night.",
+						ProgressionPlanner.Plans.Arena => "TerraBot auto (arena): a flat 96-wide boss arena with torches and a campfire.",
+						_ => "TerraBot auto (boss): settle, 200 max life, a bow and arrows, an arena, a heart lantern, lenses and a demon altar, then the Eye of Cthulhu at night.",
 					}, Color.LightGray);
 					break;
 				}

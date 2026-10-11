@@ -126,6 +126,37 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void Hurt_RestsBeforeSummoning_OnceOnly()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		g.Items[FakeGame.SuspiciousEye] = 1;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.Life = ctx.Combat.LifeMax / 2;
+		var p = new ProgressionPlanner();
+		var rest = Assert.IsType<WaitSkill>(p.ResolveForTest(Eye, ctx));
+		Assert.Equal("life", rest.What);
+		// A rest that timed out (still hurt) is not started again straight away: summon anyway.
+		p.OnSkillFinished(rest, SkillStatus.Failed, ctx);
+		Assert.IsType<BossFightSkill>(p.ResolveForTest(Eye, ctx));
+	}
+
+	[Fact]
+	public void LateInTheNight_WaitsForTheNextOne()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		g.Items[FakeGame.SuspiciousEye] = 1;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		ctx.NightTicksLeft = 60 * 60; // a minute: the Eye would fly off at dawn mid-fight
+		var p = new ProgressionPlanner();
+		var wait = Assert.IsType<WaitSkill>(p.ResolveForTest(Eye, ctx));
+		Assert.Equal("next night", wait.What);
+		ctx.NightTicksLeft = 60 * 60 * 8;
+		Assert.IsType<BossFightSkill>(p.ResolveForTest(Eye, ctx));
+	}
+
+	[Fact]
 	public void AfterTheBoss_PrepStagesAreMoot()
 	{
 		// Seen in game: right after winning, the plan went back to crafting arrows for a boss already dead.

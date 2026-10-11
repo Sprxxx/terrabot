@@ -58,6 +58,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		DemonAltarTile = TileID.DemonAltar,
 		EyeBoss = NPCID.EyeofCthulhu,
 		EyeServant = NPCID.ServantofCthulhu,
+		Campfire = ItemID.Campfire,
+		HeartLantern = ItemID.HeartLantern,
 	};
 
 

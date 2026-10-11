@@ -82,6 +82,71 @@ public class FightSkillTests
 		new(7, 1, "Test Slime", x, y, 24, 24, 0, 0, life, 60, 10);
 
 	[Fact]
+	public void BadlyHurt_WithoutPotions_RetreatsInsteadOfFighting()
+	{
+		FakeGame g = EarlyGameTests.Field(60);
+		g.Life = 20; // of 100
+		g.AddSlime(7, 8, 24);
+		g.Items[FakeGame.DirtBlock] = 10;
+		BotContext ctx = g.CreateContext(output);
+		var brain = new Bot.Brain.BotBrain();
+		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
+		g.Refresh(ctx);
+		brain.Tick(ctx);
+		output.WriteLine(brain.Describe());
+		Assert.IsType<ShelterSkill>(brain.Current);
+		Assert.True(((ShelterSkill)brain.Current).Retreat);
+		// Full life again: the same slime is just fought.
+		var brain2 = new Bot.Brain.BotBrain();
+		g.Life = -1;
+		brain2.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
+		g.Refresh(ctx);
+		brain2.Tick(ctx);
+		Assert.IsType<FightSkill>(brain2.Current);
+	}
+
+	[Fact]
+	public void Retreat_DigsBesideBlocksItCannotMine()
+	{
+		// Seen in game: straight down was under the work bench (not mineable from below); the dig found no path.
+		FakeGame g = EarlyGameTests.Field(60);
+		TilePos s = g.Grid.Markers['S'];
+		for (int x = s.X; x <= s.X + 1; x++)
+			for (int y = s.Y + 1; y <= s.Y + 5; y++)
+				g.Blocks.Unbreakable.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		output.WriteLine(shelter.Describe());
+		Assert.DoesNotContain($"WalkTo ({s.X},", shelter.Describe());
+		Assert.DoesNotContain($"WalkTo ({s.X + 1},", shelter.Describe());
+	}
+
+	[Fact]
+	public void SwordOnly_HoldsGroundAgainstAFlier_AndSwingsAsItComes()
+	{
+		// Classic demon eyes cost 150 life while the bot chased their "feet tile"; it now stands and meets them.
+		ArrayTileGrid g = ArrayTileGrid.Parse(new string('.', 60), new string('.', 60), new string('.', 60), new string('.', 60),
+			new string('.', 60), "..........S" + new string('.', 49), new string('#', 60));
+		var ctx = new BotContext { Grid = g, Log = new Log(output), Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword", Facing = 1 } };
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		ctx.Body = sim.State;
+		float cx = ctx.Body.CenterX(PhysicsParams.Default), cy = ctx.Body.CenterY(PhysicsParams.Default);
+		EntityInfo Eye(float dx) => new(3, 2, "Demon Eye", cx + dx - 15, cy - 40, 30, 32, -2f, 0.5f, 60, 60, 18, AiStyle: 2);
+		var skill = new FightSkill();
+		ctx.Hostiles = new[] { Eye(8 * 16f) };
+		skill.Start(ctx);
+		skill.Tick(ctx);
+		output.WriteLine($"far: {skill.Describe()} horizontal {ctx.Output.Horizontal} use {ctx.Output.UseItem}");
+		Assert.Equal(0, ctx.Output.Horizontal);
+		Assert.False(ctx.Output.UseItem);
+		ctx.Hostiles = new[] { Eye(3 * 16f) };
+		skill.Tick(ctx);
+		output.WriteLine($"near: {skill.Describe()} use {ctx.Output.UseItem}");
+		Assert.True(ctx.Output.UseItem);
+	}
+
+	[Fact]
 	public void KillsEnemyAhead_OnFlatGround()
 	{
 		var g = ArrayTileGrid.Parse(

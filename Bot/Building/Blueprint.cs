@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using TerraBot.Core.Grid;
 
 namespace TerraBot.Bot.Building;
@@ -41,6 +43,16 @@ public sealed class Blueprint
 	public TilePos OutsideStand { get; }
 	/// <summary>Wall item to put on <see cref="PlanCell.Wall"/> cells.</summary>
 	public int WallItem { get; }
+	/// <summary>A house: the build ends with the game's housing check on <see cref="Inside"/>.</summary>
+	public bool IsHouse { get; init; } = true;
+	/// <summary>Fell trees standing in the plan's open cells (else a tree rules the site out).</summary>
+	public bool ChopTrees { get; init; }
+	/// <summary>Reserve only the block and item cells while building, so walking may dig through open cells that are mined anyway.</summary>
+	public bool ReserveBlocksOnly { get; init; }
+	/// <summary>Sites needing more edits than this are not considered (<see cref="SiteFinder"/>).</summary>
+	public int MaxEdits { get; init; } = SiteFinder.MaxEdits;
+	/// <summary>How far (columns) <see cref="SiteFinder"/> looks for a site.</summary>
+	public int SearchRadius { get; init; } = SiteFinder.SearchRadius;
 
 	public Blueprint(string name, string[] rows, IReadOnlyList<PlanItem> items, TilePos inside, TilePos outsideStand, int wallItem)
 	{
@@ -82,8 +94,8 @@ public sealed class Blueprint
 	///   ############   y5 floor
 	/// </code>
 	/// </summary>
-	public static Blueprint SmallHouse(GameIds ids) => new(
-		"small house",
+	public static Blueprint SmallHouse(GameIds ids, bool heartLantern = false) => new(
+		heartLantern ? "small house with a heart lantern" : "small house",
 		new[] {
 			"############",
 			"#wwwwwwwwww#",
@@ -97,8 +109,48 @@ public sealed class Blueprint
 			new PlanItem(ids.Chair, 7, 3, 1, 2),
 			new PlanItem(ids.Torch, 9, 2, 1, 1),
 			new PlanItem(ids.Door, 0, 2, 1, 3, PlaceLast: true),
-		},
+		}.Concat(heartLantern ? new[] { new PlanItem(ids.HeartLantern, 2, 1, 1, 2) } : Array.Empty<PlanItem>()).ToArray(),
 		inside: new TilePos(5, 2),
 		outsideStand: new TilePos(-3, 4),
 		wallItem: ids.WoodWall);
+
+	/// <summary>
+	/// About a screen wide, as the guides say. 64 was too narrow in game: between "turn when safe" (20 from the
+	/// middle) and the end there were only 9 tiles, less than one gap between the Eye's dashes, so the bot was
+	/// often forced to turn with a dash coming.
+	/// </summary>
+	public const int ArenaWidth = 96;
+	public const int ArenaClearance = 7;
+	public const int ArenaTorchSpacing = 12;
+
+	/// <summary>
+	/// A boss arena as the guides build one for the Eye of Cthulhu: a flat floor about a screen wide
+	/// (<see cref="ArenaWidth"/>) with <see cref="ArenaClearance"/> rows of open air above it (jumps, and shots at a
+	/// boss hovering overhead), torches every <see cref="ArenaTorchSpacing"/> tiles and a campfire in the middle
+	/// (Cozy Fire: +0.5 HP/s and 10% more regeneration within 170×125 tiles). The heart lantern goes in the house
+	/// (it hangs from a ceiling; same range), see <see cref="SmallHouse"/>.
+	/// <code>
+	///   ..........................   y0 .. y6  open air (bumps mined, trees felled)
+	///   ...t...........CCC.....t..   y6  torches and the campfire on the floor
+	///   ##########################   y7  floor (pits filled)
+	/// </code>
+	/// </summary>
+	public static Blueprint Arena(GameIds ids, int width = ArenaWidth)
+	{
+		var rows = new string[ArenaClearance + 1];
+		for (int y = 0; y < ArenaClearance; y++)
+			rows[y] = new string('.', width);
+		rows[ArenaClearance] = new string('#', width);
+		int top = ArenaClearance - 1, mid = width / 2;
+		var items = new List<PlanItem> { new(ids.Campfire, mid - 1, top - 1, 3, 2) };
+		for (int x = ArenaTorchSpacing / 2; x < width; x += ArenaTorchSpacing)
+			if (x < mid - 2 || x > mid + 2)
+				items.Add(new PlanItem(ids.Torch, x, top, 1, 1));
+		return new Blueprint("boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
+			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, MaxEdits = 600, SearchRadius = 80,
+		};
+	}
+
+	/// <summary>The feet row a player standing on the floor has (arena blueprints: the row above the floor).</summary>
+	public int StandRow => Height - 2;
 }

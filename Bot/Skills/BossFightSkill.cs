@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using TerraBot.Core.Grid;
+using TerraBot.Core.Pathfinding;
 using TerraBot.Core.Physics;
 
 namespace TerraBot.Bot.Skills;
@@ -31,6 +32,13 @@ public sealed class BossFightSkill : ISkill
 	public const int WallScanTiles = 40;
 	/// <summary>Past this many tiles from the start, turn round even when it is not safe.</summary>
 	public const int HardHalfWidth = 40;
+	/// <summary>In an arena, turn when safe this many columns before its ends, and anyway this many before.</summary>
+	public const int ArenaSoftMargin = 10, ArenaHardMargin = 2;
+	/// <summary>Extra room (px) kept from an arena end when braking.</summary>
+	public const float BrakeMarginPx = 8f;
+	/// <summary>Walking back to the arena ends within this many columns of its middle.</summary>
+	public const int ArenaReturnTolerance = 6;
+	private WalkToSkill backToArena;
 	/// <summary>Boss speed (px/tick) that counts as a dash (the Eye: 6 / 6.8 Classic, 7+ Expert; hovers at up to 5–6).</summary>
 	public const float DashSpeed = 5.5f;
 	/// <summary>Ticks after a dash starts before it has gone by, and how long the gap that follows is safe for a turn.</summary>
@@ -66,6 +74,11 @@ public sealed class BossFightSkill : ISkill
 	private int bossLifeSeen = int.MaxValue;
 	private int lifeLogged = int.MaxValue;
 
+	/// <summary>
+	/// The arena's columns and the feet row of standing on its floor: kite inside it (turning points from its ends),
+	/// brake before its ends, and walk back if knocked or slid off it.
+	/// </summary>
+	public (int MinX, int MaxX, int StandY)? Arena { get; init; }
 	public int SummonItem { get; }
 	public int BossType { get; }
 	public int[] MinionTypes { get; }
@@ -86,7 +99,12 @@ public sealed class BossFightSkill : ISkill
 
 	public void Start(BotContext ctx) => ctx.Log.Info($"Boss fight start: boss {BossType}, summon item {SummonItem}, {ctx.Combat.RangedName} with {ctx.Combat.AmmoCount} arrows, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}");
 
-	public void Stop(BotContext ctx) => summon?.Stop(ctx);
+	public void Stop(BotContext ctx)
+	{
+		summon?.Stop(ctx);
+		backToArena?.Stop(ctx);
+		backToArena = null;
+	}
 
 	public SkillStatus Tick(BotContext ctx)
 	{
@@ -101,7 +119,7 @@ public sealed class BossFightSkill : ISkill
 			return Fail(ctx, "died");
 		if (ctx.BodyIssue != null)
 			return SkillStatus.Running;
-		centre ??= ctx.Node;
+		centre ??= Arena is (int ax0, int ax1, int ay) ? new TilePos((ax0 + ax1) / 2, ay) : ctx.Node;
 
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
@@ -152,12 +170,16 @@ public sealed class BossFightSkill : ISkill
 		if (!ctx.Combat.HasRanged)
 			return Fail(ctx, "out of arrows");
 
-		Move(ctx, boss);
+		bool walkingBack = BackToArena(ctx);
+		if (!walkingBack)
+			Move(ctx, boss);
 		// Target: a servant about to bite, else the boss.
 		EntityInfo? servant = ctx.Hostiles.Where(h => MinionTypes.Contains(h.Type) && h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
 			.OrderBy(h => h.DistanceTo(cx, cy)).Cast<EntityInfo?>().FirstOrDefault();
 		EntityInfo? target = servant ?? boss;
-		if (target is EntityInfo t && FightSkill.ClearShot(ctx, cx, cy, t.CenterX, t.CenterY)) {
+		// While walking back the path may need the pickaxe or blocks: no shooting then.
+		bool canShoot = !walkingBack || ctx.Output.Tool == ToolRequest.None;
+		if (canShoot && target is EntityInfo t && FightSkill.ClearShot(ctx, cx, cy, t.CenterX, t.CenterY)) {
 			AimSolution s = Ballistics.Lead(cx, cy, t.CenterX, t.CenterY, t.VX, t.VY, ctx.Combat.Projectile);
 			ctx.Output.Tool = ToolRequest.Ranged;
 			ctx.Output.AimMouse(s.AimX, s.AimY);
@@ -167,16 +189,81 @@ public sealed class BossFightSkill : ISkill
 		}
 		else
 			State = "kiting";
+		if (walkingBack)
+			State = "walking back to the arena, " + State;
 		Heal(ctx);
 		return SkillStatus.Running;
 	}
 
-	/// <summary>Kite, unless something is about to hit us: then take the best <see cref="Dodge"/> plan.</summary>
+	/// <summary>
+	/// Off the arena (slid past an end, knocked off): walk back to its middle. Seen in game: the bot slid a tile past
+	/// the end of a floor built over open air and fell eight tiles, then ran into the wall down there for a minute.
+	/// </summary>
+	private bool BackToArena(BotContext ctx)
+	{
+		if (Arena is not (int x0, int x1, int standY)) {
+			return false;
+		}
+		TilePos n = ctx.Node;
+		bool off = n.X < x0 || n.X > x1 || n.Y > standY + 1;
+		if (!off && ctx.Body.Grounded) {
+			if (backToArena != null) {
+				backToArena.Stop(ctx);
+				backToArena = null;
+				ctx.Log.Info($"Boss fight: back in the arena at {n}");
+			}
+			return false;
+		}
+		if (!off)
+			return backToArena != null && WalkBack(ctx); // in the air on the way back: keep going
+		if (backToArena == null) {
+			ctx.Log.Info($"Boss fight: off the arena at {n}, walking back");
+			backToArena = new WalkToSkill(new GoalNearTile(new TilePos((x0 + x1) / 2, standY), ArenaReturnTolerance, ctx.Physics)) { Quiet = true };
+			backToArena.Start(ctx);
+		}
+		return WalkBack(ctx);
+	}
+
+	private bool WalkBack(BotContext ctx)
+	{
+		SkillStatus s = backToArena.Tick(ctx);
+		State = "walking back to the arena";
+		if (s != SkillStatus.Running) {
+			backToArena.Stop(ctx);
+			backToArena = null;
+		}
+		return true;
+	}
+
+	/// <summary>Kite, unless something is about to hit us: then take the best <see cref="Dodge"/> plan; never slide off the arena.</summary>
 	private void Move(BotContext ctx, EntityInfo? boss)
+	{
+		MoveFreely(ctx, boss, out float minX, out float maxX);
+		if (Arena == null)
+			return;
+		// Brake before an end: never press towards it within the stopping distance (v² / 2a, braking is
+		// slowdown + acceleration) plus a few pixels. Pressing towards an end only once at it still slid a tile past.
+		PhysicsParams p = ctx.Physics;
+		float vx = ctx.Body.VX, stop = vx * vx / (2f * p.BrakeDecel) + BrakeMarginPx;
+		if (vx > 0f && maxX - ctx.Body.X <= stop && ctx.Output.Horizontal >= 0)
+			ctx.Output.Horizontal = -1;
+		else if (vx < 0f && ctx.Body.X - minX <= stop && ctx.Output.Horizontal <= 0)
+			ctx.Output.Horizontal = 1;
+		else if (vx == 0f && (ctx.Output.Horizontal > 0 && maxX - ctx.Body.X < BrakeMarginPx || ctx.Output.Horizontal < 0 && ctx.Body.X - minX < BrakeMarginPx))
+			ctx.Output.Horizontal = 0;
+	}
+
+	private void MoveFreely(BotContext ctx, EntityInfo? boss, out float minX, out float maxX)
 	{
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
-		var (floorY, minX, maxX) = Surroundings(ctx);
+		float floorY;
+		(floorY, minX, maxX) = Surroundings(ctx);
+		if (Arena is (int ax0, int ax1, _)) {
+			// Past the arena's ends the ground is unknown: the dodge planner treats them as walls.
+			minX = Math.Max(minX, ax0 * 16f);
+			maxX = Math.Min(maxX, (ax1 + 1) * 16f - p.Width);
+		}
 		TrackDash(ctx, boss, cx, cy);
 		Kite(ctx, boss, floorY, minX, maxX);
 		threats.Clear();
@@ -201,12 +288,16 @@ public sealed class BossFightSkill : ISkill
 			}
 		}
 		dodging = true;
-		ctx.Output.Horizontal = best.Dir;
+		// The planner treats the arena ends as walls, so running into one scores like standing still; in the world
+		// there is no wall there and the bot would run out of the arena. Stand instead.
+		bool atEnd = best.Dir < 0 ? ctx.Body.X <= minX + 1f : best.Dir > 0 && ctx.Body.X >= maxX - 1f;
+		ctx.Output.Horizontal = atEnd ? 0 : best.Dir;
 		ctx.Output.Jump = best.JumpHold > 0;
 		// Keep going the way the dodge took us rather than turning straight back, but not out past the arena end
 		// (the kite would turn straight round again: a tug of war that froze the bot at the far end).
 		int offset = ctx.Node.X - centre.Value.X;
-		if (best.Dir != 0 && (best.Dir > 0 ? offset < ArenaHalfWidth : offset > -ArenaHalfWidth))
+		int softHalf = HalfWidths().Soft;
+		if (best.Dir != 0 && (best.Dir > 0 ? offset < softHalf : offset > -softHalf))
 			runDir = best.Dir;
 	}
 
@@ -256,6 +347,15 @@ public sealed class BossFightSkill : ISkill
 	private static string NextDashText(BotContext ctx, EntityInfo? boss) =>
 		boss is EntityInfo b && b.AiStyle == EyePattern.EyeAiStyle ? $"next dash in {EyePattern.TicksUntilDash(b, ctx.Expert)} ticks" : "";
 
+	/// <summary>Where kiting turns when safe (soft) and turns anyway (hard), in columns from the centre.</summary>
+	private (int Soft, int Hard) HalfWidths()
+	{
+		if (Arena is not (int x0, int x1, _))
+			return (ArenaHalfWidth, HardHalfWidth);
+		int half = (x1 - x0) / 2;
+		return (Math.Min(ArenaHalfWidth, half - ArenaSoftMargin), half - ArenaHardMargin);
+	}
+
 	/// <summary>Floor under the feet (px) and the walls left and right (bounds for the hitbox's left edge, px).</summary>
 	private static (float FloorY, float MinX, float MaxX) Surroundings(BotContext ctx)
 	{
@@ -295,9 +395,10 @@ public sealed class BossFightSkill : ISkill
 	{
 		TilePos node = ctx.Node;
 		int offset = node.X - centre.Value.X;
-		bool outward = runDir > 0 ? offset >= ArenaHalfWidth : offset <= -ArenaHalfWidth;
+		var (soft, hardHalf) = HalfWidths();
+		bool outward = runDir > 0 ? offset >= soft : offset <= -soft;
 		bool atWall = runDir > 0 ? maxX - ctx.Body.X < 16f : ctx.Body.X - minX < 16f;
-		bool hard = atWall || (runDir > 0 ? offset >= HardHalfWidth : offset <= -HardHalfWidth);
+		bool hard = atWall || (runDir > 0 ? offset >= hardHalf : offset <= -hardHalf);
 		if (hard || outward && SafeToTurn(ctx, boss, floorY, minX, maxX)) {
 			runDir = -runDir;
 			blocked = 0;

@@ -137,6 +137,27 @@ public sealed class ShelterSkill : ISkill
 	public bool Sealed => phase == Phase.Waiting && seal != null && sealedOk;
 	private bool sealedOk;
 
+	/// <summary>A retreat to recover life (<see cref="Recover"/>) rather than sitting out the night: never interrupted to fight.</summary>
+	public bool Retreat => until != null;
+	private readonly System.Func<BotContext, bool> until;
+	private readonly string why = "for the night";
+	private int waitTicks;
+	/// <summary>Longest a retreat waits (it may not have sealed, or regeneration may be stopped by a debuff).</summary>
+	public const int MaxRetreatTicks = 60 * 120;
+
+	public ShelterSkill() { }
+
+	/// <summary>Dig in and seal, and open up again once <paramref name="done"/> holds (instead of at morning).</summary>
+	public ShelterSkill(System.Func<BotContext, bool> done, string reason)
+	{
+		until = done;
+		why = reason;
+	}
+
+	/// <summary>Hide until life is back to <paramref name="fraction"/> of max: the retreat when hurt without potions.</summary>
+	public static ShelterSkill Recover(float fraction) =>
+		new(c => c.Combat.LifeFraction >= fraction, $"to recover to {fraction:P0} life");
+
 	public string State => phase.ToString();
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Shelter";
@@ -146,10 +167,48 @@ public sealed class ShelterSkill : ISkill
 	public void Start(BotContext ctx)
 	{
 		TilePos n = ctx.Node;
-		ctx.Log.Info($"Shelter start at {n}: digging in for the night");
-		dig = new WalkToSkill(new TilePos(n.X, n.Y + Depth)) { Quiet = true };
+		TilePos target = DigTarget(ctx, n);
+		ctx.Log.Info($"Shelter start at {n}: digging in {why} at column {target.X}");
+		// A small search and one attempt: a retreat that plans for seconds while being bitten is no retreat.
+		dig = new WalkToSkill(target) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 		dig.Start(ctx);
 	}
+
+	/// <summary>
+	/// Where to dig down to: the nearest column pair whose cells from the ground down to <see cref="Depth"/> can all
+	/// be mined (or are open). Seen in game: straight down was under the work bench, which cannot be mined from
+	/// under it, and the plan ran out of nodes after 2.7 s while demon eyes finished the bot off.
+	/// </summary>
+	private static TilePos DigTarget(BotContext ctx, TilePos n)
+	{
+		int ground = n.Y + 1;
+		while (ground < n.Y + 12 && !ctx.Grid.Get(n.X, ground).IsSolid())
+			ground++; // in the air (knocked up, mid-jump): count from the ground below
+		int stand = ground - 1;
+		for (int d = 0; d <= DigSearchColumns; d++)
+			foreach (int x in d == 0 ? new[] { n.X } : new[] { n.X - d, n.X + d })
+				if (Diggable(ctx, x, ground) && Diggable(ctx, x + 1, ground))
+					return new TilePos(x, stand + Depth);
+		return new TilePos(n.X, stand + Depth);
+	}
+
+	private static bool Diggable(BotContext ctx, int x, int ground)
+	{
+		for (int y = ground; y < ground + Depth; y++) {
+			CellKind k = ctx.Grid.Get(x, y);
+			if (k.IsLiquid())
+				return false;
+			// Path blocks: the house and arena floor count as unbreakable (BotContext.Protected).
+			if (k.IsSolid() && float.IsInfinity(ctx.PathBlocks?.BreakTicks(x, y) ?? float.PositiveInfinity))
+				return false;
+			if (ctx.Protected != null && ctx.Protected.Contains(new TilePos(x, y)))
+				return false; // open house cells too (the doorway): a hole there would wreck the house
+		}
+		return true;
+	}
+
+	/// <summary>Columns either side searched for a place to dig in.</summary>
+	public const int DigSearchColumns = 8;
 
 	public void Stop(BotContext ctx)
 	{
@@ -182,7 +241,7 @@ public sealed class ShelterSkill : ISkill
 				TilePos? open = seal.Select(c => (TilePos?)c).FirstOrDefault(c => !ctx.Grid.Get(c.Value.X, c.Value.Y).IsSolid());
 				if (open == null) {
 					sealedOk = true;
-					ctx.Log.Info($"Shelter: sealed in at {ctx.Node}, waiting for morning");
+					ctx.Log.Info($"Shelter: sealed in at {ctx.Node}, waiting {(until != null ? why : "for morning")}");
 					phase = Phase.Waiting;
 					return SkillStatus.Running;
 				}
@@ -197,9 +256,9 @@ public sealed class ShelterSkill : ISkill
 				return SkillStatus.Running;
 			}
 			case Phase.Waiting:
-				if (ctx.IsNight)
+				if (until != null ? !until(ctx) && ++waitTicks <= MaxRetreatTicks : ctx.IsNight)
 					return SkillStatus.Running;
-				ctx.Log.Info("Shelter: morning, opening up");
+				ctx.Log.Info(until != null ? $"Shelter: done waiting ({why}), opening up" : "Shelter: morning, opening up");
 				phase = Phase.Unsealing;
 				actionTicks = 0;
 				return SkillStatus.Running;

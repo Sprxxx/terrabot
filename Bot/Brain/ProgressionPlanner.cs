@@ -22,8 +22,11 @@ public sealed record StationPlaced(int TileType, string Label) : Need(Label);
 /// <summary>The best hotbar pickaxe has at least <see cref="Power"/>; otherwise get <see cref="Item"/>.</summary>
 public sealed record PickaxeAtLeast(int Power, int Item, string Label) : Need(Label);
 
-/// <summary>A house (<see cref="Building.Blueprint.SmallHouse"/>) that passes the game's housing check.</summary>
-public sealed record HouseBuilt(string Label) : Need(Label);
+/// <summary>A house (<see cref="Building.Blueprint.SmallHouse"/>) that passes the game's housing check, optionally with a heart lantern hung inside.</summary>
+public sealed record HouseBuilt(string Label, bool HeartLantern = false) : Need(Label);
+
+/// <summary>A boss arena (<see cref="Building.Blueprint.Arena"/>) near the house: flat floor, open air, torches, a campfire.</summary>
+public sealed record ArenaBuilt(string Label) : Need(Label);
 
 /// <summary>The item is worn (armour).</summary>
 public sealed record Wearing(int Item, string Label) : Need(Label);
@@ -91,14 +94,22 @@ public sealed class ProgressionPlanner
 		public const string Boss = "boss";
 		/// <summary>Just max life 200 from life crystals (a building block of the boss plan; handy on its own).</summary>
 		public const string Crystals = "crystals";
-		public static readonly string[] All = { Early, Iron, Settle, Crystals, Boss };
+		/// <summary>Just the boss arena (Milestone 8; also part of the boss plan).</summary>
+		public const string Arena = "arena";
+		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss };
 	}
 
 	private readonly Dictionary<int, long> notedAt = new();
-	private readonly Dictionary<int, float> costMemo = new();
-	private readonly HashSet<int> costVisiting = new();
+	/// <summary>Item costs worked out in this planning pass (<see cref="SolveCosts"/>).</summary>
+	private readonly Dictionary<int, float> costs = new();
+	private int costEvaluations;
+	/// <summary>Recipe cost evaluations in the last planning pass (tests).</summary>
+	public int CostEvaluations => costEvaluations;
+	/// <summary>Most items one cost solve looks at (the recipes reachable from a single item are far fewer).</summary>
+	public const int MaxCostItems = 5000;
 	private string stuck;
 	private long lastShelterEnd = long.MinValue / 2;
+	private long lastRestEnd = long.MinValue / 2;
 	private readonly List<TilePos> badSites = new();
 	private int siteFailures;
 	public const int MaxBuildFailuresPerSite = 2;
@@ -107,6 +118,19 @@ public sealed class ProgressionPlanner
 
 	/// <summary>Top-left tile of the house being built or already built (kept across re-plans).</summary>
 	public TilePos? HouseSite { get; private set; }
+	/// <summary>Top-left tile of the boss arena being built or already built.</summary>
+	public TilePos? ArenaSite { get; private set; }
+	private readonly List<TilePos> badArenaSites = new();
+	private int arenaFailures;
+	/// <summary>Keep the arena this many tiles clear of the house (bosses kill town NPCs; the guides keep them apart).</summary>
+	public const int ArenaHouseGap = 4;
+	/// <summary>Night left (ticks) needed to summon a night boss: the Eye took about 2.5 min on Classic; 4.5 min with margin.</summary>
+	public const int MinNightForBoss = 60 * 60 * 9 / 2;
+	/// <summary>Rest to this much of max life before summoning a boss (at most <see cref="MaxRestTicks"/>).</summary>
+	public const float SummonLifeFraction = 0.9f;
+	public const int MaxRestTicks = 60 * 60;
+	/// <summary>Summon within this many columns of the arena's middle.</summary>
+	public const int ArenaCentreTolerance = 4;
 
 	/// <summary>Stations the bot has seen (tile type -> top-left tile), kept while out of sight.</summary>
 	public Dictionary<int, TilePos> KnownStations { get; } = new();
@@ -120,6 +144,8 @@ public sealed class ProgressionPlanner
 	{
 		if (plan == Plans.Crystals)
 			return new Need[] { new LifeAtLeast(BossLife, "max life") };
+		if (plan == Plans.Arena)
+			return new Need[] { new ArenaBuilt("arena") };
 		var stages = new List<Need> {
 			new StationPlaced(ids.WorkBenchTile, "work bench"),
 			new HaveItem(ids.WoodenSword, 1, "wooden sword"),
@@ -143,6 +169,8 @@ public sealed class ProgressionPlanner
 		stages.Add(new PrepFor(ids.EyeBoss, new LifeAtLeast(BossLife, "max life")));
 		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.IronTierBow, 1, "iron-tier bow")));
 		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.WoodenArrow, BossArrows, "arrows")));
+		stages.Add(new PrepFor(ids.EyeBoss, new ArenaBuilt("arena")));
+		stages.Add(new PrepFor(ids.EyeBoss, new HouseBuilt("heart lantern in the house", HeartLantern: true)));
 		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu"));
 		return stages;
 	}
@@ -157,10 +185,14 @@ public sealed class ProgressionPlanner
 		Complete = false;
 		stuck = null;
 		lastShelterEnd = long.MinValue / 2;
+		lastRestEnd = long.MinValue / 2;
 		HouseSite = null;
+		ArenaSite = null;
 		searchedFor.Clear();
 		badSites.Clear();
+		badArenaSites.Clear();
 		siteFailures = 0;
+		arenaFailures = 0;
 	}
 
 	/// <summary>Tell the planner about a finished skill (so a just-placed station counts before the next scan).</summary>
@@ -175,6 +207,19 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		if (skill is WaitSkill { What: "life" })
+			lastRestEnd = ctx.Tick; // one rest per summon attempt: a rest that timed out is not started again at once
+		if (skill is BuildSkill arena && !arena.Blueprint.IsHouse) {
+			if (status == SkillStatus.Succeeded)
+				arenaFailures = 0;
+			else if (status == SkillStatus.Failed && ++arenaFailures >= MaxBuildFailuresPerSite) {
+				ctx.Log.Info($"Auto: giving up on the arena site {arena.Origin}");
+				badArenaSites.Add(arena.Origin);
+				ArenaSite = null;
+				arenaFailures = 0;
+			}
+			return;
+		}
 		if (skill is BuildSkill done && status == SkillStatus.Succeeded) {
 			HouseSite = done.Origin;
 			siteFailures = 0;
@@ -190,8 +235,25 @@ public sealed class ProgressionPlanner
 	/// <summary>The next skill to run, or null when the plan is complete or stuck.</summary>
 	public ISkill Next(BotContext ctx)
 	{
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+		try {
+			return NextUntimed(ctx);
+		}
+		finally {
+			if (watch.ElapsedMilliseconds > SlowPassMs)
+				ctx.Log.Warn($"Planner: slow pass, {watch.ElapsedMilliseconds} ms ({costs.Count} item costs, {costEvaluations} recipe evaluations)");
+		}
+	}
+
+	/// <summary>A planning pass slower than this (ms) is logged.</summary>
+	public const int SlowPassMs = 50;
+
+	private ISkill NextUntimed(BotContext ctx)
+	{
 		RememberStations(ctx);
-		costMemo.Clear();
+		ProtectBuilt(ctx);
+		costs.Clear();
+		costEvaluations = 0;
 		stuck = null;
 		var claims = new Dictionary<int, int>();
 		foreach (Need stage in StagesFor(Plan, ctx.Ids)) {
@@ -208,6 +270,7 @@ public sealed class ProgressionPlanner
 			Plans.Early => "early-game chain complete: work bench placed, wooden sword, wood stockpiled",
 			Plans.Iron => "iron-age chain complete: work bench, furnace and anvil placed, iron-tier pickaxe in hand",
 			Plans.Crystals => $"max life {ctx.Combat.LifeMaxBase} from life crystals",
+			Plans.Arena => $"the arena at {ArenaSite} is ready",
 			Plans.Boss => "the Eye of Cthulhu is defeated",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
@@ -235,7 +298,8 @@ public sealed class ProgressionPlanner
 			StationPlaced s => ResolveStation(s, claims, depth, ctx),
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Item, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
-			HouseBuilt => ResolveHouse(claims, depth, ctx),
+			HouseBuilt hb => ResolveHouse(hb.HeartLantern, claims, depth, ctx),
+			ArenaBuilt => ResolveArena(claims, depth, ctx),
 			BossDefeated b => ResolveBoss(b, claims, depth, ctx),
 			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
@@ -338,10 +402,11 @@ public sealed class ProgressionPlanner
 	/// A valid house, or: pick a site (near the work bench), get the materials it still needs (blocks for the
 	/// missing frame cells, walls for the bare ones, each furniture item not yet placed), then build.
 	/// </summary>
-	private ISkill ResolveHouse(Dictionary<int, int> claims, int depth, BotContext ctx)
+	private ISkill ResolveHouse(bool heartLantern, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
-		Blueprint bp = Blueprint.SmallHouse(ctx.Ids);
-		if (HouseSite is TilePos built && ctx.World.CheckHousing(built.X + bp.Inside.X, built.Y + bp.Inside.Y) == null)
+		Blueprint bp = Blueprint.SmallHouse(ctx.Ids, heartLantern);
+		if (HouseSite is TilePos built && ctx.World.CheckHousing(built.X + bp.Inside.X, built.Y + bp.Inside.Y) == null
+			&& bp.Items.All(it => BuildSkill.IsPlaced(ctx, bp, built, it)))
 			return null;
 		if (HouseSite == null) {
 			TilePos anchor = KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node;
@@ -378,7 +443,106 @@ public sealed class ProgressionPlanner
 		return Do($"building a {bp.Name} at {site}", new BuildSkill(bp, site));
 	}
 
-	/// <summary>Defeated, or: get the summon item (recursively), wait for night, then summon and fight.</summary>
+	/// <summary>
+	/// A finished arena, or: pick a site near the house (not overlapping it), get what it still needs (blocks for
+	/// the missing floor, the torches and campfire not yet placed), then build it with <see cref="BuildSkill"/>.
+	/// </summary>
+	private ISkill ResolveArena(Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		Blueprint bp = Blueprint.Arena(ctx.Ids);
+		if (ArenaSite is TilePos done && ArenaReady(ctx, bp, done))
+			return null;
+		if (ArenaSite == null) {
+			TilePos anchor = HouseSite ?? (KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node);
+			var keepOut = new List<(TilePos, TilePos)>();
+			if (HouseSite is TilePos h) {
+				Blueprint house = Blueprint.SmallHouse(ctx.Ids);
+				keepOut.Add((new TilePos(h.X - ArenaHouseGap, h.Y - ArenaHouseGap),
+					new TilePos(h.X + house.Width - 1 + ArenaHouseGap, h.Y + house.Height - 1 + ArenaHouseGap)));
+			}
+			ArenaSite = SiteFinder.Find(ctx, bp, anchor, badArenaSites, keepOut);
+			if (ArenaSite == null) {
+				stuck = $"no arena site ({bp.Width} wide, at most {bp.MaxEdits} edits) within {bp.SearchRadius} tiles of {anchor}";
+				return null;
+			}
+			ctx.Log.Info($"Auto: arena site {ArenaSite.Value} ({SiteFinder.Edits(ctx, bp, ArenaSite.Value)} edits)");
+		}
+		TilePos site = ArenaSite.Value;
+		int blocks = 0;
+		for (int x = 0; x < bp.Width; x++)
+			for (int y = 0; y < bp.Height; y++)
+				if (bp.At(x, y) == PlanCell.Block && !ctx.Grid.Get(site.X + x, site.Y + y).IsSolid())
+					blocks++;
+		var needs = new List<Need>();
+		if (blocks > 0)
+			needs.Add(new HaveItem(ctx.Ids.BuildingBlocks, blocks + BlockMargin, "building blocks"));
+		foreach (var g in bp.Items.Where(it => !BuildSkill.IsPlaced(ctx, bp, site, it)).GroupBy(it => it.ItemType))
+			needs.Add(new HaveItem(g.Key, g.Count(), ctx.Knowledge.ItemName(g.Key)));
+		foreach (Need n in needs) {
+			ISkill sub = Resolve(n, claims, depth + 1, ctx);
+			if (sub != null || stuck != null)
+				return sub;
+		}
+		return Do($"building the arena at {site}", new BuildSkill(bp, site));
+	}
+
+	private (TilePos?, TilePos?) protectedFor = (null, null);
+
+	/// <summary>
+	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house
+	/// and the arena's floor. Rebuilt only when a site changes.
+	/// </summary>
+	private void ProtectBuilt(BotContext ctx)
+	{
+		if (protectedFor == (HouseSite, ArenaSite) && ctx.Protected != null)
+			return;
+		protectedFor = (HouseSite, ArenaSite);
+		var cells = new HashSet<TilePos>();
+		if (HouseSite is TilePos h) {
+			Blueprint house = Blueprint.SmallHouse(ctx.Ids);
+			for (int x = 0; x < house.Width; x++)
+				for (int y = 0; y < house.Height; y++)
+					if (house.At(x, y) != PlanCell.None)
+						cells.Add(new TilePos(h.X + x, h.Y + y));
+		}
+		if (ArenaSite is TilePos a) {
+			Blueprint arena = Blueprint.Arena(ctx.Ids);
+			for (int x = 0; x < arena.Width; x++)
+				for (int y = 0; y < arena.Height; y++)
+					if (arena.At(x, y) == PlanCell.Block)
+						cells.Add(new TilePos(a.X + x, a.Y + y));
+		}
+		ctx.Protected = cells;
+	}
+
+	/// <summary>Floor solid, open cells empty (no trees), torches and campfire placed.</summary>
+	public static bool ArenaReady(BotContext ctx, Blueprint bp, TilePos site)
+	{
+		for (int x = 0; x < bp.Width; x++)
+			for (int y = 0; y < bp.Height; y++) {
+				int wx = site.X + x, wy = site.Y + y;
+				PlanCell c = bp.At(x, y);
+				if (c == PlanCell.Block && !ctx.Grid.Get(wx, wy).IsSolid())
+					return false;
+				if (c == PlanCell.Clear && !bp.Items.Any(it => it.Covers(x, y)) && (ctx.Grid.Get(wx, wy).IsSolid() || ctx.World.IsTreeTrunk(wx, wy)))
+					return false;
+			}
+		return bp.Items.All(it => BuildSkill.IsPlaced(ctx, bp, site, it));
+	}
+
+	/// <summary>The arena's columns and the feet row of a player standing on its floor, if there is one.</summary>
+	public (int MinX, int MaxX, int StandY)? ArenaBounds(BotContext ctx)
+	{
+		if (ArenaSite is not TilePos s)
+			return null;
+		Blueprint bp = Blueprint.Arena(ctx.Ids);
+		return (s.X, s.X + bp.Width - 1, s.Y + bp.StandRow);
+	}
+
+	private static bool InArena(TilePos n, int x0, int x1, int standY) =>
+		Math.Abs(n.X - (x0 + x1) / 2) <= ArenaCentreTolerance + 1 && n.Y == standY;
+
+	/// <summary>Defeated, or: get the summon item (recursively), wait for night, walk to the arena, then summon and fight.</summary>
 	private ISkill ResolveBoss(BossDefeated b, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		if (ctx.World.BossDefeated(b.Npc))
@@ -390,8 +554,24 @@ public sealed class ProgressionPlanner
 				return sub;
 			if (!ctx.IsNight)
 				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
+			// The Eye leaves at dawn: seen in game, summoned late after a long fight with demon eyes, it flew off at
+			// 1275/2800. Not enough night left: wait for the next one (through the day).
+			if (ctx.NightTicksLeft > 0 && ctx.NightTicksLeft < MinNightForBoss)
+				return Do($"too little night left for the {b.Label} ({ctx.NightTicksLeft / 60}s); waiting for the next night",
+					new WaitSkill("next night", c => c.IsNight && c.NightTicksLeft >= MinNightForBoss, NightWaitTicks + 32400));
+			if (ArenaBounds(ctx) is (int ax0, int ax1, int ay) && !InArena(ctx.Node, ax0, ax1, ay)) {
+				var middle = new TilePos((ax0 + ax1) / 2, ay);
+				return Do($"walking to the arena to summon the {b.Label}",
+					new WalkToSkill(new Core.Pathfinding.GoalNearTile(middle, ArenaCentreTolerance, ctx.Physics)));
+			}
+			// Summon at (nearly) full life: the arena's campfire and the heart lantern bring it back up quickly.
+			if (ctx.Combat.LifeFraction < SummonLifeFraction && ctx.Tick - lastRestEnd > MaxRestTicks)
+				return Do($"resting to {SummonLifeFraction:P0} life before summoning the {b.Label} ({ctx.Combat.Life}/{ctx.Combat.LifeMax})",
+					new WaitSkill("life", c => c.Combat.LifeFraction >= SummonLifeFraction, MaxRestTicks));
 		}
-		return Do($"fighting the {b.Label}", new BossFightSkill(b.SummonItem, b.Npc, b.Minions));
+		var arena = ArenaBounds(ctx);
+		return Do($"fighting the {b.Label}{(arena != null ? " in the arena" : "")}",
+			new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena });
 	}
 
 	// ---------- cost estimate (rough ticks; infinity = cannot be had) ----------
@@ -405,7 +585,7 @@ public sealed class ProgressionPlanner
 		int best = -1;
 		float bestCost = float.PositiveInfinity;
 		foreach (int i in items) {
-			float c = Cost(i, 0, ctx);
+			float c = Cost(i, ctx);
 			if (c < bestCost) {
 				bestCost = c;
 				best = i;
@@ -415,65 +595,95 @@ public sealed class ProgressionPlanner
 	}
 
 	/// <summary>
-	/// Cheapest recipe for the item, evaluated with the item itself marked in progress: a recipe whose ingredients
-	/// can only be made from the item again (iron bar -> iron fence -> iron bar) costs infinity.
+	/// Cheapest recipe for the item. A recipe that goes back through the item (iron bar -> iron fence -> iron bar)
+	/// always costs more than the item itself, so it never wins over a real one.
 	/// </summary>
 	private RecipeInfo BestRecipe(int item, BotContext ctx)
 	{
 		RecipeInfo best = null;
 		float bestCost = float.PositiveInfinity;
-		costVisiting.Add(item);
-		try {
-			foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item)) {
-				float c = RecipeCost(r, 0, ctx);
-				if (c < bestCost) {
-					bestCost = c;
-					best = r;
-				}
+		foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item)) {
+			float c = RecipeCost(r, ctx, i => Cost(i, ctx));
+			if (c < bestCost) {
+				bestCost = c;
+				best = r;
 			}
-		}
-		finally {
-			costVisiting.Remove(item);
 		}
 		return best;
 	}
 
-	private float Cost(int item, int depth, BotContext ctx)
+	/// <summary>Rough ticks to get the item (infinity = cannot be had), worked out by <see cref="SolveCosts"/> and kept for the pass.</summary>
+	private float Cost(int item, BotContext ctx)
 	{
-		// The cycle check comes first: a cached cost was worked out on another path and may go through an item
-		// that is in progress on this one.
-		if (depth > MaxDepth || costVisiting.Contains(item))
-			return float.PositiveInfinity; // a cycle (e.g. wood -> platform -> wood) is not a way to get it
-		if (costMemo.TryGetValue(item, out float memo))
-			return memo;
-		costVisiting.Add(item);
-		try {
-			float cost;
-			ItemSource src = ctx.Knowledge.SourceOf(item);
-			if (src.Kind != SourceKind.None) {
-				cost = src.Kind switch { SourceKind.Tree => TreeCost, SourceKind.Mine => MineCost, _ => HuntCost };
-			}
-			else {
-				cost = float.PositiveInfinity;
-				foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item))
-					cost = Math.Min(cost, RecipeCost(r, depth + 1, ctx));
-			}
-			if (src.Kind != SourceKind.None)
-				costMemo[item] = cost; // only raw costs are path-independent
-			return cost;
+		if (!costs.TryGetValue(item, out float c)) {
+			SolveCosts(item, ctx);
+			c = costs[item];
 		}
-		finally {
-			costVisiting.Remove(item);
-		}
+		return c;
 	}
 
-	private float RecipeCost(RecipeInfo r, int depth, BotContext ctx)
+	/// <summary>
+	/// Costs of the item and everything it can depend on (ingredients, items that place missing stations), as a
+	/// fixpoint: raw materials cost their gather time, a crafted item the cheapest of its recipes, repeated until
+	/// nothing gets cheaper. Exact and path-independent, cycles included (a way round a cycle is never cheaper,
+	/// each step costs <see cref="CraftStepCost"/>), and polynomial. The recursive estimate this replaced was
+	/// exponential on the real game's recipes once its depth limit was raised: the game froze for minutes.
+	/// </summary>
+	private void SolveCosts(int root, BotContext ctx)
 	{
+		IGameKnowledge k = ctx.Knowledge;
+		var items = new List<int>();
+		var current = new Dictionary<int, float>();
+		var todo = new Stack<int>();
+		todo.Push(root);
+		while (todo.Count > 0 && items.Count < MaxCostItems) {
+			int i = todo.Pop();
+			if (costs.ContainsKey(i) || current.ContainsKey(i))
+				continue;
+			ItemSource src = k.SourceOf(i);
+			current[i] = src.Kind switch {
+				SourceKind.Tree => TreeCost, SourceKind.Mine => MineCost, SourceKind.Hunt => HuntCost, _ => float.PositiveInfinity,
+			};
+			if (src.Kind != SourceKind.None)
+				continue;
+			items.Add(i);
+			foreach (RecipeInfo r in k.RecipesFor(i)) {
+				foreach (Ingredient ing in r.Ingredients)
+					foreach (int a in ing.Accepts)
+						todo.Push(a);
+				foreach (int station in r.Stations)
+					if (!KnownStations.ContainsKey(station))
+						foreach (int placer in k.ItemsPlacing(station))
+							if (ctx.Inventory.Count(placer) <= 0)
+								todo.Push(placer);
+			}
+		}
+		float Lookup(int i) => costs.TryGetValue(i, out float c) ? c : current.TryGetValue(i, out float d) ? d : float.PositiveInfinity;
+		bool changed = true;
+		for (int round = 0; changed && round <= items.Count; round++) {
+			changed = false;
+			foreach (int i in items) {
+				float best = current[i];
+				foreach (RecipeInfo r in k.RecipesFor(i))
+					best = Math.Min(best, RecipeCost(r, ctx, Lookup));
+				if (best < current[i] - 0.001f) {
+					current[i] = best;
+					changed = true;
+				}
+			}
+		}
+		foreach (var kv in current)
+			costs[kv.Key] = kv.Value;
+	}
+
+	private float RecipeCost(RecipeInfo r, BotContext ctx, Func<int, float> cost)
+	{
+		costEvaluations++;
 		float sum = 0f;
 		foreach (Ingredient ing in r.Ingredients) {
 			float c = float.PositiveInfinity;
 			foreach (int a in ing.Accepts)
-				c = Math.Min(c, Cost(a, depth + 1, ctx));
+				c = Math.Min(c, cost(a));
 			sum += ing.Stack * c;
 		}
 		sum /= Math.Max(1, r.ResultStack);
@@ -489,7 +699,7 @@ public sealed class ProgressionPlanner
 			}
 			float c = float.PositiveInfinity;
 			foreach (int i in placers)
-				c = Math.Min(c, ctx.Inventory.Count(i) > 0 ? 0f : Cost(i, depth + 1, ctx));
+				c = Math.Min(c, ctx.Inventory.Count(i) > 0 ? 0f : cost(i));
 			sum += c;
 		}
 		return sum;
@@ -559,7 +769,8 @@ public sealed class ProgressionPlanner
 	/// <summary>Resolve a single need against the current state (tests).</summary>
 	public ISkill ResolveForTest(Need need, BotContext ctx)
 	{
-		costMemo.Clear();
+		costs.Clear();
+		costEvaluations = 0;
 		stuck = null;
 		ISkill skill = Resolve(need, new Dictionary<int, int>(), 0, ctx);
 		return skill == null ? null : AtNight(skill, ctx);

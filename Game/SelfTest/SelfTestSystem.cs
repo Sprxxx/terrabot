@@ -49,6 +49,8 @@ public sealed class SelfTestSystem : ModSystem
 	private bool spawnFailed;
 	private int lifeAtStart;
 	private int deathsAtStart;
+	/// <summary>Ticks between heartbeat lines during a scenario (30 game seconds).</summary>
+	public const int HeartbeatTicks = 1800;
 	private TilePos? buildSite;
 	private readonly List<string> summary = new();
 	private int passed;
@@ -93,9 +95,9 @@ public sealed class SelfTestSystem : ModSystem
 				if (phaseTicks < StartDelayTicks)
 					return;
 				Active = true;
-				arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2);
+				arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2, queue.Max(q => q.Width));
 				double fullGravityRow = 60 + 10 * Math.Pow(Main.maxTilesX / 4200.0, 2) + Main.worldSurface / 6.0;
-				Mod.Logger.Info($"SELFTEST arena x {arena.Left}..{arena.Left + Arena.Width} y {arena.Top}..{arena.FloorY}, " +
+				Mod.Logger.Info($"SELFTEST arena x {arena.Left}..{arena.Left + arena.Width} y {arena.Top}..{arena.FloorY}, " +
 					$"full gravity below row {fullGravityRow:0} (arena top {arena.Top}), {bot.Blocks.Describe()}");
 				Next(Phase.Setup);
 				return;
@@ -210,6 +212,9 @@ public sealed class SelfTestSystem : ModSystem
 						return $"#{i} {n.FullName} active {n.active} life {n.life} at ({n.Center.X / 16f:0},{n.Center.Y / 16f:0}) chase {n.CanBeChasedBy()}";
 					})) + $" | bot sees {bot.Context.Hostiles.Count} | {bot.Brain.Describe()}");
 				TrackRun(p, bot, s);
+				// Heartbeat, so a watcher can tell a frozen game (no lines at all) from a quiet one.
+				if (phaseTicks > 0 && phaseTicks % HeartbeatTicks == 0)
+					Mod.Logger.Info($"SELFTEST heartbeat {s.Name} t{phaseTicks} at {bot.FeetTile()}, life {p.statLife}/{p.statLifeMax2}: {bot.Brain.Describe()}");
 				bool finished = s.Mode == "auto"
 					? phaseTicks > 2 && (!bot.Brain.Auto || (bot.Brain.Planner.Complete && bot.Brain.Current == null))
 					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > 2;
@@ -282,6 +287,15 @@ public sealed class SelfTestSystem : ModSystem
 			if (house is TilePos h)
 				result.Housing = bot.GameInfo.CheckHousing(h.X + bp.Inside.X, h.Y + bp.Inside.Y);
 			result.ArmourWorn = new[] { ids.IronTierHelmet, ids.IronTierChainmail, ids.IronTierGreaves }.Count(bot.GameInfo.IsEquipped);
+			if (house is TilePos hl) {
+				Bot.Building.Blueprint withLantern = Bot.Building.Blueprint.SmallHouse(ids, heartLantern: true);
+				result.HeartLanternHung = withLantern.Items.Where(it => it.ItemType == ids.HeartLantern)
+					.All(it => Bot.Building.BuildSkill.IsPlaced(bot.Context, withLantern, hl, it));
+			}
+			if (bot.Brain.Planner.ArenaSite is TilePos a) {
+				Bot.Building.Blueprint arenaBp = Bot.Building.Blueprint.Arena(ids);
+				result.Arena = Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, arenaBp, a) ? null : $"arena at {a} not finished";
+			}
 		}
 		result.BenchPlaced = bot.GameInfo.ScanStations(bot.FeetTile()).ContainsKey(TileID.WorkBenches) || bot.Brain.Planner.KnownStations.ContainsKey(TileID.WorkBenches);
 		result.FallDamageHits = bot.FallDamageHits;

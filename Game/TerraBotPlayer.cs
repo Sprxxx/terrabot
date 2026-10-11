@@ -281,6 +281,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		Context.PickPower = Blocks.PickPower;
 		Context.PickRangeBoost = Blocks.PickSlot >= 0 ? Player.inventory[Blocks.PickSlot].tileBoost : 0;
 		Context.IsNight = !Main.dayTime;
+		Context.NightTicksLeft = Main.dayTime ? 0 : (int)Math.Max(0, Main.nightLength - Main.time);
 		Context.Expert = Main.expertMode;
 		if (rescanNow || Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
 			rescanNow = false;

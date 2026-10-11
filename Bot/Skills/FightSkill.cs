@@ -119,6 +119,11 @@ public sealed class FightSkill : ISkill
 				State = "swinging";
 			}
 		}
+		else if (FlyingAiStyles.Contains(t.AiStyle) && ctx.Combat.HasWeapon && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY)) {
+			// A flier in sight with only a sword: hold ground and meet it. Fliers (demon eyes) come at the player on
+			// their own; chasing their "feet tile" ran the bot under them and cost it 150 life on Classic.
+			HoldAndMeet(ctx, t, dx, dy, reachX, reachY);
+		}
 		else {
 			Approach(ctx, t, dx, dy);
 			// Swing early at targets about to come into reach (slimes hop in), unless the path is mining/building.
@@ -232,6 +237,41 @@ public sealed class FightSkill : ISkill
 		}
 		return pick;
 	}
+
+	/// <summary>Stand, face the flier and swing as it comes within <see cref="MeetMargin"/> of reach.</summary>
+	private void HoldAndMeet(BotContext ctx, EntityInfo t, float dx, float dy, float reachX, float reachY)
+	{
+		approach?.Stop(ctx);
+		approach = null;
+		int want = dx >= 0 ? 1 : -1;
+		ctx.Output.Tool = ToolRequest.Weapon;
+		ctx.Output.AimMouse(t.CenterX, t.CenterY);
+		if (ctx.Combat.Facing != want && ctx.Combat.ItemAnimation == 0) {
+			ctx.Output.Horizontal = want;
+			State = "turning to meet";
+			return;
+		}
+		ctx.Output.UseItem = Math.Abs(dx) <= reachX + MeetMargin && Math.Abs(dy) <= reachY + MeetMargin;
+		State = ctx.Output.UseItem ? "meeting it" : "holding";
+		// While it is still far off, step over to drops lying close by (lenses from the last one): with fliers
+		// coming one after another the fight never ends, so loot left for "after the fight" was never picked up.
+		if (!ctx.Output.UseItem && ctx.Combat.ItemAnimation == 0 && MathF.Sqrt(dx * dx + dy * dy) > PickUpWhileFarTiles * 16f) {
+			PhysicsParams p = ctx.Physics;
+			float bx = ctx.Body.CenterX(p), by = ctx.Body.CenterY(p);
+			DropInfo? drop = ctx.Drops.Where(d => Math.Abs(d.CenterX - bx) <= PickUpRadiusTiles * 16f && Math.Abs(d.CenterY - by) <= 3 * 16f)
+				.OrderBy(d => Math.Abs(d.CenterX - bx)).Cast<DropInfo?>().FirstOrDefault();
+			if (drop is DropInfo d && Math.Abs(d.CenterX - bx) > 8f) {
+				ctx.Output.Horizontal = Math.Sign(d.CenterX - bx);
+				State = $"picking up {d.Name} while it is far";
+			}
+		}
+	}
+
+	/// <summary>Drops within this many tiles (and 3 rows) are picked up while the flier is over <see cref="PickUpWhileFarTiles"/> away.</summary>
+	public const float PickUpRadiusTiles = 10f, PickUpWhileFarTiles = 9f;
+
+	/// <summary>Start a swing this far (px) before a flier is in reach: the swing takes a while to come round.</summary>
+	public const float MeetMargin = 32f;
 
 	private void Approach(BotContext ctx, EntityInfo t, float dx, float dy)
 	{

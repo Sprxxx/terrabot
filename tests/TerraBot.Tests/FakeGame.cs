@@ -39,6 +39,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int LifeCrystal = 29, TileHeart = 12;
 	public const int IronBow = 99, WoodenArrow = 40, Lens = 38, SuspiciousEye = 43, TileDemonAltar = 26, EyeNpc = 4, ServantNpc = 5, DemonEyeAi = 2;
 	public const int SlimeAi = 1;
+	public const int Campfire = 966, HeartLantern = 1859, Chain = 85, TileCampfire = 215, TileLantern = 42;
 
 	public static readonly GameIds Ids = new() {
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
@@ -48,6 +49,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
+		Campfire = Campfire, HeartLantern = HeartLantern,
 	};
 
 	public readonly ArrayTileGrid Grid;
@@ -71,6 +73,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	private int placedSeen;
 	private int useTicks;
 	public int LifeMax = 100;
+	/// <summary>Current life; -1 = full.</summary>
+	public int Life = -1;
 
 	private readonly Dictionary<int, List<RecipeInfo>> recipes = new();
 
@@ -122,6 +126,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = Door, Ingredients = new[] { new Ingredient(6, Wood) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Chair, Ingredients = new[] { new Ingredient(4, Wood) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Table, Ingredients = new[] { new Ingredient(8, Wood) }, Stations = new[] { TileBench } });
+		// Vanilla (Recipe.cs): campfire 10 wood + 5 torches by hand; chain 1 iron bar -> 15 at an anvil; heart lantern by hand.
+		Add(new RecipeInfo { Result = Campfire, Ingredients = new[] { new Ingredient(10, Wood), new Ingredient(5, Torch) } });
+		Add(new RecipeInfo { Result = Chain, ResultStack = 15, Ingredients = new[] { new Ingredient(1, IronBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = HeartLantern, Ingredients = new[] { new Ingredient(1, LifeCrystal), new Ingredient(4, Chain) } });
 		// A cycle like vanilla's: platforms from wood and wood back from platforms.
 		Add(new RecipeInfo { Result = WoodPlatform, ResultStack = 2, Ingredients = new[] { new Ingredient(1, Wood) } });
 		Add(new RecipeInfo { Result = Wood, Ingredients = new[] { new Ingredient(2, WoodPlatform) } });
@@ -131,7 +139,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		recipes[IronBar].Insert(0, new RecipeInfo { Result = IronBar, Ingredients = new[] { new Ingredient(4, IronFence) } });
 	}
 
-	private void Add(RecipeInfo r)
+	public void Add(RecipeInfo r)
 	{
 		if (!recipes.TryGetValue(r.Result, out List<RecipeInfo> list))
 			recipes[r.Result] = list = new List<RecipeInfo>();
@@ -171,12 +179,15 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		TileChair => new[] { Chair },
 		TileDoor => new[] { Door },
 		TileTorch => new[] { Torch },
+		TileCampfire => new[] { Campfire },
+		TileLantern => new[] { HeartLantern },
 		_ => Array.Empty<int>(),
 	};
 
 	public int TilePlacedBy(int itemType) => itemType switch {
 		WorkBench => TileBench, Furnace => TileFurnace, IronAnvil or LeadAnvil => TileAnvil,
-		Table => TileTable, Chair => TileChair, Door => TileDoor, Torch => TileTorch, _ => -1,
+		Table => TileTable, Chair => TileChair, Door => TileDoor, Torch => TileTorch,
+		Campfire => TileCampfire, HeartLantern => TileLantern, _ => -1,
 	};
 
 	public string ItemName(int itemType) => $"item{itemType}";
@@ -188,7 +199,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	public (int Width, int Height, int OriginX, int OriginY) Footprint(int itemType) => TilePlacedBy(itemType) switch {
 		TileBench or TileAnvil => (2, 1, 0, 0),
-		TileFurnace or TileTable => (3, 2, 1, 1),
+		TileFurnace or TileTable or TileCampfire => (3, 2, 1, 1),
+		TileLantern => (1, 2, 0, 0),
 		TileChair => (1, 2, 0, 1),
 		TileDoor => (1, 3, 0, 0),
 		_ => (1, 1, 0, 0),
@@ -209,13 +221,15 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				if (!Free(cx, cy))
 					return false;
 				bool inBody = cx >= n.X && cx <= n.X + 1 && cy >= n.Y - 2 && cy <= n.Y;
-				if (inBody && tile != TileTorch)
+				if (inBody && tile is not (TileTorch or TileLantern))
 					return false;
 			}
 		if (tile == TileTorch)
 			return Walls.Contains(new TilePos(x, y)) || Grid.Get(x - 1, y).IsSolid() || Grid.Get(x + 1, y).IsSolid() || Grid.Get(x, y + 1).IsSolid();
 		if (tile == TileDoor)
 			return Grid.Get(x0, y0 - 1).IsSolid() && Grid.Get(x0, y0 + h).IsSolid();
+		if (tile == TileLantern)
+			return Grid.Get(x0, y0 - 1).IsSolid(); // hangs from a ceiling
 		for (int cx = x0; cx < x0 + w; cx++)
 			if (!Grid.Get(cx, y0 + h).IsSolid())
 				return false;
@@ -469,7 +483,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				Furniture[new TilePos(cx, cy)] = tile;
 				if (tile == TileDoor)
 					Grid.Set(cx, cy, CellKind.Solid);
-				else if (tile is not (TileChair or TileTorch) && cy == y - oy)
+				else if (tile is not (TileChair or TileTorch or TileCampfire or TileLantern) && cy == y - oy)
 					Grid.Set(cx, cy, CellKind.Platform);
 			}
 		if (tile is TileBench or TileFurnace or TileAnvil)
@@ -491,7 +505,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		ctx.Combat.Facing = facing;
 		ctx.Combat.LifeMax = LifeMax;
 		ctx.Combat.LifeMaxBase = LifeMax;
-		ctx.Combat.Life = LifeMax;
+		ctx.Combat.Life = Life < 0 ? LifeMax : Life;
 		Blocks.BlockCount = Count(StoneBlock) + Count(DirtBlock);
 		if (refreshes++ % 20 == 0)
 			seenStations = new Dictionary<int, TilePos>(Stations);
