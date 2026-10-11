@@ -39,6 +39,13 @@ public sealed class FightSkill : ISkill
 	/// <summary>NPC AI styles that fly (vanilla NPCAIStyleID: 2 Demon Eye, 4 Eye of Cthulhu, 5 Flying, 14 Bat).</summary>
 	public static readonly int[] FlyingAiStyles = { 2, 4, 5, 14 };
 	private const int RetargetPathTicks = 30;
+	private int progressTarget = -1;
+	private float bestDistance;
+	private int sinceCloser;
+	/// <summary>Ticks without getting closer before an enemy is left alone.</summary>
+	public const int MaxTicksNoCloser = 600;
+	private const int RetargetDistance = 6;
+	private const int RetargetAnywayTicks = 180;
 
 	private WalkToSkill approach;
 	private TilePos approachTarget;
@@ -100,6 +107,20 @@ public sealed class FightSkill : ISkill
 		calm = 0;
 		EntityInfo t = target.Value;
 		targetDistance = t.DistanceTo(cx, cy);
+		// No closer for a long while (in reach does not count as stuck): give up on it, like an enemy with no path to it.
+		if (t.Id != progressTarget || targetDistance < bestDistance - 16f) {
+			progressTarget = t.Id;
+			bestDistance = targetDistance;
+			sinceCloser = 0;
+		}
+		else if (++sinceCloser > MaxTicksNoCloser && targetDistance > MeleePreferredWithin) {
+			unreachable.Add(t.Id);
+			ctx.Log.Info($"Fight: no closer to {t.Name} in {MaxTicksNoCloser} ticks ({targetDistance / 16f:0.0} tiles); leaving it");
+			targetId = -1;
+			sinceCloser = 0;
+			State = "giving up on it";
+			return SkillStatus.Running;
+		}
 
 		float dx = t.CenterX - cx, dy = t.CenterY - cy;
 		float reachX = p.Width * 0.5f + ctx.Combat.WeaponReach + t.Width * 0.5f - 4f;
@@ -292,7 +313,10 @@ public sealed class FightSkill : ISkill
 		}
 		TilePos feet = t.FeetTile;
 		approachAge++;
-		if (approach == null || (approachAge > RetargetPathTicks && feet.ChebyshevTo(approachTarget) > 2)) {
+		// Re-aim only when the target has really moved, or now and then: a hopping slime re-aimed every half second, and
+		// each new path began with a pillar step that never got finished (seen in game: a minute at the bottom of a shaft).
+		bool moved = approachAge > RetargetPathTicks && feet.ChebyshevTo(approachTarget) > RetargetDistance;
+		if (approach == null || moved || approachAge > RetargetAnywayTicks) {
 			approach = new WalkToSkill(feet) { Quiet = true, Tolerance = 2, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			approach.Start(ctx);
 			approachTarget = feet;
