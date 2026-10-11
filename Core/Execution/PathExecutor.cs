@@ -66,6 +66,8 @@ public sealed class PathExecutor
 	public string Reason { get; private set; } = "";
 	/// <summary>Short description of what the current step is doing, for the overlay and traces.</summary>
 	public string Phase { get; private set; } = "";
+	/// <summary>The block action last being worked on (mining or placing), or null if none was started.</summary>
+	public BlockAction? CurrentAction { get; private set; }
 	/// <summary>Times the executor skipped ahead after landing on a later node of the path.</summary>
 	public int Resyncs { get; private set; }
 	/// <summary>Number of steps fully completed.</summary>
@@ -407,6 +409,7 @@ public sealed class PathExecutor
 				actionIndex++;
 				continue;
 			}
+			CurrentAction = a;
 			input.Tool = a.Kind == ActionKind.Break ? ToolRequest.Pickaxe : ToolRequest.Block;
 			input.UseItem = true;
 			input.Aim(a.Cell.X, a.Cell.Y);

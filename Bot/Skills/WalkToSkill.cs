@@ -178,9 +178,11 @@ public sealed class WalkToSkill : ISkill
 	/// <summary>Actions of the step that got stuck which did not happen: twice at a cell, and path moves stop planning them there.</summary>
 	private void NoteFailedActions(BotContext ctx)
 	{
-		if (Executor.Current is not PathStep step || !step.HasActions)
+		// Only the action that was actually being worked on: a step stuck before its actions began (positioning) says
+		// nothing about them (seen in game: cells vetoed that were never tried).
+		if (Executor.CurrentAction is not BlockAction current || Executor.Current is not PathStep step || !step.HasActions)
 			return;
-		foreach (BlockAction a in step.Actions) {
+		foreach (BlockAction a in new[] { current }) {
 			bool place = a.Kind == ActionKind.Place;
 			bool solid = ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsSolid();
 			if (place == solid)
