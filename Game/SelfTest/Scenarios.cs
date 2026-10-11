@@ -18,6 +18,9 @@ public sealed class RunResult
 	public int FallingBlocksSeen;
 	public int EnemiesLeft;
 	public int LifeLost;
+	public int Hits;
+	public int DamageTaken;
+	public int Deaths;
 	public int Wood;
 	public int Swords;
 	public bool BenchPlaced;

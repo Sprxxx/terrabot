@@ -37,6 +37,10 @@ public sealed class BotContext
 	/// <summary>Non-null when the bot must not act this tick (dead, mounted, grappled, reversed gravity...).</summary>
 	public string BodyIssue { get; set; }
 	public long Tick { get; set; }
+	/// <summary>Times the player died since the context was made (the bot does not tick while dead).</summary>
+	public int Deaths { get; set; }
+	/// <summary>Expert or Master world (Main.expertMode): bosses attack faster.</summary>
+	public bool Expert { get; set; }
 	public IBotLog Log { get; set; } = NullLog.Instance;
 	/// <summary>When true, skills log a line per tick (pos, vel, step, input).</summary>
 	public bool Trace { get; set; }

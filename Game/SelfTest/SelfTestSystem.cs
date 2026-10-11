@@ -48,6 +48,7 @@ public sealed class SelfTestSystem : ModSystem
 	private readonly List<int> spawned = new();
 	private bool spawnFailed;
 	private int lifeAtStart;
+	private int deathsAtStart;
 	private TilePos? buildSite;
 	private readonly List<string> summary = new();
 	private int passed;
@@ -152,6 +153,8 @@ public sealed class SelfTestSystem : ModSystem
 				before = arena.SnapshotSolid(s.Rows, s.Width);
 				seenFalling.Clear();
 				bot.HurtCount = 0;
+				bot.DamageTaken = 0;
+				deathsAtStart = bot.Context.Deaths;
 				bot.FallDamageHits = 0;
 				bot.FallingBlockHits = 0;
 				bot.SetDig(s.Dig);
@@ -285,6 +288,9 @@ public sealed class SelfTestSystem : ModSystem
 		result.FallingBlockHits = bot.FallingBlockHits;
 		result.EnemiesLeft = spawned.Count(i => i >= 0 && i < Main.maxNPCs && Main.npc[i].active && Main.npc[i].life > 0);
 		result.LifeLost = Math.Max(0, lifeAtStart - Main.LocalPlayer.statLife);
+		result.Hits = bot.HurtCount;
+		result.DamageTaken = bot.DamageTaken;
+		result.Deaths = bot.Context.Deaths - deathsAtStart;
 		result.Log = tee.Lines;
 		bot.SetEnabled(false, "selftest evaluate");
 		bot.Context.Log = originalLog;
@@ -306,7 +312,7 @@ public sealed class SelfTestSystem : ModSystem
 		int replans = result.Log.Count(l => l.StartsWith("Re-plan"));
 		string line = $"SELFTEST {(ok ? "PASS" : "FAIL")} {s.Name}{(ok ? "" : " -- " + reason)} | {result.Outcome} | ticks {result.Ticks}, " +
 			$"plans {plans}, replans {replans}, broken {result.Broken}, placed {result.Placed}, lowest feet row {result.MaxFeetRow}, " +
-			$"fall hits {result.FallDamageHits}, falling blocks {result.FallingBlocksSeen}, life lost {result.LifeLost}, enemies left {result.EnemiesLeft}, " +
+			$"fall hits {result.FallDamageHits}, falling blocks {result.FallingBlocksSeen}, life lost {result.LifeLost}, hits {result.Hits} ({result.DamageTaken} damage), deaths {result.Deaths}, enemies left {result.EnemiesLeft}, " +
 			$"wood {result.Wood}, swords {result.Swords}, bench {result.BenchPlaced}";
 		summary.Add(line);
 		Mod.Logger.Info(line);

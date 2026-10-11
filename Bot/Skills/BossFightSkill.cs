@@ -12,7 +12,8 @@ namespace TerraBot.Bot.Skills;
 /// <list type="bullet">
 /// <item>summon: use the summon item (the game only allows it at night) unless the boss is already here;</item>
 /// <item>move: run back and forth across an arena <see cref="ArenaHalfWidth"/> tiles to either side of where the
-/// fight started, turning at the ends, with a hop every so often (a moving target is hard to dash into);</item>
+/// fight started, turning at the ends (the Eye aims each dash at where we are, so a runner is hard to hit); when
+/// the boss or a servant would touch us on that course, take the best <see cref="Dodge"/> plan instead;</item>
 /// <item>shoot: servants that come within <see cref="ServantDangerTiles"/> first, else the boss, with lead and
 /// drop (<see cref="Ballistics"/>); melee servants that touch us when there is no clear shot;</item>
 /// <item>heal below <see cref="HealBelow"/> of max life (quick-heal).</item>
@@ -25,7 +26,21 @@ public sealed class BossFightSkill : ISkill
 	public const int ArenaHalfWidth = 20;
 	public const float ServantDangerTiles = 8f;
 	public const float HealBelow = 0.45f;
-	public const int HopEvery = 50;
+	/// <summary>Hostiles this close (tiles) are fed to the <see cref="Dodge"/> planner.</summary>
+	public const float ThreatRadiusTiles = 30f;
+	public const int WallScanTiles = 40;
+	/// <summary>Past this many tiles from the start, turn round even when it is not safe.</summary>
+	public const int HardHalfWidth = 40;
+	/// <summary>Boss speed (px/tick) that counts as a dash (the Eye: 6 / 6.8 Classic, 7+ Expert; hovers at up to 5–6).</summary>
+	public const float DashSpeed = 5.5f;
+	/// <summary>Ticks after a dash starts before it has gone by, and how long the gap that follows is safe for a turn.</summary>
+	public const int DashPassTicks = 30, TurnWindowTicks = 50;
+	/// <summary>Speed of the hypothetical dash a turn must survive.</summary>
+	public const float VirtualDashSpeed = 7f;
+	/// <summary>A turn from full speed: ~11 ticks to stop, ~37 to get back to full speed; the slow part is the danger.</summary>
+	public const int TurnNeedsTicks = 60;
+	/// <summary>Kite clearance (px) under which the dodge planner takes over, and over which it hands back.</summary>
+	public const float DodgeStartGap = 16f, DodgeStopGap = 32f;
 	public const int MaxFightTicks = 60 * 60 * 8;
 	/// <summary>Ticks with no boss around after it appeared before concluding it left (or died).</summary>
 	public const int GoneTicks = 90;
@@ -38,15 +53,24 @@ public sealed class BossFightSkill : ISkill
 	private int fightTicks;
 	private int goneTicks;
 	private int runDir = 1;
-	private int hop;
+	private bool dodging;
+	private int? deathsAtStart;
+	private long lastDashTick = -100000;
+	private (float, float)? lastBossV;
+	private long lastForcedTurnLog = -100000;
+	private long lastDodgeLog = -100000;
+	private readonly System.Collections.Generic.List<Threat> threats = new();
 	private int blocked;
 	private bool healPressedLastTick;
 	private TilePos? centre;
 	private int bossLifeSeen = int.MaxValue;
+	private int lifeLogged = int.MaxValue;
 
 	public int SummonItem { get; }
 	public int BossType { get; }
 	public int[] MinionTypes { get; }
+	/// <summary>Times the dodge planner overrode kiting.</summary>
+	public int Dodges { get; private set; }
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Boss";
@@ -68,11 +92,12 @@ public sealed class BossFightSkill : ISkill
 	{
 		ctx.Output = MoveInput.None;
 		if (ctx.World.BossDefeated(BossType)) {
-			ctx.Log.Info($"Boss fight: boss {BossType} defeated after {fightTicks} ticks");
+			ctx.Log.Info($"Boss fight: boss {BossType} defeated after {fightTicks} ticks, {Dodges} dodges, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}");
 			State = "won";
 			return SkillStatus.Succeeded;
 		}
-		if (ctx.BodyIssue == "dead")
+		deathsAtStart ??= ctx.Deaths;
+		if (ctx.BodyIssue == "dead" || ctx.Deaths > deathsAtStart)
 			return Fail(ctx, "died");
 		if (ctx.BodyIssue != null)
 			return SkillStatus.Running;
@@ -88,7 +113,7 @@ public sealed class BossFightSkill : ISkill
 				if (++waitForBoss > MaxWaitForBoss)
 					return Fail(ctx, $"no boss within {MaxWaitForBoss} ticks of summoning");
 				State = "waiting for the boss";
-				Kite(ctx);
+				Move(ctx, null);
 				return SkillStatus.Running;
 			}
 			if (!ctx.Combat.HasRanged)
@@ -111,8 +136,10 @@ public sealed class BossFightSkill : ISkill
 				ctx.Log.Info($"Boss fight: {b.Name} is here, life {b.Life}/{b.LifeMax}");
 			seenBoss = true;
 			goneTicks = 0;
-			if (b.Life < bossLifeSeen - b.LifeMax / 10 || b.Life <= b.LifeMax / 2 && bossLifeSeen > b.LifeMax / 2)
-				ctx.Log.Info($"Boss fight: {b.Name} at {b.Life}/{b.LifeMax}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax}, {ctx.Combat.AmmoCount} arrows");
+			if (b.Life <= lifeLogged - b.LifeMax / 10 || b.Life <= b.LifeMax / 2 && lifeLogged > b.LifeMax / 2) {
+				lifeLogged = b.Life;
+				ctx.Log.Info($"Boss fight: {b.Name} at {b.Life}/{b.LifeMax}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax}, {ctx.Combat.AmmoCount} arrows, {Dodges} dodges");
+			}
 			bossLifeSeen = Math.Min(bossLifeSeen, b.Life);
 		}
 		else if (++goneTicks == 1)
@@ -125,7 +152,7 @@ public sealed class BossFightSkill : ISkill
 		if (!ctx.Combat.HasRanged)
 			return Fail(ctx, "out of arrows");
 
-		Kite(ctx);
+		Move(ctx, boss);
 		// Target: a servant about to bite, else the boss.
 		EntityInfo? servant = ctx.Hostiles.Where(h => MinionTypes.Contains(h.Type) && h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
 			.OrderBy(h => h.DistanceTo(cx, cy)).Cast<EntityInfo?>().FirstOrDefault();
@@ -144,28 +171,150 @@ public sealed class BossFightSkill : ISkill
 		return SkillStatus.Running;
 	}
 
-	/// <summary>Run to one end of the arena and back, hopping now and then; turn early at walls.</summary>
-	private void Kite(BotContext ctx)
+	/// <summary>Kite, unless something is about to hit us: then take the best <see cref="Dodge"/> plan.</summary>
+	private void Move(BotContext ctx, EntityInfo? boss)
+	{
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		var (floorY, minX, maxX) = Surroundings(ctx);
+		TrackDash(ctx, boss, cx, cy);
+		Kite(ctx, boss, floorY, minX, maxX);
+		threats.Clear();
+		foreach (EntityInfo h in ctx.Hostiles)
+			if (h.Damage > 0 && h.DistanceTo(cx, cy) <= ThreatRadiusTiles * 16f)
+				threats.Add(h.AiStyle == EyePattern.EyeAiStyle ? EyePattern.Predict(h, ctx.Expert) : new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
+		if (threats.Count == 0)
+			return;
+		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, runDir, 0);
+		// Hysteresis: start dodging when the kite comes within DodgeStartGap, stop once it clears DodgeStopGap again.
+		if (!kite.Hits && kite.Clearance >= (dodging ? DodgeStopGap : DodgeStartGap)) {
+			dodging = false;
+			return;
+		}
+		DodgePlan best = Dodge.Best(ctx.Body, p, floorY, minX, maxX, threats, runDir);
+		if (!dodging) {
+			Dodges++;
+			if (ctx.Tick - lastDodgeLog >= 30) {
+				lastDodgeLog = ctx.Tick;
+				ctx.Log.Info($"Boss fight: dodge {(best.Dir > 0 ? "right" : best.Dir < 0 ? "left" : "stand")}{(best.JumpHold > 0 ? $" + jump {best.JumpHold}" : "")} " +
+				$"(kiting {(runDir > 0 ? "right" : "left")} {(kite.Hits ? $"is hit in {kite.HitTick} ticks" : $"passes {kite.Clearance:0} px from it")}; the dodge {(best.Hits ? $"is hit in {best.HitTick}" : $"clears by {best.Clearance:0} px")})");
+			}
+		}
+		dodging = true;
+		ctx.Output.Horizontal = best.Dir;
+		ctx.Output.Jump = best.JumpHold > 0;
+		// Keep going the way the dodge took us rather than turning straight back, but not out past the arena end
+		// (the kite would turn straight round again: a tug of war that froze the bot at the far end).
+		int offset = ctx.Node.X - centre.Value.X;
+		if (best.Dir != 0 && (best.Dir > 0 ? offset < ArenaHalfWidth : offset > -ArenaHalfWidth))
+			runDir = best.Dir;
+	}
+
+	/// <summary>
+	/// Notes the tick a dash starts: the boss's velocity jumps (a hover only changes it by its small acceleration)
+	/// to dash speed, pointing at us. The Eye's next dash comes 130–150 ticks later (90–100 in Expert).
+	/// </summary>
+	private void TrackDash(BotContext ctx, EntityInfo? boss, float cx, float cy)
+	{
+		if (boss is not EntityInfo b) {
+			lastBossV = null;
+			return;
+		}
+		float speed = MathF.Sqrt(b.VX * b.VX + b.VY * b.VY);
+		float dx = cx - b.CenterX, dy = cy - b.CenterY, dist = MathF.Sqrt(dx * dx + dy * dy);
+		bool atUs = speed > 0f && dist > 0f && (b.VX * dx + b.VY * dy) / (speed * dist) > 0.9f;
+		if (lastBossV is (float pvx, float pvy) && speed >= DashSpeed && atUs
+			&& MathF.Sqrt((b.VX - pvx) * (b.VX - pvx) + (b.VY - pvy) * (b.VY - pvy)) > 1.5f)
+			lastDashTick = ctx.Tick;
+		lastBossV = (b.VX, b.VY);
+	}
+
+	/// <summary>
+	/// Turning round means slowing to a stop, and a dash aimed at a standing player cannot be outrun
+	/// (<see cref="Dodge"/>; the tests show it). For the Eye, read its attack cycle (<see cref="EyePattern"/>) and
+	/// turn only when the next dash is at least <see cref="TurnNeedsTicks"/> away. For other bosses: in the gap after
+	/// a dash went by, or when the turn would survive a dash starting right now from where the boss is.
+	/// </summary>
+	private bool SafeToTurn(BotContext ctx, EntityInfo? boss, float floorY, float minX, float maxX)
+	{
+		if (boss is not EntityInfo b)
+			return true;
+		if (b.AiStyle == EyePattern.EyeAiStyle)
+			return EyePattern.TicksUntilDash(b, ctx.Expert) >= TurnNeedsTicks;
+		long since = ctx.Tick - lastDashTick;
+		if (since >= DashPassTicks && since <= DashPassTicks + TurnWindowTicks)
+			return true;
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		float dx = cx - b.CenterX, dy = cy - b.CenterY, dist = MathF.Sqrt(dx * dx + dy * dy);
+		if (dist < 1f)
+			return false;
+		var dash = new Threat(b.X, b.Y, b.Width, b.Height, dx / dist * VirtualDashSpeed, dy / dist * VirtualDashSpeed);
+		return !Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, new[] { dash }, -runDir, 0).Hits;
+	}
+
+	private static string NextDashText(BotContext ctx, EntityInfo? boss) =>
+		boss is EntityInfo b && b.AiStyle == EyePattern.EyeAiStyle ? $"next dash in {EyePattern.TicksUntilDash(b, ctx.Expert)} ticks" : "";
+
+	/// <summary>Floor under the feet (px) and the walls left and right (bounds for the hitbox's left edge, px).</summary>
+	private static (float FloorY, float MinX, float MaxX) Surroundings(BotContext ctx)
+	{
+		PhysicsParams p = ctx.Physics;
+		TilePos n = ctx.Node;
+		float floorY = float.PositiveInfinity;
+		if (ctx.Body.Grounded)
+			floorY = ctx.Body.Y + p.Height;
+		else
+			for (int y = n.Y + 1; y <= n.Y + 30; y++)
+				if (ctx.Grid.Get(n.X, y).CanStandOn()) {
+					floorY = y * 16f;
+					break;
+				}
+		float minX = float.NegativeInfinity, maxX = float.PositiveInfinity;
+		for (int dx = 1; dx <= WallScanTiles; dx++)
+			if (Blocked(ctx.Grid, n.X - dx, n.Y)) {
+				minX = (n.X - dx + 1) * 16f;
+				break;
+			}
+		for (int dx = 1; dx <= WallScanTiles; dx++)
+			if (Blocked(ctx.Grid, n.X + dx, n.Y)) {
+				maxX = (n.X + dx) * 16f - p.Width;
+				break;
+			}
+		return (floorY, minX, maxX);
+	}
+
+	/// <summary>A wall at body height in this column (the two cells above the feet row's floor).</summary>
+	private static bool Blocked(ITileGrid g, int x, int feetY) => g.Get(x, feetY).IsSolid() || g.Get(x, feetY - 1).IsSolid();
+
+	/// <summary>
+	/// Run to one end of the arena and back. Past <see cref="ArenaHalfWidth"/> turn when <see cref="SafeToTurn"/>;
+	/// past <see cref="HardHalfWidth"/>, or a tile short of a wall, turn anyway (the dodge planner handles it).
+	/// </summary>
+	private void Kite(BotContext ctx, EntityInfo? boss, float floorY, float minX, float maxX)
 	{
 		TilePos node = ctx.Node;
 		int offset = node.X - centre.Value.X;
-		if (offset >= ArenaHalfWidth)
-			runDir = -1;
-		else if (offset <= -ArenaHalfWidth)
-			runDir = 1;
+		bool outward = runDir > 0 ? offset >= ArenaHalfWidth : offset <= -ArenaHalfWidth;
+		bool atWall = runDir > 0 ? maxX - ctx.Body.X < 16f : ctx.Body.X - minX < 16f;
+		bool hard = atWall || (runDir > 0 ? offset >= HardHalfWidth : offset <= -HardHalfWidth);
+		if (hard || outward && SafeToTurn(ctx, boss, floorY, minX, maxX)) {
+			runDir = -runDir;
+			blocked = 0;
+			if (hard && boss != null && ctx.Tick - lastForcedTurnLog > 60) {
+				lastForcedTurnLog = ctx.Tick;
+				ctx.Log.Info($"Boss fight: forced to turn at {node} ({(atWall ? "wall" : "far end")}), {NextDashText(ctx, boss)}");
+			}
+		}
 		else if (ctx.Body.Grounded && Math.Abs(ctx.Body.VX) < 0.1f) {
 			if (++blocked > 10) {
-				runDir = -runDir; // against a wall: turn round
+				runDir = -runDir; // stuck on something: turn round
 				blocked = 0;
 			}
 		}
 		else
 			blocked = 0;
 		ctx.Output.Horizontal = runDir;
-		if (ctx.Body.Grounded && ++hop >= HopEvery) {
-			hop = 0;
-			ctx.Output.Jump = true;
-		}
 	}
 
 	private void Heal(BotContext ctx)
@@ -173,8 +322,6 @@ public sealed class BossFightSkill : ISkill
 		bool want = ctx.Combat.LifeFraction < HealBelow && ctx.Combat.CanQuickHeal && !healPressedLastTick;
 		ctx.Output.QuickHeal = want;
 		healPressedLastTick = want;
-		if (want)
-			ctx.Log.Info($"Boss fight: quick-heal at {ctx.Combat.Life}/{ctx.Combat.LifeMax}");
 	}
 
 	private static T Start<T>(BotContext ctx, T skill) where T : ISkill

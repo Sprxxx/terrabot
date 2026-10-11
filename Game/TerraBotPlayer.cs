@@ -35,6 +35,7 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	/// <summary>Hits taken (any cause) and fall-damage hits, for the self-test harness. Reset by the harness.</summary>
 	public int HurtCount { get; set; }
+	public int DamageTaken { get; set; }
 	public int FallDamageHits { get; set; }
 	public int FallingBlockHits { get; set; }
 
@@ -97,6 +98,15 @@ public sealed class TerraBotPlayer : ModPlayer
 	}
 
 	/// <summary>Logs every hit so test runs show fall damage and knockback (which explains OffPath re-plans).</summary>
+	/// <summary>SetControls (and so the bot) does not run while dead: count deaths so skills notice after the respawn.</summary>
+	public override void Kill(double damage, int hitDirection, bool pvp, PlayerDeathReason damageSource)
+	{
+		if (!IsLocal)
+			return;
+		Context.Deaths++;
+		Mod.Logger.Warn($"Died ({damage:0} damage) at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
+	}
+
 	public override void OnHurt(Player.HurtInfo info)
 	{
 		if (!IsLocal)
@@ -108,6 +118,7 @@ public sealed class TerraBotPlayer : ModPlayer
 			: src.SourceOtherIndex == 0 ? "fall damage"
 			: $"other {src.SourceOtherIndex}";
 		HurtCount++;
+		DamageTaken += info.Damage;
 		if (src.SourceOtherIndex == 0 && src.SourceNPCIndex < 0 && src.SourceProjectileType <= 0)
 			FallDamageHits++;
 		if (SelfTest.SelfTestSystem.IsFallingBlockProjectile(src.SourceProjectileType))
@@ -270,6 +281,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		Context.PickPower = Blocks.PickPower;
 		Context.PickRangeBoost = Blocks.PickSlot >= 0 ? Player.inventory[Blocks.PickSlot].tileBoost : 0;
 		Context.IsNight = !Main.dayTime;
+		Context.Expert = Main.expertMode;
 		if (rescanNow || Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
 			rescanNow = false;
 			TilePos feet = FeetTile();
@@ -282,7 +294,7 @@ public sealed class TerraBotPlayer : ModPlayer
 			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > (n.boss ? BossPerceptionRadiusPx : PerceptionRadiusPx))
 				continue;
 			hostiles.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
-				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle));
+				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle, n.ai[0], n.ai[1], n.ai[2], n.ai[3]));
 		}
 		hostiles.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
 		Context.Hostiles = hostiles;
@@ -341,8 +353,14 @@ public sealed class TerraBotPlayer : ModPlayer
 		Player.controlUp = o.Up;
 		Player.controlDown = o.Down;
 		Player.controlJump = o.Jump;
-		if (o.QuickHeal)
-			Player.controlQuickHeal = true; // vanilla needs releaseQuickHeal, so the skill pulses this
+		// Vanilla reads controlQuickHeal before PlayerLoader.SetControls runs (Player.Update) and ResetControls clears
+		// it next tick, so setting it here never heals. Call what the quick-heal key calls instead (a UI action:
+		// same checks, same potion sickness).
+		if (o.QuickHeal && Player.potionDelay == 0) {
+			int before = Player.statLife;
+			Player.QuickHeal();
+			Context.Log.Info($"Quick-heal: life {before} -> {Player.statLife}, potion sickness {Player.potionDelay} ticks");
+		}
 		// Without a tool request the mouse button stays the player's (handy for building obstacles to test
 		// re-planning). With one, the bot owns item use: switch hotbar slot when no swing is in progress, then
 		// hold use. Non-autoReuse items need the button released between swings (vanilla releaseUseItem).
