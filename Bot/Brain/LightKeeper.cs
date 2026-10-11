@@ -1,0 +1,114 @@
+using System;
+using TerraBot.Core.Grid;
+using TerraBot.Core.Physics;
+
+namespace TerraBot.Bot.Brain;
+
+/// <summary>
+/// Lights the way like a player does: when it is dark where the bot stands and no torch is within
+/// <see cref="Spacing"/> tiles, slip a torch onto a spot next to the body between two swings of whatever skill is
+/// running (movement is left alone). Also keeps a few torches crafted from gel and wood (by hand, like the crafting
+/// menu). The bot itself does not need the light (it reads tiles directly); this is so a watching player can see.
+/// </summary>
+public sealed class LightKeeper
+{
+	/// <summary>Brightness (vanilla Lighting.Brightness, 0..1) below which the bot's spot counts as dark.</summary>
+	public const float DarkBelow = 0.25f;
+	/// <summary>No new torch while one is within this many tiles (Chebyshev).</summary>
+	public const int Spacing = 9;
+	/// <summary>Look at the light this often (ticks); the torch scan is 19 × 19 cells.</summary>
+	public const int CheckEvery = 20;
+	/// <summary>Ticks to keep trying one placement before giving up on that spot.</summary>
+	public const int MaxPlaceTicks = 12;
+	/// <summary>Craft torches while fewer than this are carried and gel and wood allow.</summary>
+	public const int Reserve = 10;
+	public const int CraftEvery = 300;
+
+	private int ticks;
+	private TilePos? placing;
+	private int placeTicks;
+	private TilePos? lastFailed;
+
+	public int Placed { get; private set; }
+
+	/// <summary>Runs after the skill's tick: may replace this tick's item use with placing a torch.</summary>
+	public void Tick(BotContext ctx)
+	{
+		ticks++;
+		int torch = ctx.Ids.Torch;
+		if (torch <= 0 || ctx.World == null || ctx.Inventory == null || ctx.BodyIssue != null)
+			return;
+		if (ticks % CraftEvery == 0)
+			KeepStock(ctx, torch);
+		if (placing is TilePos cell) {
+			int torchTile = ctx.Knowledge?.TilePlacedBy(torch) ?? -1;
+			if (ctx.World.TileTypeAt(cell.X, cell.Y) == torchTile && torchTile >= 0) {
+				Placed++;
+				placing = null;
+				return;
+			}
+			if (++placeTicks > MaxPlaceTicks || ctx.Inventory.Count(torch) <= 0) {
+				lastFailed = cell;
+				placing = null;
+				return;
+			}
+			Use(ctx, torch, cell);
+			return;
+		}
+		if (ticks % CheckEvery != 0 || ctx.Inventory.Count(torch) <= 0 || ctx.Combat.ItemAnimation > 0)
+			return;
+		TilePos n = ctx.Node;
+		if (ctx.World.LightAt(n.X, n.Y - 1) >= DarkBelow || TorchNear(ctx, n))
+			return;
+		TilePos? spot = Spot(ctx, torch, n);
+		if (spot == null)
+			return;
+		placing = spot;
+		placeTicks = 0;
+		Use(ctx, torch, spot.Value);
+	}
+
+	private static void Use(BotContext ctx, int torch, TilePos cell)
+	{
+		// Only the item use is taken over; the skill's movement stays.
+		ctx.Output.Tool = ToolRequest.Item;
+		ctx.Output.ToolItem = torch;
+		ctx.Output.UseItem = true;
+		ctx.Output.Aim(cell.X, cell.Y);
+		ctx.Output.HasMouseAim = false;
+	}
+
+	private bool TorchNear(BotContext ctx, TilePos n)
+	{
+		int torchTile = ctx.Knowledge?.TilePlacedBy(ctx.Ids.Torch) ?? -1;
+		if (torchTile < 0)
+			return true;
+		for (int x = n.X - Spacing; x <= n.X + Spacing; x++)
+			for (int y = n.Y - Spacing; y <= n.Y + Spacing; y++)
+				if (ctx.World.TileTypeAt(x, y) == torchTile)
+					return true;
+		return false;
+	}
+
+	/// <summary>A cell beside or in the body where the game would take a torch: head height first, then the sides.</summary>
+	private TilePos? Spot(BotContext ctx, int torch, TilePos n)
+	{
+		foreach (var (dx, dy) in new[] { (0, -2), (1, -2), (-1, -2), (2, -2), (-1, -1), (2, -1), (0, -1), (1, -1), (-1, 0), (2, 0) }) {
+			var c = new TilePos(n.X + dx, n.Y + dy);
+			if (c == lastFailed || ctx.Grid.Get(c.X, c.Y).IsSolid())
+				continue;
+			if (ctx.World.CanPlaceItem(torch, c.X, c.Y))
+				return c;
+		}
+		return null;
+	}
+
+	private static void KeepStock(BotContext ctx, int torch)
+	{
+		if (ctx.Inventory.Count(torch) >= Reserve || ctx.Inventory.Count(ctx.Ids.Gel) <= 0 || ctx.Inventory.Count(ctx.Ids.Wood) <= 0 || ctx.Crafter == null)
+			return;
+		CraftResult r = ctx.Crafter.TryCraft(torch);
+		if (r == CraftResult.Crafted)
+			ctx.Log.Info($"Light: crafted torches (now {ctx.Inventory.Count(torch)})");
+	}
+}

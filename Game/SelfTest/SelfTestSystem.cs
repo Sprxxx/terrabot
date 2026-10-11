@@ -51,6 +51,8 @@ public sealed class SelfTestSystem : ModSystem
 	private int deathsAtStart;
 	/// <summary>Ticks between heartbeat lines during a scenario (30 game seconds).</summary>
 	public const int HeartbeatTicks = 1800;
+	/// <summary>Enemy spawns stay on (real-world scenarios); otherwise the self-test turns them off.</summary>
+	public static bool SpawnsOn { get; private set; }
 	private TilePos? buildSite;
 	private readonly List<string> summary = new();
 	private int passed;
@@ -66,7 +68,8 @@ public sealed class SelfTestSystem : ModSystem
 		summary.Clear();
 		string filter = Program.LaunchParameters[LaunchFlag];
 		var names = string.IsNullOrWhiteSpace(filter) || filter == "all" ? null : new HashSet<string>(filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-		queue = Scenario.All.Where(s => names == null || names.Contains(s.Name)).ToList();
+		// Real-world runs take up to an hour: only when asked for by name.
+		queue = Scenario.All.Where(s => names == null ? !s.RealWorld : names.Contains(s.Name)).ToList();
 		Mod.Logger.Info($"SELFTEST armed: {queue.Count} scenario(s): {string.Join(", ", queue.Select(s => s.Name))}");
 	}
 
@@ -112,6 +115,15 @@ public sealed class SelfTestSystem : ModSystem
 					Main.dayTime = false;
 					Main.time = 0;
 				}
+				SpawnsOn = s.RealWorld;
+				if (s.RealWorld) {
+					// The world as it is: its town NPCs, its enemies, the character's own inventory, at the spawn.
+					s.Inventory?.Invoke(p);
+					Arena.StripHelpers(p);
+					Arena.PlacePlayer(p, new TilePos(Main.spawnTileX - 1, Main.spawnTileY - 1));
+					Next(Phase.Settle);
+					return;
+				}
 				// Every NPC goes, town NPCs included: the Guide shoots arrows at hostiles and would help the bot.
 				// (This is the throw-away copy of the world in the self-test save folder.)
 				for (int i = 0; i < Main.maxNPCs; i++)
@@ -147,12 +159,14 @@ public sealed class SelfTestSystem : ModSystem
 
 			case Phase.Settle: {
 				Scenario s = queue[index];
-				TilePos start = Arena.Find(s.Rows, 'S');
-				Arena.PlacePlayer(p, arena.ToWorld(start.X, start.Y, s.Rows.Length)); // hold still while physics/frames settle
+				if (!s.RealWorld) {
+					TilePos start = Arena.Find(s.Rows, 'S');
+					Arena.PlacePlayer(p, arena.ToWorld(start.X, start.Y, s.Rows.Length)); // hold still while physics/frames settle
+				}
 				if (phaseTicks < SettleTicks)
 					return;
 				result = new RunResult { MaxFeetRow = int.MinValue };
-				before = arena.SnapshotSolid(s.Rows, s.Width);
+				before = s.RealWorld ? null : arena.SnapshotSolid(s.Rows, s.Width);
 				seenFalling.Clear();
 				bot.HurtCount = 0;
 				bot.DamageTaken = 0;
@@ -215,6 +229,11 @@ public sealed class SelfTestSystem : ModSystem
 				// Heartbeat, so a watcher can tell a frozen game (no lines at all) from a quiet one.
 				if (phaseTicks > 0 && phaseTicks % HeartbeatTicks == 0)
 					Mod.Logger.Info($"SELFTEST heartbeat {s.Name} t{phaseTicks} at {bot.FeetTile()}, life {p.statLife}/{p.statLifeMax2}: {bot.Brain.Describe()}");
+				// Real-world runs: every 2 minutes, what the bot has and where the plan is.
+				if (s.RealWorld && phaseTicks % (HeartbeatTicks * 4) == 0)
+					Mod.Logger.Info($"SELFTEST status {s.Name} t{phaseTicks} {(Main.dayTime ? "day" : "night")} {Main.time:0}: plan [{bot.Brain.Planner.Status}] "
+						+ $"max life {p.statLifeMax}, deaths {bot.Context.Deaths - deathsAtStart}, "
+						+ "inventory " + string.Join(", ", Enumerable.Range(0, 50).Where(i => !p.inventory[i].IsAir).Select(i => $"{p.inventory[i].Name} x{p.inventory[i].stack}")));
 				bool finished = s.Mode == "auto"
 					? phaseTicks > 2 && (!bot.Brain.Auto || (bot.Brain.Planner.Complete && bot.Brain.Current == null))
 					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > 2;
@@ -262,8 +281,8 @@ public sealed class SelfTestSystem : ModSystem
 
 	private void Evaluate(TerraBotPlayer bot, Scenario s, bool finished)
 	{
-		bool[,] after = arena.SnapshotSolid(s.Rows, s.Width);
-		for (int x = 0; x < s.Width; x++)
+		bool[,] after = before == null ? null : arena.SnapshotSolid(s.Rows, s.Width);
+		for (int x = 0; after != null && x < s.Width; x++)
 			for (int y = 0; y < s.Rows.Length; y++) {
 				if (before[x, y] && !after[x, y]) result.Broken++;
 				if (!before[x, y] && after[x, y]) result.Placed++;
@@ -372,7 +391,7 @@ public sealed class SelfTestSpawns : GlobalNPC
 {
 	public override void EditSpawnRate(Player player, ref int spawnRate, ref int maxSpawns)
 	{
-		if (SelfTestSystem.Enabled)
+		if (SelfTestSystem.Enabled && !SelfTestSystem.SpawnsOn)
 			maxSpawns = 0;
 	}
 }

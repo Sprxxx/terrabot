@@ -39,6 +39,9 @@ public interface IWorldInfo
 
 	/// <summary>Has the world recorded this boss NPC type as defeated (NPC.downedBoss1 and friends)?</summary>
 	bool BossDefeated(int npcType);
+
+	/// <summary>Light level at the cell, 0 (dark) to about 1 (vanilla Lighting.Brightness).</summary>
+	float LightAt(int x, int y);
 }
 
 /// <summary>Read-only view of the player's items.</summary>

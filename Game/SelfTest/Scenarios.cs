@@ -80,6 +80,11 @@ public sealed class Scenario
 	public double DayTime { get; init; } = 27000;
 	public bool ExpectSuccess { get; init; } = true;
 	public int TimeoutTicks { get; init; } = 60 * 45;
+	/// <summary>
+	/// Play the copied world as it is: no arena, no fixture, the character's own inventory, normal enemy spawns and
+	/// town NPCs, starting at the world spawn. For "does it actually play the game" runs.
+	/// </summary>
+	public bool RealWorld { get; init; }
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
 	public Action<Arena, int> During { get; init; }
 	/// <summary>Extra checks; return null when fine, else the failure reason.</summary>
@@ -164,6 +169,20 @@ public sealed class Scenario
 	private static IReadOnlyList<Scenario> CreateAll()
 	{
 		var list = new List<Scenario> {
+		new() {
+			// Milestone 9: the copied world and character as they are, /bot auto boss from the spawn in the morning.
+			// Not part of "all" runs (see SelfTestSystem): it plays for up to an hour. Run it by name.
+			Name = "world_eye",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "auto",
+			AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Boss,
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			TimeoutTicks = 60 * 60 * 60,
+			Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
+		},
 			new() {
 				Name = "fight_green_slime",
 				Rows = Grid(Repeat("..............................", 6), "..S..............E............", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),

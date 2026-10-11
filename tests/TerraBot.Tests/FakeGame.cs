@@ -259,6 +259,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public bool CanMineTarget(int x, int y) => TileTypeAt(x, y) == TileHeart;
 	public readonly System.Collections.Generic.HashSet<int> BossesDefeated = new();
 	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
+	/// <summary>Light everywhere; tests set it lower for the torch habit.</summary>
+	public float Light = 1f;
+	public float LightAt(int x, int y) => Light;
 
 	/// <summary>Puts a 2×2 life crystal with its top-left cell at (x, y) (cells must be open; it sits on the floor below).</summary>
 	/// <summary>A 3×2 demon altar (nothing places one; it is found) with its top-left at (x, y).</summary>

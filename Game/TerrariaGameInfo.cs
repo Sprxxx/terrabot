@@ -348,6 +348,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == TileID.Heart && WorldGen.CanKillTile(x, y);
 
 	/// <summary>Vanilla bosses' "downed" flags (the Eye of Cthulhu first; extend as bosses are added).</summary>
+	public float LightAt(int x, int y) => WorldGen.InWorld(x, y, 1) ? Lighting.Brightness(x, y) : 1f;
+
 	public bool BossDefeated(int npcType) => npcType switch {
 		NPCID.EyeofCthulhu => NPC.downedBoss1,
 		NPCID.KingSlime => NPC.downedSlimeKing,

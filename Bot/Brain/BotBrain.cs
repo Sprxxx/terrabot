@@ -76,6 +76,8 @@ public sealed class BotBrain
 
 	/// <summary>Hurt this badly with no potion to drink and enemies about: dig in and recover instead of fighting on.</summary>
 	public const float RetreatBelow = 0.3f;
+	/// <summary>Torches in the dark, so a watcher can see (auto mode).</summary>
+	public LightKeeper Light { get; } = new();
 	private int deathsSeen;
 	/// <summary>Life to recover to before coming out of a retreat.</summary>
 	public const float RetreatUntil = 0.8f;
@@ -132,6 +134,8 @@ public sealed class BotBrain
 			return;
 
 		SkillStatus status = Current.Tick(ctx);
+		if (Auto)
+			Light.Tick(ctx);
 		if (status == SkillStatus.Running)
 			return;
 
