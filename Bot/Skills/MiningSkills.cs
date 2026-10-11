@@ -24,7 +24,8 @@ public sealed class MineSkill : ISkill
 	public const int MaxMineTicksPerTile = 60 * 8;
 	public const int ExploreDepth = 15;
 	public const int ExploreSideways = 6;
-	public const int MaxExplores = 8;
+	/// <summary>Explorations (each up to <see cref="ExploreSkill.MaxLegs"/> legs) before giving up.</summary>
+	public const int MaxExplores = 3;
 	public const int CollectRadius = 12;
 	/// <summary>Unreachable targets in a row before giving up (nearby tiles tend to be unreachable for the same reason).</summary>
 	public const int MaxUnreachableInARow = 4;
@@ -111,11 +112,11 @@ public sealed class MineSkill : ISkill
 		}
 		if (++explores > MaxExplores)
 			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations");
-		TilePos node = ctx.Node;
-		var goal = new TilePos(node.X + exploreDir * ExploreSideways, node.Y + ExploreDepth);
+		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
+		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
+		int tileType = TileType;
+		Begin(ctx, new ExploreSkill(Label(ctx), c => c.World.FindTiles(tileType, c.Node, SearchRadius).Count > 0, ExploreBias.Down, exploreDir), "exploring");
 		exploreDir = -exploreDir;
-		ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, digging down towards {goal}");
-		Begin(ctx, new WalkToSkill(goal) { Quiet = true, Tolerance = 3 }, "exploring");
 		return SkillStatus.Running;
 	}
 

@@ -191,8 +191,21 @@ public sealed class ProgressionPlanner
 		searchedFor.Clear();
 		badSites.Clear();
 		badArenaSites.Clear();
+		stationExplores = 0;
 		siteFailures = 0;
 		arenaFailures = 0;
+	}
+
+	/// <summary>Chests closer than this (tiles) that are seen and not looted yet are looted before anything else.</summary>
+	public const int LootRadius = 40;
+
+	/// <summary>The nearest seen, unlocked chest not looted (or given up on) yet, within <see cref="LootRadius"/>.</summary>
+	public static ChestInfo? NextChest(BotContext ctx)
+	{
+		foreach (ChestInfo c in ctx.World.SeenChests(ctx.Node, LootRadius))
+			if (!c.Locked && !ctx.OpenedChests.Contains(c.TopLeft))
+				return c;
+		return null;
 	}
 
 	/// <summary>Tell the planner about a finished skill (so a just-placed station counts before the next scan).</summary>
@@ -207,6 +220,8 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		if (skill is LootChestSkill loot)
+			ctx.OpenedChests.Add(loot.Chest); // looted, or not reachable: either way not again
 		if (skill is WaitSkill { What: "life" })
 			lastRestEnd = ctx.Tick; // one rest per summon attempt: a rest that timed out is not started again at once
 		if (skill is BuildSkill arena && !arena.Blueprint.IsHouse) {
@@ -252,6 +267,9 @@ public sealed class ProgressionPlanner
 	{
 		RememberStations(ctx);
 		ProtectBuilt(ctx);
+		// A chest in sight comes first, as for a player: healing potions, accessories, better weapons.
+		if (NextChest(ctx) is ChestInfo chest)
+			return Do($"looting the chest at {chest.TopLeft}", new LootChestSkill(chest.TopLeft));
 		costs.Clear();
 		costEvaluations = 0;
 		stuck = null;
@@ -330,8 +348,15 @@ public sealed class ProgressionPlanner
 			// Nothing places it (a demon altar): find one in the world.
 			TilePos? found = ctx.World.FindTiles(s.TileType, ctx.Node, StationSearchRadius).Cast<TilePos?>().FirstOrDefault();
 			if (found == null) {
-				stuck = $"no {k.TileName(s.TileType)} within {StationSearchRadius} tiles, and nothing can place one";
-				return null;
+				// None seen yet (only what is revealed on the map counts): go and look, a new direction each time.
+				if (stationExplores >= MaxStationExplores) {
+					stuck = $"no {k.TileName(s.TileType)} found after {stationExplores} explorations, and nothing can place one";
+					return null;
+				}
+				int tile = s.TileType;
+				int heading = stationExplores++ % 2 == 0 ? 1 : -1;
+				return Do($"exploring for a {k.TileName(s.TileType)} (none seen yet)",
+					new ExploreSkill(k.TileName(s.TileType), c => c.World.FindTiles(tile, c.Node, StationSearchRadius).Count > 0, ExploreBias.Down, heading));
 			}
 			KnownStations[s.TileType] = found.Value;
 			notedAt[s.TileType] = ctx.Tick + 60 * 60 * 60; // far away: do not forget it before going there
@@ -368,6 +393,10 @@ public sealed class ProgressionPlanner
 			case SourceKind.Tree:
 				return Do($"need {more} more {name} (gathering to {target})", new GatherWoodSkill(item, target));
 			case SourceKind.Mine:
+				// Stone is also what the bot builds with on the way: seen in game, it mined exactly 20 stone for the furnace,
+				// used one to climb out of its hole on the way back to the bench, and went down for one more, forever.
+				if (ctx.Ids.BuildingBlocks.Contains(item))
+					target += BlockMargin;
 				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target));
 			case SourceKind.Hunt:
 				if (NocturnalAiStyles.Contains(src.NpcAiStyle) && !ctx.IsNight)
@@ -694,7 +723,7 @@ public sealed class ProgressionPlanner
 			IReadOnlyList<int> placers = ctx.Knowledge.ItemsPlacing(station);
 			if (placers.Count == 0) {
 				// Nothing places it (a demon altar): usable only if one exists out there.
-				sum += FindUnplaceableStation(station, ctx) ? FoundStationCost : float.PositiveInfinity;
+				sum += FindUnplaceableStation(station, ctx) ? FoundStationCost : UnseenStationCost; // not seen yet: explore for it
 				continue;
 			}
 			float c = float.PositiveInfinity;
@@ -720,6 +749,10 @@ public sealed class ProgressionPlanner
 
 	/// <summary>Walking to a station found far away, roughly.</summary>
 	private const float FoundStationCost = 200f;
+	/// <summary>A station nothing can place and none seen yet: findable by exploring, but costly.</summary>
+	private const float UnseenStationCost = 3000f;
+	private int stationExplores;
+	public const int MaxStationExplores = 10; // fights interrupt explores and each restart counts
 	private readonly HashSet<int> searchedFor = new();
 
 	/// <summary>Look for a station nothing can place (once per planner reset); remember it when found.</summary>

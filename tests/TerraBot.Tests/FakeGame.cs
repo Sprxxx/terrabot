@@ -250,7 +250,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		var found = new List<TilePos>();
 		for (int x = around.X - radius; x <= around.X + radius; x++)
 			for (int y = around.Y - radius; y <= around.Y + radius; y++)
-				if (Grid.InBounds(x, y) && TileTypeAt(x, y) == tileType && !Blocks.Unbreakable.Contains(new TilePos(x, y)))
+				if (Grid.InBounds(x, y) && TileTypeAt(x, y) == tileType && !Blocks.Unbreakable.Contains(new TilePos(x, y)) && IsRevealed(x, y))
 					found.Add(new TilePos(x, y));
 		return found.OrderBy(c => c.ChebyshevTo(around)).ToList();
 	}
@@ -262,6 +262,19 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// <summary>Light everywhere; tests set it lower for the torch habit.</summary>
 	public float Light = 1f;
 	public float LightAt(int x, int y) => Light;
+	/// <summary>Cells not seen yet; everything else is revealed.</summary>
+	public readonly HashSet<TilePos> Unrevealed = new();
+	public bool IsRevealed(int x, int y) => !Unrevealed.Contains(new TilePos(x, y)); // off the grid counts as seen, like the game
+	/// <summary>Cells within this many tiles of the bot get revealed as it moves (the map filling in).</summary>
+	public int RevealRadius = 10;
+
+	/// <summary>Hide everything from column <paramref name="fromX"/> on (the far side of the world not seen yet).</summary>
+	public void HideFrom(int fromX)
+	{
+		for (int x = fromX; x < Grid.Width; x++)
+			for (int y = 0; y < Grid.Height; y++)
+				Unrevealed.Add(new TilePos(x, y));
+	}
 
 	/// <summary>Puts a 2×2 life crystal with its top-left cell at (x, y) (cells must be open; it sits on the floor below).</summary>
 	/// <summary>A 3×2 demon altar (nothing places one; it is found) with its top-left at (x, y).</summary>
@@ -343,9 +356,37 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public bool HasRoomFor(int itemType) => true;
 	public bool IsEquipped(int itemType) => Equipped.Contains(itemType);
 
+	/// <summary>Chests by top-left tile, with their contents; looted ones are emptied.</summary>
+	public readonly Dictionary<TilePos, List<(int Item, int Stack)>> Chests = new();
+	public readonly HashSet<TilePos> LockedChests = new();
+	/// <summary>Item types that are accessories (5 slots).</summary>
+	public readonly HashSet<int> Accessories = new();
+	public const int HermesBoots = 54, LesserHealingPotion = 28;
+
+	public IReadOnlyList<ChestInfo> SeenChests(TilePos around, int radius) => Chests.Keys
+		.Where(c => System.Math.Abs(c.X - around.X) <= radius && System.Math.Abs(c.Y - around.Y) <= radius && IsRevealed(c.X, c.Y))
+		.OrderBy(c => c.ChebyshevTo(around)).Select(c => new ChestInfo(c, LockedChests.Contains(c))).ToList();
+
+	/// <summary>Like vanilla: within about 5 × 4 tiles of the player, unlocked.</summary>
+	public string LootChest(TilePos topLeft)
+	{
+		TilePos n = Sim.Node;
+		if (!Chests.TryGetValue(topLeft, out var items) || LockedChests.Contains(topLeft) || System.Math.Abs(n.X - topLeft.X) > 5 || System.Math.Abs(n.Y - topLeft.Y) > 4)
+			return null;
+		foreach (var (item, stack) in items)
+			Items[item] = Count(item) + stack;
+		string got = string.Join(", ", items.Select(i => $"item{i.Item} x{i.Stack}"));
+		items.Clear();
+		return got;
+	}
+
+	public IReadOnlyList<int> UnwornAccessories() => Accessories.Where(a => Count(a) > 0 && !Equipped.Contains(a)).ToList();
+
 	public bool TryEquip(int itemType)
 	{
 		if (Count(itemType) <= 0)
+			return false;
+		if (Accessories.Contains(itemType) && (Equipped.Contains(itemType) || Equipped.Count(Accessories.Contains) >= 5))
 			return false;
 		Items[itemType]--;
 		Equipped.Add(itemType);
@@ -462,6 +503,12 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		if (swingTimer > 0)
 			swingTimer--;
 		Sim.Step(o);
+		if (Unrevealed.Count > 0) {
+			TilePos n = Sim.Node;
+			for (int x = n.X - RevealRadius; x <= n.X + RevealRadius; x++)
+				for (int y = n.Y - RevealRadius; y <= n.Y + RevealRadius; y++)
+					Unrevealed.Remove(new TilePos(x, y));
+		}
 		// A block placed by the sim comes out of the inventory (stone first, then dirt).
 		for (; placedSeen < Sim.Placed; placedSeen++) {
 			int item = Count(StoneBlock) > 0 ? StoneBlock : DirtBlock;

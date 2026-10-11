@@ -104,13 +104,18 @@ public class BossPlannerTests
 	}
 
 	[Fact]
-	public void NoAltarAnywhere_IsStuck_WithAClearReason()
+	public void NoAltarSeen_Explores_ThenIsStuck_WithAClearReason()
 	{
+		// Only what is revealed counts: none seen means go and look, a few times, before giving up.
 		FakeGame g = ProgressionTests.Mine();
 		g.Items[FakeGame.Lens] = 6;
-		Assert.Null(Next(g, night: true, out ProgressionPlanner p));
-		Assert.True(p.Stuck);
-		Assert.Contains("nothing can place one", p.Status + p.ResolveForTestStuck);
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		for (int i = 0; i < ProgressionPlanner.MaxStationExplores; i++)
+			Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx));
+		Assert.Null(p.ResolveForTest(Eye, ctx));
+		Assert.Contains("nothing can place one", p.ResolveForTestStuck);
 	}
 
 	[Fact]

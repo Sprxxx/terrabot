@@ -76,6 +76,16 @@ public sealed class BotBrain
 
 	/// <summary>Hurt this badly with no potion to drink and enemies about: dig in and recover instead of fighting on.</summary>
 	public const float RetreatBelow = 0.3f;
+	/// <summary>How often (ticks) the brain checks for accessories to put on and chests in sight.</summary>
+	public const int HabitEvery = 60;
+
+	/// <summary>Put on carried accessories while a slot is free (Hermes Boots from a chest, a Band of Regeneration...).</summary>
+	private static void WearAccessories(BotContext ctx)
+	{
+		foreach (int item in ctx.Inventory.UnwornAccessories())
+			if (ctx.Crafter.TryEquip(item))
+				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)}");
+	}
 	/// <summary>Torches in the dark, so a watcher can see (auto mode).</summary>
 	public LightKeeper Light { get; } = new();
 	private int deathsSeen;
@@ -104,6 +114,14 @@ public sealed class BotBrain
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			Interrupt(ctx);
 			Begin(ShelterSkill.Recover(RetreatUntil), ctx);
+		}
+		if (Auto && ctx.Tick % HabitEvery == 0) {
+			WearAccessories(ctx);
+			// A chest comes into sight while looking for ore or prey: go and loot it first (the planner picks it next).
+			if (Current is MineSkill or ExploreSkill or HuntSkill && ProgressionPlanner.NextChest(ctx) is ChestInfo seen) {
+				ctx.Log.Info($"Auto: a chest at {seen.TopLeft} came into sight; pausing {Current.Name} to loot it");
+				Interrupt(ctx);
+			}
 		}
 		if (Auto && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
 			if (Current != null)

@@ -77,6 +77,11 @@ public sealed class Arena
 			}
 		}
 		WorldGen.RangeFrame(Left - 1, Top - 1, Left + Width + 1, FloorY + 5);
+		// The bot only knows tiles revealed on the map: a built arena counts as seen.
+		for (int x = Left; x < Left + Width; x++)
+			for (int y = Top; y <= FloorY + 4; y++)
+				Main.Map.Update(x, y, 255);
+		Main.refreshMap = true;
 		// Demon altars: 'A' is the bottom-middle cell of a 3×2 altar standing on the floor below (WorldGen.Place3x2).
 		foreach (TilePos m in FindAll(rows, 'A')) {
 			TilePos w = ToWorld(m.X, m.Y, rows.Length);

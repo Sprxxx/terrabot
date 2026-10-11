@@ -68,7 +68,8 @@ public class ProgressionTests
 		var skill = Assert.IsType<MineSkill>(NextFor(g, out _, out _));
 		Assert.Equal(FakeGame.StoneBlock, skill.ItemType);
 		Assert.Equal(FakeGame.TileStone, skill.TileType);
-		Assert.Equal(20, skill.Amount);
+		// 20 for the furnace plus a margin: stone is also what the bot builds with on the way back (seen in game).
+		Assert.Equal(20 + ProgressionPlanner.BlockMargin, skill.Amount);
 	}
 
 	[Fact]
@@ -157,6 +158,9 @@ public class ProgressionTests
 			FurnaceTile = FakeGame.TileFurnace, AnvilTile = 999, IronTierPickaxe = FakeGame.IronPickaxe,
 		};
 		var p = new ProgressionPlanner();
+		// Nothing places it and none is seen: explore for one a few times, then stuck.
+		for (int i = 0; i < ProgressionPlanner.MaxStationExplores; i++)
+			Assert.IsType<ExploreSkill>(p.Next(ctx));
 		Assert.Null(p.Next(ctx));
 		Assert.True(p.Stuck);
 		Assert.False(p.Complete);

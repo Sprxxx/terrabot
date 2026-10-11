@@ -39,6 +39,8 @@ public sealed class BotContext
 	public long Tick { get; set; }
 	/// <summary>Times the player died since the context was made (the bot does not tick while dead).</summary>
 	public int Deaths { get; set; }
+	/// <summary>Chests already looted (or given up on), by top-left tile: not visited again.</summary>
+	public System.Collections.Generic.HashSet<TilePos> OpenedChests { get; } = new();
 	/// <summary>Expert or Master world (Main.expertMode): bosses attack faster.</summary>
 	public bool Expert { get; set; }
 	public IBotLog Log { get; set; } = NullLog.Instance;

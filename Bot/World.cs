@@ -4,8 +4,14 @@ using TerraBot.Core.Grid;
 namespace TerraBot.Bot;
 
 /// <summary>Tile facts the skills need beyond the pathfinding grid (implemented by the game adapter).</summary>
+/// <summary>A chest the player has seen: its top-left tile, and whether it is locked (gold chests in the dungeon...).</summary>
+public readonly record struct ChestInfo(TilePos TopLeft, bool Locked);
+
 public interface IWorldInfo
 {
+	/// <summary>Chests within <paramref name="radius"/> tiles that the player has seen (revealed on the map), nearest first.</summary>
+	IReadOnlyList<ChestInfo> SeenChests(TilePos around, int radius);
+
 	/// <summary>Is there a tree trunk tile (any tree kind) at this cell?</summary>
 	bool IsTreeTrunk(int x, int y);
 
@@ -16,7 +22,10 @@ public interface IWorldInfo
 	/// <summary>Tile type at the cell, or -1 when there is no tile.</summary>
 	int TileTypeAt(int x, int y);
 
-	/// <summary>Cells holding <paramref name="tileType"/> within <paramref name="radius"/> tiles (Chebyshev) of <paramref name="around"/>, nearest first.</summary>
+	/// <summary>
+	/// Cells holding <paramref name="tileType"/> within <paramref name="radius"/> tiles (Chebyshev) of <paramref name="around"/>,
+	/// nearest first: only cells the player has seen (revealed on the map), as a player would know them.
+	/// </summary>
 	IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius);
 
 	/// <summary>Is there a background wall in the cell?</summary>
@@ -40,6 +49,9 @@ public interface IWorldInfo
 	/// <summary>Has the world recorded this boss NPC type as defeated (NPC.downedBoss1 and friends)?</summary>
 	bool BossDefeated(int npcType);
 
+	/// <summary>Has the player seen this cell (revealed on the world map, vanilla Main.Map.IsRevealed)? Off the world: true.</summary>
+	bool IsRevealed(int x, int y);
+
 	/// <summary>Light level at the cell, 0 (dark) to about 1 (vanilla Lighting.Brightness).</summary>
 	float LightAt(int x, int y);
 }
@@ -53,8 +65,11 @@ public interface IInventory
 	/// <summary>Is there a free main-inventory slot (or a stack this item can join)?</summary>
 	bool HasRoomFor(int itemType);
 
-	/// <summary>Is the item worn in an armour slot (head, body, legs)?</summary>
+	/// <summary>Is the item worn in an armour slot (head, body, legs) or an accessory slot?</summary>
 	bool IsEquipped(int itemType);
+
+	/// <summary>Accessories carried but not worn (no vanity), one entry per type.</summary>
+	IReadOnlyList<int> UnwornAccessories();
 }
 
 public enum CraftResult
@@ -75,8 +90,18 @@ public interface ICrafter
 {
 	CraftResult TryCraft(int itemType);
 
-	/// <summary>Put a carried armour piece on, like right-clicking it (vanilla ItemSlot.SwapEquip). False if it could not.</summary>
+	/// <summary>
+	/// Put a carried armour piece or accessory on, like right-clicking it (vanilla ItemSlot.SwapEquip). Accessories
+	/// only into an empty slot (never swapping one out). False if it could not.
+	/// </summary>
 	bool TryEquip(int itemType);
+
+	/// <summary>
+	/// Open the chest at <paramref name="topLeft"/> and take everything, like right-clicking it and pressing Loot All
+	/// (vanilla Player.OpenChest, ChestUI.LootAll), then close it. Only within the game's interaction range and only
+	/// unlocked chests. Returns what was taken ("" if it was empty), or null if it could not be opened.
+	/// </summary>
+	string LootChest(TilePos topLeft);
 
 	/// <summary>Human-readable recipe needs for logs ("10 Wood @ Work Bench").</summary>
 	string Describe(int itemType);

@@ -44,6 +44,7 @@ public sealed class LightKeeper
 			int torchTile = ctx.Knowledge?.TilePlacedBy(torch) ?? -1;
 			if (ctx.World.TileTypeAt(cell.X, cell.Y) == torchTile && torchTile >= 0) {
 				Placed++;
+				ctx.Log.Info($"Light: torch #{Placed} at {cell} (light {ctx.World.LightAt(cell.X, cell.Y):0.00})");
 				placing = null;
 				return;
 			}

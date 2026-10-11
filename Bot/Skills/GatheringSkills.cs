@@ -143,8 +143,11 @@ public sealed class CollectDropsSkill : ISkill
 		}
 		DropInfo target = candidates[0];
 		if (walkTarget != target.Id || walk == null) {
+			// The give-up count belongs to the drop, not the walk: reset per walk, it never reached 30 (seen in game:
+			// a drop on a ledge out of grab range, the walk "arriving" every tick).
+			if (walkTarget != target.Id)
+				standingTicks = 0;
 			walkTarget = target.Id;
-			standingTicks = 0;
 			walk = new WalkToSkill(target.Tile) { Quiet = true, Tolerance = 1 };
 			walk.Start(ctx);
 		}

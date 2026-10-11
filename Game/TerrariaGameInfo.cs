@@ -216,7 +216,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		var found = new List<TilePos>();
 		for (int x = around.X - radius; x <= around.X + radius; x++)
 			for (int y = around.Y - radius; y <= around.Y + radius; y++)
-				if (WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == tileType)
+				// Only what the player has seen: no x-ray. Exploring (and torchlight) reveals the map.
+				if (WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == tileType && Main.Map.IsRevealed(x, y))
 					found.Add(new TilePos(x, y));
 		found.Sort((a, b) => a.ChebyshevTo(around).CompareTo(b.ChebyshevTo(around)));
 		return found;
@@ -348,6 +349,9 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == TileID.Heart && WorldGen.CanKillTile(x, y);
 
 	/// <summary>Vanilla bosses' "downed" flags (the Eye of Cthulhu first; extend as bosses are added).</summary>
+	/// <summary>Off the map counts as seen: there is nothing to explore past the world's edge.</summary>
+	public bool IsRevealed(int x, int y) => !WorldGen.InWorld(x, y, 1) || Main.Map.IsRevealed(x, y);
+
 	public float LightAt(int x, int y) => WorldGen.InWorld(x, y, 1) ? Lighting.Brightness(x, y) : 1f;
 
 	public bool BossDefeated(int npcType) => npcType switch {
@@ -408,17 +412,79 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	public bool IsEquipped(int itemType)
 	{
-		for (int i = 0; i < 3; i++)
+		for (int i = 0; i < AccessoryEnd; i++)
 			if (player.armor[i].type == itemType && !player.armor[i].IsAir)
 				return true;
 		return false;
 	}
 
+	/// <summary>armor[0..2] are head, body, legs; armor[3..9] the accessory slots (some only in Expert/Master).</summary>
+	private const int AccessoryStart = 3, AccessoryEnd = 10;
+
+	private bool FreeAccessorySlot()
+	{
+		for (int i = AccessoryStart; i < AccessoryEnd; i++)
+			if (player.IsItemSlotUnlockedAndUsable(i) && player.armor[i].IsAir)
+				return true;
+		return false;
+	}
+
+	public IReadOnlyList<int> UnwornAccessories()
+	{
+		var list = new List<int>();
+		for (int i = 0; i < 50; i++) {
+			Item it = player.inventory[i];
+			if (!it.IsAir && it.accessory && !it.vanity && !list.Contains(it.type) && !IsEquipped(it.type))
+				list.Add(it.type);
+		}
+		return list;
+	}
+
+	public IReadOnlyList<ChestInfo> SeenChests(TilePos around, int radius)
+	{
+		var list = new List<ChestInfo>();
+		for (int i = 0; i < Main.maxChests; i++) {
+			Chest c = Main.chest[i];
+			if (c == null || Math.Abs(c.x - around.X) > radius || Math.Abs(c.y - around.Y) > radius || !Main.Map.IsRevealed(c.x, c.y))
+				continue;
+			if (!Main.tile[c.x, c.y].HasTile || !TileID.Sets.BasicChest[Main.tile[c.x, c.y].TileType])
+				continue; // dressers and other containers are left alone
+			list.Add(new ChestInfo(new TilePos(c.x, c.y), Chest.IsLocked(c.x, c.y)));
+		}
+		list.Sort((a, b) => a.TopLeft.ChebyshevTo(around).CompareTo(b.TopLeft.ChebyshevTo(around)));
+		return list;
+	}
+
+	public string LootChest(TilePos topLeft)
+	{
+		if (player.whoAmI != Main.myPlayer || Main.netMode == NetmodeID.MultiplayerClient)
+			return null;
+		int x = topLeft.X, y = topLeft.Y;
+		if (!player.IsInTileInteractionRange(x, y, Terraria.DataStructures.TileReachCheckSettings.Simple) || Chest.IsLocked(x, y))
+			return null;
+		int index = Chest.FindChest(x, y);
+		if (index < 0)
+			return null;
+		Chest chest = Main.chest[index];
+		var before = chest.item.Where(i => i != null && !i.IsAir).Select(i => (i.Name, i.stack)).ToList();
+		player.OpenChest(x, y, index);
+		Terraria.UI.ChestUI.LootAll();
+		player.chest = -1;
+		Main.playerInventory = false;
+		Recipe.FindRecipes();
+		var left = chest.item.Where(i => i != null && !i.IsAir).Select(i => i.Name).ToHashSet();
+		return string.Join(", ", before.Where(b => !left.Contains(b.Name)).Select(b => $"{b.Name} x{b.stack}"))
+			+ (left.Count > 0 ? $" (left behind: {string.Join(", ", left)}; inventory full?)" : "");
+	}
+
 	/// <summary>Right-click equip (ItemSlot.SwapEquip on the inventory slot), only for the local player.</summary>
 	public bool TryEquip(int itemType)
 	{
-		if (player.whoAmI != Main.myPlayer || FindItem(itemType, out int slot) == null)
+		Item item = FindItem(itemType, out int slot);
+		if (player.whoAmI != Main.myPlayer || item == null)
 			return false;
+		if (item.accessory && (!FreeAccessorySlot() || IsEquipped(itemType)))
+			return false; // never swap a worn accessory out; the same one twice is not allowed anyway
 		Terraria.UI.ItemSlot.SwapEquip(player.inventory, Terraria.UI.ItemSlot.Context.InventoryItem, slot);
 		return IsEquipped(itemType);
 	}
