@@ -104,7 +104,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (!IsLocal)
 			return;
 		Context.Deaths++;
-		Mod.Logger.Warn($"Died ({damage:0} damage) at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
+		Mod.Logger.Warn($"Died ({damage:0} damage: {damageSource.GetDeathText(Player.name)}) at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
 	}
 
 	public override void OnHurt(Player.HurtInfo info)
@@ -317,6 +317,8 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.Facing = Player.direction;
 		k.ItemAnimation = Player.itemAnimation;
 		k.CanQuickHeal = Player.potionDelay == 0 && Player.QuickHeal_GetItemToUse() != null;
+		k.Breath = Player.breath;
+		k.BreathMax = Player.breathMax;
 		k.WeaponReach = Blocks.WeaponSlot >= 0 ? Blocks.WeaponReach : 0f;
 		k.WeaponName = Blocks.WeaponName;
 		k.HasRanged = Blocks.RangedSlot >= 0 && Blocks.AmmoCount > 0;

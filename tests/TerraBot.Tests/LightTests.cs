@@ -55,3 +55,33 @@ public class LightTests
 		Assert.True(g.Count(FakeGame.Torch) > 0);
 	}
 }
+
+/// <summary>Out of breath under water: surface before anything else (drowning skips the hurt event).</summary>
+public class BreathTests
+{
+	private readonly ITestOutputHelper output;
+	public BreathTests(ITestOutputHelper output) => this.output = output;
+
+	[Fact]
+	public void LowBreathUnderWater_Surfaces_AndGetsItsHeadOut()
+	{
+		// A pool 6 deep with the bot at the bottom; air above it.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 18; y++)
+			rows.Add(new string('.', 40));
+		for (int y = 0; y < 6; y++)
+			rows.Add("##########" + new string('~', 20) + "##########");
+		rows[23] = "##########" + "~~~~S" + new string('~', 15) + "##########";
+		rows.Add(new string('#', 40));
+		FakeGame g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		var brain = new Bot.Brain.BotBrain();
+		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
+		g.Refresh(ctx);
+		ctx.Combat.Breath = 60;
+		brain.Tick(ctx);
+		output.WriteLine(brain.Describe());
+		Assert.IsType<Bot.Skills.SurfaceSkill>(brain.Current);
+		Assert.True(ctx.Output.Jump);
+	}
+}

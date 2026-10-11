@@ -41,6 +41,9 @@ public sealed class CombatInfo
 	public int ItemAnimation { get; set; }
 	/// <summary>Is there a healing potion that quick-heal (H) would use, with no potion sickness?</summary>
 	public bool CanQuickHeal { get; set; }
+	/// <summary>Breath (Player.breath, 0..breathMax = 200): runs down under water, drowning at 0.</summary>
+	public int Breath { get; set; } = 200;
+	public int BreathMax { get; set; } = 200;
 	/// <summary>How far (px) in front of the body's edge the best melee weapon reaches; 0 = no weapon.</summary>
 	public float WeaponReach { get; set; }
 	public string WeaponName { get; set; } = "";
