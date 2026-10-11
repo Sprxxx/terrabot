@@ -114,8 +114,9 @@ public sealed class MineSkill : ISkill
 			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations");
 		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
 		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
-		int tileType = TileType;
-		Begin(ctx, new ExploreSkill(Label(ctx), c => c.World.FindTiles(tileType, c.Node, SearchRadius).Count > 0, ExploreBias.Down, exploreDir), "exploring");
+		// "Found" is what this skill would actually go for (not beside water, not given up on...): with "any seen", exploring
+		// stopped at ore that mining then skipped, and mining explored again, round and round.
+		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, ExploreBias.Down, exploreDir), "exploring");
 		exploreDir = -exploreDir;
 		return SkillStatus.Running;
 	}
