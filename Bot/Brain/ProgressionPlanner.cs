@@ -156,11 +156,14 @@ public sealed class ProgressionPlanner
 		}
 		stages.Add(new StationPlaced(ids.FurnaceTile, "furnace"));
 		stages.Add(new StationPlaced(ids.AnvilTile, "anvil"));
+		// The sword before the pickaxe: in a real world, mining the pickaxe's 30 ore with a copper shortsword (5 damage, a
+		// point or two a hit against a yellow slime) cost 9 deaths in one run.
+		if (plan != Plans.Iron)
+			stages.Add(new HaveItem(ids.IronTierBroadsword, 1, "iron-tier broadsword"));
 		stages.Add(new PickaxeAtLeast(IronTierPickPower, ids.IronTierPickaxe, "iron-tier pickaxe"));
 		if (plan == Plans.Iron)
 			return stages;
 		stages.Add(new HouseBuilt("house"));
-		stages.Add(new HaveItem(ids.IronTierBroadsword, 1, "iron-tier broadsword"));
 		stages.Add(new Wearing(ids.IronTierHelmet, "helmet"));
 		stages.Add(new Wearing(ids.IronTierChainmail, "chainmail"));
 		stages.Add(new Wearing(ids.IronTierGreaves, "greaves"));
@@ -817,7 +820,9 @@ public sealed class ProgressionPlanner
 	{
 		foreach (var kv in ctx.Seen.Stations)
 			KnownStations[kv.Key] = kv.Value;
-		TilePos node = ctx.Node;
+		// Against where the scan was made, not where the bot is now: right after a respawn the scan is still from where it
+		// died, and the work bench at the spawn counted as gone (seen in game: a new bench after every death, 60 wood).
+		TilePos node = ctx.Seen.Origin ?? ctx.Node;
 		foreach (int type in KnownStations.Keys.ToList())
 			if (KnownStations[type].ChebyshevTo(node) <= StationSightTiles && !ctx.Seen.Stations.ContainsKey(type)
 				&& !(notedAt.TryGetValue(type, out long t) && ctx.Tick - t < PlacedGraceTicks))

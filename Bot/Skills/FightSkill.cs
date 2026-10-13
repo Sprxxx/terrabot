@@ -51,6 +51,8 @@ public sealed class FightSkill : ISkill
 	public const float IgnoredStillFoughtWithin = 3 * 16f;
 	/// <summary>An ignored enemy starts a fight (the brain's danger check) only this close: less than <see cref="IgnoredStillFoughtWithin"/>, for hysteresis.</summary>
 	public const float IgnoredDangerWithin = 2 * 16f;
+	/// <summary>Enemies more than this many rows below <see cref="BotContext.DeepestRow"/> are not chased (unless they bite).</summary>
+	public const int DeepChaseMargin = 10;
 	/// <summary>Swinging at a target in reach this long without it losing life: it cannot be hit from here; leave it.</summary>
 	public const int MaxSwingTicksNoDamage = 300;
 	private int swingWatchId = -1, swingWatchLife, swingTicksNoDamage;
@@ -275,7 +277,8 @@ public sealed class FightSkill : ISkill
 			if (d <= engage)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
-			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d);
+			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
+				&& (e.FeetTile.Y - DeepChaseMargin <= ctx.DeepestRow || e.Id == ctx.RecentAttacker); // not chased down into the depths
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {

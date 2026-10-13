@@ -162,6 +162,8 @@ public sealed class PathSearch
 				continue;
 			if (SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath))
 				continue;
+			if (float.IsPositiveInfinity(e.Cost))
+				continue; // lava
 			float g = g0 + e.Cost;
 			long k = e.To.Key;
 			if (nodes.TryGetValue(k, out NodeRec existing) && (existing.Closed || existing.G <= g))

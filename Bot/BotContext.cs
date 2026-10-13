@@ -135,7 +135,9 @@ public sealed class BotContext
 	public const int CavernDefense = 8;
 	/// <summary>Defense below this keeps them within <see cref="CavernDepth"/> rows into the caverns.</summary>
 	public const int DeepDefense = 16;
-	public const int ShallowMargin = 15, CavernDepth = 150;
+	/// <summary>Rows relative to <see cref="CavernY"/>: without armour stay above the caverns (in game, 15 rows into them
+	/// was still skeletons and mother slimes); with some, this far in.</summary>
+	public const int ShallowMargin = -10, CavernDepth = 150;
 
 	/// <summary>
 	/// The deepest row worth going to for ore and exploring with the armour worn, like a player who stays out of the

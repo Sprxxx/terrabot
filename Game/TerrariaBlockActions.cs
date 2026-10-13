@@ -122,7 +122,13 @@ public sealed class TerrariaBlockActions : IBlockActions
 
 	private static float PickScore(Item it) => it.pick;
 	private static float AxeScore(Item it) => it.axe;
-	private static float WeaponScore(Item it) => IsMeleeWeapon(it) ? it.damage * 60f / Math.Max(1, it.useAnimation) : 0f;
+	/// <summary>
+	/// Damage per second against a typical early enemy: vanilla takes half the defense off each hit (about 8 for
+	/// slimes, zombies, skeletons). By raw damage per tick the copper shortsword (5 in 12 ticks) beat the wooden sword
+	/// (7 in 25), but against a yellow slime it did a point or two a hit; the bot swung for minutes and died.
+	/// </summary>
+	private static float WeaponScore(Item it) => IsMeleeWeapon(it) ? Math.Max(1f, it.damage - TypicalDefense / 2f) * 60f / Math.Max(1, it.useAnimation) : 0f;
+	private const int TypicalDefense = 8;
 	private static float RangedScore(Item it) => IsArrowWeapon(it) ? it.damage * 60f / Math.Max(1, it.useAnimation) : 0f;
 	private static float BlockScore(Item it) => IsThrowawayBlock(it) ? (IsCheapBlock(it.createTile) ? 1_000_000 : 0) + it.stack : 0f;
 

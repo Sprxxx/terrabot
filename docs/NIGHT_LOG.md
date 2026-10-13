@@ -81,3 +81,21 @@ what was decided and the result.
     old height before it drops, so the bot pressed into that block, then found no way on. **Decision:** the
     TunnelDown move also breaks that cell. The debug map now marks unbreakable cells 'X' and unsafe ones 'U'.
 - **Tests:** 203 unit tests. In game, 23 regression scenarios pass.
+
+### world_eye run 18
+- **Progress:** iron pickaxe and house started. **Life crystals work end to end** (seen, mined, used: max life
+  120). Two chests looted, one with **Healing Potion ×5**, Silver Bars, a Hunter Potion and an Inner Tube (worn).
+- **But 9 deaths.** Causes:
+  - Fighting cavern enemies (skeletons, mother slime, antlion chargers) with a Copper Shortsword at 100 HP.
+  - A lava pool walked into while chasing.
+  - Crafting a new work bench and furnace after every death: the station scan was still from where it died, so the
+    stations at spawn counted as "gone".
+- **Decisions:**
+  - **Lava** is impassable for the planner (it was only "liquid", 3× cost).
+  - **Depth limit:** with no armour, stay 10 rows above the caverns. Fights do not chase enemies more than 10 rows
+    below the limit, unless they are attacking.
+  - **Broadsword before pickaxe:** after the anvil, an iron-tier broadsword comes first in the boss and settle plans.
+  - **Weapon choice** scores damage after half of a typical early enemy's defense (8). The Wooden Sword now beats the
+    Copper Shortsword, which did 1–2 damage a hit to yellow slimes.
+  - **Station memory:** stations count as gone only when the scan was made near them (scan origin recorded).
+- **Tests:** 203 unit tests. In game, 25 regression scenarios pass, including eye_of_cthulhu.

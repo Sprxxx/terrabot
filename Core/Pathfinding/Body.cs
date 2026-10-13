@@ -66,6 +66,16 @@ public static class Body
 		return false;
 	}
 
+	/// <summary>Does any body cell hold lava?</summary>
+	public static bool TouchesLava(ITileGrid g, TilePos n)
+	{
+		for (int dy = -HeightTiles + 1; dy <= 0; dy++)
+			for (int dx = 0; dx < WidthTiles; dx++)
+				if (g.Get(n.X + dx, n.Y + dy).HasLava())
+					return true;
+		return false;
+	}
+
 	/// <summary>Is the top row of the body (the head) in liquid?</summary>
 	public static bool HeadInLiquid(ITileGrid g, TilePos n)
 	{

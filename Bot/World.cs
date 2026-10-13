@@ -161,4 +161,7 @@ public sealed class Surroundings
 
 	/// <summary>Placed crafting-station tiles near the player, by tile type (top-left tile of each).</summary>
 	public IReadOnlyDictionary<int, TilePos> Stations { get; set; } = new Dictionary<int, TilePos>();
+
+	/// <summary>Where the scan was made (feet tile); null = unknown (treated as the bot's position).</summary>
+	public TilePos? Origin { get; set; }
 }

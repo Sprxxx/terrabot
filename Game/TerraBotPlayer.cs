@@ -303,7 +303,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (rescanNow || Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
 			rescanNow = false;
 			TilePos feet = FeetTile();
-			Context.Seen = new Surroundings { Trees = GameInfo.ScanTrees(feet), Stations = GameInfo.ScanStations(feet) };
+			Context.Seen = new Surroundings { Trees = GameInfo.ScanTrees(feet), Stations = GameInfo.ScanStations(feet), Origin = feet };
 		}
 		Vector2 c = Player.Center;
 		var hostiles = new List<EntityInfo>();

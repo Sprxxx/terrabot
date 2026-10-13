@@ -128,6 +128,9 @@ public sealed class MoveContext
 	/// <summary>Applies the liquid and footing penalties to an edge ending at <paramref name="to"/>.</summary>
 	public float Adjust(float cost, TilePos to)
 	{
+		// Never into lava: 3x cost for "liquid" sent the bot into a lava pool chasing an antlion charger (78 damage, dead).
+		if (Body.TouchesLava(Grid, to))
+			return float.PositiveInfinity;
 		float c = Body.HeadInLiquid(Grid, to) ? cost * HeadUnderCostMultiplier : Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
 		return Body.IsPrecarious(Grid, to, MaxDrop + 1) ? c + PrecariousTicks : c;
 	}
