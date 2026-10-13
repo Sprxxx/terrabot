@@ -232,3 +232,11 @@ what was decided and the result.
   was per walk, so none was ever banned. Every failure cost a 2.8 s re-plan. **Decision:** step failure counts live
   on the bot's context, across walks.
 - In game, 4 walk scenarios pass.
+
+### Jumps through slopes (found from run 30)
+- **Cause of the short landings:** a jump's swept cells only had to be "passable", and slopes and half blocks count
+  as passable (Platform|Shaped), so jumps were planned through them. In the game they are solid from below.
+  **Decision:** on a jump's way, a shaped cell is open only where the feet stand at take-off. Test
+  `JumpThroughASlope_IsNotPlanned` added (212 unit tests).
+- **Run 31 so far:** anvil at game minute 6 and the **Iron Broadsword at minute 14**, the fastest yet. 2 deaths: an
+  antlion charger in the desert (now a danger zone) and a crawdad.

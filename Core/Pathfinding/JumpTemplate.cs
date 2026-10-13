@@ -35,9 +35,14 @@ public sealed class JumpTemplate
 
 	public bool Fits(ITileGrid g, TilePos from)
 	{
-		foreach (TilePos c in BodyCells)
-			if (!g.Get(from.X + c.X, from.Y + c.Y).IsPassable())
+		// A slope or half block is open only where the feet stand at take-off: anywhere else on the way it is in the
+		// way (seen in game: three jumps through slopes landed a tile short, in the same places every run).
+		foreach (TilePos c in BodyCells) {
+			CellKind k = g.Get(from.X + c.X, from.Y + c.Y);
+			bool startFeet = c.Y == 0 && (c.X == 0 || c.X == 1);
+			if (startFeet ? !k.IsPassable() : !k.IsHeadroom())
 				return false;
+		}
 		foreach (TilePos c in CrossCells)
 			if (g.Get(from.X + c.X, from.Y + c.Y).CanStandOn())
 				return false;

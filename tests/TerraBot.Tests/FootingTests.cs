@@ -1,3 +1,4 @@
+using System.Linq;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
 using TerraBot.Bot.Skills;
@@ -148,5 +149,32 @@ public class FootingTests
 		Assert.False(ctx.InDangerZone(new TilePos(2276, 300)));
 		ctx.Tick = 100 + BotContext.DangerZoneTicks + 1;
 		Assert.False(ctx.InDangerZone(new TilePos(2290, 400)));
+	}
+
+	[Fact]
+	public void JumpThroughASlope_IsNotPlanned()
+	{
+		// world_eye run 30: jumps whose path crossed a slope landed a tile short (slopes are solid from below).
+		string[] rows = {
+			"......................",
+			"......................",
+			"......................",
+			"......................",
+			"......................",
+			"......................",
+			"..............G.......",
+			"..........############",
+			"..........############",
+			"..S.......############",
+			"######################" };
+		PathResult open = TestUtil.Plan(ArrayTileGrid.Parse(rows));
+		PathStep jump = Assert.Single(open.Steps, st => st.Kind == MoveKind.Jump);
+		// A slope on a cell the jump sweeps on the way up, outside the start and landing bodies.
+		TilePos mid = jump.Template.BodyCells.Select(c => new TilePos(jump.From.X + c.X, jump.From.Y + c.Y))
+			.First(c => c.Y < jump.From.Y - 2 && !(c.X >= jump.To.X && c.X <= jump.To.X + 1 && c.Y >= jump.To.Y - 2) && rows[c.Y][c.X] == '.');
+		string[] blocked = (string[])rows.Clone();
+		blocked[mid.Y] = blocked[mid.Y].Remove(mid.X, 1).Insert(mid.X, "/");
+		PathResult r = TestUtil.Plan(ArrayTileGrid.Parse(blocked));
+		Assert.DoesNotContain(r.Steps, st => st.Kind == MoveKind.Jump && st.From == jump.From && st.To == jump.To && st.Template == jump.Template);
 	}
 }
