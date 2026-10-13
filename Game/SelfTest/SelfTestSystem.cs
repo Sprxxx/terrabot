@@ -275,8 +275,10 @@ public sealed class SelfTestSystem : ModSystem
 				TrackRun(p, bot, s);
 				// Heartbeat, so a watcher can tell a frozen game (no lines at all) from a quiet one.
 				if (phaseTicks > 0 && phaseTicks % HeartbeatTicks == 0) {
-					Mod.Logger.Info($"SELFTEST heartbeat {s.Name} t{phaseTicks} speed {Speed(HeartbeatTicks, beatClock)} ({Main.frameRate} fps, present {Main.instance.GraphicsDevice.PresentationParameters.PresentationInterval}) at {bot.FeetTile()}, life {p.statLife}/{p.statLifeMax2}: {bot.Brain.Describe()}");
+					Mod.Logger.Info($"SELFTEST heartbeat {s.Name} t{phaseTicks} speed {Speed(HeartbeatTicks, beatClock)} ({Main.frameRate} fps, present {Main.instance.GraphicsDevice.PresentationParameters.PresentationInterval}, "
+						+ $"{beatClock.Elapsed.TotalMilliseconds / HeartbeatTicks:0.00} ms/tick of which bot {TerraBotPlayer.BotTime.Elapsed.TotalMilliseconds / HeartbeatTicks:0.00}) at {bot.FeetTile()}, life {p.statLife}/{p.statLifeMax2}: {bot.Brain.Describe()}");
 					beatClock.Restart();
+					TerraBotPlayer.BotTime.Reset();
 				}
 				// Real-world runs: every 2 minutes, what the bot has and where the plan is.
 				if (s.RealWorld && phaseTicks % (HeartbeatTicks * 4) == 0)

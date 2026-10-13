@@ -101,7 +101,10 @@ spawn and prints PASS/FAIL for each:
 
 **Fast mode:** add `-Fast` to run the game faster than its normal 60 ticks a second (vsync off, no tick limit),
 and `-DrawEvery 4` to draw only every 4th frame on top of that. It needs the Frame Skip setting on Off or Subtle.
-settle_auto (about 6 minutes of game time) took 58 s with `-Fast` (6.3×) and 24 s with `-Fast -DrawEvery 4` (16×).
+settle_auto (about 6 minutes of game time) took 58 s with `-Fast` (6.3×), 24 s with `-DrawEvery 4` (16×) and 14 s
+with `-DrawEvery 16` (27×, about 35× once warmed up). Past that the game's own update (about 0.45 ms a tick, of which
+the bot is under 0.1 ms) is the limit. Lighting, the map reveal and the camera only update when a frame is drawn,
+so with `-DrawEvery 16` they update about 4 times a game second.
 The game logic runs exactly as normal, tick for tick; only the waiting between ticks is gone.
 - a boss arena on rough ground: felling trees, mining a mound, filling a pit, crafting and placing torches and a
   campfire.

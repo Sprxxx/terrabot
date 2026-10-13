@@ -126,6 +126,9 @@ public sealed class TerraBotPlayer : ModPlayer
 		Mod.Logger.Info($"Hurt {info.Damage} ({cause}), knockback {info.Knockback:0.#} dir {info.HitDirection} at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
 	}
 
+	/// <summary>Real time spent in the bot's own tick (context refresh, brain, skills); the self-test heartbeat reads and resets it.</summary>
+	public static readonly System.Diagnostics.Stopwatch BotTime = new();
+
 	public override void SetControls()
 	{
 		aim = null;
@@ -144,11 +147,14 @@ public sealed class TerraBotPlayer : ModPlayer
 				if (moved != null)
 					Context.Log.Info(moved);
 			}
+			BotTime.Start();
 			RefreshContext();
 			Brain.Tick(Context);
+			BotTime.Stop();
 			Apply(Context.Output);
 		}
 		catch (Exception e) {
+			BotTime.Stop();
 			Mod.Logger.Error("Bot tick failed; disabling bot", e);
 			Main.NewText("TerraBot crashed and was disabled. See client.log.", Color.OrangeRed);
 			SetEnabled(false, "exception");
