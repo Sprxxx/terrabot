@@ -310,6 +310,8 @@ public sealed class SelfTestSystem : ModSystem
 				bool finished = s.Mode == "auto"
 					? phaseTicks > 2 && (!bot.Brain.Auto || (bot.Brain.Planner.Complete && bot.Brain.Current == null))
 					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > 2;
+				if (!finished && s.FinishOnLog != null && phaseTicks % 30 == 0)
+					finished = tee.Lines.Any(l => l.Contains(s.FinishOnLog));
 				if (!finished && phaseTicks < s.TimeoutTicks)
 					return;
 				Mod.Logger.Info($"SELFTEST speed {s.Name}: {phaseTicks} ticks in {runClock.Elapsed.TotalSeconds:0} s = {Speed(phaseTicks, runClock)} normal");

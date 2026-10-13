@@ -138,6 +138,30 @@ public class BuildingTests
 		Assert.True(next is CraftSkill { ItemType: FakeGame.IronChainmail } || next is WalkToSkill && p.Status.Contains("item81"), p.Status);
 	}
 
+	[Fact]
+	public void Night_WithAHouse_StaysHome_UntilGettingHomeFails()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		var home = Assert.IsType<StayHomeSkill>(next);
+
+		// Seen in game: no path home, and the same failing walk again and again until the brain gave up.
+		p.OnSkillFinished(home, SkillStatus.Failed, ctx);
+		next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.IsNotType<StayHomeSkill>(next);
+	}
+
 	/// <summary>Builds a valid house next to the start through the fake's own placement, and tells the planner about it.</summary>
 	private void HouseAlreadyThere(FakeGame g, ProgressionPlanner p, BotContext ctx)
 	{

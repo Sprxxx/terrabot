@@ -69,6 +69,13 @@ public sealed class ProgressionPlanner
 	public const int MaxDepth = 10;
 	/// <summary>After a shelter ends, don't dig in again for this long (e.g. it could not be sealed).</summary>
 	public const int ShelterCooldownTicks = 60 * 60;
+	/// <summary>After failing to get home at night: no new try for this long (a game hour); the night shelter instead.</summary>
+	public const int StayHomeRetryTicks = 60 * 60;
+	/// <summary>
+	/// Defense from which the night is not spent at home: an iron or lead set (7+). Seen in game: the boss plan, with
+	/// iron armour and 200 life, sat in the house all night instead of getting its last wood for the summon.
+	/// </summary>
+	public const int NightOutDefense = 6;
 	/// <summary>Pickaxe power of the iron tier (Iron Pickaxe 40, Lead Pickaxe 43).</summary>
 	public const int IronTierPickPower = 40;
 	/// <summary>Max life to have before a boss: 5 life crystals (also what vanilla wants before the Eye spawns on its own).</summary>
@@ -109,6 +116,7 @@ public sealed class ProgressionPlanner
 	public const int MaxCostItems = 5000;
 	private string stuck;
 	private long lastShelterEnd = long.MinValue / 2;
+	private long stayHomeFailedAt = long.MinValue / 2;
 	private long lastRestEnd = long.MinValue / 2;
 	private readonly List<TilePos> badSites = new();
 	private int siteFailures;
@@ -190,6 +198,7 @@ public sealed class ProgressionPlanner
 		Complete = false;
 		stuck = null;
 		lastShelterEnd = long.MinValue / 2;
+		stayHomeFailedAt = long.MinValue / 2;
 		lastRestEnd = long.MinValue / 2;
 		HouseSite = null;
 		ArenaSite = null;
@@ -265,6 +274,10 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		if (skill is StayHomeSkill && status == SkillStatus.Failed) {
+			stayHomeFailedAt = ctx.Tick;
+			ctx.Log.Info($"Auto: cannot get home ({skill.FailureReason}); sheltering where I am tonight");
+		}
 		if (skill is MineSkill mine) {
 			if (status == SkillStatus.Succeeded) {
 				fruitlessMines.Remove(mine.ItemType);
@@ -403,15 +416,23 @@ public sealed class ProgressionPlanner
 		return null;
 	}
 
-	/// <summary>The house's inside tile when a house is built (passes the housing check), else null.</summary>
+	/// <summary>
+	/// Where the feet stand inside the house (on the floor, by the left wall's inner side) when a house is built and
+	/// passes the housing check, else null. Not the housing check's own tile: that is two rows above the floor, and a
+	/// walk to within 1 of it had no end in game.
+	/// </summary>
 	private TilePos? HomeInside(BotContext ctx)
 	{
 		if (HouseSite is not TilePos site)
 			return null;
 		Blueprint bp = Blueprint.SmallHouse(ctx.Ids);
-		var inside = new TilePos(site.X + bp.Inside.X, site.Y + bp.Inside.Y);
-		return ctx.World.CheckHousing(inside.X, inside.Y) == null ? inside : null;
+		if (ctx.World.CheckHousing(site.X + bp.Inside.X, site.Y + bp.Inside.Y) != null)
+			return null;
+		return new TilePos(site.X + HomeStandColumn, site.Y + bp.Height - 2);
 	}
+
+	/// <summary>Column of the house where the bot waits: inside the door, clear of the table.</summary>
+	public const int HomeStandColumn = 2;
 
 	/// <summary>Work that keeps the bot on or near the surface at night: gathering, hunting, and mining or exploring from up there.</summary>
 	private static bool NightWorkOnTheSurface(ISkill skill, BotContext ctx)
@@ -428,7 +449,7 @@ public sealed class ProgressionPlanner
 			return skill; // the prey only comes out at night
 		// With a house: the night is spent in it, unless the work is safely underground (zombies and demon eyes are on
 		// the surface). Seen in game: a zombie killed the bot walking home across the surface at night.
-		if (ctx.IsNight && HomeInside(ctx) is TilePos inside && NightWorkOnTheSurface(skill, ctx)) {
+		if (ctx.IsNight && ctx.Combat.Defense < NightOutDefense && ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos inside && NightWorkOnTheSurface(skill, ctx)) {
 			Status = $"night: staying in the house instead of {skill.Name} ({Status})";
 			return new StayHomeSkill(inside);
 		}

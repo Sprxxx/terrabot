@@ -266,3 +266,15 @@ what was decided and the result.
 - **Decision:** at night with no armour the bot goes home and waits for the morning ("stay home"), instead of doing
   surface work. The house stage moves before the anvil (except in the Iron plan), so a shelter exists early.
   Run 34 was stopped to test this.
+
+### Staying home: doors and the goal (from the boss_auto regression)
+- **Closed doors were walls to the planner.** In the game a door opens by itself when the player walks into it at
+  floor level, if the "auto-open doors" setting is on for everything (it is). **Decision:** with that setting on,
+  closed doors count as open space on the bot's map.
+- **The walk home aimed at the housing check's tile,** 2 rows above the floor, so it had no end. **Decision:** the
+  goal is the floor inside the door.
+- **Getting home failed again and again until the brain gave up.** **Decision:** after a failure, no new try for a
+  game hour; the bot shelters where it is.
+- **Armour now matters:** only a bot with defense below 6 stays home. The boss plan (iron armour, 200 life) sat in
+  the house all night instead of getting its last wood.
+- New in-game scenario night_home (passes). boss_auto, night_shelter, build_house and settle_auto pass. 214 unit tests.

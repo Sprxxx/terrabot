@@ -87,6 +87,8 @@ public sealed class Scenario
 	public bool RealWorld { get; init; }
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
 	public Action<Arena, int> During { get; init; }
+	/// <summary>The run also ends once the bot logs a line containing this (for skills that never finish on their own).</summary>
+	public string FinishOnLog { get; init; }
 	/// <summary>Extra checks; return null when fine, else the failure reason.</summary>
 	public Func<RunResult, string> Check { get; init; }
 
@@ -368,6 +370,43 @@ public sealed class Scenario
 					: r.Housing != null ? $"housing check: {r.Housing}"
 					: r.ArmourWorn < 3 ? $"{r.ArmourWorn}/3 armour pieces worn"
 					: r.FallDamageHits > 0 ? $"{r.FallDamageHits} fall-damage hit(s)" : null,
+			},
+			new() {
+				// The night in the house: no armour, so after building the house the bot walks in and waits, rather than
+				// mining the anvil's ore on the surface. Seen in game: a goal on the housing check's tile (2 rows above the
+				// floor) had no path, and the closed door counted as a wall.
+				Name = "night_home",
+				Rows = Grid(Repeat(new string('.', 70), 17),
+					"..S...........................................................T......",
+					Repeat(new string(',', 70), 1),
+					Repeat(new string('#', 70), 1),
+					Repeat(new string('s', 70), 2),
+					Repeat(new string('s', 10) + new string('i', 40) + new string('s', 20), 4),
+					new string('@', 70)),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Settle,
+				Night = true,
+				Dig = true,
+				Build = true,
+				Weapon = Terraria.ID.ItemID.CopperShortsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				Inventory = p => {
+					int slot = 10;
+					void Give(int type, int stack = 1) => p.inventory[slot++] = new Terraria.Item(type, stack);
+					Give(Terraria.ID.ItemID.WoodenSword);
+					Give(Terraria.ID.ItemID.WorkBench);
+					Give(Terraria.ID.ItemID.Furnace);
+					Give(Terraria.ID.ItemID.Wood, 30);
+					Give(Terraria.ID.ItemID.WoodWall, 40);
+					Give(Terraria.ID.ItemID.WoodenDoor);
+					Give(Terraria.ID.ItemID.WoodenChair);
+					Give(Terraria.ID.ItemID.WoodenTable);
+					Give(Terraria.ID.ItemID.Torch, 5);
+				},
+				FinishOnLog = "StayHome: inside",
+				ExpectSuccess = false,
+				TimeoutTicks = 60 * 60 * 2,
+				Check = r => r.Housing != null ? $"housing check: {r.Housing}" : r.LogHas("StayHome: inside") ? null : "never got into the house",
 			},
 			new() {
 				// Milestone 7 end to end from a settled character (iron gear worn, 200 life, stations and a house kit as

@@ -56,6 +56,7 @@ public sealed class StayHomeSkill : ISkill
 		}
 		walk = null;
 		home = true;
+		ctx.Log.Info($"StayHome: inside at {ctx.Node}; waiting for the morning");
 		return SkillStatus.Running;
 	}
 

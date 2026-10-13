@@ -24,7 +24,7 @@ public sealed class TerrariaTileGrid : ITileGrid
 
 		Tile t = Main.tile[x, y];
 		CellKind k = CellKind.Empty;
-		if (t.HasUnactuatedTile) {
+		if (t.HasUnactuatedTile && !(DoorsOpenThemselves && IsClosedDoor(t.TileType))) {
 			ushort type = t.TileType;
 			bool solid = Main.tileSolid[type];
 			bool top = Main.tileSolidTop[type];
@@ -48,4 +48,16 @@ public sealed class TerrariaTileGrid : ITileGrid
 		}
 		return k;
 	}
+
+	/// <summary>
+	/// With the "auto-open doors" setting on for everything, walking into a closed door at floor level opens it (and
+	/// it closes again behind the player): DoorOpeningHelper, run from Player.Update before the movement. So for
+	/// walking, a closed door is open space. Seen in game: as a solid tile, the bot outside its house at night found
+	/// no path in. With the setting off the door stays solid (the bot never right-clicks doors).
+	/// </summary>
+	private static bool DoorsOpenThemselves =>
+		Terraria.GameContent.DoorOpeningHelper.PreferenceSettings == Terraria.GameContent.DoorOpeningHelper.DoorAutoOpeningPreference.EnabledForEverything;
+
+	private static bool IsClosedDoor(ushort type) =>
+		type == TileID.ClosedDoor || type == TileID.TallGateClosed || TileID.Sets.OpenDoorID[type] > -1;
 }
