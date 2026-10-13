@@ -165,8 +165,8 @@ public sealed class PathSearch
 			// runs; replayed, a 73-step path exists).
 			// Mined by one of the last BrokenBanSteps steps: banned (that path really mines it; the zigzag staircase of run 15
 			// re-planned 26 times otherwise). Mined further back: only a penalty.
-			if (CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, brokenRecently))
-				continue;
+			if (CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, e.Kind == MoveKind.StepUp ? brokenOnPath : brokenRecently))
+				continue; // a step up onto a stair an earlier step of the path digs away never works (zigzag stairs, runs 15 and 32)
 			float brokenPenalty = CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath) ? BrokenSupportPenalty : 0f;
 			if (float.IsPositiveInfinity(e.Cost))
 				continue; // lava

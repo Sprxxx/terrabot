@@ -240,3 +240,11 @@ what was decided and the result.
   `JumpThroughASlope_IsNotPlanned` added (212 unit tests).
 - **Run 31 so far:** anvil at game minute 6 and the **Iron Broadsword at minute 14**, the fastest yet. 2 deaths: an
   antlion charger in the desert (now a danger zone) and a crawdad.
+
+### world_eye run 32
+- **Progress:** plan repair worked in a real world ("repaired with 5 steps to rejoin, 102 nodes"). The zigzag stair
+  re-plans were still there, though (2.9 s each): a step up onto a stair block that a step 3–4 back in the same plan
+  digs away. That's outside the 2-step ban, so it only cost +1500 and was still chosen.
+- **Decision:** for step-ups, any earlier step of the path (8 back) digging the stair block bans the move. Other
+  moves keep the 2-step ban plus penalty. The cave replay still finds its path.
+- In game, 14 movement and chain scenarios pass.
