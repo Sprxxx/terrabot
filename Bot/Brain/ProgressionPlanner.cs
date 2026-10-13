@@ -232,7 +232,9 @@ public sealed class ProgressionPlanner
 		if (heart <= 0)
 			return null;
 		foreach (TilePos c in ctx.World.FindTiles(heart, ctx.Node, CrystalRadius))
-			if (!ctx.UnreachableTiles.Contains(c) && ctx.World.CanMineTarget(c.X, c.Y))
+			// Not deeper than the gear allows (mining skips those too): seen in game, a crystal 7 rows below the limit
+			// interrupted mining every second, the crystal job failing at once each time.
+			if (!ctx.UnreachableTiles.Contains(c) && c.Y <= ctx.DeepestRow && ctx.World.CanMineTarget(c.X, c.Y))
 				return c;
 		return null;
 	}
@@ -261,6 +263,14 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		if (skill is MineSkill mine) {
+			if (status == SkillStatus.Succeeded) {
+				fruitlessMines.Remove(mine.ItemType);
+				travelledFor.Remove(mine.ItemType);
+			}
+			else if (status == SkillStatus.Failed && mine.FailureReason.Contains("explorations"))
+				fruitlessMines[mine.ItemType] = (fruitlessMines.TryGetValue(mine.ItemType, out int fm) ? fm : 0) + 1;
+		}
 		if (skill is CraftSkill && status == SkillStatus.Failed && skill.FailureReason.StartsWith(nameof(CraftResult.NeedsStation))) {
 			stationMissed = true;
 			ctx.Log.Info("Auto: the game saw no station in range for that craft; walking right up to it first");
@@ -465,6 +475,8 @@ public sealed class ProgressionPlanner
 				// used one to climb out of its hole on the way back to the bench, and went down for one more, forever.
 				if (ctx.Ids.BuildingBlocks.Contains(item))
 					target += BlockMargin;
+				if (TravelForOre(ctx, item, name) is ISkill travel)
+					return travel;
 				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target));
 			case SourceKind.Hunt:
 				if (NocturnalAiStyles.Contains(src.NpcAiStyle) && !ctx.IsNight)
@@ -883,6 +895,40 @@ public sealed class ProgressionPlanner
 	}
 
 	/// <summary>A craft failed because the game saw no station in range: walk up to it before the next craft.</summary>
+	/// <summary>Mining jobs that ran out of places to look (explorations in a row found nothing), per item, since the last success.</summary>
+	private readonly Dictionary<int, int> fruitlessMines = new();
+	private readonly Dictionary<int, int> travelledFor = new();
+	/// <summary>How far (tiles) along the surface to go to look for ore in new ground.</summary>
+	public const int TravelTiles = 120;
+
+	/// <summary>
+	/// After a mining job found nothing more to mine around here, walk to new ground first: along the surface,
+	/// <see cref="TravelTiles"/> one way, then the other way next time, like a player trying another cave. Seen in
+	/// game: 5 iron short, the bot explored the same 50 tiles for an hour.
+	/// </summary>
+	private ISkill TravelForOre(BotContext ctx, int item, string name)
+	{
+		int fails = fruitlessMines.TryGetValue(item, out int f) ? f : 0;
+		if (fails == 0 || travelledFor.TryGetValue(item, out int t) && t >= fails)
+			return null;
+		travelledFor[item] = fails;
+		int dir = fails % 2 == 1 ? 1 : -1;
+		int x = ctx.Node.X + dir * TravelTiles * ((fails + 1) / 2);
+		if (SurfaceAt(ctx.Grid, x) is not TilePos dest)
+			return null;
+		return Do($"no more {name} found around here; travelling to new ground at {dest}",
+			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true });
+	}
+
+	/// <summary>The first spot to stand on, coming down from the sky in column <paramref name="x"/>; null if none.</summary>
+	private static TilePos? SurfaceAt(ITileGrid g, int x)
+	{
+		for (int y = 40; y < 900; y++)
+			if (g.Get(x, y + 1).CanStandOn() && Core.Pathfinding.Body.IsStandable(g, new TilePos(x, y)))
+				return new TilePos(x, y);
+		return null;
+	}
+
 	private bool stationMissed;
 	private WalkToSkill stationWalk;
 	private int stationWalkType = -1;

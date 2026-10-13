@@ -169,9 +169,11 @@ public sealed class WalkToSkill : ISkill
 				NoteFailedActions(ctx);
 				// The same step stuck again and again: the plan keeps asking for something the world will not do (seen in game:
 				// 26 re-plans holding Down on a slope). Give up; the skill above picks something else.
+				// Counted per step over the whole walk, not only in a row: seen in game, two steps from the same tile took
+				// turns (a walk placing a block, a drop breaking one), each stuck "pressing right", 26 re-plans in all.
 				string stuckStep = Executor.Current?.ToString();
-				sameStuck = stuckStep != null && stuckStep == lastStuckStep ? sameStuck + 1 : 1;
-				lastStuckStep = stuckStep;
+				if (Executor.Current is PathStep cur)
+					sameStuck = stepFailures[(cur.From, cur.To)] = (stepFailures.TryGetValue((cur.From, cur.To), out int f) ? f : 0) + 1;
 				if (sameStuck >= MaxSameStuck) {
 					if (Executor.Current is PathStep bad && ctx.BadEdges.Add((bad.From, bad.To)))
 						ctx.Log.Info($"WalkTo: never planning {bad.Kind} {bad.From}->{bad.To} again; around it (F from, T to, / slope or half block):\n{Around(ctx, bad.From, bad.To)}");
@@ -235,7 +237,7 @@ public sealed class WalkToSkill : ISkill
 		return sb.ToString();
 	}
 
-	private string lastStuckStep;
+	private readonly System.Collections.Generic.Dictionary<(TilePos From, TilePos To), int> stepFailures = new();
 	private int sameStuck;
 	/// <summary>The identical step failing this many re-plans in a row ends the walk.</summary>
 	public const int MaxSameStuck = 3;

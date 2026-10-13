@@ -141,3 +141,15 @@ what was decided and the result.
   station, the planner forgets it and makes a new one where the bot is (stone first), like a player who can't find
   the way back. Test `StationItCannotGetBackTo_IsForgottenAndMadeAgain` added (207 unit tests).
 - In game, iron_age_auto, settle_auto and boss_auto pass.
+
+### world_eye run 23 (stopped at game hour 1 to test fixes)
+- **Progress:** "no way back to the furnace" fired and it went on. Iron bars, anvil, then **Iron Broadsword
+  crafted**. A chest gave 5 healing potions and an inner tube. 3 deaths (a cave bat, a zombie, poison spit).
+- **Three stalls, and the decisions:**
+  - Two steps from one tile took turns failing ("pressing right without moving"), so the "same step 3 times in a row"
+    guard never fired. **Decision:** count failures per step over the whole walk.
+  - 5 iron short, it explored the same 50 tiles for an hour. **Decision:** after a mining job finds nothing more,
+    travel about 120 tiles along the surface (the other way next time) before mining again.
+  - A life crystal 7 rows below the depth limit interrupted mining every second, since crystal mining refuses it.
+    **Decision:** crystal spotting obeys the depth limit too.
+- In game, 12 regression scenarios pass, including boss_auto and life_crystals.
