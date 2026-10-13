@@ -224,3 +224,11 @@ what was decided and the result.
   targets within 30 tiles are avoided for 30 game minutes, like a player who stays away from where they keep dying.
 - **Tests:** 211 unit tests. In game, iron_age_auto, settle_auto, life_crystals, boss_auto and 2 movement scenarios
   pass.
+
+### world_eye run 30
+- **Progress:** survived fights at 50% life (a Pinky, red slimes) and recovered. Stuck on the walk home again.
+- **Cause:** three jumps on the way home, at the same places every run ((2141,368), (2130,365), (2114,359); up 2 and
+  left 1, near slopes), land a tile short and time out after about 200 ticks. Each failed once per walk, and the count
+  was per walk, so none was ever banned. Every failure cost a 2.8 s re-plan. **Decision:** step failure counts live
+  on the bot's context, across walks.
+- In game, 4 walk scenarios pass.
