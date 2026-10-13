@@ -157,6 +157,29 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void StationItCannotGetBackTo_IsForgottenAndMadeAgain()
+	{
+		// world_eye run 22: 57 tiles below the furnace after a fight, every search for a way back failed.
+		FakeGame g = Mine();
+		g.Stations[FakeGame.TileBench] = Beside(g, 2);
+		g.Stations[FakeGame.TileFurnace] = Beside(g, -40);
+		g.Stations[FakeGame.TileAnvil] = Beside(g, 5);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronOre] = 30;
+		g.Items[FakeGame.Wood] = 3;
+		var walk = Assert.IsType<WalkToSkill>(NextFor(g, out ProgressionPlanner p, out BotContext ctx));
+		p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		walk = Assert.IsType<WalkToSkill>(p.Next(ctx));
+		p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		g.Stations.Remove(FakeGame.TileFurnace); // out of sight, as in game
+		for (int i = 0; i < 21; i++)
+			g.Refresh(ctx); // the fake rescans stations every 20 refreshes
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.IsNotType<WalkToSkill>(next); // working towards a new furnace (stone first), not another walk
+	}
+
+	[Fact]
 	public void Complete_WithAnIronTierPickaxe()
 	{
 		FakeGame g = Mine();

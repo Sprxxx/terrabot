@@ -134,3 +134,10 @@ what was decided and the result.
     fights, and keeps 12 torches for crafting, while crafting up to 20.
   - **Result:** boss_auto **PASS**: the Eye was defeated, with 0 deaths.
 - **Tests:** 206 unit tests. In game, fights, boss, building and crystal scenarios pass.
+
+### world_eye run 22
+- **Stall:** after a fight the bot was 57 tiles below and 37 tiles to the right of the furnace. Every search for a way
+  back (40,000 nodes, about 3 s each) found nothing, over and over. **Decision:** after 2 failed walks to a known
+  station, the planner forgets it and makes a new one where the bot is (stone first), like a player who can't find
+  the way back. Test `StationItCannotGetBackTo_IsForgottenAndMadeAgain` added (207 unit tests).
+- In game, iron_age_auto, settle_auto and boss_auto pass.

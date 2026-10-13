@@ -267,6 +267,19 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is CraftSkill && status == SkillStatus.Succeeded || ReferenceEquals(skill, stationWalk) && status == SkillStatus.Succeeded)
 			stationMissed = false;
+		if (ReferenceEquals(skill, stationWalk) && stationWalkType >= 0) {
+			if (status == SkillStatus.Succeeded)
+				stationWalkFailures.Remove(stationWalkType);
+			else if (status == SkillStatus.Failed && !skill.FailureReason.Contains("died")) {
+				int n = stationWalkFailures.TryGetValue(stationWalkType, out int f) ? f + 1 : 1;
+				stationWalkFailures[stationWalkType] = n;
+				if (n >= MaxStationWalkFailures) {
+					ctx.Log.Info($"Auto: no way back to the {ctx.Knowledge.TileName(stationWalkType)} at {KnownStations.GetValueOrDefault(stationWalkType)} ({n} walks failed); making a new one here");
+					KnownStations.Remove(stationWalkType);
+					stationWalkFailures.Remove(stationWalkType);
+				}
+			}
+		}
 		if (skill is LootChestSkill loot)
 			ctx.OpenedChests.Add(loot.Chest); // looted, or not reachable: either way not again
 		if (skill is WaitSkill { What: "life" })
@@ -478,6 +491,7 @@ public sealed class ProgressionPlanner
 		foreach (int station in recipe.Stations)
 			if (!NearStation(ctx, station)) {
 				stationWalk = WalkToStation(KnownStations[station], ctx);
+				stationWalkType = station;
 				return Do($"walking to the {k.TileName(station)} to craft {name}", stationWalk);
 			}
 		string have = string.Join(", ", recipe.Ingredients.Select(i => $"{k.ItemName(i.Item)} {ctx.Inventory.CountAny(i.Accepts)}/{i.Stack * crafts}"));
@@ -871,6 +885,14 @@ public sealed class ProgressionPlanner
 	/// <summary>A craft failed because the game saw no station in range: walk up to it before the next craft.</summary>
 	private bool stationMissed;
 	private WalkToSkill stationWalk;
+	private int stationWalkType = -1;
+	private readonly Dictionary<int, int> stationWalkFailures = new();
+	/// <summary>
+	/// Failed walks to a known station before it is forgotten and a new one made where the bot is, like a player who
+	/// cannot find the way back. Seen in game: after a fight 57 tiles below the furnace, three searches of 40,000 nodes
+	/// (3 s each) found no path, again and again.
+	/// </summary>
+	public const int MaxStationWalkFailures = 2;
 
 	/// <summary>The stuck reason of the last <see cref="ResolveForTest"/> (null if not stuck).</summary>
 	public string ResolveForTestStuck => stuck;
