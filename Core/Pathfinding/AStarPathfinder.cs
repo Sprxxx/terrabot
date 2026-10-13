@@ -184,7 +184,7 @@ public sealed class PathSearch
 	/// <summary>Tests can switch the broken-support check off to compare.</summary>
 	public static bool CheckBrokenSupport = true;
 	/// <summary>Extra cost of a step held up only by cells its own path mines: such plans re-plan when they get there.</summary>
-	public const float BrokenSupportPenalty = 300f;
+	public const float BrokenSupportPenalty = 1500f;
 	private readonly HashSet<TilePos> brokenOnPath = new();
 	private readonly HashSet<TilePos> brokenRecently = new();
 	/// <summary>Cells mined by this many of the last steps make a step held up only by them banned, not just costlier.</summary>
