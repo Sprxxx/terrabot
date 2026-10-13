@@ -946,10 +946,13 @@ public sealed class ProgressionPlanner
 			return null;
 		travelledFor[item] = fails;
 		int dir = fails % 2 == 1 ? 1 : -1;
-		int x = ctx.Node.X + dir * TravelTiles * ((fails + 1) / 2);
+		// Out from the spawn, farther each time (east 120, west 120, east 240...), not from wherever the bot is: from
+		// the bot, east then west went straight back to the ground just searched (seen in game).
+		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
+		int x = originX + dir * TravelTiles * ((fails + 1) / 2);
 		TilePos? found = SurfaceAt(ctx.Grid, x);
 		if (found is TilePos f0 && ctx.InDangerZone(f0))
-			found = SurfaceAt(ctx.Grid, ctx.Node.X - dir * TravelTiles * ((fails + 1) / 2)); // the other way, away from where it died
+			found = SurfaceAt(ctx.Grid, originX - dir * TravelTiles * ((fails + 1) / 2)); // the other way, away from where it died
 		if (found is not TilePos dest)
 			return null;
 		return Do($"no more {name} found around here; travelling to new ground at {dest}",
