@@ -213,3 +213,14 @@ what was decided and the result.
   that fails. In blocked_wall_appears the new wall is now handled by a 14-node repair, with no re-plan; the scenario
   check accepts either.
 - In game, 20 movement, chain and fight scenarios pass.
+
+### world_eye run 29
+- **Progress:** no deaths for 20 game minutes, looted two chests, anvil placed, iron for the broadsword. Then
+  antlions in the underground desert, around (2276–2317, 378–380), killed it twice. Antlions have killed it in nearly
+  every run tonight.
+- **Zigzag stairs:** still chosen at +300. The penalty for steps whose support an older step dug is now **+1500**. A
+  ban reaching 4 steps back broke the cave replay, so the ban stays at 2 steps.
+- **Decision: danger zones.** Where enemies (or their projectiles) killed the bot, exploring, ore, chests and travel
+  targets within 30 tiles are avoided for 30 game minutes, like a player who stays away from where they keep dying.
+- **Tests:** 211 unit tests. In game, iron_age_auto, settle_auto, life_crystals, boss_auto and 2 movement scenarios
+  pass.

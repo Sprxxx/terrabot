@@ -135,6 +135,29 @@ public sealed class BotContext
 	/// <summary>Folder for debug dumps (the region of a search that found no path); null = none.</summary>
 	public string DumpDir { get; set; }
 
+	/// <summary>
+	/// Where the bot was killed by enemies: exploring, ore and chests within <see cref="DangerZoneRadius"/> tiles are left
+	/// alone for <see cref="DangerZoneTicks"/>, like a player who stays away from where they keep dying. Seen in game:
+	/// antlions in the underground desert killed the bot in nearly every run.
+	/// </summary>
+	public System.Collections.Generic.List<(TilePos At, long Until)> DangerZones { get; } = new();
+	public const int DangerZoneRadius = 30, DangerZoneTicks = 60 * 60 * 30;
+
+	public void NoteDeathByEnemy(TilePos at)
+	{
+		DangerZones.RemoveAll(z => z.Until <= Tick);
+		DangerZones.Add((at, Tick + DangerZoneTicks));
+	}
+
+	/// <summary>Is the tile inside a zone where the bot was recently killed?</summary>
+	public bool InDangerZone(TilePos t)
+	{
+		foreach (var (at, until) in DangerZones)
+			if (until > Tick && at.ChebyshevTo(t) <= DangerZoneRadius)
+				return true;
+		return false;
+	}
+
 	/// <summary>Defense below this keeps exploring and mining above <see cref="CavernY"/> (+ <see cref="ShallowMargin"/>).</summary>
 	public const int CavernDefense = 8;
 	/// <summary>Defense below this keeps them within <see cref="CavernDepth"/> rows into the caverns.</summary>

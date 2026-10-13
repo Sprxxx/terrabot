@@ -203,7 +203,7 @@ public sealed class ExploreSkill : ISkill
 					continue;
 				if (aheadOnly && Math.Sign(x - n.X) != heading)
 					continue;
-				if (y > ctx.DeepestRow)
+				if (y > ctx.DeepestRow || ctx.InDangerZone(new TilePos(x, y)))
 					continue;
 				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y) || NearVisited(ctx, x, y))
 					continue;

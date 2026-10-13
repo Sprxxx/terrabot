@@ -137,4 +137,16 @@ public class FootingTests
 		PathResult r = new AStarPathfinder().FindPath(ctx, g.Markers['S'], new GoalStandAt(g.Markers['G'], PhysicsParams.Default));
 		Assert.Equal(PathStatus.Found, r.Status);
 	}
+
+	[Fact]
+	public void DangerZone_AroundWhereTheBotWasKilled_ExpiresLater()
+	{
+		// Antlions in the underground desert killed the bot in nearly every run: stay away from there for a while.
+		var ctx = new BotContext { Tick = 100 };
+		ctx.NoteDeathByEnemy(new TilePos(2276, 380));
+		Assert.True(ctx.InDangerZone(new TilePos(2290, 400)));
+		Assert.False(ctx.InDangerZone(new TilePos(2276, 300)));
+		ctx.Tick = 100 + BotContext.DangerZoneTicks + 1;
+		Assert.False(ctx.InDangerZone(new TilePos(2290, 400)));
+	}
 }

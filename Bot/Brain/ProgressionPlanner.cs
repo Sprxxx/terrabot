@@ -246,7 +246,7 @@ public sealed class ProgressionPlanner
 	public static ChestInfo? NextChest(BotContext ctx)
 	{
 		foreach (ChestInfo c in ctx.World.SeenChests(ctx.Node, LootRadius))
-			if (!c.Locked && !ctx.OpenedChests.Contains(c.TopLeft))
+			if (!c.Locked && !ctx.OpenedChests.Contains(c.TopLeft) && !ctx.InDangerZone(c.TopLeft))
 				return c;
 		return null;
 	}
@@ -947,7 +947,10 @@ public sealed class ProgressionPlanner
 		travelledFor[item] = fails;
 		int dir = fails % 2 == 1 ? 1 : -1;
 		int x = ctx.Node.X + dir * TravelTiles * ((fails + 1) / 2);
-		if (SurfaceAt(ctx.Grid, x) is not TilePos dest)
+		TilePos? found = SurfaceAt(ctx.Grid, x);
+		if (found is TilePos f0 && ctx.InDangerZone(f0))
+			found = SurfaceAt(ctx.Grid, ctx.Node.X - dir * TravelTiles * ((fails + 1) / 2)); // the other way, away from where it died
+		if (found is not TilePos dest)
 			return null;
 		return Do($"no more {name} found around here; travelling to new ground at {dest}",
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true });

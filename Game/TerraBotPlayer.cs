@@ -112,6 +112,8 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (!IsLocal)
 			return;
 		Context.Deaths++;
+		if (damageSource.SourceNPCIndex >= 0 || damageSource.SourceProjectileType > 0)
+			Context.NoteDeathByEnemy(FeetTile());
 		Mod.Logger.Warn($"Died ({damage:0} damage: {damageSource.GetDeathText(Player.name)}) at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
 	}
 
