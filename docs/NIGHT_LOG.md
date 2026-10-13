@@ -251,3 +251,11 @@ what was decided and the result.
 - **Tried and reverted:** banning walks too (all 8 steps back, then 4) removes the cave's only way out. **Known issue:**
   zigzag staircases still re-plan on walks back. The real fix is a planner that tracks its own digging (A* states
   with the cells mined so far), which is a bigger job left for later. In run 33 the bot still got home, just slowly.
+
+### world_eye run 33: Iron Broadsword with 0 deaths at game minute 32
+- **Progress:** no deaths at all in the first 44 game minutes, the safest run so far. It walked home despite the
+  zigzag re-plans, travelled to new ground twice, and got the **Iron Broadsword at minute 32**.
+- **Known issue:** the underground desert is almost all 'U' (unsafe to break), because the planner never breaks a
+  block with sand on top. Explore legs into it fail, and exploring moves on.
+- **Travel bounced** between the same two places (+120, then −120 from the bot's position). **Decision:** travel
+  goes out from the spawn and farther each time (east 120, west 120, east 240...).
