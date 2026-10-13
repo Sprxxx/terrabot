@@ -248,3 +248,6 @@ what was decided and the result.
 - **Decision:** for step-ups, any earlier step of the path (8 back) digging the stair block bans the move. Other
   moves keep the 2-step ban plus penalty. The cave replay still finds its path.
 - In game, 14 movement and chain scenarios pass.
+- **Tried and reverted:** banning walks too (all 8 steps back, then 4) removes the cave's only way out. **Known issue:**
+  zigzag staircases still re-plan on walks back. The real fix is a planner that tracks its own digging (A* states
+  with the cells mined so far), which is a bigger job left for later. In run 33 the bot still got home, just slowly.
