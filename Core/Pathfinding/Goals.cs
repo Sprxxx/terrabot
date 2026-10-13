@@ -13,6 +13,24 @@ public interface IGoal
 	TilePos Anchor { get; }
 }
 
+/// <summary>Exactly this node (plan repair: rejoin the old plan where one of its steps starts).</summary>
+public sealed class GoalNode : IGoal
+{
+	private readonly GoalStandAt estimate;
+	public TilePos Node { get; }
+	public TilePos Anchor => Node;
+
+	public GoalNode(TilePos node, Core.Physics.PhysicsParams p)
+	{
+		Node = node;
+		estimate = new GoalStandAt(node, p);
+	}
+
+	public bool IsGoal(TilePos n) => n == Node;
+	public float Heuristic(TilePos n) => estimate.Heuristic(n);
+	public override string ToString() => $"Node{Node}";
+}
+
 /// <summary>Stand with the body covering column Feet.X and feet on row Feet.Y.</summary>
 public sealed class GoalStandAt : IGoal
 {

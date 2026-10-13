@@ -630,7 +630,7 @@ public sealed class Scenario
 					}
 					Terraria.WorldGen.RangeFrame(arena.GridLeft + 23, arena.FloorY - 10, arena.GridLeft + 25, arena.FloorY);
 				},
-				Check = r => !r.LogHas("Blocked") ? "the new wall was not detected as Blocked" : null,
+				Check = r => !r.LogHas("Blocked") && !r.LogHas("no longer valid; repaired") ? "the new wall was not detected (no Blocked re-plan or repair)" : null,
 			},
 		};
 		return list;

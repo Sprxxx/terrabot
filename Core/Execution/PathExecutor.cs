@@ -61,6 +61,8 @@ public sealed class PathExecutor
 
 	public IReadOnlyList<PathStep> Steps => steps;
 	public int StepIndex { get; private set; }
+	/// <summary>When <see cref="ExecStatus.Blocked"/>: the index of the step found no longer valid.</summary>
+	public int? InvalidStepIndex { get; private set; }
 	public ExecStatus Status { get; private set; } = ExecStatus.Running;
 	/// <summary>Human-readable reason for the last non-Running status.</summary>
 	public string Reason { get; private set; } = "";
@@ -181,6 +183,7 @@ public sealed class PathExecutor
 			if (i == StepIndex && ticksInStep > 2)
 				continue;
 			if (!ctx.IsStepValid(steps[i])) {
+				InvalidStepIndex = i;
 				Reason = $"step {i} {steps[i]} no longer valid";
 				return false;
 			}

@@ -164,6 +164,8 @@ public sealed class WalkToSkill : ISkill
 				Executor = null;
 				break;
 			default:
+				if (Executor.Status == ExecStatus.Blocked && TryRepair(ctx, node))
+					break;
 				Replans++;
 				ctx.Log.Warn($"Re-plan #{Replans}: {Executor.Status}: {Executor.Reason}");
 				NoteFailedActions(ctx);
@@ -209,6 +211,35 @@ public sealed class WalkToSkill : ISkill
 	}
 
 	private bool dumped;
+	/// <summary>Plan repairs this walk (each a small local search): capped so a walk cannot repair for ever.</summary>
+	public int Repairs { get; private set; }
+	public const int MaxRepairs = 20, RepairSkip = 3, RepairExpansions = 3000;
+
+	/// <summary>
+	/// A step ahead became invalid (the world changed, or the plan stood on a block it dug away): instead of a whole new
+	/// search (2.6 s on a 60-tile walk home), find a short way to where the plan carries on a few steps later and keep
+	/// the rest. Seen in game: the same long walk re-planned from scratch every few steps.
+	/// </summary>
+	private bool TryRepair(BotContext ctx, TilePos node)
+	{
+		if (Executor.InvalidStepIndex is not int bad || Repairs >= MaxRepairs || !ctx.Body.Grounded || !Body.IsStartable(ctx.Grid, node))
+			return false;
+		System.Collections.Generic.IReadOnlyList<PathStep> old = Executor.Steps;
+		int join = System.Math.Min(bad + RepairSkip, old.Count - 1);
+		TilePos rejoin = old[join].To;
+		var search = new PathSearch(ctx.Moves, node, new GoalNode(rejoin, ctx.Physics), new SearchLimits { MaxExpansions = RepairExpansions });
+		search.Step(double.MaxValue);
+		if (search.Result.Status != PathStatus.Found || search.Result.Steps.Count == 0)
+			return false;
+		var steps = new System.Collections.Generic.List<PathStep>(search.Result.Steps);
+		for (int i = join + 1; i < old.Count; i++)
+			steps.Add(old[i]);
+		Repairs++;
+		Info(ctx, $"WalkTo: step {bad} no longer valid; repaired with {search.Result.Steps.Count} step(s) to rejoin at {rejoin} ({search.Result.Expanded} nodes), {steps.Count} steps left");
+		Executor = new PathExecutor(ctx.Moves, steps);
+		searchMoves = ctx.Moves;
+		return true;
+	}
 
 	/// <summary>
 	/// A big search that found no path: write the region between start and goal (legend as <see cref="Around"/>) to a

@@ -204,3 +204,12 @@ what was decided and the result.
   constraints. **Decision:** dumps now also mark open cells where no block may be placed (',') and list the
   never-plan-again steps in the region. The replay loader uses both.
 - In game, 14 movement and chain scenarios pass.
+
+### world_eye run 28: plan repair
+- **Seen:** the walk home from the mine got there, but every few steps a step ahead became "no longer valid" and the
+  whole 60-tile path was planned again (about 2.6 s and 35,000 nodes each time).
+- **Decision: plan repair.** When a step ahead turns invalid, a small local search (up to 3000 nodes) finds a way to
+  where the old plan carries on 3 steps later, and the rest of the plan is kept. Full re-planning happens only if
+  that fails. In blocked_wall_appears the new wall is now handled by a 14-node repair, with no re-plan; the scenario
+  check accepts either.
+- In game, 20 movement, chain and fight scenarios pass.
