@@ -282,6 +282,28 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void DefendLeash_IsMeasuredFromWhereTheFightStarted()
+	{
+		// Seen in game (fight_two_slimes_both_sides): chasing the slime on the left took the bot 28 tiles from the one on
+		// the right, which had been 15 tiles away at the start; measured from the bot it was beyond the leash and left alive.
+		string row = new('.', 60), floor = new('#', 60);
+		var start = ArrayTileGrid.Parse(row, row, row, row, row.Remove(30, 1).Insert(30, "S"), floor);
+		var later = ArrayTileGrid.Parse(row, row, row, row, row.Remove(17, 1).Insert(17, "S"), floor);
+		var ctx = new BotContext { Grid = start, Log = new Log(output), Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword" } };
+		ctx.Body = new SimWorld(start, PhysicsParams.Default, start.Markers['S']).State;
+		EntityInfo left = Enemy(18 * 16f, 5 * 16f - 24f, 60), right = new(8, 1, "Test Slime", 45 * 16f, 5 * 16f - 24f, 24, 24, 0, 0, 60, 60, 10);
+		ctx.Hostiles = new[] { left, right };
+		var skill = new FightSkill();
+		skill.Start(ctx);
+		skill.Tick(ctx);
+		// The left one is dead, the bot stands where it was: the right one is 28 tiles off, 15 from the start.
+		ctx.Body = new SimWorld(later, PhysicsParams.Default, later.Markers['S']).State;
+		ctx.Hostiles = new[] { right };
+		skill.Tick(ctx);
+		Assert.NotEqual("watching", skill.State);
+	}
+
+	[Fact]
 	public void NoWeapon_Fails()
 	{
 		var g = ArrayTileGrid.Parse("..S.......", "##########");

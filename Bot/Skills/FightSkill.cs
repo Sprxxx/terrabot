@@ -24,9 +24,10 @@ public sealed class FightSkill : ISkill
 	/// <summary>Enemies that once came within <see cref="EngageRadius"/> stay targets out to this distance.</summary>
 	public const float LeashRadius = 50 * 16f;
 	/// <summary>
-	/// How far (px) an engaged enemy is chased. Defending (the brain's danger response) keeps it short: seen in game, a
-	/// slime pulled the bot from 30 tiles underground back to the surface and 55 tiles away from its mining. Hunting
-	/// for drops uses <see cref="LeashRadius"/>.
+	/// How far (px) from where the fight started an engaged enemy is chased. Defending (the brain's danger response)
+	/// keeps it short: seen in game, a slime pulled the bot from 30 tiles underground back to the surface and 55 tiles
+	/// away from its mining. Hunting for drops uses <see cref="LeashRadius"/>. Measured from the start, not the bot:
+	/// from the bot, chasing one slime put the other one (15 tiles off at the start) beyond the leash.
 	/// </summary>
 	public float Leash { get; init; } = DefendLeashTiles * 16f;
 	public const float DefendLeashTiles = 24f;
@@ -75,7 +76,14 @@ public sealed class FightSkill : ISkill
 	public string Describe() =>
 		targetId >= 0 ? $"Fight {targetName} ({targetDistance / 16f:0.0} tiles) [{State}] kills {Kills}" : $"Fight [{State}] kills {Kills}";
 
-	public void Start(BotContext ctx) => ctx.Log.Info($"Fight start: {ctx.Hostiles.Count} hostile(s) near, weapon {ctx.Combat.WeaponName}");
+	private float anchorX, anchorY;
+
+	public void Start(BotContext ctx)
+	{
+		anchorX = ctx.Body.CenterX(ctx.Physics);
+		anchorY = ctx.Body.CenterY(ctx.Physics);
+		ctx.Log.Info($"Fight start: {ctx.Hostiles.Count} hostile(s) near, weapon {ctx.Combat.WeaponName}");
+	}
 
 	public void Stop(BotContext ctx)
 	{
@@ -263,7 +271,7 @@ public sealed class FightSkill : ISkill
 			if (d <= engage)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
-			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d);
+			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d);
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {

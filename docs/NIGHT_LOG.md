@@ -19,3 +19,9 @@ what was decided and the result.
 - **Decision:** after 300 ticks of in-reach swinging with no damage, the bot leaves the enemy and ignores it for 30 s,
   even at close range (`BotContext.IgnoreEvenClose`). The give-up logs a tile map so the cause can be found.
   Unit test `GivesUpOnEnemyItCannotHurtEvenInReach` added; 194 tests pass.
+- **Regression found:** fight_two_slimes_both_sides failed, leaving the second slime alive. The bot had chased the
+  first slime, and the 24-tile defend leash was measured from the bot, so the second slime was now out of range.
+  This came from an earlier leash change, not tonight's fix.
+- **Decision:** measure the defend leash from where the fight started. Unit test
+  `DefendLeash_IsMeasuredFromWhereTheFightStarted` added (195 pass). In game, fight_green_slime,
+  fight_two_slimes_both_sides, early_game_with_slimes and night_shelter all pass (4/4, 21 s at fast speed).
