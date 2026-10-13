@@ -202,6 +202,8 @@ public sealed class BotContext
 	public System.Collections.Generic.HashSet<TilePos> NoPlace { get; } = new();
 	/// <summary>Path edges that failed <see cref="Skills.WalkToSkill.MaxSameStuck"/> times in a row: the planner skips them.</summary>
 	public System.Collections.Generic.HashSet<(TilePos From, TilePos To)> BadEdges { get; } = new();
+	/// <summary>Times each step got stuck, over all walks; at <see cref="Skills.WalkToSkill.MaxSameStuck"/> it joins <see cref="BadEdges"/>.</summary>
+	public System.Collections.Generic.Dictionary<(TilePos From, TilePos To), int> StepFailures { get; } = new();
 	/// <summary>Cells where breaking failed twice in the world: path moves do not plan to break them again.</summary>
 	public System.Collections.Generic.HashSet<TilePos> NoBreak { get; } = new();
 	/// <summary>Failures so far per (cell, place?) before a veto.</summary>
