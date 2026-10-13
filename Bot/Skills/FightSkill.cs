@@ -48,6 +48,9 @@ public sealed class FightSkill : ISkill
 	public const int IgnoreTicks = 60 * 30;
 	/// <summary>An ignored enemy this close (px) is fought anyway: it is biting.</summary>
 	public const float IgnoredStillFoughtWithin = 3 * 16f;
+	/// <summary>Swinging at a target in reach this long without it losing life: it cannot be hit from here; leave it.</summary>
+	public const int MaxSwingTicksNoDamage = 300;
+	private int swingWatchId = -1, swingWatchLife, swingTicksNoDamage;
 	private const int RetargetDistance = 6;
 	private const int RetargetAnywayTicks = 180;
 
@@ -150,6 +153,21 @@ public sealed class FightSkill : ISkill
 			else {
 				ctx.Output.UseItem = true;
 				State = "swinging";
+				if (t.Id != swingWatchId || t.Life < swingWatchLife) {
+					swingWatchId = t.Id;
+					swingWatchLife = t.Life;
+					swingTicksNoDamage = 0;
+				}
+				else if (++swingTicksNoDamage > MaxSwingTicksNoDamage) {
+					unreachable.Add(t.Id);
+					ctx.IgnoreEvenClose(t.Id, IgnoreTicks);
+					TilePos me = ctx.Node, it = new((int)MathF.Floor(t.CenterX / 16f), (int)MathF.Floor(t.CenterY / 16f));
+					ctx.Log.Info($"Fight: {MaxSwingTicksNoDamage} ticks of swinging at {t.Name} in reach ({targetDistance / 16f:0.0} tiles) did no damage; "
+						+ $"leaving it (F feet, T target):\n{WalkToSkill.Around(ctx, me, it)}");
+					targetId = -1;
+					swingWatchId = -1;
+					State = "cannot hit it";
+				}
 			}
 		}
 		else if (FlyingAiStyles.Contains(t.AiStyle) && ctx.Combat.HasWeapon && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY)) {
@@ -245,7 +263,7 @@ public sealed class FightSkill : ISkill
 			if (d <= engage)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
-			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= Leash)) && !unreachable.Contains(e.Id) && (!ctx.Ignored(e.Id) || d <= IgnoredStillFoughtWithin);
+			bool candidate = (d <= engage || (engaged.Contains(e.Id) && d <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d);
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {

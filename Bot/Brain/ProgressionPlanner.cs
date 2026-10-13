@@ -842,7 +842,7 @@ public sealed class ProgressionPlanner
 		Core.Physics.PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
 		// Only hostiles we can see: one behind solid blocks cannot reach us right now (and must not interrupt a build).
-		return (ctx.Combat.HasWeapon || ctx.Combat.HasRanged) && ctx.Hostiles.Any(h => (!ctx.Ignored(h.Id) || h.DistanceTo(cx, cy) <= FightSkill.IgnoredStillFoughtWithin) && h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f
+		return (ctx.Combat.HasWeapon || ctx.Combat.HasRanged) && ctx.Hostiles.Any(h => ctx.Fightable(h.Id, h.DistanceTo(cx, cy)) && h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f
 			&& FightSkill.ClearShot(ctx, cx, cy, h.CenterX, h.CenterY));
 	}
 }

@@ -207,7 +207,7 @@ public sealed class WalkToSkill : ISkill
 	}
 
 	/// <summary>A small map of the cells round a failed step, for the log.</summary>
-	private static string Around(BotContext ctx, TilePos from, TilePos to)
+	internal static string Around(BotContext ctx, TilePos from, TilePos to)
 	{
 		var sb = new System.Text.StringBuilder();
 		int x0 = System.Math.Min(from.X, to.X) - 3, x1 = System.Math.Max(from.X, to.X) + 4;

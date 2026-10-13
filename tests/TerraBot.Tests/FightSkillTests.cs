@@ -31,7 +31,10 @@ public class FightSkillTests
 	}
 
 	/// <summary>Runs a fight; <paramref name="enemyStartsAt"/> is the enemy's feet tile; it walks 0.5 px/tick if <paramref name="walker"/>.</summary>
-	private (SkillStatus status, FightSkill skill, int enemyLife) Fight(ArrayTileGrid g, TilePos enemyStartsAt, int facing = 1, bool walker = false, int maxTicks = 3000, bool fleeing = false)
+	/// <summary>The context of the last <see cref="Fight"/>.</summary>
+	private BotContext lastCtx;
+
+	private (SkillStatus status, FightSkill skill, int enemyLife) Fight(ArrayTileGrid g, TilePos enemyStartsAt, int facing = 1, bool walker = false, int maxTicks = 3000, bool fleeing = false, bool unhittable = false)
 	{
 		PhysicsParams p = PhysicsParams.Default;
 		var sim = new SimWorld(g, p, g.Markers['S']);
@@ -42,6 +45,7 @@ public class FightSkillTests
 			Log = new Log(output),
 			Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword", Facing = facing },
 		};
+		lastCtx = ctx;
 		var skill = new FightSkill();
 		ctx.Body = sim.State;
 		ctx.Hostiles = new[] { Enemy(ex, ey, life) };
@@ -52,6 +56,7 @@ public class FightSkillTests
 			ctx.Body = sim.State;
 			ctx.Hostiles = life > 0 ? new[] { Enemy(ex, ey, life) } : Array.Empty<EntityInfo>();
 			ctx.Combat.ItemAnimation = swingTimer;
+			ctx.Tick = t;
 			status = skill.Tick(ctx);
 			MoveInput o = ctx.Output;
 			// Facing changes like vanilla HorizontalMovement: only between swings.
@@ -63,7 +68,7 @@ public class FightSkillTests
 				float cx = sim.State.CenterX(p), cy = sim.State.CenterY(p);
 				float dx = ex + 12f - cx, dy = ey + 12f - cy;
 				bool hit = Math.Abs(dx) <= 10f + 30f + 12f && Math.Abs(dy) <= 21f + 12f + 8f && Math.Sign(dx) == ctx.Combat.Facing;
-				if (hit && life > 0)
+				if (hit && life > 0 && !unhittable)
 					life -= 10;
 			}
 			if (swingTimer > 0)
@@ -223,6 +228,26 @@ public class FightSkillTests
 		var (status, _, life) = Fight(g, new TilePos(13, 10));
 		Assert.Equal(SkillStatus.Succeeded, status); // gave up on it and calmed down
 		Assert.Equal(60, life);
+	}
+
+	[Fact]
+	public void GivesUpOnEnemyItCannotHurtEvenInReach()
+	{
+		// Seen in game: a red slime 2.9 tiles away (behind a slope) was swung at for a whole game day: in reach, so the
+		// "no closer" give-up never fired, and ignored enemies within 3 tiles were still fought.
+		var g = ArrayTileGrid.Parse(
+			"..............................",
+			"..............................",
+			"..............................",
+			"..............................",
+			"..........S...................",
+			"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		var (status, _, life) = Fight(g, new TilePos(12, 4), unhittable: true);
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.Equal(60, life);
+		Assert.True(lastCtx.IgnoredEvenClose(7));
+		lastCtx.Hostiles = new[] { Enemy(12 * 16f, 5 * 16f - 24f, 60) };
+		Assert.False(TerraBot.Bot.Brain.ProgressionPlanner.InDanger(lastCtx)); // not a reason to start another fight
 	}
 
 	[Fact]

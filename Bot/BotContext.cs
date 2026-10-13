@@ -48,6 +48,25 @@ public sealed class BotContext
 	public bool Ignored(int npcId) => IgnoredEnemies.TryGetValue(npcId, out long until) && Tick < until;
 
 	public void Ignore(int npcId, int ticks) => IgnoredEnemies[npcId] = Tick + ticks;
+
+	/// <summary>
+	/// Enemies that swinging at in reach did not hurt (behind a slope or a block the line check missed), until the tick
+	/// given: unlike <see cref="IgnoredEnemies"/>, not fought or counted as danger even right next to the bot. Seen in
+	/// game: a red slime 3 tiles away was swung at for a whole game day.
+	/// </summary>
+	public System.Collections.Generic.Dictionary<int, long> UnhittableEnemies { get; } = new();
+
+	public bool IgnoredEvenClose(int npcId) => UnhittableEnemies.TryGetValue(npcId, out long until) && Tick < until;
+
+	public void IgnoreEvenClose(int npcId, int ticks)
+	{
+		Ignore(npcId, ticks);
+		UnhittableEnemies[npcId] = Tick + ticks;
+	}
+
+	/// <summary>Is this enemy one to fight (or fear) at distance <paramref name="distance"/> px, given what was given up on?</summary>
+	public bool Fightable(int npcId, float distance) =>
+		!IgnoredEvenClose(npcId) && (!Ignored(npcId) || distance <= Skills.FightSkill.IgnoredStillFoughtWithin);
 	/// <summary>Chests already looted (or given up on), by top-left tile: not visited again.</summary>
 	public System.Collections.Generic.HashSet<TilePos> OpenedChests { get; } = new();
 	/// <summary>Where exploring legs went (kept across restarts, so a fight or replan does not send it back over old ground).</summary>
