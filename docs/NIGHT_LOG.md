@@ -180,3 +180,16 @@ what was decided and the result.
   search that expands over 1000 nodes and finds nothing now writes the region to
   `tModLoader-Logs/TerraBot/nopath_*.txt`, so it can be replayed in a unit test.
 - In game, iron_age_auto, settle_auto and life_crystals pass.
+
+### world_eye run 26, and the cave with no way back (solved)
+- **Progress:** "travel to new ground" fired ("no more Iron Ore found around here; travelling to new ground") and
+  found iron there. **Iron Broadsword** again. 2 deaths (an antlion charger, a rolling cactus).
+- **The cave at (2124,339)** (no way back in runs 22, 25, 26): replayed offline from the new region dump (test
+  `DumpReplayTests.CaveBelowSpawn_HasAWayBackUp`). A plain search over the moves reached the surface, but A* stopped
+  after 3362 nodes. **Cause:** my run 15 rule rejected any step held up only by cells its own path mines. That rule
+  depends on the path a node was first reached by, and A* keeps one path per node, so it made reachable nodes dead.
+  **Decision:** turn it into a +300 tick penalty instead of a ban. A* now finds a 73-step way home.
+- **Also found:** the surface row is mostly unbreakable for the planner, because grass and flowers on a block count as
+  furniture above it (never undermined). Fine for now.
+- **Dump survey:** 9 dumps; 7 now find paths. The 2 that don't are targets under a lake, which is correct.
+- **Tests:** 211 unit tests (dump replays included). In game, 19 movement and chain scenarios pass.

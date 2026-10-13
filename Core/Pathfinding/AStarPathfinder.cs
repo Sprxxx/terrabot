@@ -160,11 +160,13 @@ public sealed class PathSearch
 				continue;
 			if (ctx.BadEdges != null && ctx.BadEdges.Contains((e.From, e.To)))
 				continue;
-			if (SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath))
-				continue;
+			// A penalty, not a ban: the check depends on the path a node was first reached by, and A* keeps one path per
+			// node, so banning made nodes dead that another path reaches fine (seen in game: no way out of a cave in three
+			// runs; replayed, a 73-step path exists).
+			float brokenPenalty = CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath) ? BrokenSupportPenalty : 0f;
 			if (float.IsPositiveInfinity(e.Cost))
 				continue; // lava
-			float g = g0 + e.Cost;
+			float g = g0 + e.Cost + brokenPenalty;
 			long k = e.To.Key;
 			if (nodes.TryGetValue(k, out NodeRec existing) && (existing.Closed || existing.G <= g))
 				continue;
@@ -175,6 +177,10 @@ public sealed class PathSearch
 
 	/// <summary>How many steps back along the path <see cref="BrokenOnPathTo"/> looks for mined cells.</summary>
 	public const int BrokenLookback = 8;
+	/// <summary>Tests can switch the broken-support check off to compare.</summary>
+	public static bool CheckBrokenSupport = true;
+	/// <summary>Extra cost of a step held up only by cells its own path mines: such plans re-plan when they get there.</summary>
+	public const float BrokenSupportPenalty = 300f;
 	private readonly HashSet<TilePos> brokenOnPath = new();
 
 	/// <summary>

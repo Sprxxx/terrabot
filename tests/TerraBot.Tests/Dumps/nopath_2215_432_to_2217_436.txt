@@ -1,0 +1,26 @@
+start (2215,432) goal StandAt(2217,436) origin (2203,420) blocks 531 pick 35
+    ~U######/......#UUUUUUUUUUU
+    ~UU########....#UUUUUUUUUUU
+    ~~~U######.....#UUUUUUUUUUU
+    ~~~U####......#%UUUUUUUUUUU
+    ~~~~U##.......#UUUUUUUUUUUU
+    ~~~~U#........#UUUUUUUUUUUU
+    ~~~~U.....##..#UUUUUUUUUUUU
+    ~~~/#....###..#UUUUUUUUUUUU
+    ~~U#....####..%UUUUUUUUUUUU
+    ~/.....#####..UUUUUUUUUUUUU
+    U.....######..UUUUUUUUUUUUU
+    ......######..UUUUUUUUUUUUU
+    ....######UUF.UUUUUUUUUUUUU
+    ...######U~~/%UUUUUUUUUUUUU
+    ..#######U~~~UUUUUUUUUUUUUU
+    #########U~~~UUUUUUUUUUUUUU
+    #########U~~~UTUUUUUUUUUUUU
+    #########U~~UUUUUUUUUUUUUUU
+    ##########/~UUUUU###UUUUUUU
+    ##########U~UU%%%%#%UUUUUUU
+    #########.#UUUUUUU%UUUUUUU%
+    ####/./#./##UUUUUUUUUUUUUUU
+    ####.....###UUUUUUUUUUUU%UU
+    ####....###%UUUUUUUUUUUUUUU
+    #####/./###UUUUUUUUUUUUUUUU
