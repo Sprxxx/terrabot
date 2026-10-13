@@ -14,6 +14,12 @@ public abstract record Need(string Label);
 public sealed record HaveItem(IReadOnlyList<int> Accepts, int Count, string Label) : Need(Label)
 {
 	public HaveItem(int item, int count, string label) : this(new[] { item }, count, label) { }
+	/// <summary>
+	/// Once <see cref="Count"/> was reached, still met down to this many (a stock used as it goes, like arrows). 0: always
+	/// <see cref="Count"/>. Seen in the boss scenario: every arrow shot at a demon eye topped the 500 up again, until the
+	/// last wood was gone and the plan sent the bot looking for trees in a world without any.
+	/// </summary>
+	public int RefillBelow { get; init; }
 }
 
 /// <summary>A crafting station of this tile type is placed (and remembered).</summary>
@@ -117,6 +123,8 @@ public sealed class ProgressionPlanner
 	private string stuck;
 	private long lastShelterEnd = long.MinValue / 2;
 	private long stayHomeFailedAt = long.MinValue / 2;
+	/// <summary>Labels of <see cref="HaveItem.RefillBelow"/> needs whose full count was reached (and not used up since).</summary>
+	private readonly HashSet<string> stocked = new();
 	private long lastRestEnd = long.MinValue / 2;
 	private readonly List<TilePos> badSites = new();
 	private int siteFailures;
@@ -181,7 +189,7 @@ public sealed class ProgressionPlanner
 			return stages;
 		stages.Add(new PrepFor(ids.EyeBoss, new LifeAtLeast(BossLife, "max life")));
 		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.IronTierBow, 1, "iron-tier bow")));
-		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.WoodenArrow, BossArrows, "arrows")));
+		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.WoodenArrow, BossArrows, "arrows") { RefillBelow = BossArrows * 4 / 5 }));
 		stages.Add(new PrepFor(ids.EyeBoss, new ArenaBuilt("arena")));
 		stages.Add(new PrepFor(ids.EyeBoss, new HouseBuilt("heart lantern in the house", HeartLantern: true)));
 		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu"));
@@ -194,6 +202,7 @@ public sealed class ProgressionPlanner
 			Plan = plan;
 		KnownStations.Clear();
 		notedAt.Clear();
+		stocked.Clear();
 		Status = "";
 		Complete = false;
 		stuck = null;
@@ -453,7 +462,9 @@ public sealed class ProgressionPlanner
 			Status = $"night: staying in the house instead of {skill.Name} ({Status})";
 			return new StayHomeSkill(inside);
 		}
-		if (!ctx.IsNight || skill is not (GatherWoodSkill or HuntSkill) || ctx.Tick - lastShelterEnd < ShelterCooldownTicks)
+		// Armoured, the night's zombies and demon eyes are fought like a player would (seen in the boss scenario: iron armour
+		// and 200 life, dug in for the whole night over 1 wood).
+		if (!ctx.IsNight || ctx.Combat.Defense >= NightOutDefense || skill is not (GatherWoodSkill or HuntSkill) || ctx.Tick - lastShelterEnd < ShelterCooldownTicks)
 			return skill;
 		Status = $"night: sheltering instead of {skill.Name} ({Status})";
 		return new ShelterSkill();
@@ -529,10 +540,13 @@ public sealed class ProgressionPlanner
 		IGameKnowledge k = ctx.Knowledge;
 		int claimed = claims.GetValueOrDefault(h.Accepts[0]);
 		int available = ctx.Inventory.CountAny(h.Accepts) - claimed;
-		if (available >= h.Count) {
-			claims[h.Accepts[0]] = claimed + h.Count;
+		if (h.RefillBelow > 0 && available >= h.Count)
+			stocked.Add(h.Label);
+		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(h.Label)) {
+			claims[h.Accepts[0]] = claimed + Math.Min(h.Count, available);
 			return null;
 		}
+		stocked.Remove(h.Label);
 		int more = h.Count - Math.Max(0, available);
 		int item = Cheapest(h.Accepts, ctx);
 		if (item < 0) {

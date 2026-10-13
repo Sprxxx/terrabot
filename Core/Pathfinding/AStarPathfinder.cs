@@ -57,6 +57,8 @@ public sealed class PathSearch
 		public bool HasParent;
 		public bool Closed;
 		public PathStep Via;
+		/// <summary>The path here has a step held up only by cells the same path mines (it carries the penalty).</summary>
+		public bool Tainted;
 	}
 
 	private readonly MoveContext ctx;
@@ -113,8 +115,11 @@ public sealed class PathSearch
 					return true;
 				}
 
+				// A partial plan never ends past a tainted step: it would fail there and re-plan. The penalty alone does not
+				// keep such nodes out (the partial end is picked by heuristic, not cost): seen in game, 40 re-plans in a row
+				// of 3 s each, one stair step of progress each, climbing out of a mine.
 				float h = goal.Heuristic(pos);
-				if (h < bestH) {
+				if (h < bestH && !rec.Tainted) {
 					bestH = h;
 					best = pos;
 				}
@@ -154,6 +159,7 @@ public sealed class PathSearch
 			move.Expand(ctx, pos, edges);
 
 		long parent = pos.Key;
+		bool parentTainted = nodes[parent].Tainted;
 		BrokenOnPathTo(pos);
 		foreach (PathStep e in edges) {
 			if (e.To.ChebyshevTo(start) > limits.MaxRadius)
@@ -174,7 +180,7 @@ public sealed class PathSearch
 			long k = e.To.Key;
 			if (nodes.TryGetValue(k, out NodeRec existing) && (existing.Closed || existing.G <= g))
 				continue;
-			nodes[k] = new NodeRec { G = g, Parent = parent, HasParent = true, Via = e };
+			nodes[k] = new NodeRec { G = g, Parent = parent, HasParent = true, Via = e, Tainted = parentTainted || brokenPenalty > 0f };
 			open.Enqueue(k, g + goal.Heuristic(e.To));
 		}
 	}

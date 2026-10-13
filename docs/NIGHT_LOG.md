@@ -278,3 +278,21 @@ what was decided and the result.
 - **Armour now matters:** only a bot with defense below 6 stays home. The boss plan (iron armour, 200 life) sat in
   the house all night instead of getting its last wood.
 - New in-game scenario night_home (passes). boss_auto, night_shelter, build_house and settle_auto pass. 214 unit tests.
+
+### world_eye run 35: house on day one, the first night spent at home
+- **Progress:** house built at game minute 2 (before the anvil), anvil by the first evening. At nightfall the bot
+  walked into the house and waited, as planned. It looted a chest: 5 healing potions, an inner tube, silver bars.
+- **Problem 1, leaving the house to fight:** zombies outside showed up as danger, so the bot went out three times;
+  the third time a zombie killed it (the only death). **Decision:** once inside, enemies are only fought if one has
+  actually hit the bot, and there's no retreat either (the house is the retreat).
+- **Problem 2, climbing out of the mine (40 re-plans of 3 s each, 1 stair step each):** the 40,000-node searches ran
+  out, and a partial plan ends at the node closest to the goal, whatever its cost. So the "stands on a block its own
+  path digs away" penalty never kept those steps out: each partial plan failed after one step. **Decision:** a
+  partial plan never ends past such a step. Test `PartialPlanThroughRock_NeverStandsOnWhatItDigs` fails without
+  this, passes with it (215 unit tests).
+- Run 35 was stopped at game day 2 (11 more iron ore to find) to test these.
+- **Regressions (the boss scenario, twice):** (1) with iron armour, it dug in for the whole night over 1 wood.
+  **Decision:** at defense 6+ there's no night shelter either (a player in iron armour fights the night). (2) Every
+  arrow shot at a demon eye topped the 500 up again, until the wood was gone. **Decision:** stocks like arrows refill
+  only below 80% once full. boss_auto passes again (Eye defeated). In game, 9 walk and dig scenarios, night_home,
+  night_shelter and iron_age_auto pass. 217 unit tests.

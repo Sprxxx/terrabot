@@ -105,6 +105,21 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void Night_Armoured_GathersWoodInsteadOfSheltering()
+	{
+		// The boss scenario: iron armour and 200 life, dug in for the whole night over 1 wood.
+		FakeGame g = Mine();
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.Defense = ProgressionPlanner.NightOutDefense + 1;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Iron);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.IsType<GatherWoodSkill>(next);
+	}
+
+	[Fact]
 	public void Anvil_ChoosesTheWorldsOre()
 	{
 		FakeGame g = Mine();

@@ -177,4 +177,30 @@ public class FootingTests
 		PathResult r = TestUtil.Plan(ArrayTileGrid.Parse(blocked));
 		Assert.DoesNotContain(r.Steps, st => st.Kind == MoveKind.Jump && st.From == jump.From && st.To == jump.To && st.Template == jump.Template);
 	}
+
+	[Fact]
+	public void PartialPlanThroughRock_NeverStandsOnWhatItDigs()
+	{
+		// world_eye run 35: climbing out of a mine through solid rock, the search ran out of nodes; the partial plan's
+		// end was past a step held up only by blocks earlier steps dig, so it failed there and re-planned (40 times).
+		var rows = Enumerable.Repeat(new string('#', 70), 60).ToList();
+		for (int y = 54; y <= 56; y++)
+			rows[y] = new string('#', 60) + "......" + "####";
+		rows[56] = new string('#', 61) + "S" + "....####";
+		rows[59] = new string('@', 70);
+		var (g, b) = TestBlockActions.Parse(rows.ToArray());
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = false };
+		TilePos start = g.Markers['S'];
+		var search = new PathSearch(ctx, start, new GoalNearTile(new TilePos(start.X, 3), 2, PhysicsParams.Default), new SearchLimits { MaxExpansions = 2000 });
+		search.Step(1e9);
+		Assert.Equal(PathStatus.Partial, search.Result.Status);
+		Assert.True(search.Result.Steps.Count > 3, search.Result.ToString());
+		// Replay: every step valid on the grid as the earlier steps left it.
+		for (int i = 0; i < search.Result.Steps.Count; i++) {
+			PathStep st = search.Result.Steps[i];
+			Assert.True(ctx.IsStepValid(st), $"step {i} {st} invalid after the earlier steps' digging");
+			foreach (BlockAction a in st.Actions ?? System.Array.Empty<BlockAction>())
+				g.Set(a.Cell.X, a.Cell.Y, a.Kind == ActionKind.Break ? CellKind.Empty : CellKind.Solid);
+		}
+	}
 }

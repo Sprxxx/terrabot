@@ -174,6 +174,26 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void Arrows_AreNotToppedUpAfterEveryShot()
+	{
+		// The boss scenario: each arrow shot at a demon eye topped the 500 up again, until the wood ran out.
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		var arrows = new HaveItem(FakeGame.WoodenArrow, 500, "arrows") { RefillBelow = 400 };
+		g.Items[FakeGame.WoodenArrow] = 450;
+		Assert.NotNull(p.ResolveForTest(arrows, ctx)); // never had the 500 yet
+		g.Items[FakeGame.WoodenArrow] = 500;
+		Assert.Null(p.ResolveForTest(arrows, ctx));
+		g.Items[FakeGame.WoodenArrow] = 450;
+		Assert.Null(p.ResolveForTest(arrows, ctx)); // a few shot: still enough
+		g.Items[FakeGame.WoodenArrow] = 399;
+		Assert.NotNull(p.ResolveForTest(arrows, ctx)); // running low: back up to 500
+		g.Items[FakeGame.WoodenArrow] = 450;
+		Assert.NotNull(p.ResolveForTest(arrows, ctx));
+	}
+
+	[Fact]
 	public void AlreadyDefeated_IsDone()
 	{
 		FakeGame g = ProgressionTests.Mine();
