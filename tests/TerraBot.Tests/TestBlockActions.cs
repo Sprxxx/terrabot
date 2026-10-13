@@ -23,7 +23,10 @@ public sealed class TestBlockActions : IBlockActions
 			? float.PositiveInfinity
 			: TicksPerBlock;
 
-	public bool CanPlaceAt(int x, int y) => !grid.Get(x, y).CanStandOn();
+	/// <summary>Open cells where no block may go (',' in game dumps).</summary>
+	public HashSet<TilePos> NoPlace { get; } = new();
+
+	public bool CanPlaceAt(int x, int y) => !grid.Get(x, y).CanStandOn() && !NoPlace.Contains(new TilePos(x, y));
 
 	public static (ArrayTileGrid grid, TestBlockActions blocks) Parse(params string[] rows)
 	{

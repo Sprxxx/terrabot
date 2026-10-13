@@ -225,6 +225,11 @@ public sealed class WalkToSkill : ISkill
 			int x0 = System.Math.Min(start.X, goal.X) - 12, x1 = System.Math.Max(start.X, goal.X) + 12;
 			int y0 = System.Math.Min(start.Y, goal.Y) - 12, y1 = System.Math.Max(start.Y, goal.Y) + 8;
 			string map = Around(ctx, start, goal, x0, x1, y0, y1);
+			var bad = new System.Text.StringBuilder();
+			foreach (var (from, to) in ctx.BadEdges)
+				if (from.X >= x0 && from.X <= x1 && from.Y >= y0 && from.Y <= y1)
+					bad.Append($"bad {from.X - x0} {from.Y - y0} {to.X - x0} {to.Y - y0}").Append(System.Environment.NewLine);
+			map += System.Environment.NewLine + bad;
 			string file = System.IO.Path.Combine(ctx.DumpDir, $"nopath_{start.X}_{start.Y}_to_{goal.X}_{goal.Y}.txt");
 			System.IO.File.WriteAllText(file, $"start {start} goal {Goal} origin ({x0},{y0}) blocks {ctx.Blocks?.BlockCount ?? 0} pick {ctx.PickPower}" + System.Environment.NewLine + map + System.Environment.NewLine);
 			ctx.Log.Info($"WalkTo: no path from {start} to {Goal}; region written to {file}");
@@ -249,6 +254,8 @@ public sealed class WalkToSkill : ISkill
 		char Cell(int x, int y)
 		{
 			CellKind k = ctx.Grid.Get(x, y);
+			if (moves.Blocks != null && k.ToChar() == '.' && !moves.Blocks.CanPlaceAt(x, y))
+				return ','; // open, but no block can go here (vetoed, reserved, nothing to attach to...)
 			if (!k.IsSolid() || moves.Blocks == null)
 				return k.ToChar();
 			if (BlockRules.Unsafe(ctx.Grid, new TilePos(x, y), System.Array.Empty<TilePos>()))

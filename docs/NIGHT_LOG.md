@@ -193,3 +193,14 @@ what was decided and the result.
   furniture above it (never undermined). Fine for now.
 - **Dump survey:** 9 dumps; 7 now find paths. The 2 that don't are targets under a lake, which is correct.
 - **Tests:** 211 unit tests (dump replays included). In game, 19 movement and chain scenarios pass.
+
+### world_eye run 27
+- **Progress:** made it back from the deep mine to the original furnace (the penalty change at work), then anvil,
+  travel to new ground, iron for the broadsword. 1 death.
+- **Zigzag again:** a pure penalty brought back the run 15 staircase re-plans (2.8 s each). **Decision (hybrid):**
+  support dug by the last 2 steps of the path bans the step; dug further back only costs +300. The cave replay still
+  finds its path.
+- **Short no-path loops** around (2199–2217, 425–435) failed in game but succeed in offline replays, so the dumps miss
+  constraints. **Decision:** dumps now also mark open cells where no block may be placed (',') and list the
+  never-plan-again steps in the region. The replay loader uses both.
+- In game, 14 movement and chain scenarios pass.

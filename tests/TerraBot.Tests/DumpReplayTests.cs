@@ -22,7 +22,7 @@ public class DumpReplayTests
 	public static (ArrayTileGrid grid, TestBlockActions blocks, TilePos start, TilePos goal) Load(string file)
 	{
 		string[] lines = File.ReadAllLines(file);
-		string[] rows = lines.Skip(1).Where(l => l.Length > 0).Select(l => l.Trim()).ToArray();
+		string[] rows = lines.Skip(1).Where(l => l.Length > 0 && !l.StartsWith("bad ")).Select(l => l.Trim()).ToArray();
 		TilePos start = default, goal = default;
 		for (int y = 0; y < rows.Length; y++)
 			for (int x = 0; x < rows[y].Length; x++) {
@@ -31,9 +31,24 @@ public class DumpReplayTests
 			}
 		// F and T stand on cells of unknown kind: F is the body's feet (open), T a target tile (solid ore).
 		string[] clean = rows.Select((r, y) => new string(r.Select((c, x) => c switch {
-			'F' => 'S', 'T' => '#', 'X' => '@', 'U' => '#', _ => c }).ToArray())).ToArray();
+			'F' => 'S', 'T' => '#', 'X' => '@', 'U' => '#', ',' => '.', _ => c }).ToArray())).ToArray();
 		var (g, b) = TestBlockActions.Parse(clean);
+		for (int y = 0; y < rows.Length; y++)
+			for (int x = 0; x < rows[y].Length; x++)
+				if (rows[y][x] == ',')
+					b.NoPlace.Add(new TilePos(x, y));
 		return (g, b, start, goal);
+	}
+
+	/// <summary>The never-plan-again steps a dump lists ("bad fx fy tx ty", region coordinates).</summary>
+	public static System.Collections.Generic.HashSet<(TilePos From, TilePos To)> BadEdgesOf(string file)
+	{
+		var set = new System.Collections.Generic.HashSet<(TilePos, TilePos)>();
+		foreach (string l in File.ReadLines(file).Where(l => l.StartsWith("bad "))) {
+			int[] v = l.Split(' ').Skip(1).Select(int.Parse).ToArray();
+			set.Add((new TilePos(v[0], v[1]), new TilePos(v[2], v[3])));
+		}
+		return set;
 	}
 
 	[Fact]
@@ -114,7 +129,7 @@ public class DumpReplayTests
 		foreach (string file in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Dumps"), "*.txt")) {
 			var (g, b, start, t) = Load(file);
 			b.BlockCount = 100;
-			var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
+			var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true, BadEdges = BadEdgesOf(file) };
 			var search = new PathSearch(ctx, start, GoalOf(file, t), new SearchLimits());
 			search.Step(1e9);
 			output.WriteLine($"{Path.GetFileName(file)}: {search.Result}");
