@@ -371,8 +371,9 @@ public sealed class SelfTestSystem : ModSystem
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
 		result.EyeDefeated = NPC.downedBoss1;
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
-		// The hotbar is restocked every 30 ticks: a pickaxe crafted on the last tick can still be in the backpack.
-		bot.Blocks.StockHotbar(Main.LocalPlayer);
+		// The hotbar is restocked every 30 ticks, one swap at a time: a pickaxe crafted on the last tick can still be in
+		// the backpack, behind another swap.
+		for (int i = 0; i < 5 && bot.Blocks.StockHotbar(Main.LocalPlayer) != null; i++) { }
 		bot.Blocks.Refresh(Main.LocalPlayer);
 		result.PickPower = bot.Blocks.PickPower;
 		{

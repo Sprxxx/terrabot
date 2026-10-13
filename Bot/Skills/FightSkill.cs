@@ -258,6 +258,12 @@ public sealed class FightSkill : ISkill
 		return true;
 	}
 
+	/// <summary>
+	/// Is the enemy in liquid? Water enemies (jellyfish, piranhas) are left alone unless they bite: seen in game, the bot
+	/// chased a jellyfish out to 20 tiles, into the water it was told to keep out of.
+	/// </summary>
+	public static bool InWater(BotContext ctx, EntityInfo e) =>
+		ctx.Grid.Get((int)MathF.Floor(e.CenterX / 16f), (int)MathF.Floor(e.CenterY / 16f)).IsLiquid();
 	/// <summary>No solid cell on the straight line between the two points (sampled every 8 px).</summary>
 	public static bool ClearShot(BotContext ctx, float x0, float y0, float x1, float y1)
 	{
@@ -284,7 +290,8 @@ public sealed class FightSkill : ISkill
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
 			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
-				&& (e.FeetTile.Y - DeepChaseMargin <= ctx.DeepestRow || e.Id == ctx.RecentAttacker); // not chased down into the depths
+				&& (e.FeetTile.Y - DeepChaseMargin <= ctx.DeepestRow || e.Id == ctx.RecentAttacker) // not chased down into the depths
+				&& (!InWater(ctx, e) || e.Id == ctx.RecentAttacker); // nor into water after jellyfish and piranhas
 			if (e.Id == targetId && candidate)
 				current = e;
 			if (candidate && d < best) {

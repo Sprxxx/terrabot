@@ -280,10 +280,18 @@ public sealed class ProgressionPlanner
 		if (ReferenceEquals(skill, stationWalk) && stationWalkType >= 0) {
 			if (status == SkillStatus.Succeeded)
 				stationWalkFailures.Remove(stationWalkType);
-			else if (status == SkillStatus.Failed && !skill.FailureReason.Contains("died")) {
+			// A step that failed 3 times does not count (it is banned and the next walk routes round it): counting it
+			// too rebuilt the furnace and anvil twice in one run (5 iron bars each time).
+			else if (status == SkillStatus.Failed && !skill.FailureReason.Contains("same step") && !skill.FailureReason.Contains("died")) {
 				int n = stationWalkFailures.TryGetValue(stationWalkType, out int f) ? f + 1 : 1;
 				stationWalkFailures[stationWalkType] = n;
-				if (n >= MaxStationWalkFailures) {
+				if (n >= MaxStationWalkFailures && ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0) {
+					// Like a player: drink a recall potion and be home, rather than rebuild the stations (an anvil is 15 ore).
+					ctx.Log.Info($"Auto: no way back to the {ctx.Knowledge.TileName(stationWalkType)} ({n} walks failed); drinking a recall potion to go home");
+					recallNext = true;
+					stationWalkFailures.Remove(stationWalkType);
+				}
+				else if (n >= MaxStationWalkFailures) {
 					ctx.Log.Info($"Auto: no way back to the {ctx.Knowledge.TileName(stationWalkType)} at {KnownStations.GetValueOrDefault(stationWalkType)} ({n} walks failed); making a new one here");
 					KnownStations.Remove(stationWalkType);
 					stationWalkFailures.Remove(stationWalkType);
@@ -317,6 +325,20 @@ public sealed class ProgressionPlanner
 		}
 	}
 
+	/// <summary>
+	/// After the plan got stuck (no site, nothing places a station...): forget the given-up sites and searches so the next
+	/// try starts fresh, as the brain's rest after failures does for unreachable tiles.
+	/// </summary>
+	public void ForgetGivenUp()
+	{
+		stuck = null;
+		badSites.Clear();
+		badArenaSites.Clear();
+		siteFailures = 0;
+		arenaFailures = 0;
+		stationExplores = 0;
+	}
+
 	/// <summary>The next skill to run, or null when the plan is complete or stuck.</summary>
 	public ISkill Next(BotContext ctx)
 	{
@@ -337,6 +359,11 @@ public sealed class ProgressionPlanner
 	{
 		RememberStations(ctx);
 		ProtectBuilt(ctx);
+		if (recallNext) {
+			recallNext = false;
+			if (ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
+				return Do("drinking a recall potion to get home to the stations", new UseItemSkill(ctx.Ids.RecallPotion));
+		}
 		// A chest in sight comes first, as for a player: healing potions, accessories, better weapons.
 		if (NextChest(ctx) is ChestInfo chest)
 			return Do($"looting the chest at {chest.TopLeft}", new LootChestSkill(chest.TopLeft));
@@ -521,7 +548,11 @@ public sealed class ProgressionPlanner
 			&& bp.Items.All(it => BuildSkill.IsPlaced(ctx, bp, built, it)))
 			return null;
 		if (HouseSite == null) {
+			// By the work bench, unless that is far from where the bot respawns: a bench put up 120 tiles off underground (no
+			// way back to the old one) left no site within reach, and auto mode stopped. Then near the spawn, like a player.
 			TilePos anchor = KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node;
+			if (ctx.SpawnTile is TilePos spawn && anchor.ChebyshevTo(spawn) > HouseNearSpawnTiles)
+				anchor = spawn;
 			HouseSite = SiteFinder.Find(ctx, bp, anchor, badSites);
 			if (HouseSite == null) {
 				stuck = $"no building site within {SiteFinder.SearchRadius} tiles of {anchor}";
@@ -900,6 +931,8 @@ public sealed class ProgressionPlanner
 	private readonly Dictionary<int, int> travelledFor = new();
 	/// <summary>How far (tiles) along the surface to go to look for ore in new ground.</summary>
 	public const int TravelTiles = 120;
+	/// <summary>A work bench farther than this from the spawn does not anchor the house; the spawn does.</summary>
+	public const int HouseNearSpawnTiles = 60;
 
 	/// <summary>
 	/// After a mining job found nothing more to mine around here, walk to new ground first: along the surface,
@@ -932,6 +965,8 @@ public sealed class ProgressionPlanner
 	private bool stationMissed;
 	private WalkToSkill stationWalk;
 	private int stationWalkType = -1;
+	/// <summary>Set when the way back to the stations is lost and a recall potion is carried: drink it next.</summary>
+	private bool recallNext;
 	private readonly Dictionary<int, int> stationWalkFailures = new();
 	/// <summary>
 	/// Failed walks to a known station before it is forgotten and a new one made where the bot is, like a player who
@@ -960,6 +995,7 @@ public sealed class ProgressionPlanner
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
 		// Only hostiles we can see: one behind solid blocks cannot reach us right now (and must not interrupt a build).
 		return (ctx.Combat.HasWeapon || ctx.Combat.HasRanged) && ctx.Hostiles.Any(h => ctx.Fightable(h.Id, h.DistanceTo(cx, cy), FightSkill.IgnoredDangerWithin) && h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f
+			&& (!FightSkill.InWater(ctx, h) || h.Id == ctx.RecentAttacker)
 			&& FightSkill.ClearShot(ctx, cx, cy, h.CenterX, h.CenterY));
 	}
 }

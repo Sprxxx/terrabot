@@ -60,6 +60,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		EyeServant = NPCID.ServantofCthulhu,
 		Campfire = ItemID.Campfire,
 		HeartLantern = ItemID.HeartLantern,
+		RecallPotion = ItemID.RecallPotion,
 	};
 
 

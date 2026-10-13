@@ -153,3 +153,18 @@ what was decided and the result.
   - A life crystal 7 rows below the depth limit interrupted mining every second, since crystal mining refuses it.
     **Decision:** crystal spotting obeys the depth limit too.
 - In game, 12 regression scenarios pass, including boss_auto and life_crystals.
+
+### world_eye run 24: Iron Broadsword with 0 deaths, then the Iron Pickaxe
+- **Progress:** best run so far. A chest gave an **Aglet** (worn), 4 Lesser Healing Potions, 50 arrows and 4 **Recall
+  Potions**. It rebuilt the base where it was when it had no way back. **Iron Broadsword at game minute 20 with 0
+  deaths**, then the **Iron Pickaxe** at about minute 33 (3 deaths by then: an antlion swarmer and devourers).
+- **What went wrong, and the decisions:**
+  - Chasing a jellyfish into water. **Decision:** enemies in liquid are not targets or danger unless they bite.
+  - Rebuilt furnace and anvil twice, with 5 iron bars each time. One bad step counted as "no way back". **Decision:**
+    walks that end on a banned step do not count. With a **Recall Potion** in the bag, drink it to get home instead of
+    rebuilding (new GameIds.RecallPotion).
+  - **"No building site within 40 tiles of the bench"** stopped auto mode: the new bench was underground, 120 tiles
+    from spawn. **Decision:** a bench more than 60 tiles from the respawn point does not anchor the house; the spawn
+    does. A stuck plan now rests and retries with its given-up sites forgotten, and stops only after 5 rests.
+  - The iron_age_auto check restocks the hotbar several times (one swap per call).
+- **Tests:** 208 unit tests. In game, iron_age_auto, boss_auto, settle_auto, build_house and the fight scenarios pass.

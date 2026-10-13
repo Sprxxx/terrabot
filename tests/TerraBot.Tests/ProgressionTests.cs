@@ -180,6 +180,25 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void NoWayBack_WithARecallPotion_DrinksIt()
+	{
+		FakeGame g = Mine();
+		g.Stations[FakeGame.TileBench] = Beside(g, 2);
+		g.Stations[FakeGame.TileFurnace] = Beside(g, -40);
+		g.Stations[FakeGame.TileAnvil] = Beside(g, 5);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronOre] = 30;
+		g.Items[FakeGame.Wood] = 3;
+		g.Items[FakeGame.RecallPotion] = 2;
+		var walk = Assert.IsType<WalkToSkill>(NextFor(g, out ProgressionPlanner p, out BotContext ctx));
+		p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		walk = Assert.IsType<WalkToSkill>(p.Next(ctx));
+		p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		var use = Assert.IsType<UseItemSkill>(p.Next(ctx));
+		Assert.Equal(FakeGame.RecallPotion, use.ItemType);
+	}
+
+	[Fact]
 	public void Complete_WithAnIronTierPickaxe()
 	{
 		FakeGame g = Mine();

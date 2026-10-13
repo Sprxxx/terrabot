@@ -39,6 +39,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int LifeCrystal = 29, TileHeart = 12;
 	public const int IronBow = 99, WoodenArrow = 40, Lens = 38, SuspiciousEye = 43, TileDemonAltar = 26, EyeNpc = 4, ServantNpc = 5, DemonEyeAi = 2;
 	public const int SlimeAi = 1;
+	public const int RecallPotion = 2350;
 	public const int Campfire = 966, HeartLantern = 1859, Chain = 85, TileCampfire = 215, TileLantern = 42;
 
 	public static readonly GameIds Ids = new() {
@@ -49,7 +50,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
-		Campfire = Campfire, HeartLantern = HeartLantern,
+		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion,
 	};
 
 	public readonly ArrayTileGrid Grid;

@@ -201,9 +201,18 @@ public sealed class BotBrain
 					LastResult = "auto: done";
 				}
 				else if (Planner.Stuck) {
-					ctx.Log.Warn("Auto: " + Planner.Status + "; stopping auto mode");
+					// Not the end: rest and try again with the given-up sites forgotten (seen in game: "no building site"
+					// stopped a run that had just made its iron pickaxe). Only after the rests run out does auto mode stop.
 					LastResult = "auto: " + Planner.Status;
-					Auto = false;
+					if (++backoffs > MaxBackoffs) {
+						ctx.Log.Warn("Auto: " + Planner.Status + $"; still stuck after {MaxBackoffs} rests, stopping auto mode");
+						Auto = false;
+					}
+					else {
+						ctx.Log.Warn("Auto: " + Planner.Status + $"; resting {BackoffTicks} ticks and trying again ({backoffs}/{MaxBackoffs})");
+						Planner.ForgetGivenUp();
+						backoffUntil = ctx.Tick + BackoffTicks;
+					}
 				}
 				return;
 			}

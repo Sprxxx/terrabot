@@ -149,6 +149,8 @@ public sealed class GameIds
 	/// <summary>Arena regeneration: a campfire (Cozy Fire) on the floor, a heart lantern (Heart Lamp) hung in the house.</summary>
 	public int Campfire { get; init; }
 	public int HeartLantern { get; init; }
+	/// <summary>Recall Potion: drunk, it takes the player home to the spawn point.</summary>
+	public int RecallPotion { get; init; }
 
 	public static readonly GameIds None = new();
 }

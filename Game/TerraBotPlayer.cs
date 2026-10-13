@@ -300,6 +300,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		Context.NightTicksLeft = Main.dayTime ? 0 : (int)Math.Max(0, Main.nightLength - Main.time);
 		Context.Expert = Main.expertMode;
 		Context.CavernY = (int)Main.rockLayer;
+		Context.SpawnTile = Player.SpawnX >= 0 && Player.SpawnY >= 0 ? new TilePos(Player.SpawnX, Player.SpawnY - 1) : new TilePos(Main.spawnTileX, Main.spawnTileY - 1);
 		if (rescanNow || Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
 			rescanNow = false;
 			TilePos feet = FeetTile();
