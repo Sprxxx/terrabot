@@ -529,6 +529,8 @@ public sealed class ProgressionPlanner
 		}
 		foreach (int station in recipe.Stations)
 			if (!NearStation(ctx, station)) {
+				if (RecallHome(ctx, KnownStations[station]) is ISkill recall)
+					return recall;
 				stationWalk = WalkToStation(KnownStations[station], ctx);
 				stationWalkType = station;
 				return Do($"walking to the {k.TileName(station)} to craft {name}", stationWalk);
@@ -971,6 +973,22 @@ public sealed class ProgressionPlanner
 	private bool stationMissed;
 	private WalkToSkill stationWalk;
 	private int stationWalkType = -1;
+	/// <summary>A station at home farther than this (tiles) is reached by a recall potion if one is carried.</summary>
+	public const int RecallDistance = 50;
+
+	/// <summary>
+	/// Far from a station that stands by the spawn, with a recall potion in the bag: drink it, like a player, instead of
+	/// a long walk back. Seen in game: the walk home from the mine took 4 game minutes of 3-second plans, every run.
+	/// </summary>
+	private ISkill RecallHome(BotContext ctx, TilePos station)
+	{
+		if (ctx.Ids.RecallPotion <= 0 || ctx.Inventory.Count(ctx.Ids.RecallPotion) <= 0 || ctx.SpawnTile is not TilePos spawn)
+			return null;
+		if (station.ChebyshevTo(ctx.Node) <= RecallDistance || station.ChebyshevTo(spawn) > RecallDistance / 2)
+			return null;
+		return Do($"drinking a recall potion to get home to the stations ({station.ChebyshevTo(ctx.Node)} tiles away)", new UseItemSkill(ctx.Ids.RecallPotion));
+	}
+
 	/// <summary>Set when the way back to the stations is lost and a recall potion is carried: drink it next.</summary>
 	private bool recallNext;
 	private readonly Dictionary<int, int> stationWalkFailures = new();

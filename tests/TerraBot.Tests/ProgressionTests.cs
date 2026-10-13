@@ -199,6 +199,29 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void FarFromTheStationsAtHome_DrinksARecallPotion()
+	{
+		// world_eye: the walk home from the mine took 4 game minutes every run; a player drinks a recall potion.
+		FakeGame g = Mine();
+		g.Stations[FakeGame.TileBench] = Beside(g, 2);
+		g.Stations[FakeGame.TileFurnace] = Beside(g, -60);
+		g.Stations[FakeGame.TileAnvil] = Beside(g, 5);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronOre] = 30;
+		g.Items[FakeGame.Wood] = 3;
+		g.Items[FakeGame.RecallPotion] = 1;
+		g.IsNight = false;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = Beside(g, -60); // the furnace is at home, by the spawn
+		var planner = new ProgressionPlanner();
+		planner.Reset(ProgressionPlanner.Plans.Iron);
+		var use = Assert.IsType<UseItemSkill>(planner.Next(ctx));
+		Assert.Equal(FakeGame.RecallPotion, use.ItemType);
+		ctx.SpawnTile = Beside(g, 0); // the furnace is not by the spawn: walk
+		Assert.IsType<WalkToSkill>(planner.Next(ctx));
+	}
+
+	[Fact]
 	public void Complete_WithAnIronTierPickaxe()
 	{
 		FakeGame g = Mine();
