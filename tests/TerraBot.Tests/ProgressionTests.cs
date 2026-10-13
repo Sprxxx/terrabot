@@ -247,6 +247,7 @@ public class ProgressionTests
 			FurnaceTile = FakeGame.TileFurnace, AnvilTile = 999, IronTierPickaxe = FakeGame.IronPickaxe,
 		};
 		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Iron); // the iron chain: no house before the anvil
 		// Nothing places it and none is seen: explore for one a few times, then stuck.
 		for (int i = 0; i < ProgressionPlanner.MaxStationExplores; i++)
 			Assert.IsType<ExploreSkill>(p.Next(ctx));

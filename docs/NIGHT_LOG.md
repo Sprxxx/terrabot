@@ -259,3 +259,10 @@ what was decided and the result.
   block with sand on top. Explore legs into it fail, and exploring moves on.
 - **Travel bounced** between the same two places (+120, then −120 from the bot's position). **Decision:** travel
   goes out from the spawn and farther each time (east 120, west 120, east 240...).
+
+### world_eye run 34: Iron Pickaxe and a house started
+- **Progress:** broadsword, then 30 iron ore smelted into the **Iron Pickaxe**, then a house site by the spawn and
+  the wood crafting for it, all in the first night. 2 deaths, both at night on the surface.
+- **Decision:** at night with no armour the bot goes home and waits for the morning ("stay home"), instead of doing
+  surface work. The house stage moves before the anvil (except in the Iron plan), so a shelter exists early.
+  Run 34 was stopped to test this.

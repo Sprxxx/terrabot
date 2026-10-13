@@ -155,6 +155,9 @@ public sealed class ProgressionPlanner
 			return stages;
 		}
 		stages.Add(new StationPlaced(ids.FurnaceTile, "furnace"));
+		// A house before the iron gear, like a player on day one: somewhere to spend the night (StayHomeSkill).
+		if (plan != Plans.Iron)
+			stages.Add(new HouseBuilt("house"));
 		stages.Add(new StationPlaced(ids.AnvilTile, "anvil"));
 		// The sword before the pickaxe: in a real world, mining the pickaxe's 30 ore with a copper shortsword (5 damage, a
 		// point or two a hit against a yellow slime) cost 9 deaths in one run.
@@ -163,7 +166,6 @@ public sealed class ProgressionPlanner
 		stages.Add(new PickaxeAtLeast(IronTierPickPower, ids.IronTierPickaxe, "iron-tier pickaxe"));
 		if (plan == Plans.Iron)
 			return stages;
-		stages.Add(new HouseBuilt("house"));
 		stages.Add(new Wearing(ids.IronTierHelmet, "helmet"));
 		stages.Add(new Wearing(ids.IronTierChainmail, "chainmail"));
 		stages.Add(new Wearing(ids.IronTierGreaves, "greaves"));
@@ -401,10 +403,35 @@ public sealed class ProgressionPlanner
 		return null;
 	}
 
+	/// <summary>The house's inside tile when a house is built (passes the housing check), else null.</summary>
+	private TilePos? HomeInside(BotContext ctx)
+	{
+		if (HouseSite is not TilePos site)
+			return null;
+		Blueprint bp = Blueprint.SmallHouse(ctx.Ids);
+		var inside = new TilePos(site.X + bp.Inside.X, site.Y + bp.Inside.Y);
+		return ctx.World.CheckHousing(inside.X, inside.Y) == null ? inside : null;
+	}
+
+	/// <summary>Work that keeps the bot on or near the surface at night: gathering, hunting, and mining or exploring from up there.</summary>
+	private static bool NightWorkOnTheSurface(ISkill skill, BotContext ctx)
+	{
+		if (skill is GatherWoodSkill or LootChestSkill || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
+			return true;
+		bool nearSurface = ctx.SurfaceY <= 0 || ctx.Node.Y < ctx.SurfaceY + 15;
+		return nearSurface && skill is MineSkill or ExploreSkill;
+	}
+
 	private ISkill AtNight(ISkill skill, BotContext ctx)
 	{
 		if (skill is HuntSkill h && NocturnalAiStyles.Contains(h.AiStyle))
 			return skill; // the prey only comes out at night
+		// With a house: the night is spent in it, unless the work is safely underground (zombies and demon eyes are on
+		// the surface). Seen in game: a zombie killed the bot walking home across the surface at night.
+		if (ctx.IsNight && HomeInside(ctx) is TilePos inside && NightWorkOnTheSurface(skill, ctx)) {
+			Status = $"night: staying in the house instead of {skill.Name} ({Status})";
+			return new StayHomeSkill(inside);
+		}
 		if (!ctx.IsNight || skill is not (GatherWoodSkill or HuntSkill) || ctx.Tick - lastShelterEnd < ShelterCooldownTicks)
 			return skill;
 		Status = $"night: sheltering instead of {skill.Name} ({Status})";

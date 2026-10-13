@@ -130,6 +130,8 @@ public sealed class BotContext
 	/// First row of the cavern layer (Main.rockLayer; a player sees the background change). 0 = unknown (no depth limit).
 	/// </summary>
 	public int CavernY { get; set; }
+	/// <summary>Last row of the surface layer (Main.worldSurface); 0 = unknown.</summary>
+	public int SurfaceY { get; set; }
 	/// <summary>Where the player respawns (feet tile): the bed if set, else the world spawn. Null if unknown.</summary>
 	public TilePos? SpawnTile { get; set; }
 	/// <summary>Folder for debug dumps (the region of a search that found no path); null = none.</summary>
