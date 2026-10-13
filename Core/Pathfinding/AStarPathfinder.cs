@@ -163,6 +163,10 @@ public sealed class PathSearch
 			// A penalty, not a ban: the check depends on the path a node was first reached by, and A* keeps one path per
 			// node, so banning made nodes dead that another path reaches fine (seen in game: no way out of a cave in three
 			// runs; replayed, a 73-step path exists).
+			// Mined by one of the last BrokenBanSteps steps: banned (that path really mines it; the zigzag staircase of run 15
+			// re-planned 26 times otherwise). Mined further back: only a penalty.
+			if (CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, brokenRecently))
+				continue;
 			float brokenPenalty = CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath) ? BrokenSupportPenalty : 0f;
 			if (float.IsPositiveInfinity(e.Cost))
 				continue; // lava
@@ -182,6 +186,9 @@ public sealed class PathSearch
 	/// <summary>Extra cost of a step held up only by cells its own path mines: such plans re-plan when they get there.</summary>
 	public const float BrokenSupportPenalty = 300f;
 	private readonly HashSet<TilePos> brokenOnPath = new();
+	private readonly HashSet<TilePos> brokenRecently = new();
+	/// <summary>Cells mined by this many of the last steps make a step held up only by them banned, not just costlier.</summary>
+	public const int BrokenBanSteps = 2;
 
 	/// <summary>
 	/// Cells the last <see cref="BrokenLookback"/> steps of the path to <paramref name="pos"/> mine. The planner works
@@ -191,12 +198,16 @@ public sealed class PathSearch
 	private void BrokenOnPathTo(TilePos pos)
 	{
 		brokenOnPath.Clear();
+		brokenRecently.Clear();
 		long k = pos.Key;
 		for (int i = 0; i < BrokenLookback && nodes.TryGetValue(k, out NodeRec r) && r.HasParent; i++) {
 			if (r.Via.Actions != null)
 				foreach (BlockAction a in r.Via.Actions)
-					if (a.Kind == ActionKind.Break)
+					if (a.Kind == ActionKind.Break) {
 						brokenOnPath.Add(a.Cell);
+						if (i < BrokenBanSteps)
+							brokenRecently.Add(a.Cell);
+					}
 			k = r.Parent;
 		}
 	}
