@@ -154,10 +154,13 @@ public sealed class PathSearch
 			move.Expand(ctx, pos, edges);
 
 		long parent = pos.Key;
+		BrokenOnPathTo(pos);
 		foreach (PathStep e in edges) {
 			if (e.To.ChebyshevTo(start) > limits.MaxRadius)
 				continue;
 			if (ctx.BadEdges != null && ctx.BadEdges.Contains((e.From, e.To)))
+				continue;
+			if (SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath))
 				continue;
 			float g = g0 + e.Cost;
 			long k = e.To.Key;
@@ -166,6 +169,40 @@ public sealed class PathSearch
 			nodes[k] = new NodeRec { G = g, Parent = parent, HasParent = true, Via = e };
 			open.Enqueue(k, g + goal.Heuristic(e.To));
 		}
+	}
+
+	/// <summary>How many steps back along the path <see cref="BrokenOnPathTo"/> looks for mined cells.</summary>
+	public const int BrokenLookback = 8;
+	private readonly HashSet<TilePos> brokenOnPath = new();
+
+	/// <summary>
+	/// Cells the last <see cref="BrokenLookback"/> steps of the path to <paramref name="pos"/> mine. The planner works
+	/// on the unedited grid, so without this a step could stand on a block an earlier step of the same plan digs
+	/// away. Seen in game: a zigzag staircase up through rock, each plan invalid a few steps in, 26 re-plans of 1 s each.
+	/// </summary>
+	private void BrokenOnPathTo(TilePos pos)
+	{
+		brokenOnPath.Clear();
+		long k = pos.Key;
+		for (int i = 0; i < BrokenLookback && nodes.TryGetValue(k, out NodeRec r) && r.HasParent; i++) {
+			if (r.Via.Actions != null)
+				foreach (BlockAction a in r.Via.Actions)
+					if (a.Kind == ActionKind.Break)
+						brokenOnPath.Add(a.Cell);
+			k = r.Parent;
+		}
+	}
+
+	/// <summary>Would the body at <paramref name="to"/> only be held up by cells in <paramref name="broken"/>?</summary>
+	public static bool SupportOnlyFromBroken(ITileGrid g, TilePos to, HashSet<TilePos> broken)
+	{
+		if (broken.Count == 0)
+			return false;
+		TilePos a = new(to.X, to.Y + 1), b = new(to.X + 1, to.Y + 1);
+		bool ga = g.Get(a.X, a.Y).CanStandOn(), gb = g.Get(b.X, b.Y).CanStandOn();
+		if (!ga && !gb)
+			return false; // not held up by the grid at all (a jump's apex, a pillar's placed block): not our concern
+		return !(ga && !broken.Contains(a)) && !(gb && !broken.Contains(b));
 	}
 
 	private PathResult Build(PathStatus status, TilePos end, Stopwatch sw)

@@ -133,6 +133,30 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void CraftThatFindsNoStation_WalksUpToItFirst()
+	{
+		// Seen in game: in a hole below the furnace the planner thought it near, the game did not; craft, fail, repeat.
+		FakeGame g = Mine();
+		g.Stations[FakeGame.TileBench] = Beside(g, 2);
+		g.Stations[FakeGame.TileFurnace] = Beside(g, -3);
+		g.Stations[FakeGame.TileAnvil] = Beside(g, 5);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronOre] = 30;
+		g.Items[FakeGame.Wood] = 3;
+		g.StationRange = 1; // the game wants the bot closer than the planner thought
+		var craft = Assert.IsType<CraftSkill>(NextFor(g, out ProgressionPlanner p, out BotContext ctx));
+		craft.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		for (int i = 0; i < 200 && s == SkillStatus.Running; i++) {
+			g.Refresh(ctx);
+			s = craft.Tick(ctx);
+		}
+		Assert.Equal(SkillStatus.Failed, s);
+		p.OnSkillFinished(craft, s, ctx);
+		Assert.IsType<WalkToSkill>(p.Next(ctx));
+	}
+
+	[Fact]
 	public void Complete_WithAnIronTierPickaxe()
 	{
 		FakeGame g = Mine();

@@ -123,7 +123,8 @@ public sealed class ExploreSkill : ISkill
 			legWasFallback = frontier == null;
 			// Digging on: straight down for ores and caves (2 blocks a tile; a diagonal through stone was 60-70 blocks a
 			// leg in game), a level tunnel along the surface.
-			bool down = Bias == ExploreBias.Down && !downBlocked;
+			// Not deeper than the gear allows (BotContext.DeepestRow): sideways once at the floor.
+			bool down = Bias == ExploreBias.Down && !downBlocked && node.Y + FallbackDepth <= ctx.DeepestRow;
 			legDown = frontier == null && down;
 			TilePos t = frontier ?? (down
 				? new TilePos(node.X + heading * FallbackSideways, node.Y + FallbackDepth)
@@ -181,6 +182,8 @@ public sealed class ExploreSkill : ISkill
 				if (d < MinLegTiles)
 					continue;
 				if (aheadOnly && Math.Sign(x - n.X) != heading)
+					continue;
+				if (y > ctx.DeepestRow)
 					continue;
 				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y) || NearVisited(ctx, x, y))
 					continue;

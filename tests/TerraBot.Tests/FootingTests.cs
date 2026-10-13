@@ -55,4 +55,34 @@ public class FootingTests
 		Assert.False(ProgressionPlanner.InDanger(ctx)); // 2.6 tiles: beyond the danger distance for ignored enemies
 		Assert.True(ctx.Fightable(7, slime.DistanceTo(cx, cy))); // but an ongoing fight keeps it
 	}
+
+	[Fact]
+	public void StepHeldUpOnlyByAMinedCell_IsRejected()
+	{
+		// world_eye run 15: a staircase dug up through rock planned a walk back onto a block an earlier step mined.
+		var g = ArrayTileGrid.Parse("......", "......", "######");
+		var to = new TilePos(1, 1);
+		var none = new System.Collections.Generic.HashSet<TilePos>();
+		Assert.False(PathSearch.SupportOnlyFromBroken(g, to, none));
+		var one = new System.Collections.Generic.HashSet<TilePos> { new(1, 2) };
+		Assert.False(PathSearch.SupportOnlyFromBroken(g, to, one)); // the other column still holds it
+		var both = new System.Collections.Generic.HashSet<TilePos> { new(1, 2), new(2, 2) };
+		Assert.True(PathSearch.SupportOnlyFromBroken(g, to, both));
+		var air = ArrayTileGrid.Parse("......", "......", "......");
+		Assert.False(PathSearch.SupportOnlyFromBroken(air, to, both)); // not held by the grid anyway (mid-jump)
+	}
+
+	[Fact]
+	public void DeepestRow_FollowsTheArmour()
+	{
+		// world_eye run 15: exploring for iron in no armour went 200 tiles down; skeletons and bats killed the bot.
+		var ctx = new BotContext { Combat = new CombatInfo() };
+		Assert.Equal(int.MaxValue, ctx.DeepestRow); // depth unknown: no limit
+		ctx.CavernY = 400;
+		Assert.Equal(400 + BotContext.ShallowMargin, ctx.DeepestRow);
+		ctx.Combat.Defense = BotContext.CavernDefense; // e.g. full iron armour
+		Assert.Equal(400 + BotContext.CavernDepth, ctx.DeepestRow);
+		ctx.Combat.Defense = BotContext.DeepDefense;
+		Assert.Equal(int.MaxValue, ctx.DeepestRow);
+	}
 }

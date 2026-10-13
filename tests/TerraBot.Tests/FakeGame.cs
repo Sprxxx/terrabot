@@ -63,6 +63,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly Dictionary<int, int> Items = new();
 	public readonly List<DropInfo> Drops = new();
 	public readonly Dictionary<int, TilePos> Stations = new();
+	/// <summary>How near (Chebyshev tiles) a station must be for a craft, like vanilla's AdjTiles box.</summary>
+	public int StationRange = 4;
 	public readonly List<(int id, float x, float y, int life)> Slimes = new();
 	public bool IsNight;
 	public int Crafts;
@@ -400,7 +402,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		if (all.Count == 0)
 			return CraftResult.NoRecipe;
 		bool HasItems(RecipeInfo x) => x.Ingredients.All(i => this.CountAny(i.Accepts) >= i.Stack);
-		bool HasStations(RecipeInfo x) => x.Stations.All(s => Stations.TryGetValue(s, out TilePos at) && at.ChebyshevTo(Sim.Node) <= 4);
+		bool HasStations(RecipeInfo x) => x.Stations.All(s => Stations.TryGetValue(s, out TilePos at) && at.ChebyshevTo(Sim.Node) <= StationRange);
 		RecipeInfo r = all.FirstOrDefault(x => HasItems(x) && HasStations(x));
 		if (r == null)
 			return all.Any(HasItems) ? CraftResult.NeedsStation : CraftResult.Missing;

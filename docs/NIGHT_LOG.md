@@ -49,3 +49,20 @@ what was decided and the result.
 - **Decision 2:** auto mode no longer quits after 3 failures. It rests 10 s, forgets what it had marked unreachable or
   failing (the world changes as it digs), and tries again. It stops for good only after 5 such rests with no success
   in between.
+
+### world_eye run 15 (stopped after 2 game hours to test fixes)
+- **Progress:** the furthest real-world run so far. Furnace, anvil, 30 iron, iron pickaxe, then a house site and
+  furniture crafting. A chest gave a **Depth Meter**, which it put on, so looting and accessories work in game.
+  3 deaths: a skeleton and poison spit about 200 tiles down, and a zombie at a water edge.
+- **Stairway re-plans:** digging a staircase up through rock re-planned 26 times at about 1 s each. A step could
+  stand on a block that an earlier step of the same plan digs away. **Decision:** A* looks 8 steps back along the
+  path and does not count cells those steps break as support (`PathSearch.SupportOnlyFromBroken`).
+- **Too deep:** **Decision:** a gear-based depth limit (`BotContext.DeepestRow`). With defense under 8, exploring and
+  ore stay above the cavern layer (+15 rows). Under 16, at most 150 rows into the caverns. No limit beyond that.
+- **Water edge:** at a pool the game swapped dry and wet physics every few ticks, and each swap meant a 1.4 s
+  re-plan, so the bot stood still. **Decision:** keep the dry physics values while wet (water is costed, not modelled).
+- **settle_auto regression:** standing in a hole just below the furnace, the planner thought it was in range and the
+  game did not, so crafting failed over and over. **Decision:** `NearStation` now uses vanilla's AdjTiles box, and
+  after a craft fails for lack of a station the bot walks right up to it first.
+- **Flaky check:** the iron_age_auto pick-power check ran before the 30-tick hotbar restock. It now restocks first.
+- **Tests:** 201 unit tests pass. In game, 21 movement, fight and crafting-chain scenarios pass.

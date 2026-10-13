@@ -166,6 +166,7 @@ public sealed class SelfTestSystem : ModSystem
 				Active = true;
 				arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2, queue.Max(q => q.Width));
 				double fullGravityRow = 60 + 10 * Math.Pow(Main.maxTilesX / 4200.0, 2) + Main.worldSurface / 6.0;
+				Mod.Logger.Info($"SELFTEST world: surface row {Main.worldSurface:0}, caverns from row {Main.rockLayer:0}, {Main.maxTilesX}x{Main.maxTilesY}");
 				Mod.Logger.Info($"SELFTEST arena x {arena.Left}..{arena.Left + arena.Width} y {arena.Top}..{arena.FloorY}, " +
 					$"full gravity below row {fullGravityRow:0} (arena top {arena.Top}), {bot.Blocks.Describe()}");
 				Next(Phase.Setup);
@@ -370,6 +371,8 @@ public sealed class SelfTestSystem : ModSystem
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
 		result.EyeDefeated = NPC.downedBoss1;
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
+		// The hotbar is restocked every 30 ticks: a pickaxe crafted on the last tick can still be in the backpack.
+		bot.Blocks.StockHotbar(Main.LocalPlayer);
 		bot.Blocks.Refresh(Main.LocalPlayer);
 		result.PickPower = bot.Blocks.PickPower;
 		{

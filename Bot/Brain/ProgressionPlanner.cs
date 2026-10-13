@@ -239,6 +239,12 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		if (skill is CraftSkill && status == SkillStatus.Failed && skill.FailureReason.StartsWith(nameof(CraftResult.NeedsStation))) {
+			stationMissed = true;
+			ctx.Log.Info("Auto: the game saw no station in range for that craft; walking right up to it first");
+		}
+		if (skill is CraftSkill && status == SkillStatus.Succeeded || ReferenceEquals(skill, stationWalk) && status == SkillStatus.Succeeded)
+			stationMissed = false;
 		if (skill is LootChestSkill loot)
 			ctx.OpenedChests.Add(loot.Chest); // looted, or not reachable: either way not again
 		if (skill is WaitSkill { What: "life" })
@@ -448,8 +454,10 @@ public sealed class ProgressionPlanner
 				return sub;
 		}
 		foreach (int station in recipe.Stations)
-			if (!NearStation(ctx, station))
-				return Do($"walking to the {k.TileName(station)} to craft {name}", WalkToStation(KnownStations[station], ctx));
+			if (!NearStation(ctx, station)) {
+				stationWalk = WalkToStation(KnownStations[station], ctx);
+				return Do($"walking to the {k.TileName(station)} to craft {name}", stationWalk);
+			}
 		string have = string.Join(", ", recipe.Ingredients.Select(i => $"{k.ItemName(i.Item)} {ctx.Inventory.CountAny(i.Accepts)}/{i.Stack * crafts}"));
 		return Do($"crafting {more} {name} ({have})", new CraftSkill(item, target));
 	}
@@ -820,8 +828,25 @@ public sealed class ProgressionPlanner
 	private static WalkToSkill WalkToStation(TilePos at, BotContext ctx) =>
 		new(new Core.Pathfinding.GoalNearTile(at, StationReach - 1, ctx.Physics));
 
-	private bool NearStation(BotContext ctx, int tileType) =>
-		KnownStations.TryGetValue(tileType, out TilePos at) && at.ChebyshevTo(ctx.Node) <= StationReach;
+	/// <summary>
+	/// Vanilla Player.AdjTiles counts station tiles within 4 columns of the body's centre column and from 2 rows above
+	/// the feet to 3 below (a row short of that below). After
+	/// a craft failed for want of the station (<see cref="stationMissed"/>), only once a walk to it has been made.
+	/// Seen in game: standing in a hole below the furnace, "near" by distance but not for the game, the bot crafted,
+	/// failed and crafted again for a minute until auto mode gave up.
+	/// </summary>
+	private bool NearStation(BotContext ctx, int tileType)
+	{
+		if (stationMissed || !KnownStations.TryGetValue(tileType, out TilePos at))
+			return false;
+		TilePos n = ctx.Node;
+		int dx = at.X - (n.X + 1), dy = at.Y - n.Y;
+		return Math.Abs(dx) <= 4 && dy >= -2 && dy <= 2;
+	}
+
+	/// <summary>A craft failed because the game saw no station in range: walk up to it before the next craft.</summary>
+	private bool stationMissed;
+	private WalkToSkill stationWalk;
 
 	/// <summary>The stuck reason of the last <see cref="ResolveForTest"/> (null if not stuck).</summary>
 	public string ResolveForTestStuck => stuck;

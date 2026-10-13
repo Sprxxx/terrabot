@@ -105,6 +105,26 @@ public sealed class BotContext
 	public bool IsNight { get; set; }
 	/// <summary>Ticks of night left (Main.nightLength - Main.time at night; 0 by day).</summary>
 	public int NightTicksLeft { get; set; }
+	/// <summary>
+	/// First row of the cavern layer (Main.rockLayer; a player sees the background change). 0 = unknown (no depth limit).
+	/// </summary>
+	public int CavernY { get; set; }
+
+	/// <summary>Defense below this keeps exploring and mining above <see cref="CavernY"/> (+ <see cref="ShallowMargin"/>).</summary>
+	public const int CavernDefense = 8;
+	/// <summary>Defense below this keeps them within <see cref="CavernDepth"/> rows into the caverns.</summary>
+	public const int DeepDefense = 16;
+	public const int ShallowMargin = 15, CavernDepth = 150;
+
+	/// <summary>
+	/// The deepest row worth going to for ore and exploring with the armour worn, like a player who stays out of the
+	/// caverns in copper gear. Seen in game: exploring for iron in no armour went 200 tiles down, and skeletons, cave
+	/// bats and black slimes killed the bot 5 times in an hour. int.MaxValue = no limit.
+	/// </summary>
+	public int DeepestRow => CavernY <= 0 ? int.MaxValue
+		: Combat.Defense < CavernDefense ? CavernY + ShallowMargin
+		: Combat.Defense < DeepDefense ? CavernY + CavernDepth
+		: int.MaxValue;
 
 	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
 	public IBlockActions Blocks { get; set; }

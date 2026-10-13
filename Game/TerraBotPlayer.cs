@@ -86,11 +86,19 @@ public sealed class TerraBotPlayer : ModPlayer
 		}
 	}
 
+	private bool haveDryPhysics;
+
 	public override void PostUpdateRunSpeeds()
 	{
 		if (!IsLocal)
 			return;
+		// In liquid vanilla swaps gravity, fall and jump for water values. The planner does not model water (it only
+		// costs it), and at a water edge the values flipped every few ticks, each flip a re-plan of over a second: the
+		// bot stood still for a game hour. Keep the dry values while wet.
+		if (Player.wet && haveDryPhysics)
+			return;
 		PhysicsParams p = PhysicsReader.Read(Player);
+		haveDryPhysics = !Player.wet;
 		if (p != LivePhysics) {
 			Mod.Logger.Info($"Physics params changed: {p}");
 			LivePhysics = p;
@@ -289,6 +297,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		Context.IsNight = !Main.dayTime;
 		Context.NightTicksLeft = Main.dayTime ? 0 : (int)Math.Max(0, Main.nightLength - Main.time);
 		Context.Expert = Main.expertMode;
+		Context.CavernY = (int)Main.rockLayer;
 		if (rescanNow || Main.GameUpdateCount % 20 == 0 || Context.Seen.Trees.Count == 0 && Main.GameUpdateCount % 5 == 0) {
 			rescanNow = false;
 			TilePos feet = FeetTile();
@@ -325,6 +334,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.CanQuickHeal = Player.potionDelay == 0 && Player.QuickHeal_GetItemToUse() != null;
 		k.Breath = Player.breath;
 		k.BreathMax = Player.breathMax;
+		k.Defense = Player.statDefense;
 		k.WeaponReach = Blocks.WeaponSlot >= 0 ? Blocks.WeaponReach : 0f;
 		k.WeaponName = Blocks.WeaponName;
 		k.HasRanged = Blocks.RangedSlot >= 0 && Blocks.AmmoCount > 0;
