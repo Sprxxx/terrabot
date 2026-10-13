@@ -16,10 +16,15 @@ namespace TerraBot.Game.SelfTest;
 /// the world it runs every <see cref="Scenario"/> in an arena above the spawn point, logs one
 /// <c>SELFTEST PASS|FAIL</c> line per scenario plus a summary, and quits the game.
 /// Optional value: <c>-terrabotselftest name1,name2</c> runs only those scenarios.
+/// With <c>-terrabotfast</c> the game runs as fast as the PC allows instead of 60 ticks a second (vanilla's unused
+/// Main.superFast switch: Main.DoUpdate then skips its 1/60 s accumulator and turns vsync off; it only has an effect
+/// when the Frame Skip setting is Off or Subtle; vsync needs <see cref="KeepVsyncOff"/>).
+/// <c>-terrabotfast N</c> also draws only every N-th frame (Game.SuppressDraw), so a slow-drawing PC is not the limit.
 /// </summary>
 public sealed class SelfTestSystem : ModSystem
 {
 	public const string LaunchFlag = "-terrabotselftest";
+	public const string FastFlag = "-terrabotfast";
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
@@ -56,6 +61,41 @@ public sealed class SelfTestSystem : ModSystem
 	private TilePos? buildSite;
 	private readonly List<string> summary = new();
 	private int passed;
+	/// <summary>In fast mode, draw only every this many updates.</summary>
+	private int drawEvery = 1;
+	/// <summary>Real time since the scenario started running, and since the last heartbeat: the speed against 60 ticks a second.</summary>
+	private readonly System.Diagnostics.Stopwatch runClock = new(), beatClock = new();
+
+	private static string Speed(int ticks, System.Diagnostics.Stopwatch clock) =>
+		clock.Elapsed.TotalSeconds > 0 ? $"{ticks / 60.0 / clock.Elapsed.TotalSeconds:0.0}x" : "?";
+
+	public override void Load()
+	{
+		if (Enabled && Program.LaunchParameters.ContainsKey(FastFlag))
+			On_Main.SetResolution += KeepVsyncOff;
+	}
+
+	/// <summary>
+	/// Main.superFast clears the vsync flag every update but never applies it, and Main.SetResolution (called before
+	/// every draw, via UpdateDisplaySettings) turns it back on and resets the device whenever the flag is off. So in
+	/// fast mode: let SetResolution see it on (no reset), then switch the device itself to immediate presenting once,
+	/// and again only if a resolution change put vsync back.
+	/// </summary>
+	private static void KeepVsyncOff(On_Main.orig_SetResolution orig, int width, int height)
+	{
+		if (!Main.superFast) {
+			orig(width, height);
+			return;
+		}
+		Main.graphics.SynchronizeWithVerticalRetrace = true;
+		orig(width, height);
+		var device = Main.graphics.GraphicsDevice;
+		if (device != null && device.PresentationParameters.PresentationInterval != Microsoft.Xna.Framework.Graphics.PresentInterval.Immediate) {
+			Main.graphics.SynchronizeWithVerticalRetrace = false;
+			Main.graphics.ApplyChanges();
+			ModContent.GetInstance<TerraBotMod>().Logger.Info("SELFTEST fast: vsync off");
+		}
+	}
 
 	public override void OnWorldLoad()
 	{
@@ -70,7 +110,10 @@ public sealed class SelfTestSystem : ModSystem
 		var names = string.IsNullOrWhiteSpace(filter) || filter == "all" ? null : new HashSet<string>(filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 		// Real-world runs take up to an hour: only when asked for by name.
 		queue = Scenario.All.Where(s => names == null ? !s.RealWorld : names.Contains(s.Name)).ToList();
-		Mod.Logger.Info($"SELFTEST armed: {queue.Count} scenario(s): {string.Join(", ", queue.Select(s => s.Name))}");
+		Main.superFast = Program.LaunchParameters.TryGetValue(FastFlag, out string fast);
+		drawEvery = int.TryParse(fast, out int n) && n > 1 ? n : 1;
+		Mod.Logger.Info($"SELFTEST armed: {queue.Count} scenario(s): {string.Join(", ", queue.Select(s => s.Name))}; "
+			+ $"fast {Main.superFast}, drawing every {drawEvery} frame(s) (frame skip {Main.FrameSkipMode})");
 	}
 
 	public override void PostUpdateEverything()
@@ -81,6 +124,8 @@ public sealed class SelfTestSystem : ModSystem
 		if (p == null || !p.active)
 			return;
 		var bot = p.GetModPlayer<TerraBotPlayer>();
+		if (Main.superFast && drawEvery > 1 && Main.GameUpdateCount % drawEvery != 0)
+			Main.instance.SuppressDraw();
 		phaseTicks++;
 		try {
 			Step(p, bot);
@@ -211,6 +256,8 @@ public sealed class SelfTestSystem : ModSystem
 					bot.SetTarget(arena.ToWorld(goal.X, goal.Y, s.Rows.Length), "selftest");
 				}
 				bot.SetEnabled(true, "selftest");
+				runClock.Restart();
+				beatClock.Restart();
 				Next(Phase.Running);
 				return;
 			}
@@ -227,8 +274,10 @@ public sealed class SelfTestSystem : ModSystem
 					})) + $" | bot sees {bot.Context.Hostiles.Count} | {bot.Brain.Describe()}");
 				TrackRun(p, bot, s);
 				// Heartbeat, so a watcher can tell a frozen game (no lines at all) from a quiet one.
-				if (phaseTicks > 0 && phaseTicks % HeartbeatTicks == 0)
-					Mod.Logger.Info($"SELFTEST heartbeat {s.Name} t{phaseTicks} at {bot.FeetTile()}, life {p.statLife}/{p.statLifeMax2}: {bot.Brain.Describe()}");
+				if (phaseTicks > 0 && phaseTicks % HeartbeatTicks == 0) {
+					Mod.Logger.Info($"SELFTEST heartbeat {s.Name} t{phaseTicks} speed {Speed(HeartbeatTicks, beatClock)} ({Main.frameRate} fps, present {Main.instance.GraphicsDevice.PresentationParameters.PresentationInterval}) at {bot.FeetTile()}, life {p.statLife}/{p.statLifeMax2}: {bot.Brain.Describe()}");
+					beatClock.Restart();
+				}
 				// Real-world runs: every 2 minutes, what the bot has and where the plan is.
 				if (s.RealWorld && phaseTicks % (HeartbeatTicks * 4) == 0)
 					Mod.Logger.Info($"SELFTEST status {s.Name} t{phaseTicks} {(Main.dayTime ? "day" : "night")} {Main.time:0}: plan [{bot.Brain.Planner.Status}] "
@@ -239,6 +288,7 @@ public sealed class SelfTestSystem : ModSystem
 					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > 2;
 				if (!finished && phaseTicks < s.TimeoutTicks)
 					return;
+				Mod.Logger.Info($"SELFTEST speed {s.Name}: {phaseTicks} ticks in {runClock.Elapsed.TotalSeconds:0} s = {Speed(phaseTicks, runClock)} normal");
 				Evaluate(bot, s, finished);
 				index++;
 				Next(index < queue.Count ? Phase.Setup : Phase.Done);

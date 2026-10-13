@@ -23,7 +23,11 @@ param(
 	[string]$WorldFile = "Enchanting_Outskirts",
 	[string]$TmlDir = "C:\Program Files (x86)\Steam\steamapps\common\tModLoader",
 	[int]$TimeoutMinutes = 20,
-	[switch]$NoBuild
+	[switch]$NoBuild,
+	# Run the game as fast as the PC allows instead of 60 ticks a second (needs Frame Skip Off or Subtle).
+	[switch]$Fast,
+	# With -Fast: draw only every N-th frame (the game logic still runs every tick).
+	[int]$DrawEvery = 1
 )
 $ErrorActionPreference = "Stop"
 
@@ -64,6 +68,7 @@ if (-not (Test-Path (Join-Path $testDir "Worlds\$WorldFile.wld"))) { throw "Worl
 
 $tmlArgs = @("tModLoader.dll", "-tmlsavedirectory", "`"$testDir`"", "-skipselect", "`"${Player}:${World}`"",
 	"-terrabotselftest", $Scenarios, "-steamworkshopfolder", "none")
+if ($Fast) { $tmlArgs += @("-terrabotfast", "$DrawEvery") }
 Write-Host "Launching tModLoader:  $($tmlArgs -join ' ')"
 $started = Get-Date
 $proc = Start-Process -FilePath (Join-Path $TmlDir "dotnet\dotnet.exe") -ArgumentList $tmlArgs -WorkingDirectory $TmlDir -PassThru
