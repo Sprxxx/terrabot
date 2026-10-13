@@ -35,6 +35,23 @@ public static class Body
 	public static bool HasSupport(ITileGrid g, int x, int y) =>
 		g.Get(x, y + 1).CanStandOn() || g.Get(x + 1, y + 1).CanStandOn();
 
+	/// <summary>
+	/// Standing on one column only, with nothing to land on under the other for <paramref name="depth"/> tiles. The
+	/// hitbox overlaps each column by 10 px; a few px of drift (knockback, a swing) slides it off. Seen in game: digging
+	/// down beside a shaft, the bot slid in and fell 42 tiles (180 damage).
+	/// </summary>
+	public static bool IsPrecarious(ITileGrid g, TilePos n, int depth)
+	{
+		bool left = g.Get(n.X, n.Y + 1).CanStandOn(), right = g.Get(n.X + 1, n.Y + 1).CanStandOn();
+		if (left == right)
+			return false;
+		int open = left ? n.X + 1 : n.X;
+		for (int dy = 1; dy <= depth; dy++)
+			if (g.Get(open, n.Y + dy).CanStandOn() || g.Get(open, n.Y + dy).IsLiquid())
+				return false;
+		return true;
+	}
+
 	public static bool IsStandable(ITileGrid g, int x, int y) => IsClear(g, x, y) && HasSupport(g, x, y);
 
 	public static bool IsStandable(ITileGrid g, TilePos n) => IsStandable(g, n.X, n.Y);

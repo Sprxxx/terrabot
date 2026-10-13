@@ -49,6 +49,8 @@ public sealed class FightSkill : ISkill
 	public const int IgnoreTicks = 60 * 30;
 	/// <summary>An ignored enemy this close (px) is fought anyway: it is biting.</summary>
 	public const float IgnoredStillFoughtWithin = 3 * 16f;
+	/// <summary>An ignored enemy starts a fight (the brain's danger check) only this close: less than <see cref="IgnoredStillFoughtWithin"/>, for hysteresis.</summary>
+	public const float IgnoredDangerWithin = 2 * 16f;
 	/// <summary>Swinging at a target in reach this long without it losing life: it cannot be hit from here; leave it.</summary>
 	public const int MaxSwingTicksNoDamage = 300;
 	private int swingWatchId = -1, swingWatchLife, swingTicksNoDamage;
@@ -76,14 +78,11 @@ public sealed class FightSkill : ISkill
 	public string Describe() =>
 		targetId >= 0 ? $"Fight {targetName} ({targetDistance / 16f:0.0} tiles) [{State}] kills {Kills}" : $"Fight [{State}] kills {Kills}";
 
+	/// <summary>Where the fight started, for the leash: set on the first tick (at Start the body can be stale).</summary>
 	private float anchorX, anchorY;
+	private bool anchored;
 
-	public void Start(BotContext ctx)
-	{
-		anchorX = ctx.Body.CenterX(ctx.Physics);
-		anchorY = ctx.Body.CenterY(ctx.Physics);
-		ctx.Log.Info($"Fight start: {ctx.Hostiles.Count} hostile(s) near, weapon {ctx.Combat.WeaponName}");
-	}
+	public void Start(BotContext ctx) => ctx.Log.Info($"Fight start: {ctx.Hostiles.Count} hostile(s) near, weapon {ctx.Combat.WeaponName}");
 
 	public void Stop(BotContext ctx)
 	{
@@ -107,6 +106,11 @@ public sealed class FightSkill : ISkill
 
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		if (!anchored) {
+			anchored = true;
+			anchorX = cx;
+			anchorY = cy;
+		}
 		EntityInfo? target = PickTarget(ctx, cx, cy);
 		if (target == null) {
 			approach = null;

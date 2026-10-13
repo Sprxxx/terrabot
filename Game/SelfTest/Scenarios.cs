@@ -180,7 +180,7 @@ public sealed class Scenario
 			Dig = true,
 			Build = true,
 			DayTime = 3000,
-			TimeoutTicks = 60 * 60 * 60,
+			TimeoutTicks = 60 * 60 * 60 * 4, // four game hours: about 8 min with -Fast -DrawEvery 16
 			Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
 		},
 			new() {

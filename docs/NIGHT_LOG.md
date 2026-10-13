@@ -25,3 +25,18 @@ what was decided and the result.
 - **Decision:** measure the defend leash from where the fight started. Unit test
   `DefendLeash_IsMeasuredFromWhereTheFightStarted` added (195 pass). In game, fight_green_slime,
   fight_two_slimes_both_sides, early_game_with_slimes and night_shelter all pass (4/4, 21 s at fast speed).
+
+### world_eye run 13 (fast mode: 1 game hour in about 3 real minutes)
+- **Progress:** work bench, furnace, 15 iron, anvil, then 24 of 30 iron for the pickaxe. Four deaths, all
+  recovered: two cave bats and a red slime while it was digging in to recover, and one 42-tile fall. Timed out after
+  1 game hour.
+- **Fall:** it was digging down beside a deep one-tile shaft, standing on one column with its hitbox overlapping the
+  support by a few px, and slid in. **Decision:** footing over a drop deeper than the safe fall (`Body.IsPrecarious`)
+  costs +200 ticks in planning, so such spots are used only when there is no alternative.
+- **Stall:** an ignored Yellow Slime sat at 2.9–3.0 tiles. Ignored enemies within 3 tiles count as danger, so a fight
+  started, the slime drifted to 3.01 tiles and the fight ended, every 2 s for the rest of the hour. **Decision:**
+  hysteresis. An ignored enemy starts a fight only within 2 tiles, and a fight keeps it out to 3.
+- **Leash fix follow-up:** the fight anchor was read in Start(), before the body was refreshed (the self-test position
+  was stale), so it is now set on the first tick.
+- **Timeout:** world_eye raised to 4 game hours (about 8 real minutes in fast mode).
+- **Tests:** FootingTests added (198 pass). In game, 19 movement and fight scenarios pass.

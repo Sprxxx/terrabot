@@ -122,7 +122,13 @@ public sealed class MoveContext
 		return m != null && m.IsValid(this, step);
 	}
 
-	/// <summary>Applies liquid penalty to an edge ending at <paramref name="to"/>.</summary>
-	public float Adjust(float cost, TilePos to) =>
-		Body.HeadInLiquid(Grid, to) ? cost * HeadUnderCostMultiplier : Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
+	/// <summary>Extra cost for an edge ending on precarious footing (<see cref="Body.IsPrecarious"/>, over a drop beyond <see cref="MaxDrop"/>).</summary>
+	public float PrecariousTicks { get; init; } = 200f;
+
+	/// <summary>Applies the liquid and footing penalties to an edge ending at <paramref name="to"/>.</summary>
+	public float Adjust(float cost, TilePos to)
+	{
+		float c = Body.HeadInLiquid(Grid, to) ? cost * HeadUnderCostMultiplier : Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
+		return Body.IsPrecarious(Grid, to, MaxDrop + 1) ? c + PrecariousTicks : c;
+	}
 }

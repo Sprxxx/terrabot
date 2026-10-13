@@ -64,9 +64,13 @@ public sealed class BotContext
 		UnhittableEnemies[npcId] = Tick + ticks;
 	}
 
-	/// <summary>Is this enemy one to fight (or fear) at distance <paramref name="distance"/> px, given what was given up on?</summary>
-	public bool Fightable(int npcId, float distance) =>
-		!IgnoredEvenClose(npcId) && (!Ignored(npcId) || distance <= Skills.FightSkill.IgnoredStillFoughtWithin);
+	/// <summary>
+	/// Is this enemy one to fight at distance <paramref name="distance"/> px, given what was given up on? Ignored ones
+	/// only within <paramref name="ignoredWithin"/> (px): the danger check uses a shorter distance than the fight, or an
+	/// ignored slime sitting at the edge started and ended a fight every 2 s (seen in game: mining stalled for an hour).
+	/// </summary>
+	public bool Fightable(int npcId, float distance, float ignoredWithin = Skills.FightSkill.IgnoredStillFoughtWithin) =>
+		!IgnoredEvenClose(npcId) && (!Ignored(npcId) || distance <= ignoredWithin);
 	/// <summary>Chests already looted (or given up on), by top-left tile: not visited again.</summary>
 	public System.Collections.Generic.HashSet<TilePos> OpenedChests { get; } = new();
 	/// <summary>Where exploring legs went (kept across restarts, so a fight or replan does not send it back over old ground).</summary>
