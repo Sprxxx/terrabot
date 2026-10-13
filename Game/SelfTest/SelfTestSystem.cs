@@ -71,8 +71,29 @@ public sealed class SelfTestSystem : ModSystem
 
 	public override void Load()
 	{
-		if (Enabled && Program.LaunchParameters.ContainsKey(FastFlag))
+		if (!Enabled)
+			return;
+		if (Program.LaunchParameters.ContainsKey(FastFlag))
 			On_Main.SetResolution += KeepVsyncOff;
+		focusField = typeof(Microsoft.Xna.Framework.Game).GetField("INTERNAL_isActive", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		if (focusField != null)
+			On_Main.DoUpdate += RunInBackground;
+		else
+			Mod.Logger.Warn("SELFTEST: FNA focus field not found; the game will pause while its window is not focused");
+	}
+
+	private static System.Reflection.FieldInfo focusField;
+
+	/// <summary>
+	/// Singleplayer pauses while the window is not focused (Main.DoUpdate: hasFocus = Game.IsActive, then gamePaused).
+	/// The self-test runs unattended, so it tells the game it still has focus at the start of every update. FNA only
+	/// clears the flag on a focus-lost event, polled once per frame before Update. Keyboard input reaches only the
+	/// focused window, so typing elsewhere does not reach the game.
+	/// </summary>
+	private static void RunInBackground(On_Main.orig_DoUpdate orig, Main self, ref Microsoft.Xna.Framework.GameTime gameTime)
+	{
+		focusField.SetValue(self, true);
+		orig(self, ref gameTime);
 	}
 
 	/// <summary>

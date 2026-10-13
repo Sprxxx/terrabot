@@ -10,7 +10,8 @@
      The mod builds each scenario in an arena above spawn, runs the bot, logs SELFTEST lines and quits the game.
   4. Prints the SELFTEST lines from tModLoader-Logs\client.log. Exit code = number of failed scenarios.
 
-  Singleplayer pauses while the game window is not focused, so leave the window in front while it runs.
+  The self-test keeps the game running while its window is not focused (vanilla singleplayer pauses then), so
+  other windows can be used meanwhile.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\selftest.ps1
