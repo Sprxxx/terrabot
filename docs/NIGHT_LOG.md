@@ -168,3 +168,15 @@ what was decided and the result.
     does. A stuck plan now rests and retries with its given-up sites forgotten, and stops only after 5 rests.
   - The iron_age_auto check restocks the hotbar several times (one swap per call).
 - **Tests:** 208 unit tests. In game, iron_age_auto, boss_auto, settle_auto, build_house and the fight scenarios pass.
+
+### world_eye run 25
+- **Progress:** another chest gave a Leaf Wand, a Living Wood Wand, a Regeneration Potion and a Recall Potion. Iron
+  for the broadsword was being mined when I stopped the run. 3 deaths, all around row 496, well below the depth limit
+  of 441.
+- **Why so deep:** level "digging on" tunnels at row 433 broke into caves and the bot dropped through, sinking leg by
+  leg. Once below the limit, exploring looked only 10 rows up for frontiers and kept tunnelling at that depth.
+  **Decision:** below the limit, exploring searches upward far enough and its fallback leg digs back up.
+- **The same cave at (2125,339)** had no way back to spawn in three runs (40,000-node searches). **Decision:** a
+  search that expands over 1000 nodes and finds nothing now writes the region to
+  `tModLoader-Logs/TerraBot/nopath_*.txt`, so it can be replayed in a unit test.
+- In game, iron_age_auto, settle_auto and life_crystals pass.

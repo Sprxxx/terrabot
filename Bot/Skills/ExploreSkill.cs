@@ -129,7 +129,12 @@ public sealed class ExploreSkill : ISkill
 			// Not deeper than the gear allows (BotContext.DeepestRow): sideways once at the floor.
 			bool down = Bias == ExploreBias.Down && !downBlocked && node.Y + FallbackDepth <= ctx.DeepestRow;
 			legDown = frontier == null && down;
-			TilePos t = frontier ?? (down
+			// Below the depth the gear allows (fell in, chased, knocked down): dig back up first. Seen in game: at row 480
+			// with a floor of 441 every leg was a level tunnel at that depth, and skeletons killed the bot there.
+			bool tooDeep = node.Y > ctx.DeepestRow;
+			TilePos t = frontier ?? (tooDeep
+				? new TilePos(node.X + heading * FallbackSideways, Math.Max(ctx.DeepestRow, node.Y - FallbackDepth))
+				: down
 				? new TilePos(node.X + heading * FallbackSideways, node.Y + FallbackDepth)
 				: new TilePos(node.X + heading * FallbackStep, node.Y));
 			legs++;
@@ -189,6 +194,8 @@ public sealed class ExploreSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		int up = Bias == ExploreBias.Down ? 10 : 20, down = Bias == ExploreBias.Down ? MaxLegTiles : 20;
+		if (n.Y > ctx.DeepestRow)
+			up = Math.Min(MaxLegTiles, n.Y - ctx.DeepestRow + 10); // too deep: look up to back above the floor
 		for (int x = n.X - MaxLegTiles; x <= n.X + MaxLegTiles; x += 2) {
 			for (int y = n.Y - up; y <= n.Y + down; y++) {
 				int d = Math.Max(Math.Abs(x - n.X), Math.Abs(y - n.Y));

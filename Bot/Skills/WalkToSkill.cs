@@ -208,15 +208,43 @@ public sealed class WalkToSkill : ISkill
 		}
 	}
 
+	private bool dumped;
+
+	/// <summary>
+	/// A big search that found no path: write the region between start and goal (legend as <see cref="Around"/>) to a
+	/// file, so the case can be replayed in a unit test. Seen in game: the same cave, 57 tiles below spawn, never had a
+	/// way back in three runs.
+	/// </summary>
+	private void DumpRegion(BotContext ctx, TilePos start)
+	{
+		dumped = true;
+		if (ctx.DumpDir == null)
+			return;
+		try {
+			TilePos goal = Goal.Anchor;
+			int x0 = System.Math.Min(start.X, goal.X) - 12, x1 = System.Math.Max(start.X, goal.X) + 12;
+			int y0 = System.Math.Min(start.Y, goal.Y) - 12, y1 = System.Math.Max(start.Y, goal.Y) + 8;
+			string map = Around(ctx, start, goal, x0, x1, y0, y1);
+			string file = System.IO.Path.Combine(ctx.DumpDir, $"nopath_{start.X}_{start.Y}_to_{goal.X}_{goal.Y}.txt");
+			System.IO.File.WriteAllText(file, $"start {start} goal {Goal} origin ({x0},{y0}) blocks {ctx.Blocks?.BlockCount ?? 0} pick {ctx.PickPower}" + System.Environment.NewLine + map + System.Environment.NewLine);
+			ctx.Log.Info($"WalkTo: no path from {start} to {Goal}; region written to {file}");
+		}
+		catch (System.Exception e) {
+			ctx.Log.Warn("WalkTo: region dump failed: " + e.Message);
+		}
+	}
+
 	/// <summary>
 	/// A small map of the cells round a failed step, for the log. Solid cells the path may not break are 'X' (too hard
 	/// for the pickaxe, under furniture, vetoed, protected) and 'U' (unsafe: liquid or a falling block next to it).
 	/// </summary>
-	internal static string Around(BotContext ctx, TilePos from, TilePos to)
+	internal static string Around(BotContext ctx, TilePos from, TilePos to) =>
+		Around(ctx, from, to, System.Math.Min(from.X, to.X) - 3, System.Math.Max(from.X, to.X) + 4,
+			System.Math.Min(from.Y, to.Y) - 4, System.Math.Max(from.Y, to.Y) + 2);
+
+	internal static string Around(BotContext ctx, TilePos from, TilePos to, int x0, int x1, int y0, int y1)
 	{
 		var sb = new System.Text.StringBuilder();
-		int x0 = System.Math.Min(from.X, to.X) - 3, x1 = System.Math.Max(from.X, to.X) + 4;
-		int y0 = System.Math.Min(from.Y, to.Y) - 4, y1 = System.Math.Max(from.Y, to.Y) + 2;
 		MoveContext moves = ctx.Moves;
 		char Cell(int x, int y)
 		{
@@ -285,6 +313,8 @@ public sealed class WalkToSkill : ISkill
 			return false;
 		}
 		NoPathCount++;
+		if (LastPlan.Status == PathStatus.NoPath && LastPlan.Expanded > 1000 && !dumped)
+			DumpRegion(ctx, LastPlan.Start);
 		State = $"no path ({LastPlan.Status}), retry {NoPathCount}/{MaxNoPath}";
 		waitTicks = NoPathRetryDelay;
 		return false;

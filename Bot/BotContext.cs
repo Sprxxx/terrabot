@@ -132,6 +132,8 @@ public sealed class BotContext
 	public int CavernY { get; set; }
 	/// <summary>Where the player respawns (feet tile): the bed if set, else the world spawn. Null if unknown.</summary>
 	public TilePos? SpawnTile { get; set; }
+	/// <summary>Folder for debug dumps (the region of a search that found no path); null = none.</summary>
+	public string DumpDir { get; set; }
 
 	/// <summary>Defense below this keeps exploring and mining above <see cref="CavernY"/> (+ <see cref="ShallowMargin"/>).</summary>
 	public const int CavernDefense = 8;
