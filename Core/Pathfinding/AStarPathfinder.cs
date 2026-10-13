@@ -85,7 +85,7 @@ public sealed class PathSearch
 		best = start;
 		bestH = goal.Heuristic(start);
 
-		if (!Body.IsStandable(ctx.Grid, start)) {
+		if (!Body.IsStartable(ctx.Grid, start)) {
 			Result = new PathResult { Status = PathStatus.InvalidStart, Start = start, Best = start };
 			return;
 		}

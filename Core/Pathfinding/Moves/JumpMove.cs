@@ -25,7 +25,7 @@ public sealed class JumpMove : IMoveType
 
 		foreach (JumpLibrary.Entry e in ctx.Jumps.Entries) {
 			var to = new TilePos(from.X + e.Dx, from.Y + e.Dy);
-			if (!Body.IsStandable(window, to))
+			if (!Body.IsStandable(window, to) || LandsInASlope(window, to))
 				continue;
 			foreach (JumpTemplate v in e.Variants) {
 				if (v.Fits(window, from)) {
@@ -38,4 +38,10 @@ public sealed class JumpMove : IMoveType
 
 	public bool IsValid(MoveContext ctx, in PathStep step) =>
 		step.Template != null && Body.IsStandable(ctx.Grid, step.To) && step.Template.Fits(ctx.Grid, step.From);
+
+	/// <summary>
+	/// Feet would end up inside a slope or half block: the templates assume a flat landing, and the slope's surface is
+	/// lower or higher than that. Seen in game: two such jumps failed 3 times each. Walking and step-ups handle slopes.
+	/// </summary>
+	private static bool LandsInASlope(ITileGrid g, TilePos to) => g.Get(to.X, to.Y).IsShaped() || g.Get(to.X + 1, to.Y).IsShaped();
 }

@@ -107,3 +107,14 @@ what was decided and the result.
   player stands partly inside it. Also, each rest now starts with 45 ticks of hopping sideways, a different way each
   time, to get off whatever spot keeps failing.
 - **Tests:** '/' in test grids now means a shaped tile. 204 unit tests. In game, 21 movement and chain scenarios pass.
+
+### world_eye run 20
+- **Failure:** walking back to the furnace failed over and over. Jumps ending with the feet inside a slope cell
+  failed 3 times each, and the rest wiped the "never plan this step" notes, so it retried them.
+- **Decisions:**
+  - Jumps no longer target a landing with feet inside a slope (`JumpMove.LandsInASlope`); walking and step-ups still
+    handle slopes.
+  - The run 19 slope fix is narrowed to the start only (`Body.IsStartable`). As a general "standable" rule it created
+    these bad jump targets.
+  - Rests no longer clear the never-plan-again steps, which are facts about the world.
+- **Tests:** 205 unit tests. In game, 19 + 11 regression scenarios pass.

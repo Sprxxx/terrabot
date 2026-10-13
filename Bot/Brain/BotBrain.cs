@@ -243,11 +243,10 @@ public sealed class BotBrain
 					Auto = false;
 				}
 				else {
-					ctx.Log.Warn($"Auto: {failures} failures in a row ({LastResult}); resting {BackoffTicks} ticks, forgetting what was unreachable, then trying again ({backoffs}/{MaxBackoffs})");
+					ctx.Log.Warn($"Auto: {failures} failures in a row ({LastResult}); resting {BackoffTicks} ticks, forgetting what was unreachable (not the steps that failed 3 times: those are facts), then trying again ({backoffs}/{MaxBackoffs})");
 					failures = 0;
 					backoffUntil = ctx.Tick + BackoffTicks;
 					ctx.UnreachableTiles.Clear();
-					ctx.BadEdges.Clear();
 					ctx.NoPlace.Clear();
 					ctx.NoBreak.Clear();
 					ctx.ActionFailures.Clear();

@@ -248,7 +248,7 @@ public sealed class WalkToSkill : ISkill
 		MoveContext moves = ctx.Moves;
 		TilePos start = node;
 		foreach (TilePos d in StartCandidates) {
-			if (Body.IsStandable(moves.Grid, node + d)) {
+			if (Body.IsStartable(moves.Grid, node + d)) {
 				start = node + d;
 				break;
 			}

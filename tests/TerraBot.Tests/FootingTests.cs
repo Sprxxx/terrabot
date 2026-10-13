@@ -117,8 +117,24 @@ public class FootingTests
 			"...S/...",
 			"........",
 			"########");
-		Assert.True(Body.IsStandable(g, g.Markers['S']));
+		Assert.True(Body.IsStartable(g, g.Markers['S']));
+		Assert.False(Body.IsStandable(g, g.Markers['S'])); // not a landing spot for other moves
 		var air = ArrayTileGrid.Parse("........", "........", "...S....", "........", "########");
-		Assert.False(Body.IsStandable(air, air.Markers['S']));
+		Assert.False(Body.IsStartable(air, air.Markers['S']));
+	}
+
+	[Fact]
+	public void PlanStartsFromASlopeOverAir()
+	{
+		var (g, b) = TestBlockActions.Parse(
+			"............",
+			"............",
+			"...S/.......",
+			"............",
+			"..........G.",
+			"############");
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
+		PathResult r = new AStarPathfinder().FindPath(ctx, g.Markers['S'], new GoalStandAt(g.Markers['G'], PhysicsParams.Default));
+		Assert.Equal(PathStatus.Found, r.Status);
 	}
 }
