@@ -206,16 +206,29 @@ public sealed class WalkToSkill : ISkill
 		}
 	}
 
-	/// <summary>A small map of the cells round a failed step, for the log.</summary>
+	/// <summary>
+	/// A small map of the cells round a failed step, for the log. Solid cells the path may not break are 'X' (too hard
+	/// for the pickaxe, under furniture, vetoed, protected) and 'U' (unsafe: liquid or a falling block next to it).
+	/// </summary>
 	internal static string Around(BotContext ctx, TilePos from, TilePos to)
 	{
 		var sb = new System.Text.StringBuilder();
 		int x0 = System.Math.Min(from.X, to.X) - 3, x1 = System.Math.Max(from.X, to.X) + 4;
 		int y0 = System.Math.Min(from.Y, to.Y) - 4, y1 = System.Math.Max(from.Y, to.Y) + 2;
+		MoveContext moves = ctx.Moves;
+		char Cell(int x, int y)
+		{
+			CellKind k = ctx.Grid.Get(x, y);
+			if (!k.IsSolid() || moves.Blocks == null)
+				return k.ToChar();
+			if (BlockRules.Unsafe(ctx.Grid, new TilePos(x, y), System.Array.Empty<TilePos>()))
+				return 'U';
+			return float.IsInfinity(moves.Blocks.BreakTicks(x, y)) ? 'X' : k.ToChar();
+		}
 		for (int y = y0; y <= y1; y++) {
 			sb.Append("    ");
 			for (int x = x0; x <= x1; x++)
-				sb.Append(x == from.X && y == from.Y ? 'F' : x == to.X && y == to.Y ? 'T' : ctx.Grid.Get(x, y).ToChar());
+				sb.Append(x == from.X && y == from.Y ? 'F' : x == to.X && y == to.Y ? 'T' : Cell(x, y));
 			if (y < y1)
 				sb.Append('\n');
 		}

@@ -81,14 +81,19 @@ public sealed class DigMove : IMoveType
 				AddBody(cells, to);
 				break;
 			}
-			case Variant.TunnelDown:
+			case Variant.TunnelDown: {
 				to = new TilePos(from.X + dir, from.Y + 1);
 				if (!Body.HasSupport(g, to.X, to.Y))
 					return false;
 				kind = MoveKind.Drop;
 				baseCost = ctx.WalkTileCost + ctx.FallTicks(1) + 1f;
 				AddBody(cells, to);
+				// The body steps sideways at its old height before it drops (the back column still holds it up), so the
+				// head cell in front at that height must be open too. Seen in game: pressing right into it for 46 ticks.
+				int front = dir > 0 ? from.X + Body.WidthTiles : from.X - 1;
+				cells.Add(new TilePos(front, from.Y - Body.HeightTiles + 1));
 				break;
+			}
 			default: { // DigDown
 				if (!FindDigLanding(ctx, from, out int k))
 					return false;

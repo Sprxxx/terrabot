@@ -293,6 +293,14 @@ public sealed class FightSkill : ISkill
 			targetId = -1;
 		}
 		EntityInfo? pick = current ?? nearest;
+		// Whatever just bit us comes first: seen in game, the bot chased a slime 20 tiles off while two others bit it.
+		int attacker = ctx.RecentAttacker;
+		if (attacker >= 0 && attacker != pick?.Id && !unreachable.Contains(attacker))
+			foreach (EntityInfo e in ctx.Hostiles)
+				if (e.Id == attacker && e.DistanceTo(cx, cy) <= engage) {
+					pick = e;
+					break;
+				}
 		if (pick is EntityInfo e2 && e2.Id != targetId) {
 			targetId = e2.Id;
 			targetName = e2.Name;

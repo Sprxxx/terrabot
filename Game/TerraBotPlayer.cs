@@ -127,6 +127,8 @@ public sealed class TerraBotPlayer : ModPlayer
 			: $"other {src.SourceOtherIndex}";
 		HurtCount++;
 		DamageTaken += info.Damage;
+		if (src.SourceNPCIndex >= 0 && src.SourceNPCIndex < Main.maxNPCs)
+			Context.NoteAttacker(src.SourceNPCIndex);
 		if (src.SourceOtherIndex == 0 && src.SourceNPCIndex < 0 && src.SourceProjectileType <= 0)
 			FallDamageHits++;
 		if (SelfTest.SelfTestSystem.IsFallingBlockProjectile(src.SourceProjectileType))

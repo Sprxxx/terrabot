@@ -304,6 +304,30 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void WhatBitUs_IsFoughtFirst()
+	{
+		// world_eye run 17: the bot chased a slime 20 tiles off while a red slime next to it bit it to death.
+		string row = new('.', 60), floor = new('#', 60);
+		var g = ArrayTileGrid.Parse(row, row, row, row, row.Remove(30, 1).Insert(30, "S"), floor);
+		var ctx = new BotContext { Grid = g, Log = new Log(output), Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword" } };
+		ctx.Body = new SimWorld(g, PhysicsParams.Default, g.Markers['S']).State;
+		EntityInfo far = new(8, 1, "Far Slime", 50 * 16f, 5 * 16f - 24f, 24, 24, 0, 0, 60, 60, 10);
+		EntityInfo near = new(9, 1, "Biting Slime", 33 * 16f, 5 * 16f - 24f, 24, 24, 0, 0, 60, 60, 10);
+		ctx.Hostiles = new[] { far };
+		var skill = new FightSkill();
+		skill.Start(ctx);
+		skill.Tick(ctx);
+		Assert.Contains("Far Slime", skill.Describe());
+		ctx.Ignore(9, 1800); // given up on earlier
+		ctx.Hostiles = new[] { far, near };
+		ctx.Tick = 10;
+		ctx.NoteAttacker(9);
+		Assert.False(ctx.Ignored(9));
+		skill.Tick(ctx);
+		Assert.Contains("Biting Slime", skill.Describe());
+	}
+
+	[Fact]
 	public void NoWeapon_Fails()
 	{
 		var g = ArrayTileGrid.Parse("..S.......", "##########");

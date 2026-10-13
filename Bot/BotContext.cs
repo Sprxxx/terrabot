@@ -58,6 +58,27 @@ public sealed class BotContext
 
 	public bool IgnoredEvenClose(int npcId) => UnhittableEnemies.TryGetValue(npcId, out long until) && Tick < until;
 
+	/// <summary>The NPC (whoAmI) that last hurt the bot by contact, and when; -1 if none.</summary>
+	public int LastAttacker { get; private set; } = -1;
+	public long LastAttackedTick { get; private set; } = -1;
+	/// <summary>An attack this recent makes its NPC the one to fight.</summary>
+	public const int AttackerMemoryTicks = 120;
+
+	/// <summary>
+	/// Something hurt the bot: whatever was given up on about it is forgotten (it can reach us, so we can reach it).
+	/// Seen in game: a red slime given up on as unhittable kept biting while the bot chased another slime 20 tiles away.
+	/// </summary>
+	public void NoteAttacker(int npcId)
+	{
+		LastAttacker = npcId;
+		LastAttackedTick = Tick;
+		IgnoredEnemies.Remove(npcId);
+		UnhittableEnemies.Remove(npcId);
+	}
+
+	/// <summary>The NPC that hurt the bot within <see cref="AttackerMemoryTicks"/>, or -1.</summary>
+	public int RecentAttacker => LastAttacker >= 0 && Tick - LastAttackedTick <= AttackerMemoryTicks ? LastAttacker : -1;
+
 	public void IgnoreEvenClose(int npcId, int ticks)
 	{
 		Ignore(npcId, ticks);

@@ -85,4 +85,25 @@ public class FootingTests
 		ctx.Combat.Defense = BotContext.DeepDefense;
 		Assert.Equal(int.MaxValue, ctx.DeepestRow);
 	}
+
+	[Fact]
+	public void DiagonalDigDown_ClearsTheHeadCellInFront()
+	{
+		// world_eye run 17: a dig down to the right left the block at head height in front; the bot pressed right into
+		// it for 46 ticks. The body steps sideways at its old height before it drops.
+		var (g, b) = TestBlockActions.Parse(
+			"@@@@@@@@",
+			"@...#@@@",
+			"@......@",
+			"@.S....@",
+			"@@@##@@@",
+			"@@@##@@@",
+			"@@@@@@@@");
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = false };
+		var edges = new System.Collections.Generic.List<PathStep>();
+		foreach (IMoveType m in ctx.Moves)
+			m.Expand(ctx, g.Markers['S'], edges);
+		PathStep down = Assert.Single(edges, e => e.Kind == MoveKind.Drop && e.To == new TilePos(3, 4));
+		Assert.Contains(down.Actions, a => a.Cell == new TilePos(4, 1));
+	}
 }

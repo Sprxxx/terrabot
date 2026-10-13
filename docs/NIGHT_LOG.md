@@ -66,3 +66,18 @@ what was decided and the result.
   after a craft fails for lack of a station the bot walks right up to it first.
 - **Flaky check:** the iron_age_auto pick-power check ran before the 30-tick hotbar restock. It now restocks first.
 - **Tests:** 201 unit tests pass. In game, 21 movement, fight and crafting-chain scenarios pass.
+
+### world_eye runs 16 and 17
+- **Run 16:** got stuck exploring, with the same leg failing at once for 9 game minutes. A leg that fails at once did
+  not count as a failure, so it retried for ever. **Decision:** after 10 instant failures in a row, exploring fails
+  and logs a tile map, so the brain's rest-and-retry clears what boxes it in.
+- **Run 17:** the anvil was placed by game minute 6, the fastest yet. Then:
+  - **Bitten while ignoring the biter:** the "can't hit it" rule gave up on a red slime in water that kept biting
+    the bot, and the bot chased another slime 20 tiles away. **Decision:** the context records the last NPC that
+    hurt the bot (`NoteAttacker`). That clears any ignore on it, and the fight targets it first.
+  - **Crowds:** most deaths happen while digging in at 30% life among 2–3 enemies. **Decision:** with 2+ hostiles
+    within 8 tiles, retreat at 50%.
+  - **Boxed in:** a diagonal dig down had not cleared the head-height cell in front. The body steps sideways at its
+    old height before it drops, so the bot pressed into that block, then found no way on. **Decision:** the
+    TunnelDown move also breaks that cell. The debug map now marks unbreakable cells 'X' and unsafe ones 'U'.
+- **Tests:** 203 unit tests. In game, 23 regression scenarios pass.

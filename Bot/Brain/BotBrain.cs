@@ -88,6 +88,23 @@ public sealed class BotBrain
 
 	/// <summary>Hurt this badly with no potion to drink and enemies about: dig in and recover instead of fighting on.</summary>
 	public const float RetreatBelow = 0.3f;
+	/// <summary>With <see cref="CrowdSize"/> or more hostiles within <see cref="CrowdTiles"/>, retreat already below this.</summary>
+	public const float CrowdRetreatBelow = 0.5f;
+	public const int CrowdSize = 2, CrowdTiles = 8;
+
+	/// <summary>
+	/// Life fraction below which the bot retreats to dig in. Earlier against a crowd: seen in game, digging in at 30%
+	/// among three slimes or bats, it died before the hole was deep enough, four times in one run.
+	/// </summary>
+	public static float RetreatThreshold(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		int near = 0;
+		foreach (EntityInfo h in ctx.Hostiles)
+			if (h.DistanceTo(cx, cy) <= CrowdTiles * 16f && ++near >= CrowdSize)
+				return CrowdRetreatBelow;
+		return RetreatBelow;
+	}
 	/// <summary>Tiles round a spot where the bot ran out of breath that it no longer mines.</summary>
 	public const int DrownAvoidRadius = 6;
 	/// <summary>How often (ticks) the brain checks for accessories to put on and chests in sight.</summary>
@@ -136,7 +153,7 @@ public sealed class BotBrain
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
 		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill
-			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatBelow && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)) {
+			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			Interrupt(ctx);
 			Begin(ShelterSkill.Recover(RetreatUntil), ctx);

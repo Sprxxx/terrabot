@@ -42,6 +42,9 @@ public sealed class ExploreSkill : ISkill
 	private bool legDown;
 	private int legStart;
 	private int pauseUntil;
+	private int instantFails;
+	/// <summary>Legs in a row that fail at once before exploring gives up (<see cref="InstantFailTicks"/>).</summary>
+	public const int MaxInstantFails = 10;
 	/// <summary>A leg failing within this many ticks did not really start; wait <see cref="RetryPauseTicks"/> and try again.</summary>
 	public const int InstantFailTicks = 10, RetryPauseTicks = 30;
 	private bool downBlocked;
@@ -146,13 +149,23 @@ public sealed class ExploreSkill : ISkill
 		if (s == SkillStatus.Running)
 			return SkillStatus.Running;
 		if (s == SkillStatus.Failed && ticks - legStart < InstantFailTicks) {
-			// Failed before it got going (no footing, start not standable): not a real leg; try again shortly.
+			// Failed before it got going (no footing, start not standable): not a real leg; try again shortly. But not
+			// for ever: seen in game, no move at all led out of the spot (search expanded 1 node) and the bot retried the
+			// same leg for 9 game minutes. Then fail, so the brain's rest clears the vetoes that may box it in.
+			if (++instantFails > MaxInstantFails) {
+				TilePos here = ctx.Node;
+				ctx.Log.Info($"Explore: {MaxInstantFails} legs in a row failed at once from {here} ({walk.FailureReason}); around it:\n{WalkToSkill.Around(ctx, here, legTarget is TilePos lt && lt.ChebyshevTo(here) <= 4 ? lt : here)}");
+				walk.Stop(ctx);
+				walk = null;
+				return Fail(ctx, $"no way on from {here}: {MaxInstantFails} legs failed at once");
+			}
 			legs--;
 			pauseUntil = ticks + RetryPauseTicks;
 			walk.Stop(ctx);
 			walk = null;
 			return SkillStatus.Running;
 		}
+		instantFails = 0;
 		if (s == SkillStatus.Failed) {
 			// Down blocked (the bottom, lava): tunnel sideways from now on; a sideways tunnel blocked: turn round.
 			ctx.Log.Info($"Explore: leg {legs} to {legTarget} failed ({walk.FailureReason})"
