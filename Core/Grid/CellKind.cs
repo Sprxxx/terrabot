@@ -61,6 +61,7 @@ public static class CellKindExtensions
 		'#' or '@' => CellKind.Solid,
 		'%' => CellKind.Solid | CellKind.Falling,
 		'=' => CellKind.Platform,
+		'/' => CellKind.Platform | CellKind.Shaped, // a slope or half block, as TerrariaTileGrid reads them
 		'~' => CellKind.Water,
 		'!' => CellKind.Lava,
 		'h' => CellKind.Honey,

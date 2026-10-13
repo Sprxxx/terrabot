@@ -106,4 +106,19 @@ public class FootingTests
 		PathStep down = Assert.Single(edges, e => e.Kind == MoveKind.Drop && e.To == new TilePos(3, 4));
 		Assert.Contains(down.Actions, a => a.Cell == new TilePos(4, 1));
 	}
+
+	[Fact]
+	public void SlopeInTheFeetRow_HoldsTheBodyUp()
+	{
+		// world_eye run 19: resting on a slope with air under both columns, every plan failed with "invalid start".
+		var g = ArrayTileGrid.Parse(
+			"........",
+			"........",
+			"...S/...",
+			"........",
+			"########");
+		Assert.True(Body.IsStandable(g, g.Markers['S']));
+		var air = ArrayTileGrid.Parse("........", "........", "...S....", "........", "########");
+		Assert.False(Body.IsStandable(air, air.Markers['S']));
+	}
 }

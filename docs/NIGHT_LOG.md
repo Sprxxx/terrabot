@@ -99,3 +99,11 @@ what was decided and the result.
     Copper Shortsword, which did 1–2 damage a hit to yellow slimes.
   - **Station memory:** stations count as gone only when the scan was made near them (scan origin recorded).
 - **Tests:** 203 unit tests. In game, 25 regression scenarios pass, including eye_of_cthulhu.
+
+### world_eye run 19
+- **Stall:** the bot came to rest on a slope tile with air under both foot columns. The planner counted only blocks
+  under the feet as support, so its own position was "InvalidStart" and every plan failed. All 5 rests happened on the
+  same tile and auto mode stopped. **Decision:** a slope or half block in the feet row counts as support, since the
+  player stands partly inside it. Also, each rest now starts with 45 ticks of hopping sideways, a different way each
+  time, to get off whatever spot keeps failing.
+- **Tests:** '/' in test grids now means a shaped tile. 204 unit tests. In game, 21 movement and chain scenarios pass.

@@ -23,6 +23,8 @@ public sealed class BotBrain
 	/// keeps at it. Seen in game: auto mode stopped for good when the iron hunt failed three times.
 	/// </summary>
 	public const int BackoffTicks = 60 * 10;
+	/// <summary>Ticks at the start of each rest spent hopping sideways, off whatever spot the plans kept failing from.</summary>
+	public const int UnstickTicks = 45;
 	/// <summary>Rounds of rest-and-retry without one success before auto mode stops for good.</summary>
 	public const int MaxBackoffs = 5;
 
@@ -180,8 +182,17 @@ public sealed class BotBrain
 		}
 		if (Current == null && Target != null)
 			Begin(new WalkToSkill(Target.Value), ctx);
-		if (Current == null && Auto && ctx.Tick < backoffUntil)
-			return; // resting after failures in a row (danger and breath are still handled above)
+		if (Current == null && Auto && ctx.Tick < backoffUntil) {
+			// Resting after failures in a row (danger and breath are still handled above). First hop sideways a little, a
+			// new way each rest: seen in game, the bot sat on a spot the planner could not start from, and all five rests
+			// failed from the same tile.
+			if (backoffUntil - ctx.Tick > BackoffTicks - UnstickTicks) {
+				ctx.Output = MoveInput.None;
+				ctx.Output.Horizontal = backoffs % 2 == 0 ? 1 : -1;
+				ctx.Output.Jump = (ctx.Tick / 15) % 2 == 0;
+			}
+			return;
+		}
 		if (Current == null && Auto) {
 			ISkill next = Planner.Next(ctx);
 			if (next == null) {

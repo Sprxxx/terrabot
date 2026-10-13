@@ -32,8 +32,12 @@ public static class Body
 
 	public static bool IsClear(ITileGrid g, TilePos n) => IsClear(g, n.X, n.Y);
 
+	/// <summary>
+	/// Something under the feet, or a slope / half block in the feet row itself: the player stands partly inside those.
+	/// Seen in game: resting on a slope with air under both columns, the start was "not standable" and every plan failed.
+	/// </summary>
 	public static bool HasSupport(ITileGrid g, int x, int y) =>
-		g.Get(x, y + 1).CanStandOn() || g.Get(x + 1, y + 1).CanStandOn();
+		g.Get(x, y + 1).CanStandOn() || g.Get(x + 1, y + 1).CanStandOn() || g.Get(x, y).IsShaped() || g.Get(x + 1, y).IsShaped();
 
 	/// <summary>
 	/// Standing on one column only, with nothing to land on under the other for <paramref name="depth"/> tiles. The
