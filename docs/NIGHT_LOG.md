@@ -40,3 +40,12 @@ what was decided and the result.
   was stale), so it is now set on the first tick.
 - **Timeout:** world_eye raised to 4 game hours (about 8 real minutes in fast mode).
 - **Tests:** FootingTests added (198 pass). In game, 19 movement and fight scenarios pass.
+
+### world_eye run 14
+- **Failure:** it stopped after about 4 game minutes. Mining iron "failed after 3 explorations", but every exploration
+  had found ore. The counter counted all searches, not only fruitless ones. Three failed Mine jobs in a row then
+  stopped auto mode for good.
+- **Decision 1:** a successful mine resets the exploration counter, so only fruitless explorations in a row count.
+- **Decision 2:** auto mode no longer quits after 3 failures. It rests 10 s, forgets what it had marked unreachable or
+  failing (the world changes as it digs), and tries again. It stops for good only after 5 such rests with no success
+  in between.

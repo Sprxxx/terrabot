@@ -17,8 +17,18 @@ namespace TerraBot.Bot.Brain;
 public sealed class BotBrain
 {
 	public const int MaxConsecutiveFailures = 3;
+	/// <summary>
+	/// After <see cref="MaxConsecutiveFailures"/> failures in a row the brain rests this long, forgets what it found
+	/// unreachable or failing (the world changes: mined tunnels, new caves seen), and tries again, like a player who
+	/// keeps at it. Seen in game: auto mode stopped for good when the iron hunt failed three times.
+	/// </summary>
+	public const int BackoffTicks = 60 * 10;
+	/// <summary>Rounds of rest-and-retry without one success before auto mode stops for good.</summary>
+	public const int MaxBackoffs = 5;
 
 	private int failures;
+	private int backoffs;
+	private long backoffUntil = -1;
 
 	public TilePos? Target { get; private set; }
 	public ISkill Current { get; private set; }
@@ -53,6 +63,8 @@ public sealed class BotBrain
 		Target = null;
 		Auto = on;
 		failures = 0;
+		backoffs = 0;
+		backoffUntil = -1;
 		Planner.Reset(plan);
 		ctx.UnreachableTiles.Clear();
 		LastResult = "";
@@ -151,6 +163,8 @@ public sealed class BotBrain
 		}
 		if (Current == null && Target != null)
 			Begin(new WalkToSkill(Target.Value), ctx);
+		if (Current == null && Auto && ctx.Tick < backoffUntil)
+			return; // resting after failures in a row (danger and breath are still handled above)
 		if (Current == null && Auto) {
 			ISkill next = Planner.Next(ctx);
 			if (next == null) {
@@ -193,9 +207,23 @@ public sealed class BotBrain
 		}
 		if (Auto) {
 			failures = status == SkillStatus.Failed ? failures + 1 : 0;
+			if (status == SkillStatus.Succeeded && !wasFight)
+				backoffs = 0;
 			if (failures >= MaxConsecutiveFailures) {
-				ctx.Log.Warn($"Auto: {failures} failures in a row, stopping auto mode ({LastResult})");
-				Auto = false;
+				if (++backoffs > MaxBackoffs) {
+					ctx.Log.Warn($"Auto: {failures} failures in a row after {MaxBackoffs} rests, stopping auto mode ({LastResult})");
+					Auto = false;
+				}
+				else {
+					ctx.Log.Warn($"Auto: {failures} failures in a row ({LastResult}); resting {BackoffTicks} ticks, forgetting what was unreachable, then trying again ({backoffs}/{MaxBackoffs})");
+					failures = 0;
+					backoffUntil = ctx.Tick + BackoffTicks;
+					ctx.UnreachableTiles.Clear();
+					ctx.BadEdges.Clear();
+					ctx.NoPlace.Clear();
+					ctx.NoBreak.Clear();
+					ctx.ActionFailures.Clear();
+				}
 			}
 		}
 	}

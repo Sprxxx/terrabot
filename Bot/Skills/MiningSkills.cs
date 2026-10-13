@@ -111,7 +111,7 @@ public sealed class MineSkill : ISkill
 			return SkillStatus.Running;
 		}
 		if (++explores > MaxExplores)
-			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations");
+			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations in a row");
 		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
 		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
 		// "Found" is what this skill would actually go for (not beside water, not given up on...): with "any seen", exploring
@@ -127,6 +127,7 @@ public sealed class MineSkill : ISkill
 			// Mined (or changed under us): the drop falls nearby; pick it up before the next tile.
 			Mined++;
 			unreachableInARow = 0;
+			explores = 0; // exploring found ore that got mined: only fruitless explorations in a row count
 			target = null;
 			sub?.Stop(ctx);
 			sub = null;
