@@ -203,4 +203,21 @@ public class FootingTests
 				g.Set(a.Cell.X, a.Cell.Y, a.Kind == ActionKind.Break ? CellKind.Empty : CellKind.Solid);
 		}
 	}
+
+	[Fact]
+	public void BelowTheDepthLimit_EdgesCostMore_AndTheContextFollowsTheGear()
+	{
+		// world_eye run 36: home from the depth limit through the open caverns below it; crawdads killed the bot twice.
+		var flat = ArrayTileGrid.Parse("........", "........", "........", "########");
+		var moves = new MoveContext(flat, PhysicsParams.Default) { AvoidBelowRow = 1 };
+		Assert.Equal(10f, moves.Adjust(10f, new TilePos(2, 1)));
+		Assert.Equal(10f + moves.BelowRowTicks, moves.Adjust(10f, new TilePos(2, 2)));
+
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(null);
+		ctx.CavernY = 30;
+		Assert.Equal(ctx.DeepestRow, ctx.Moves.AvoidBelowRow);
+		ctx.Combat.Defense = BotContext.DeepDefense; // full gear: no limit
+		Assert.Equal(int.MaxValue, ctx.Moves.AvoidBelowRow);
+	}
 }

@@ -41,6 +41,7 @@ public sealed class ExploreSkill : ISkill
 	private bool legWasFallback;
 	private bool legDown;
 	private int legStart;
+	private TilePos legFrom;
 	private int pauseUntil;
 	private int instantFails;
 	/// <summary>Legs in a row that fail at once before exploring gives up (<see cref="InstantFailTicks"/>).</summary>
@@ -130,10 +131,12 @@ public sealed class ExploreSkill : ISkill
 			bool down = Bias == ExploreBias.Down && !downBlocked && node.Y + FallbackDepth <= ctx.DeepestRow;
 			legDown = frontier == null && down;
 			// Below the depth the gear allows (fell in, chased, knocked down): dig back up first. Seen in game: at row 480
-			// with a floor of 441 every leg was a level tunnel at that depth, and skeletons killed the bot there.
+			// with a floor of 441 every leg was a level tunnel at that depth, and skeletons killed the bot there. A full leg
+			// up, not just to the floor: 4 rows below it, "up to the floor" was within the walk's tolerance, and 14 legs in
+			// a row ended at once without a step (world_eye run 36).
 			bool tooDeep = node.Y > ctx.DeepestRow;
 			TilePos t = frontier ?? (tooDeep
-				? new TilePos(node.X + heading * FallbackSideways, Math.Max(ctx.DeepestRow, node.Y - FallbackDepth))
+				? new TilePos(node.X + heading * FallbackSideways, node.Y - FallbackDepth)
 				: down
 				? new TilePos(node.X + heading * FallbackSideways, node.Y + FallbackDepth)
 				: new TilePos(node.X + heading * FallbackStep, node.Y));
@@ -148,6 +151,7 @@ public sealed class ExploreSkill : ISkill
 			walk = new WalkToSkill(t) { Quiet = true, Tolerance = 3, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			walk.Start(ctx);
 			legStart = ticks;
+			legFrom = node;
 		}
 		SkillStatus s = walk.Tick(ctx);
 		State = $"leg {legs} to {legTarget}";
@@ -170,7 +174,20 @@ public sealed class ExploreSkill : ISkill
 			walk = null;
 			return SkillStatus.Running;
 		}
-		instantFails = 0;
+		// A leg that ended where it began (the target already within reach) went nowhere: count it like a failed one, so
+		// the next pick turns or looks for a frontier anywhere, and the same leg is not taken again and again.
+		bool wentNowhere = s == SkillStatus.Succeeded && ctx.Node.ChebyshevTo(legFrom) <= 1;
+		if (wentNowhere && ++instantFails > MaxInstantFails) {
+			walk.Stop(ctx);
+			walk = null;
+			return Fail(ctx, $"no way on from {ctx.Node}: {MaxInstantFails} legs went nowhere");
+		}
+		if (!wentNowhere)
+			instantFails = 0;
+		if (wentNowhere) {
+			ctx.Log.Info($"Explore: leg {legs} to {legTarget} went nowhere; turning round");
+			heading = -heading;
+		}
 		if (s == SkillStatus.Failed) {
 			// Down blocked (the bottom, lava): tunnel sideways from now on; a sideways tunnel blocked: turn round.
 			ctx.Log.Info($"Explore: leg {legs} to {legTarget} failed ({walk.FailureReason})"
@@ -180,7 +197,7 @@ public sealed class ExploreSkill : ISkill
 			else if (legWasFallback)
 				heading = -heading;
 		}
-		lastFallbackFailed = legWasFallback && !legDown && s == SkillStatus.Failed;
+		lastFallbackFailed = legWasFallback && !legDown && (s == SkillStatus.Failed || wentNowhere);
 		walk.Stop(ctx);
 		walk = null;
 		return SkillStatus.Running;

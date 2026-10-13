@@ -296,3 +296,18 @@ what was decided and the result.
   arrow shot at a demon eye topped the 500 up again, until the wood was gone. **Decision:** stocks like arrows refill
   only below 80% once full. boss_auto passes again (Eye defeated). In game, 9 walk and dig scenarios, night_home,
   night_shelter and iron_age_auto pass. 217 unit tests.
+
+### world_eye run 36: Iron Broadsword and Iron Pickaxe by the second night
+- **Progress:** house and anvil on day one, the first night at home with no trips outside, the **Iron Broadsword on
+  day 2** and the **Iron Pickaxe on the second night**. Then mining 45 iron for armour.
+- **5 deaths,** 4 of them in the caverns (rows 452-471, depth limit 441): skeletons, crawdads, a spitter. The causes:
+  - Walks home from mining at the limit went through the open caverns below it, the cheapest route. **Decision:**
+    path edges below the depth limit cost 25 ticks more (the move context follows the gear).
+  - Just below the limit, "dig back up to the limit" was within the walk's 3-tile tolerance: 14 legs in a row ended
+    at once, the iron search gave up, and the bot travelled off through the caverns. **Decision:** dig a full 20 up,
+    and a leg that goes nowhere counts as failed (the next leg turns). Test
+    `JustBelowTheDepthLimit_DigsBackUp_InsteadOfGoingNowhere` failed on the old code (16 legs in 236 ticks).
+- 1 death to a vulture in the desert while travelling east for ore.
+- The PLAN now has an M9 section and the milestones after the Eye, in order (M10 Brain of Cthulhu through M18 Moon
+  Lord).
+- In game, 7 scenarios pass (early_game, iron_age, settle, night_home, life_crystals, tunnel, dig-down). 219 unit tests.

@@ -53,6 +53,30 @@ public class ExploreTests
 		Assert.Equal(SkillStatus.Succeeded, s);
 		Assert.True(g.Count(FakeGame.IronOre) >= 3);
 	}
+
+	[Fact]
+	public void JustBelowTheDepthLimit_DigsBackUp_InsteadOfGoingNowhere()
+	{
+		// world_eye run 36: 4 rows below the floor, "dig up to the floor" was within the walk's tolerance, and 14 legs in
+		// a row ended at once without a step.
+		var rows = new System.Collections.Generic.List<string> { new string('.', 60), new string('.', 60) };
+		for (int y = 2; y < 22; y++)
+			rows.Add(new string('s', 60));
+		for (int y = 22; y < 25; y++)
+			rows.Add(new string('s', 30) + (y == 24 ? "...S...." : "........") + new string('s', 22));
+		for (int y = 25; y < 31; y++)
+			rows.Add(new string('s', 60));
+		rows.Add(new string('@', 60));
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.CavernY = 30; // floor at row 20 with no armour
+		Assert.Equal(20, ctx.DeepestRow);
+		var explore = new ExploreSkill("the way up", c => c.Node.Y <= c.DeepestRow, ExploreBias.Down, heading: 1);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, explore, 60 * 60 * 2);
+		output.WriteLine($"{s} after {g.Sim.Ticks} ticks, {explore.Legs} legs, at {g.Sim.Node}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(explore.Legs <= 3, $"{explore.Legs} legs");
+	}
 }
 
 /// <summary>Water: ore beside it is left alone, swimming with the head under costs a lot.</summary>

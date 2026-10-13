@@ -125,13 +125,23 @@ public sealed class MoveContext
 	/// <summary>Extra cost for an edge ending on precarious footing (<see cref="Body.IsPrecarious"/>, over a drop beyond <see cref="MaxDrop"/>).</summary>
 	public float PrecariousTicks { get; init; } = 200f;
 
-	/// <summary>Applies the liquid and footing penalties to an edge ending at <paramref name="to"/>.</summary>
+	/// <summary>
+	/// Edges ending below this row cost <see cref="BelowRowTicks"/> more (the caverns, too dangerous for the gear worn).
+	/// Seen in game: mining at the depth limit, then walking home through the open caverns just below it, where
+	/// crawdads and skeletons killed the bot twice. int.MaxValue = off.
+	/// </summary>
+	public int AvoidBelowRow { get; init; } = int.MaxValue;
+	public float BelowRowTicks { get; init; } = 25f;
+
+	/// <summary>Applies the liquid, footing and depth penalties to an edge ending at <paramref name="to"/>.</summary>
 	public float Adjust(float cost, TilePos to)
 	{
 		// Never into lava: 3x cost for "liquid" sent the bot into a lava pool chasing an antlion charger (78 damage, dead).
 		if (Body.TouchesLava(Grid, to))
 			return float.PositiveInfinity;
 		float c = Body.HeadInLiquid(Grid, to) ? cost * HeadUnderCostMultiplier : Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
+		if (to.Y > AvoidBelowRow)
+			c += BelowRowTicks;
 		return Body.IsPrecarious(Grid, to, MaxDrop + 1) ? c + PrecariousTicks : c;
 	}
 }

@@ -616,12 +616,50 @@ UI click would call:
 * **Pointing**: the tile target (`tileTargetX/Y`) and the mouse position (`Main.mouseX/Y`) are overridden for
   the duration of `ItemCheck`. Range, tool power and speed are vanilla's.
 
+## Milestone 9: real-world play up to the Eye of Cthulhu (in progress)
+Scenario `world_eye`: the copied real world (Peppe on "Noxious Vision of Organs", a small Crimson world), the
+character's own inventory, normal spawns, starting at the world spawn. Run with `-Fast -DrawEvery 16` (about 30x)
+and with the window unfocused (the focus pause is hooked off). Run by run, decisions and results go in
+`docs/NIGHT_LOG.md`.
+
+Done so far:
+* Survival: depth limits by defense, death spots avoided, retreat and rest, recall potions, and a night spent in
+  the house (doors count as open space with the auto-open setting). With defense 6+ the bot works at night.
+* Pathfinding in real terrain: broken support, plan repair, region dumps replayed as tests, and partial plans that
+  never end past a self-undermined step.
+* Stations, house, anvil, broadsword and pickaxe in a real world. Best so far: Iron Broadsword at game minute 14
+  (run 31), and the house on day one plus the first night at home (runs 35 and 36).
+
+Left: armour, 200 life (crystals), bow and arrows, the arena, the summon, and the win. Known issues: the
+underground desert counts as unsafe (sand on top), and mining near the depth limit drops into caverns.
+
+## Milestones after the Eye (planned in progression order, as a normal player plays)
+Each mechanic is to be verified against the decompile and terraria.wiki.gg when its milestone starts.
+* **M10, the evil biome boss.** This world is Crimson, so the Brain of Cthulhu. Summon with a Bloody Spine
+  (Vertebrae from Crimson enemies plus Crimtane Bars; the Eye drops Crimtane Ore in Crimson worlds), or by smashing
+  3 Crimson Hearts. Needs travel to the Crimson, fighting its Creepers, and a hammer. Crimstone needs pick power 65,
+  so use the chasms or explosives. After the win: Crimtane gear and the Deathbringer Pickaxe.
+* **M11, Skeletron.** The dungeon on the far side of the world, the Old Man at its door, a night fight. Prep:
+  400 life, Crimtane armour, potions, an arena near the dungeon. After the win the dungeon opens (Muramasa, Water
+  Bolt, golden keys).
+* **M12, the Wall of Flesh.** Hellstone with the Deathbringer, Molten armour, a hellbridge in the Underworld, the
+  Guide Voodoo Doll in lava. Optional on the way: Queen Bee (jungle), King Slime.
+* **M13, early Hardmode.** The Pwnhammer smashes altars (Cobalt/Palladium, Mythril/Orichalcum,
+  Adamantite/Titanium), a hardmode anvil and forge, and survival against the spreading evil biomes and new enemies.
+* **M14, the mechanical bosses.** The Destroyer, the Twins and Skeletron Prime (summons crafted from souls), an
+  arena with platforms, Hallowed armour and wings.
+* **M15, Plantera.** The bulb in the underground jungle after all three mechs. Chlorophyte, the arena in the
+  jungle.
+* **M16, Golem.** The Temple Key, the Lihzahrd temple's traps, Lihzahrd Power Cells at the altar.
+* **M17, the Lunatic Cultist and the Lunar Events.** The cultists at the dungeon, then the four pillars (shields
+  down by kills).
+* **M18, the Moon Lord.** The summon after the pillars, the best gear from the pillar fragments, a long arena.
+  This completes the game.
+
 ## Not yet (noted for later)
 Ropes/ladders, swimming (water only penalised, lava avoided), slopes/half-blocks (modelled as full blocks),
-doors, breaking above the head while pillaring, flying jump starts, magic combat, chests, accessories (Hermes
-Boots), healing and buff potions, better arrows, biome woods (only forest Wood is a gather source),
-conditional recipes (near water, biome...), bosses after the Eye. Hiding in the house rather than a hole needs
-doors in the pathfinder.
+doors, breaking above the head while pillaring, flying jump starts, magic combat, accessories beyond wearing what is found, healing and buff potions, better arrows, biome woods (only forest Wood is a gather source),
+conditional recipes (near water, biome...), bosses after the Eye.
 
 ## Self-test history
 Automated in-game self-test (`tools/selftest.ps1`, `Game/SelfTest/`) added 2026-10-10. It runs scenarios in
