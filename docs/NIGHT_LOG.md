@@ -118,3 +118,19 @@ what was decided and the result.
     these bad jump targets.
   - Rests no longer clear the never-plan-again steps, which are facts about the world.
 - **Tests:** 205 unit tests. In game, 19 + 11 regression scenarios pass.
+
+### world_eye run 21, and a boss_auto regression
+- **Run 21:** no deaths for the first game hour, a big improvement on earlier runs. It retreated at 37% life,
+  quick-healed with a looted potion, and recovered in a dug-in shelter. Then it stalled, "chasing" a red slime 3.8
+  tiles away for 7000+ ticks without moving. The no-closer give-up skipped anything within 6 tiles.
+  **Decision:** that give-up now applies whenever the target is not in sword reach, and being in reach counts as
+  progress.
+- **Tried and reverted:** weighted A* for digging legs. It cut search nodes by only 2% (the heuristic is tiny going
+  down), so it is not worth keeping.
+- **boss_auto regression** (broken since tonight's earlier M9 habits):
+  - The use-crystals-on-sight habit ate the life crystal meant for the heart lantern, so the bot explored 220 tiles for
+    a new one. **Decision:** keep one crystal while the plan still needs a heart lantern.
+  - The torch keeper lit the way with the arena's torches and gel. **Decision:** it pauses during builds and boss
+    fights, and keeps 12 torches for crafting, while crafting up to 20.
+  - **Result:** boss_auto **PASS**: the Eye was defeated, with 0 deaths.
+- **Tests:** 206 unit tests. In game, fights, boss, building and crystal scenarios pass.

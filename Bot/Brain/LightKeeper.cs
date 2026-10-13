@@ -21,7 +21,12 @@ public sealed class LightKeeper
 	/// <summary>Ticks to keep trying one placement before giving up on that spot.</summary>
 	public const int MaxPlaceTicks = 12;
 	/// <summary>Craft torches while fewer than this are carried and gel and wood allow.</summary>
-	public const int Reserve = 10;
+	public const int Reserve = 20;
+	/// <summary>
+	/// Torches not placed for light: the plan needs them (furnace 3, campfire 5, the arena's own). Seen in game: the
+	/// keeper lit a detour with the arena's torches, and boss_auto then hunted gel for an hour.
+	/// </summary>
+	public const int KeepForCrafting = 12;
 	public const int CraftEvery = 300;
 
 	private int ticks;
@@ -56,7 +61,7 @@ public sealed class LightKeeper
 			Use(ctx, torch, cell);
 			return;
 		}
-		if (ticks % CheckEvery != 0 || ctx.Inventory.Count(torch) <= 0 || ctx.Combat.ItemAnimation > 0)
+		if (ticks % CheckEvery != 0 || ctx.Inventory.Count(torch) <= KeepForCrafting || ctx.Combat.ItemAnimation > 0)
 			return;
 		TilePos n = ctx.Node;
 		if (ctx.World.LightAt(n.X, n.Y - 1) >= DarkBelow || TorchNear(ctx, n))

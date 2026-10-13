@@ -214,7 +214,9 @@ public sealed class BotBrain
 			return;
 
 		SkillStatus status = Current.Tick(ctx);
-		if (Auto)
+		// Not while building (the house and arena place their own torches, and the keeper's took the arena's: boss_auto
+		// then hunted gel for an hour) or in a boss fight.
+		if (Auto && Current is not Building.BuildSkill && Current is not BossFightSkill)
 			Light.Tick(ctx);
 		if (status == SkillStatus.Running)
 			return;

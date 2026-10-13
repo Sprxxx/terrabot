@@ -204,6 +204,25 @@ public sealed class ProgressionPlanner
 	/// <summary>Life crystals seen within this many tiles are mined right away.</summary>
 	public const int CrystalRadius = 25;
 
+	/// <summary>
+	/// Does the plan still want a heart lantern (a life crystal goes into it)? Then one crystal is kept back from the
+	/// use-on-sight habit. Seen in boss_auto: the crystal given for the lantern was eaten, and the bot explored 220 tiles
+	/// for another one, lost the arena and ran out of gel.
+	/// </summary>
+	private bool LanternStillNeeded(BotContext ctx)
+	{
+		bool planned = StagesFor(Plan, ctx.Ids).Any(n => n is HouseBuilt { HeartLantern: true } || n is PrepFor { Inner: HouseBuilt { HeartLantern: true } });
+		if (!planned || ctx.World.BossDefeated(ctx.Ids.EyeBoss) || ctx.Inventory.Count(ctx.Ids.HeartLantern) > 0)
+			return false;
+		if (HouseSite is TilePos built) {
+			Blueprint bp = Blueprint.SmallHouse(ctx.Ids, heartLantern: true);
+			foreach (PlanItem it in bp.Items)
+				if (it.ItemType == ctx.Ids.HeartLantern && BuildSkill.IsPlaced(ctx, bp, built, it))
+					return false;
+		}
+		return true;
+	}
+
 	public static bool LifeCrystalUseful(BotContext ctx) => ctx.Ids.LifeCrystal > 0 && ctx.Combat.LifeMaxBase > 0 && ctx.Combat.LifeMaxBase < MaxCrystalLife;
 
 	/// <summary>The nearest life crystal (heart tile) the player has seen within <see cref="CrystalRadius"/> that can be mined.</summary>
@@ -300,7 +319,7 @@ public sealed class ProgressionPlanner
 			return Do($"looting the chest at {chest.TopLeft}", new LootChestSkill(chest.TopLeft));
 		// Likewise a life crystal: mined and used on sight, whatever stage the plan is at.
 		if (LifeCrystalUseful(ctx)) {
-			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0)
+			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > (LanternStillNeeded(ctx) ? 1 : 0))
 				return Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase})", new UseItemSkill(ctx.Ids.LifeCrystal));
 			if (SeenLifeCrystal(ctx) is TilePos heart)
 				return Do($"mining the life crystal seen at {heart}",

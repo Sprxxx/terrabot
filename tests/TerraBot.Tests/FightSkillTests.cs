@@ -328,6 +328,24 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void GivesUpOnEnemyOutOfReachButClose_WhenNoWayCloser()
+	{
+		// world_eye run 21: a red slime 3.8 tiles off (out of reach, no way to it) was chased for 7000+ ticks: the
+		// no-closer give-up skipped anything within 6 tiles.
+		var g = ArrayTileGrid.Parse(
+			"..............................",
+			"..............#...............",
+			"..............#...............",
+			"..............#...............",
+			"..............#...............",
+			"...........S..#...............",
+			"##############################");
+		var (status, _, life) = Fight(g, new TilePos(14, 0), maxTicks: 3000);
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.Equal(60, life);
+	}
+
+	[Fact]
 	public void NoWeapon_Fails()
 	{
 		var g = ArrayTileGrid.Parse("..S.......", "##########");

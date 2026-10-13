@@ -45,6 +45,7 @@ public sealed class FightSkill : ISkill
 	private int sinceCloser;
 	/// <summary>Ticks without getting closer before an enemy is left alone.</summary>
 	public const int MaxTicksNoCloser = 600;
+	private bool wasInReach;
 	/// <summary>An enemy given up on is left alone this long (also by later fights and the danger check).</summary>
 	public const int IgnoreTicks = 60 * 30;
 	/// <summary>An ignored enemy this close (px) is fought anyway: it is biting.</summary>
@@ -134,7 +135,9 @@ public sealed class FightSkill : ISkill
 			bestDistance = targetDistance;
 			sinceCloser = 0;
 		}
-		else if (++sinceCloser > MaxTicksNoCloser && targetDistance > MeleePreferredWithin) {
+		else if (++sinceCloser > MaxTicksNoCloser && !wasInReach) {
+			// Not "within 6 tiles": seen in game, a red slime 3.8 tiles off (out of sword reach, no way closer) was
+			// chased for over 7000 ticks without a step taken.
 			unreachable.Add(t.Id);
 			ctx.Ignore(t.Id, IgnoreTicks);
 			ctx.Log.Info($"Fight: no closer to {t.Name} in {MaxTicksNoCloser} ticks ({targetDistance / 16f:0.0} tiles); leaving it");
@@ -148,6 +151,9 @@ public sealed class FightSkill : ISkill
 		float reachX = p.Width * 0.5f + ctx.Combat.WeaponReach + t.Width * 0.5f - 4f;
 		float reachY = p.Height * 0.5f + t.Height * 0.5f + 8f;
 		bool inReach = ctx.Combat.HasWeapon && Math.Abs(dx) <= reachX && Math.Abs(dy) <= reachY && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY);
+		if (inReach)
+			sinceCloser = 0; // swinging at it is progress (the no-damage rule covers swings that do nothing)
+		wasInReach = inReach;
 
 		if (!inReach && UseRanged(ctx, t, cx, cy)) {
 			Shoot(ctx, t, cx, cy);
