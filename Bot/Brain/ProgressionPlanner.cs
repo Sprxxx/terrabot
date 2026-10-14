@@ -218,6 +218,8 @@ public sealed class ProgressionPlanner
 	{
 		if (plan != null)
 			Plan = plan;
+		lastDeeperTick = long.MinValue / 2;
+		travelDest = null;
 		KnownStations.Clear();
 		notedAt.Clear();
 		stocked.Clear();
@@ -1106,13 +1108,19 @@ public sealed class ProgressionPlanner
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
 	}
 
+	/// <summary>Least time (2 game hours) between steps deeper (<see cref="BotContext.DepthBonus"/>).</summary>
+	public const int DeeperEveryTicks = 2 * 3600;
+	private long lastDeeperTick = long.MinValue / 2;
+
 	/// <summary>Farther than this (tiles) from the spawn with nowhere to travel: walk back to it first.</summary>
 	public const int NoTripBackTiles = 30;
 
 	private ISkill NoTripPossible(BotContext ctx, string name)
 	{
-		// Deeper each time (wherever the bot is: mining from the spawn wanders far before it fails).
-		if (ctx.DepthBonus < BotContext.MaxDepthBonus) {
+		// Deeper each time (wherever the bot is: mining from the spawn wanders far before it fails), but a step at a time:
+		// iron and silver each ran out at once and the bonus went from 25 to 50 rows within seconds (world_eye run 72).
+		if (ctx.DepthBonus < BotContext.MaxDepthBonus && ctx.Tick - lastDeeperTick >= DeeperEveryTicks) {
+			lastDeeperTick = ctx.Tick;
 			ctx.DepthBonus += BotContext.DepthBonusStep;
 			ctx.ExploresWithoutOre.Clear();
 			ctx.Log.Info($"Auto: no more {name} within reach and nowhere to travel; going {ctx.DepthBonus} rows deeper than the gear alone allows (down to row {ctx.DeepestRow})");

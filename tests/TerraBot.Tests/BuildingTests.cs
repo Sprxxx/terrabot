@@ -295,6 +295,10 @@ public class BuildingTests
 		output.WriteLine($"{p.Status} -> {next?.Describe()}");
 		Assert.False(next is WalkToSkill { Travel: true });
 		Assert.Equal(BotContext.DepthBonusStep, ctx.DepthBonus); // deeper than the gear alone allows
+		p.NoteFruitless(FakeGame.IronOre); // the other ore runs out at once too: no second step yet (run 72: 25 to 50 in seconds)
+		p.NoteFruitless(FakeGame.SilverOre);
+		p.Next(ctx);
+		Assert.Equal(BotContext.DepthBonusStep, ctx.DepthBonus);
 		Assert.Equal(FakeGame.RecallPotion, Assert.IsType<UseItemSkill>(next).ItemType); // far from the spawn: back there to look again
 	}
 
