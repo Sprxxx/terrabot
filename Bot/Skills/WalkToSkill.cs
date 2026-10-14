@@ -73,6 +73,9 @@ public sealed class WalkToSkill : ISkill
 	}
 
 	private readonly IGoal fixedGoal;
+	/// <summary>Longest wait (ticks) for the ground before planning: a walk held in the air fails instead.</summary>
+	public const int MaxAirborneTicks = 180;
+	private int airborneTicks;
 
 	private void Info(BotContext ctx, string message)
 	{
@@ -134,9 +137,15 @@ public sealed class WalkToSkill : ISkill
 					return SkillStatus.Running;
 				}
 				if (!ctx.Body.Grounded) {
+					// Not for ever: seen in game (world_eye, the first run with paused work resuming), "waiting to land" at one
+					// spot for three game days, never moving (held in the air by something: a cobweb, a ledge corner). Fights
+					// and nightfall used to throw the job away and so broke it; resumed, nothing did.
+					if (++airborneTicks > MaxAirborneTicks)
+						return Fail(ctx, $"never landed in {MaxAirborneTicks} ticks at {node} (vy {ctx.Body.VY:0.###}, feet {ctx.Grid.Get(node.X, node.Y)}/{ctx.Grid.Get(node.X + 1, node.Y)}, under {ctx.Grid.Get(node.X, node.Y + 1)}/{ctx.Grid.Get(node.X + 1, node.Y + 1)})");
 					State = "waiting to land";
 					return SkillStatus.Running;
 				}
+				airborneTicks = 0;
 				StartSearch(ctx, node);
 			}
 			// Stand still while searching; long searches are spread over several ticks.

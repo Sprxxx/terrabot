@@ -58,6 +58,54 @@ public class ContinuityTests
 	}
 
 	[Fact]
+	public void AWalkHeldInTheAir_FailsInsteadOfWaitingForever()
+	{
+		// The first measured run with resuming work: "waiting to land" at one spot for three game days. Restarts used to
+		// break it; with the job resumed, nothing did.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		var walk = new WalkToSkill(new TilePos(ctx.Node.X + 20, ctx.Node.Y));
+		walk.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		for (int t = 0; t < WalkToSkill.MaxAirborneTicks + 10 && s == SkillStatus.Running; t++) {
+			var body = ctx.Body;
+			body.VY = 0.3f; // held in the air (a cobweb), never landing
+			ctx.Body = body;
+			s = walk.Tick(ctx);
+		}
+		output.WriteLine(walk.FailureReason);
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.Contains("never landed", walk.FailureReason);
+	}
+
+	/// <summary>A job that never gets anywhere: stands still, always the same state.</summary>
+	private sealed class NoProgressSkill : ISkill
+	{
+		public string Name => "Stuck";
+		public string Describe() => "Stuck [same as ever]";
+		public void Start(BotContext ctx) { }
+		public SkillStatus Tick(BotContext ctx) => SkillStatus.Running;
+		public void Stop(BotContext ctx) { }
+	}
+
+	[Fact]
+	public void WorkWithNoProgressForGameHours_IsGivenUp()
+	{
+		// AltoClef's progress checkers: with restarts gone, a hang has to be caught for what it is.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		var brain = new BotBrain();
+		brain.StartSkill(new NoProgressSkill(), ctx);
+		for (int t = 0; t <= BotBrain.NoProgressTicks + 60 && brain.Work != null; t++) {
+			ctx.Tick = t;
+			brain.Tick(ctx);
+		}
+		output.WriteLine(brain.LastResult);
+		Assert.Null(brain.Work);
+		Assert.Contains("no progress", brain.LastResult);
+	}
+
+	[Fact]
 	public void SkillKeys_AreTheSameForTheSameJob_AndDifferForAnother()
 	{
 		Assert.Equal(new MineSkill(11, 6, 24).Key, new MineSkill(11, 6, 24).Key);

@@ -44,6 +44,40 @@ public sealed class BotBrain
 	public ISkill Current => Override ?? Work;
 	private bool replan;
 	private string replanWhy = "";
+
+	/// <summary>
+	/// Work that has neither moved the bot <see cref="ProgressTiles"/> tiles nor changed what it is doing (its
+	/// description) for this long is failed, so the planner and the rests take over (AltoClef's progress checkers).
+	/// Seen in game: with paused work resuming, a walk "waiting to land" held the bot in one spot for three game days;
+	/// the restarts that used to break such hangs are gone.
+	/// </summary>
+	public const int NoProgressTicks = 2 * 3600;
+	public const int ProgressTiles = 3;
+	private ISkill watched;
+	private TilePos watchedAt;
+	private string watchedState;
+	private long watchedSince;
+
+	/// <summary>Skills that wait in place on purpose: the night at home or dug in, a wait, a boss fight.</summary>
+	private static bool WaitsOnPurpose(ISkill s) => s is StayHomeSkill or ShelterSkill or WaitSkill or BossFightSkill;
+
+	/// <summary>True if the work is stuck (and is failed now).</summary>
+	private bool WorkStuck(BotContext ctx)
+	{
+		if (Work == null || Override != null || WaitsOnPurpose(Work)) {
+			watched = null;
+			return false;
+		}
+		string state = Work.Describe();
+		if (!ReferenceEquals(watched, Work) || ctx.Node.ChebyshevTo(watchedAt) >= ProgressTiles || state != watchedState) {
+			watched = Work;
+			watchedAt = ctx.Node;
+			watchedState = state;
+			watchedSince = ctx.Tick;
+			return false;
+		}
+		return ctx.Tick - watchedSince > NoProgressTicks;
+	}
 	public string LastResult { get; private set; } = "";
 	public bool Auto { get; private set; }
 	public ProgressionPlanner Planner { get; } = new();
@@ -274,6 +308,7 @@ public sealed class BotBrain
 	private int deathsSeen;
 	private int lastBreath;
 	private bool wasNight;
+	private bool stuckWork;
 	/// <summary>Life to recover to before coming out of a retreat.</summary>
 	public const float RetreatUntil = 0.8f;
 
@@ -419,6 +454,11 @@ public sealed class BotBrain
 			return;
 
 		SkillStatus status = Current.Tick(ctx);
+		if (status == SkillStatus.Running && WorkStuck(ctx)) {
+			ctx.Log.Warn($"Auto: no progress in {NoProgressTicks / 3600} game hours ({Work.Describe()} at {ctx.Node}); giving the job up");
+			stuckWork = true;
+			status = SkillStatus.Failed;
+		}
 		// Not while building (the house and arena place their own torches, and the keeper's took the arena's: boss_auto
 		// then hunted gel for an hour) or in a boss fight.
 		if (Auto && Current is not Building.BuildSkill && Current is not BossFightSkill)
@@ -427,7 +467,9 @@ public sealed class BotBrain
 			return;
 
 		ISkill skill = Current;
-		string why = skill.FailureReason;
+		string why = stuckWork ? $"no progress in {NoProgressTicks / 3600} game hours" : skill.FailureReason;
+		stuckWork = false;
+		watched = null;
 		LastResult = $"{skill.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
 		ctx.Log.Info($"Skill finished: {LastResult}");
 		bool wasFight = skill is FightSkill;
