@@ -133,6 +133,13 @@ public sealed class BotBrain
 		return true;
 	}
 
+	private static void LogBreathMystery(BotContext ctx)
+	{
+		TilePos hn = ctx.Node;
+		ctx.Log.Warn($"Breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} falling but the head cells read {ctx.Grid.Get(hn.X, hn.Y - 2)}/{ctx.Grid.Get(hn.X + 1, hn.Y - 2)}"
+			+ $" (above {ctx.Grid.Get(hn.X, hn.Y - 3)}/{ctx.Grid.Get(hn.X + 1, hn.Y - 3)}) at {hn}");
+	}
+
 	/// <summary>Vanilla aiStyle of worms (devourers, giant worms, the eater of worlds): they burrow through blocks.</summary>
 	public const int WormAi = 6;
 	public const float WormNearPx = 30 * 16f;
@@ -171,6 +178,7 @@ public sealed class BotBrain
 	/// <summary>Torches in the dark, so a watcher can see (auto mode).</summary>
 	public LightKeeper Light { get; } = new();
 	private int deathsSeen;
+	private int lastBreath;
 	/// <summary>Life to recover to before coming out of a retreat.</summary>
 	public const float RetreatUntil = 0.8f;
 
@@ -191,10 +199,12 @@ public sealed class BotBrain
 		}
 		// Losing breath without the head cells reading as liquid (world_eye run 52: drowned from full life during a mine
 		// with no surfacing at all): say what the head cells are, to find out why.
-		if (Auto && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax / 2 && !SurfaceSkill.HeadUnder(ctx) && ctx.Tick % 60 == 0) {
-			TilePos hn = ctx.Node;
-			ctx.Log.Warn($"Breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} but the head cells read {ctx.Grid.Get(hn.X, hn.Y - 2)}/{ctx.Grid.Get(hn.X + 1, hn.Y - 2)}"
-				+ $" (above {ctx.Grid.Get(hn.X, hn.Y - 3)}/{ctx.Grid.Get(hn.X + 1, hn.Y - 3)}) at {hn}");
+		if (ctx.Tick % 60 == 0) {
+			// Falling since the last check, not coming back after leaving the water.
+			bool breathFalling = ctx.Combat.Breath < lastBreath;
+			lastBreath = ctx.Combat.Breath;
+			if (Auto && breathFalling && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax / 2 && !SurfaceSkill.HeadUnder(ctx))
+				LogBreathMystery(ctx);
 		}
 		// Out of breath under water comes before everything: drowning skips the hurt event and kills in seconds.
 		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && SurfaceSkill.HeadUnder(ctx)) {

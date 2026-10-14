@@ -533,3 +533,16 @@ what was decided and the result.
   - Desert monsters in sight (antlions, tomb crawlers) mark 5-day danger zones until defense 16, as evil-biome
     monsters do until defense 8.
 - In game, 5 chain scenarios pass. 238 unit tests.
+
+### world_eye run 54: anvil at 15 s, broadsword at 31 s, pickaxe at 58 s, helmet at 4 minutes
+- **Progress:** all the fastest yet: the anvil about 15 seconds in, the **Iron Broadsword at about 31 seconds**, the
+  **Iron Pickaxe at about 58 seconds**, the **Iron Helmet worn at about 4 minutes**. Desert sightings worked (antlions
+  marked at x 2238-2298).
+- **Death:** an antlion charger. The hurt run-off went right, away from one enemy and straight into the desert zones
+  just marked. **Decision:** the run-off goes the other way when its side is off limits.
+- **Surfacing loop:** "heading for air at (2010,411)" walked to a plain tile, which WalkTo reads as "stand on the
+  ground below it", here the bot's own spot under water, so it "arrived" every tick. **Decision:** the walk goes to the
+  air node itself. The breath diagnostic now warns only while breath falls (it fired while breath came back).
+- **Known issue, open:** the way up from that spot was through the same flooded passage, so walk up, surface, walk up
+  again. A player would swim up; the bot can't swim well without flippers.
+- In game, 4 fight, retreat and chain scenarios pass. 238 unit tests.

@@ -90,7 +90,9 @@ public sealed class SurfaceSkill : ISkill
 		if (walk == null && !walkFailed && ctx.Body.Grounded) {
 			if (NearestAir(ctx) is TilePos air) {
 				ctx.Log.Info($"Surface: heading for air at {air}");
-				walk = new WalkToSkill(air) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
+				// The node itself: a plain tile target means "stand on the ground below it", which here was the bot's own spot
+				// under the water, so the walk "arrived" at once, every tick (world_eye run 54).
+				walk = new WalkToSkill(new Core.Pathfinding.GoalNearTile(air, 1, ctx.Physics)) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 				walk.Start(ctx);
 				walkStart = ticks;
 			}

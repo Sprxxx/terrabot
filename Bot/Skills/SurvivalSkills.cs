@@ -172,6 +172,12 @@ public sealed class ShelterSkill : ISkill
 			TilePos n0 = ctx.Node;
 			int dir = hx > ctx.Body.CenterX(ctx.Physics) ? -1 : 1;
 			var away = new TilePos(n0.X + dir * FleeTiles, n0.Y);
+			// Not into somewhere off limits (seen in game, run 54: away from one antlion, straight into the desert it came from).
+			var other = new TilePos(n0.X - dir * FleeTiles, n0.Y);
+			if (ctx.OffLimits(away) && !ctx.OffLimits(other)) {
+				dir = -dir;
+				away = other;
+			}
 			ctx.Log.Info($"Shelter start at {n0}: something on me; running {(dir > 0 ? "right" : "left")} first, then digging in {why}");
 			dig = new WalkToSkill(new Core.Pathfinding.GoalNearTile(away, FleeTolerance, ctx.Physics)) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			dig.Start(ctx);
