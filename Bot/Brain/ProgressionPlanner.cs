@@ -456,6 +456,14 @@ public sealed class ProgressionPlanner
 	/// passes the housing check, else null. Not the housing check's own tile: that is two rows above the floor, and a
 	/// walk to within 1 of it had no end in game.
 	/// </summary>
+	/// <summary>
+	/// The house to run to when badly hurt, if there is one within <see cref="RetreatHomeTiles"/> and getting home has not
+	/// just failed. Seen in game: most deaths of the night runs came while digging in to recover, hit as it dug.
+	/// </summary>
+	public TilePos? HomeToRetreatTo(BotContext ctx) =>
+		ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos home && home.ChebyshevTo(ctx.Node) <= RetreatHomeTiles ? home : null;
+	public const int RetreatHomeTiles = 60;
+
 	private TilePos? HomeInside(BotContext ctx)
 	{
 		if (HouseSite is not TilePos site)

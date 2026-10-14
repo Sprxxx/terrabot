@@ -158,7 +158,11 @@ public sealed class BotBrain
 			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			Interrupt(ctx);
-			Begin(ShelterSkill.Recover(RetreatUntil), ctx);
+			// Home if it is near (enemies cannot get through the door), else dig in where it is.
+			if (Planner.HomeToRetreatTo(ctx) is TilePos home)
+				Begin(new StayHomeSkill(home) { RecoverTo = RetreatUntil }, ctx);
+			else
+				Begin(ShelterSkill.Recover(RetreatUntil), ctx);
 		}
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			WearAccessories(ctx);

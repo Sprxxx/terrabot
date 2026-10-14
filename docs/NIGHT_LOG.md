@@ -397,3 +397,11 @@ what was decided and the result.
   placing a block each time to keep its footing (1,258 planned placements), so the stone count never rose.
   **Decision:** tiles under the feet are mining's last choice. settle_auto passes again (21,919 ticks), as do
   iron_age_auto, early_game_auto, life_crystals and boss_auto.
+
+### Retreat home rather than into a hole (from runs 40-43)
+- 10 of the 13 deaths in runs 40-43 came while digging in to recover ("Shelter [Digging]"): slimes, zombies and a
+  devourer kept hitting the bot as it dug. Run 43 also lost the bot to a vulture on the desert's surface.
+- **Decision:** badly hurt with the house within 60 tiles (and getting home hasn't just failed), the retreat walks
+  home and waits inside until 80% life. The brain doesn't stop that walk to fight. Elsewhere it still digs in.
+  Test `BadlyHurt_NearTheHouse_RetreatsHome_NotIntoAHole`. 229 unit tests.
+- In game, 5 scenarios pass (fights, night_shelter, night_home, settle, boss_auto).

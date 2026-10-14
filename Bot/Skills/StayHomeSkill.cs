@@ -22,9 +22,12 @@ public sealed class StayHomeSkill : ISkill
 
 	public StayHomeSkill(TilePos insideTile) => inside = insideTile;
 
+	/// <summary>When above 0: a retreat home to recover to this life fraction (day or night), not a night at home.</summary>
+	public float RecoverTo { get; init; }
+
 	public string Describe() => $"StayHome {inside} [{State}]" + (walk != null ? " > " + walk.Describe() : "");
 
-	public void Start(BotContext ctx) => ctx.Log.Info($"StayHome: night; going into the house at {inside}");
+	public void Start(BotContext ctx) => ctx.Log.Info($"StayHome: {(RecoverTo > 0 ? "hurt" : "night")}; going into the house at {inside}");
 
 	public void Stop(BotContext ctx)
 	{
@@ -35,13 +38,13 @@ public sealed class StayHomeSkill : ISkill
 	public SkillStatus Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
-		if (!ctx.IsNight) {
-			State = "morning";
+		if (RecoverTo > 0 ? home && ctx.Combat.LifeFraction >= RecoverTo : !ctx.IsNight) {
+			State = RecoverTo > 0 ? "recovered" : "morning";
 			Stop(ctx);
 			return SkillStatus.Succeeded;
 		}
 		if (home) {
-			State = "waiting for the morning";
+			State = RecoverTo > 0 ? "recovering" : "waiting for the morning";
 			return SkillStatus.Running;
 		}
 		walk ??= StartWalk(ctx);

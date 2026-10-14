@@ -220,6 +220,34 @@ public class BuildingTests
 		Assert.False(fought);
 	}
 
+	[Fact]
+	public void BadlyHurt_NearTheHouse_RetreatsHome_NotIntoAHole()
+	{
+		// The night runs: most deaths came while digging in to recover, hit as it dug. A house nearby is the better hiding place.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, brain.Planner, ctx);
+		g.Sim.State.X += 20 * 16;
+		g.Life = 20;
+		g.AddSlime(9, (int)(g.Sim.State.X / 16) + 3, 24);
+		ISkill retreat = null;
+		for (int t = 0; t < 120 && retreat == null; t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+			if (brain.Current is StayHomeSkill or ShelterSkill)
+				retreat = brain.Current;
+		}
+		output.WriteLine(brain.Describe());
+		var home = Assert.IsType<StayHomeSkill>(retreat);
+		Assert.True(home.RecoverTo > 0);
+	}
+
 	/// <summary>Builds a valid house next to the start through the fake's own placement, and tells the planner about it.</summary>
 	private void HouseAlreadyThere(FakeGame g, ProgressionPlanner p, BotContext ctx)
 	{
