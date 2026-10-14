@@ -597,7 +597,7 @@ public sealed class ProgressionPlanner
 		}
 		stocked.Remove(h.Label);
 		int more = h.Count - Math.Max(0, available);
-		int item = Cheapest(h.Accepts, ctx);
+		int item = h.Accepts.Count > 1 ? CheapestToFinish(h.Accepts, more, ctx) : Cheapest(h.Accepts, ctx);
 		if (item < 0) {
 			stuck = $"no way to get {h.Label}" + MissingStationHint(h.Accepts, ctx);
 			return null;
@@ -848,6 +848,63 @@ public sealed class ProgressionPlanner
 			}
 		}
 		return best;
+	}
+
+	/// <summary>
+	/// Of several items that do (armour tiers: iron or silver), the one cheapest to finish from what is carried: the
+	/// recipe expanded against the bag, only what is still missing costed. Seen in game (measured run C): costed from
+	/// scratch, the choice flipped between iron and silver each time one ore's fruitless count rose, and after two game
+	/// days the bot held 41 iron and 57 silver ore, enough of neither for its chainmail.
+	/// </summary>
+	private int CheapestToFinish(IReadOnlyList<int> items, int count, BotContext ctx)
+	{
+		int best = -1;
+		float bestCost = float.PositiveInfinity;
+		foreach (int i in items) {
+			if (float.IsPositiveInfinity(Cost(i, ctx)))
+				continue;
+			float c = Shortfall(i, count, ctx, new Dictionary<int, int>(), 0);
+			if (c < bestCost) {
+				bestCost = c;
+				best = i;
+			}
+		}
+		return best;
+	}
+
+	public const int MaxShortfallDepth = 6;
+
+	/// <summary>
+	/// Rough ticks still needed for <paramref name="n"/> of the item, taking what is carried (minus what <paramref name="used"/>
+	/// has already taken for this estimate) before crafting or gathering the rest.
+	/// </summary>
+	private float Shortfall(int item, int n, BotContext ctx, Dictionary<int, int> used, int depth)
+	{
+		int have = Math.Max(0, ctx.Inventory.Count(item) - used.GetValueOrDefault(item));
+		int take = Math.Min(have, n);
+		used[item] = used.GetValueOrDefault(item) + take;
+		int missing = n - take;
+		if (missing <= 0)
+			return 0f;
+		if (ctx.Knowledge.SourceOf(item).Kind != SourceKind.None || depth >= MaxShortfallDepth || BestRecipe(item, ctx) is not RecipeInfo r)
+			return missing * Cost(item, ctx);
+		int crafts = (missing + Math.Max(1, r.ResultStack) - 1) / Math.Max(1, r.ResultStack);
+		float sum = crafts * CraftStepCost;
+		foreach (Ingredient ing in r.Ingredients) {
+			int pick = -1;
+			float unit = float.PositiveInfinity;
+			foreach (int a in ing.Accepts) {
+				float ca = Cost(a, ctx);
+				if (ca < unit) {
+					unit = ca;
+					pick = a;
+				}
+			}
+			if (pick < 0)
+				return float.PositiveInfinity;
+			sum += Shortfall(pick, ing.Stack * crafts, ctx, used, depth + 1);
+		}
+		return sum;
 	}
 
 	/// <summary>

@@ -210,6 +210,32 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ArmourTier_IsTheOneCheapestToFinishFromTheBag()
+	{
+		// Measured run C: the tier was costed from scratch, so it flipped between iron and silver with each fruitless mine,
+		// and after two game days the bot held 41 iron and 57 silver ore, enough of neither.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.Items[FakeGame.IronHelmet] = 1;
+		g.Equipped.Add(FakeGame.IronHelmet);
+		g.Items[FakeGame.IronOre] = 10;
+		g.Items[FakeGame.SilverOre] = 95; // 5 short of the silver chainmail's 100, 65 short of the iron one's 75
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.SilverOre); // silver has run out once: each silver ore now costs twice as much
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Contains($"item{FakeGame.SilverOre}", p.Status + next?.Describe()); // finishing the silver one, not starting iron over
+	}
+
+	[Fact]
 	public void Armour_SwitchesToSilver_WhenIronKeepsRunningOut()
 	{
 		// world_eye run 38: 114 iron for anvil, sword, pickaxe and armour, and the iron near the spawn ran out.
