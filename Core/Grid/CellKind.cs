@@ -21,6 +21,11 @@ public enum CellKind : byte
 	/// block underneath (no dropping through it; digging breaks it).
 	/// </summary>
 	Shaped = 64,
+	/// <summary>
+	/// Hurts on touch (TileID.Sets.TouchDamageImmediate: thorns, cactus, spikes). Not passable; with Solid, not stood on
+	/// either. Seen in game (world_eye run 38): crimson thorns read as open space, and the bot died in the same patch twice.
+	/// </summary>
+	Hazard = 128,
 }
 
 public static class CellKindExtensions
@@ -37,16 +42,17 @@ public static class CellKindExtensions
 	public static bool HasLava(this CellKind k) => (k & CellKind.Lava) != 0;
 
 	/// <summary>Something the player can stand on.</summary>
-	public static bool CanStandOn(this CellKind k) => (k & (CellKind.Solid | CellKind.Platform)) != 0;
+	public static bool CanStandOn(this CellKind k) => (k & (CellKind.Solid | CellKind.Platform)) != 0 && (k & CellKind.Hazard) == 0;
 
 	/// <summary>Can the player's body occupy this cell? Lava counts as impassable (avoid it entirely).</summary>
-	public static bool IsPassable(this CellKind k) => (k & (CellKind.Solid | CellKind.Lava)) == 0;
+	public static bool IsPassable(this CellKind k) => (k & (CellKind.Solid | CellKind.Lava | CellKind.Hazard)) == 0;
 
 	public static bool IsLiquid(this CellKind k) => (k & (CellKind.Water | CellKind.Lava | CellKind.Honey)) != 0;
 
 	/// <summary>One-character legend used by ASCII grids, dumps and tests.</summary>
 	public static char ToChar(this CellKind k)
 	{
+		if ((k & CellKind.Hazard) != 0) return '^';
 		if (k.IsSolid()) return k.IsFalling() ? '%' : '#';
 		if (k.IsShaped()) return '/';
 		if (k.IsPlatform()) return '=';
@@ -65,6 +71,7 @@ public static class CellKindExtensions
 		'~' => CellKind.Water,
 		'!' => CellKind.Lava,
 		'h' => CellKind.Honey,
+		'^' => CellKind.Hazard,
 		_ => CellKind.Empty,
 	};
 }

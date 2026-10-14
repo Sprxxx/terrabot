@@ -35,6 +35,8 @@ public sealed class TerrariaTileGrid : ITileGrid
 				k = TileID.Sets.Falling[type] ? CellKind.Solid | CellKind.Falling : CellKind.Solid;
 			else if (top && (solid || t.TileFrameY == 0))
 				k = CellKind.Platform;
+			if (TileID.Sets.TouchDamageImmediate[type] > 0)
+				k |= CellKind.Hazard;
 		}
 
 		if (t.LiquidAmount > 0) {

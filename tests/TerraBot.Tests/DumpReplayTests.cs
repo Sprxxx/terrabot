@@ -86,6 +86,27 @@ public class DumpReplayTests
 		Assert.Equal(PathStatus.Found, search.Result.Status);
 	}
 
+	[Fact]
+	public void CaveBelowSpawn_Run38_NoBlocks_OnlyTheRelaxedSearchGetsOut()
+	{
+		// world_eye run 38: the same cave as runs 22-26, with every block held back for building: three 40,000-node
+		// searches found no way home. Without placing, the only way up stands on blocks the path itself digs away, which
+		// the broken-support check rules out; WalkToSkill then plans again without the check.
+		string file = Path.Combine(AppContext.BaseDirectory, "Dumps", "nopath_2124_339_to_2092_282.txt");
+		var (g, b, start, home) = Load(file);
+		b.BlockCount = 0;
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true, BadEdges = BadEdgesOf(file) };
+		var goal = GoalOf(file, home);
+		var strict = new PathSearch(ctx, start, goal, new SearchLimits());
+		strict.Step(1e9);
+		output.WriteLine("with the broken-support check: " + strict.Result);
+		var relaxed = new PathSearch(ctx, start, goal, new SearchLimits { CheckBrokenSupport = false });
+		relaxed.Step(1e9);
+		output.WriteLine("without: " + relaxed.Result);
+		Assert.Equal(PathStatus.NoPath, strict.Result.Status);
+		Assert.Equal(PathStatus.Found, relaxed.Result.Status);
+	}
+
 	[Fact(Skip = "debug aid: prints which nodes the moves reach from a dump's start")]
 	public void Debug_ReachableFromCave()
 	{

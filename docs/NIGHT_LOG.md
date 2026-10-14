@@ -323,3 +323,19 @@ what was decided and the result.
   "SELFTEST stall" when the plan status hasn't changed for 3 game hours.
 - **Flaky unit test:** a static switch (`CheckBrokenSupport`) raced with parallel tests. It's now per search.
 - In game, 5 fight scenarios pass, including boss_auto. 220 unit tests.
+
+### world_eye run 38: broadsword and pickaxe by game day 3, then the iron ran out nearby
+- **Progress:** the house, then the Iron Broadsword and the Iron Pickaxe; 29 of the 45 iron for armour. Looted the
+  chest at row 463 (5 healing potions). 3 deaths.
+- **No way home from the cave below the spawn (the runs 22-26 cave):** with every block held back for building, the
+  only way up stands on blocks the path itself digs away, and the broken-support check rules those steps out, so
+  three 40,000-node searches found nothing. The bot made a new bench, furnace and anvil down there and carried on.
+  **Decision:** after a no-path, WalkTo plans once more without the check (such steps just cost a re-plan when
+  reached). Replay test `CaveBelowSpawn_Run38_NoBlocks_OnlyTheRelaxedSearchGetsOut`.
+- **Two deaths on the same tile, nothing attacking:** touch damage ("other" 3: thorns, cactus, spikes; Crimson thorns
+  here), read as open space. **Decision:** a Hazard cell kind (TileID.Sets.TouchDamageImmediate), not passable and
+  not stood on. Deaths by lava, drowning and tiles now mark danger zones too (not falls).
+- **The stall warning** fired during nights at home. **Decision:** waits at home or in a shelter don't count.
+- **Next:** iron is scarce near the spawn after 114 ore (anvil, sword, pickaxe, armour). A player would also take
+  lead, silver or tungsten armour, or go farther; the plan only knows iron-tier armour. To do if it keeps stalling.
+- In game, 12 walk, dig and chain scenarios pass. 222 unit tests.

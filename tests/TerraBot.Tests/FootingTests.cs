@@ -220,4 +220,31 @@ public class FootingTests
 		ctx.Combat.Defense = BotContext.DeepDefense; // full gear: no limit
 		Assert.Equal(int.MaxValue, ctx.Moves.AvoidBelowRow);
 	}
+
+	[Fact]
+	public void ThornsAndSpikes_AreNotWalkedThrough_NorStoodOn()
+	{
+		// world_eye run 38: crimson thorns read as open space; the bot died in the same patch twice.
+		Assert.False(CellKind.Hazard.IsPassable());
+		Assert.False((CellKind.Solid | CellKind.Hazard).CanStandOn());
+		Assert.Equal('^', CellKind.Hazard.ToChar());
+		Assert.Equal(CellKind.Hazard, CellKindExtensions.FromChar('^'));
+		// A corridor walled by thorns, no digging: no way through. Without the thorns there is.
+		string[] rows = {
+			"##########",
+			"....^.....",
+			"....^.....",
+			"S...^.....",
+			"##########",
+		};
+		var thorns = ArrayTileGrid.Parse(rows);
+		var clear = ArrayTileGrid.Parse(rows.Select(r => r.Replace('^', '.')).ToArray());
+		var goal = new GoalNearTile(new TilePos(8, 3), 0, PhysicsParams.Default);
+		var blocked = new PathSearch(new MoveContext(thorns, PhysicsParams.Default) { AllowBreak = false, AllowPlace = false }, thorns.Markers['S'], goal);
+		blocked.Step(1e9);
+		var open = new PathSearch(new MoveContext(clear, PhysicsParams.Default) { AllowBreak = false, AllowPlace = false }, clear.Markers['S'], goal);
+		open.Step(1e9);
+		Assert.Equal(PathStatus.Found, open.Result.Status);
+		Assert.NotEqual(PathStatus.Found, blocked.Result.Status);
+	}
 }

@@ -112,7 +112,9 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (!IsLocal)
 			return;
 		Context.Deaths++;
-		if (damageSource.SourceNPCIndex >= 0 || damageSource.SourceProjectileType > 0)
+		// Enemies, and spots that hurt (thorns and spikes are "other" 3, lava 2, drowning 1); not falls (other 0): the
+		// landing spot is not dangerous in itself. Seen in game: two deaths in the same thorn patch.
+		if (damageSource.SourceNPCIndex >= 0 || damageSource.SourceProjectileType > 0 || damageSource.SourceOtherIndex > 0)
 			Context.NoteDeathByEnemy(FeetTile());
 		Mod.Logger.Warn($"Died ({damage:0} damage: {damageSource.GetDeathText(Player.name)}) at {DescribePosition()}; bot {(Enabled ? "ON" : "OFF")}: {Brain.Describe()}");
 	}

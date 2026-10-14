@@ -310,7 +310,8 @@ public sealed class SelfTestSystem : ModSystem
 				// late because nothing else was logged at INFO).
 				if (s.RealWorld && phaseTicks % HeartbeatTicks == 0) {
 					string st = bot.Brain.Planner.Status;
-					if (st != stallStatus) {
+					// Waiting out the night (at home or dug in) is not a stall.
+					if (st != stallStatus || bot.Brain.Current is Bot.Skills.StayHomeSkill or Bot.Skills.ShelterSkill) {
 						stallStatus = st;
 						stallSince = phaseTicks;
 					}

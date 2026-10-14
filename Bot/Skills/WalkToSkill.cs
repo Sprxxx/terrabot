@@ -52,6 +52,8 @@ public sealed class WalkToSkill : ISkill
 
 	/// <summary>A* limits (null = the defaults). Sub-skills with alternatives give up sooner on far-off targets.</summary>
 	public SearchLimits Limits { get; init; }
+	/// <summary>After a no-path with the broken-support check: plan the rest of this walk without it.</summary>
+	private bool relaxed;
 
 	public WalkToSkill(TilePos target)
 	{
@@ -325,7 +327,10 @@ public sealed class WalkToSkill : ISkill
 		ArrivedNearGoal = false;
 		plans++;
 		searchMoves = moves;
-		search = new PathSearch(moves, start, Goal, Limits);
+		SearchLimits limits = Limits ?? SearchLimits.Default;
+		if (relaxed)
+			limits = new SearchLimits { MaxExpansions = limits.MaxExpansions, MaxRadius = limits.MaxRadius, CheckBrokenSupport = false };
+		search = new PathSearch(moves, start, Goal, limits);
 		State = "planning";
 	}
 
@@ -349,6 +354,15 @@ public sealed class WalkToSkill : ISkill
 			// The search started on a goal node: the start candidate next to us (we are not standing exactly on a node,
 			// or not grounded yet). That is "there", not "no path".
 			ArrivedNearGoal = true;
+			return false;
+		}
+		// The broken-support check rules out steps onto blocks the same path digs away; with no blocks to place, a way out
+		// of a cave can need them (they only cost a re-plan when reached). Seen in game (world_eye run 38): three 40,000-node
+		// searches from the cave below the spawn found nothing; the replay finds 109 steps without the check.
+		if (LastPlan.Status == PathStatus.NoPath && !relaxed && (Limits ?? SearchLimits.Default).CheckBrokenSupport) {
+			relaxed = true;
+			Info(ctx, "WalkTo: no path that keeps off blocks it digs away; planning again allowing them (re-planning where they fail)");
+			waitTicks = 0;
 			return false;
 		}
 		NoPathCount++;
