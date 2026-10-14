@@ -257,6 +257,7 @@ public sealed class SelfTestSystem : ModSystem
 					SpawnEnemies(s);
 				lifeAtStart = p.statLife;
 				bot.Context.DigAnyway = false; // a last resort from the scenario before (seen: it let a walk test undermine sand)
+				bot.Context.DepthBonus = 0;
 				if (s.Mode == "fight") {
 					bot.Brain.StartSkill(new Bot.Skills.FightSkill(), bot.Context);
 				}

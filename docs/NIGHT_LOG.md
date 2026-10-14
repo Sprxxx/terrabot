@@ -708,3 +708,15 @@ what was decided and the result.
   - A hurt flight home (StayHome with RecoverTo) is never paused to fight, at any distance.
   - The trip's walks up to the surface and back to the spawn are marked ToSurface and count as night surface work (StayHome instead).
 - No unit test for the flight fix (FakeGame has no worm NPCs). night_home, night_shelter and settle_auto pass. 254 unit tests.
+
+## Run 70 (commit 9d782c8), **FAIL: auto mode stopped** after about 3 game minutes (1 death)
+- Anvil 20 s, Iron Broadsword about 1 min, Iron Pickaxe about 2 min. The nightfall re-plan fired twice. The recall now only comes with a chosen trip ("start the trip to (2215,279) from the spawn").
+- **Death:** a trip to (1975,280), the corruption's eastern edge. Exploring from there went 70 tiles into the corruption, and a devourer killed the bot.
+  - The evil biome did not read as off limits: its surface is mostly plain dirt under one layer of corrupt grass, below the desert's 15% share.
+  - **Fix:** InEvilBiome now uses its own EvilShare of 7%.
+- **Then auto mode stopped:** at (1986,420) every exploration was off limits (corruption, crowd zones), no trip was possible, and every mining job failed. Five rests went by in seconds, and the self-test failed.
+  - **Decision:** with nowhere to travel, do what a player does when the shallow ore is gone.
+    - Go 25 rows deeper than the gear alone allows (BotContext.DepthBonus, up to 100, logged; reset per run).
+    - If more than 30 tiles from the spawn, go back there first, by recall potion if more than 50 tiles off, else on foot.
+- Pillar mystery: a banned step's tile-type log showed dirt (type 0) in the bot's own feet cell. So the bot really stands inside a block. No mod code places tiles directly (all through vanilla item use). A sloped dirt cell hidden by the 'F' marker is possible. Still open.
+- Tests updated (254 pass). iron_age_auto and settle_auto pass.

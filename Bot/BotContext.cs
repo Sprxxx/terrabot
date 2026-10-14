@@ -187,7 +187,14 @@ public sealed class BotContext
 	/// Is the tile where the seen solid tiles around it (48x48) are largely Corruption or Crimson? Seen in game (world_eye
 	/// run 47): eaters of souls killed the bot there in copper gear. Players go in once they have armour (Milestone 10).
 	/// </summary>
-	public bool InEvilBiome(TilePos t) => World != null && Ids.EvilTiles.Length > 0 && Share(t, c => c.Evil) >= DesertShare;
+	public bool InEvilBiome(TilePos t) => World != null && Ids.EvilTiles.Length > 0 && Share(t, c => c.Evil) >= EvilShare;
+
+	/// <summary>
+	/// Share of seen solid tiles that makes the evil biome: lower than a desert's, as its surface is mostly plain dirt under
+	/// one layer of corrupt grass. At the desert's 15% the bot explored 70 tiles into the corruption from a trip's end at
+	/// its edge, and a devourer killed it (world_eye run 70).
+	/// </summary>
+	public const float EvilShare = 0.07f;
 
 	/// <summary>
 	/// Chunk side for <see cref="InUndergroundDesert"/>, and the share of seen solid tiles in the 3x3 chunks around a tile
@@ -316,9 +323,17 @@ public sealed class BotContext
 	/// bats and black slimes killed the bot 5 times in an hour. int.MaxValue = no limit.
 	/// </summary>
 	public int DeepestRow => CavernY <= 0 ? int.MaxValue
-		: Combat.Defense < CavernDefense ? CavernY + (Combat.WeaponDamage >= GoodWeaponDamage ? ArmedMargin : ShallowMargin)
-		: Combat.Defense < DeepDefense ? CavernY + CavernDepth
+		: Combat.Defense < CavernDefense ? CavernY + (Combat.WeaponDamage >= GoodWeaponDamage ? ArmedMargin : ShallowMargin) + DepthBonus
+		: Combat.Defense < DeepDefense ? CavernY + CavernDepth + DepthBonus
 		: int.MaxValue;
+
+	/// <summary>
+	/// Rows deeper than the gear alone allows, taken on when the ground within reach has nothing left and there is nowhere to
+	/// travel (as a player goes deeper once the shallow ore is gone). Seen in game (world_eye run 70): between a corruption
+	/// and a desert, with the near caves full of slimes, every mining job failed until auto mode stopped.
+	/// </summary>
+	public int DepthBonus { get; set; }
+	public const int DepthBonusStep = 25, MaxDepthBonus = 100;
 
 	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
 	public IBlockActions Blocks { get; set; }

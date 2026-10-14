@@ -270,10 +270,10 @@ public class BuildingTests
 	}
 
 	[Fact]
-	public void NowhereToTravel_NoRecallPotionIsDrunk()
+	public void NowhereToTravel_NoTrip_ButDeeperAndBackToTheSpawn()
 	{
 		// world_eye run 68: every way from the spawn crossed a biome, and five recall potions went in a minute, each followed by
-		// mining from the spawn again.
+		// mining from the spawn again; run 70: with nowhere to go and nothing to mine, auto mode stopped.
 		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
 		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
 		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
@@ -293,8 +293,9 @@ public class BuildingTests
 		p.NoteFruitless(FakeGame.SilverOre);
 		ISkill next = p.Next(ctx);
 		output.WriteLine($"{p.Status} -> {next?.Describe()}");
-		Assert.IsNotType<UseItemSkill>(next);
 		Assert.False(next is WalkToSkill { Travel: true });
+		Assert.Equal(BotContext.DepthBonusStep, ctx.DepthBonus); // deeper than the gear alone allows
+		Assert.Equal(FakeGame.RecallPotion, Assert.IsType<UseItemSkill>(next).ItemType); // far from the spawn: back there to look again
 	}
 
 	[Fact]

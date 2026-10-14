@@ -67,6 +67,7 @@ public sealed class BotBrain
 		failures = 0;
 		backoffs = 0;
 		ctx.DigAnyway = false; // a last resort of the run before, not of this one (it leaked into the next self-test scenario)
+		ctx.DepthBonus = 0;
 		backoffUntil = -1;
 		Planner.Reset(plan);
 		ctx.UnreachableTiles.Clear();

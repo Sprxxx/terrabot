@@ -1076,8 +1076,9 @@ public sealed class ProgressionPlanner
 			travelledFor[item] = fails;
 			// Nowhere to go (seen in game, world_eye run 68: between a corruption and a desert, every way crosses one):
 			// no trip, and no recall potion drunk for one either (five were, in a minute, each followed by mining from the spawn).
+			// Instead: back to the spawn to look from there, and from there deeper (run 70: auto mode stopped, every job failing).
 			if (ChooseTravelDest(ctx, fails) is not TilePos chosen)
-				return null;
+				return NoTripPossible(ctx, name);
 			travelDest = chosen;
 			fresh = true;
 		}
@@ -1103,6 +1104,27 @@ public sealed class ProgressionPlanner
 		}
 		return Do($"no more {name} found around here; {(fresh ? "travelling" : "on")} to new ground at {dest}",
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
+	}
+
+	/// <summary>Farther than this (tiles) from the spawn with nowhere to travel: walk back to it first.</summary>
+	public const int NoTripBackTiles = 30;
+
+	private ISkill NoTripPossible(BotContext ctx, string name)
+	{
+		// Deeper each time (wherever the bot is: mining from the spawn wanders far before it fails).
+		if (ctx.DepthBonus < BotContext.MaxDepthBonus) {
+			ctx.DepthBonus += BotContext.DepthBonusStep;
+			ctx.ExploresWithoutOre.Clear();
+			ctx.Log.Info($"Auto: no more {name} within reach and nowhere to travel; going {ctx.DepthBonus} rows deeper than the gear alone allows (down to row {ctx.DeepestRow})");
+		}
+		if (ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > NoTripBackTiles) {
+			if (ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0 && spawn.ChebyshevTo(ctx.Node) > RecallDistance)
+				return Do($"no more {name} found around here and nowhere to travel; drinking a recall potion to look again from the spawn",
+					new UseItemSkill(ctx.Ids.RecallPotion));
+			return Do($"no more {name} found around here and nowhere to travel; back to the spawn at {spawn} to look from there",
+				new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
+		}
+		return null;
 	}
 
 	/// <summary>
