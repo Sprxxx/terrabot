@@ -163,7 +163,7 @@ public sealed class BotBrain
 				: null;
 			if (biome == null || ctx.InDangerZone(e.FeetTile))
 				continue;
-			ctx.NoteDanger(e.FeetTile, BotContext.BiomeZoneTicks);
+			ctx.NoteDanger(e.FeetTile, BotContext.BiomeZoneTicks, BotContext.BiomeZoneRadius);
 			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: {biome} is near; keeping away from there for now");
 		}
 	}

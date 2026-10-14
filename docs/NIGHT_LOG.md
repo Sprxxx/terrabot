@@ -583,3 +583,12 @@ what was decided and the result.
 - **Decision:** a whole-fight backstop: if no enemy loses any life for 1,200 ticks, the fight ends and the enemies
   around are ignored for a while, even close by.
 - In game, 6 fight and chain scenarios pass. 238 unit tests.
+
+### world_eye run 58
+- **Progress:** the fight backstop worked ("no enemy hurt in 1200 ticks"). The anvil at about 3 minutes, a chest (3
+  recall potions), the **Silver Broadsword at about 5 minutes**.
+- **Deaths (4):** a zombie far east at night, a yellow slime, an antlion charger at x 2192 (30 tiles past the desert
+  zones), and a salamander at row 460.
+- **Decisions:** monster-sighting zones cover 60 tiles round (death zones 30). With a good sword but no armour, the
+  depth limit is 15 rows above the caverns (was 10). In game, iron_age, settle, boss_auto and life_crystals pass.
+  238 unit tests.

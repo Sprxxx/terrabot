@@ -142,17 +142,20 @@ public sealed class BotContext
 	/// alone for <see cref="DangerZoneTicks"/>, like a player who stays away from where they keep dying. Seen in game:
 	/// antlions in the underground desert killed the bot in nearly every run.
 	/// </summary>
-	public System.Collections.Generic.List<(TilePos At, long Until)> DangerZones { get; } = new();
+	public System.Collections.Generic.List<(TilePos At, long Until, int Radius)> DangerZones { get; } = new();
 	public const int DangerZoneRadius = 30, DangerZoneTicks = 60 * 60 * 30;
 
 	public void NoteDeathByEnemy(TilePos at) => NoteDanger(at, DangerZoneTicks);
 
-	/// <summary>A danger zone at <paramref name="at"/> for <paramref name="ticks"/>.</summary>
-	public void NoteDanger(TilePos at, long ticks)
+	/// <summary>A danger zone at <paramref name="at"/> for <paramref name="ticks"/>, <paramref name="radius"/> tiles round.</summary>
+	public void NoteDanger(TilePos at, long ticks, int radius = DangerZoneRadius)
 	{
 		DangerZones.RemoveAll(z => z.Until <= Tick);
-		DangerZones.Add((at, Tick + ticks));
+		DangerZones.Add((at, Tick + ticks, radius));
 	}
+
+	/// <summary>A biome seen by its monsters spans more than a death spot: run 58 died to an antlion charger 30 tiles past the zones.</summary>
+	public const int BiomeZoneRadius = 60;
 
 	/// <summary>An evil biome seen by its monsters stays where it is: kept 5 game days (a death spot, 1.25). Run 50 went back after it lapsed.</summary>
 	public const long BiomeZoneTicks = 5L * 86400;
@@ -264,8 +267,8 @@ public sealed class BotContext
 	/// <summary>Is the tile inside a zone where the bot was recently killed?</summary>
 	public bool InDangerZone(TilePos t)
 	{
-		foreach (var (at, until) in DangerZones)
-			if (until > Tick && at.ChebyshevTo(t) <= DangerZoneRadius)
+		foreach (var (at, until, radius) in DangerZones)
+			if (until > Tick && at.ChebyshevTo(t) <= radius)
 				return true;
 		return false;
 	}
@@ -274,14 +277,18 @@ public sealed class BotContext
 	public const int CavernDefense = 8;
 	/// <summary>Defense below this keeps them within <see cref="CavernDepth"/> rows into the caverns.</summary>
 	public const int DeepDefense = 16;
-	/// <summary>Rows relative to <see cref="CavernY"/>: without armour stay above the caverns (in game, 15 rows into them
-	/// was still skeletons and mother slimes); with some, this far in.</summary>
+	/// <summary>
+	/// Rows relative to <see cref="CavernY"/>: without armour stay above the caverns (in game, 15 rows into them was still
+	/// skeletons and mother slimes; at 10 rows above, mining at the limit kept dropping the bot into them, runs 36-47);
+	/// with some armour, <see cref="CavernDepth"/> rows into them.
+	/// </summary>
 	public const int ShallowMargin = -20, CavernDepth = 150;
 	/// <summary>
-	/// With an iron-tier sword or better (10+ damage) but no armour: down to 10 rows above the caverns. At 20 rows above,
-	/// the ore of that band near the spawn ran out and the bot travelled back and forth for a whole night (run 48).
+	/// With an iron-tier sword or better (10+ damage) but no armour: down to 15 rows above the caverns. At 20 rows above,
+	/// the ore of that band near the spawn ran out and the bot travelled back and forth for a whole night (run 48); at 10,
+	/// mining at the limit dropped it into the caverns again (run 58: a salamander at row 460).
 	/// </summary>
-	public const int ArmedMargin = -10, GoodWeaponDamage = 10; // -10: mining at the limit, skeletons from the caverns 10 rows down kept killing it (runs 36-47)
+	public const int ArmedMargin = -15, GoodWeaponDamage = 10;
 
 	/// <summary>
 	/// The deepest row worth going to for ore and exploring with the armour worn, like a player who stays out of the
