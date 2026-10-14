@@ -52,6 +52,42 @@ public class DumpReplayTests
 	}
 
 	[Fact]
+	public void BigCave170RowsDown_HasAWayBackToTheSpawn()
+	{
+		// Measured run J2: 31 searches of 40,000 nodes (5 s each, the bot standing still) from this cave to the spawn ended
+		// "no path" with no node better than the start.
+		string file = Path.Combine(AppContext.BaseDirectory, "Dumps", "nopath_2053_451_to_2095_282.txt");
+		var (g, b, start, _) = Load(file);
+		var goalAt = new TilePos(2095 - 2041, 282 - 270); // header: goal Near(2095,282)±4, origin (2041,270)
+		b.BlockCount = 860;
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true, BadEdges = BadEdgesOf(file) };
+		var goal = new GoalNearTile(goalAt, 4, PhysicsParams.Default);
+		var search = new PathSearch(ctx, start, goal, new SearchLimits { SegmentAfter = 0 });
+		search.Step(1e9);
+		output.WriteLine($"with the dump's bans: {search.Result}, best {search.Result.Best} (start {start}, goal {goalAt})");
+		var clean = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
+		var free = new PathSearch(clean, start, goal, new SearchLimits { SegmentAfter = 0 });
+		free.Step(1e9);
+		output.WriteLine($"without bans: {free.Result}, best {free.Result.Best}");
+		var relaxed = new PathSearch(ctx, start, goal, new SearchLimits { SegmentAfter = 0, CheckBrokenSupport = false });
+		relaxed.Step(1e9);
+		output.WriteLine($"relaxed: {relaxed.Result}, best {relaxed.Result.Best}");
+		// As the game had it: 'U' (unsafe to break) cells unbreakable.
+		string[] rows = File.ReadAllLines(file).Skip(1).Where(l => l.Length > 0 && !l.StartsWith("bad ")).Select(l => l.Trim().Replace('U', '@')).ToArray();
+		string tmp = Path.Combine(Path.GetTempPath(), "cave_u.txt");
+		File.WriteAllLines(tmp, new[] { File.ReadLines(file).First() }.Concat(rows));
+		var (gu, bu, su, _) = Load(tmp);
+		bu.BlockCount = 860;
+		var uctx = new MoveContext(gu, PhysicsParams.Default) { Blocks = bu, AllowBreak = true, AllowPlace = true, BadEdges = BadEdgesOf(file) };
+		var us = new PathSearch(uctx, su, goal, new SearchLimits { SegmentAfter = 0 });
+		us.Step(1e9);
+		output.WriteLine($"U unbreakable: {us.Result}, best {us.Result.Best}");
+		int uCount = rows.Sum(r => r.Count(c => c == '@'));
+		output.WriteLine($"unbreakable cells in the region: {uCount}");
+		Assert.True(search.Result.Status is PathStatus.Found or PathStatus.Partial, search.Result.ToString());
+	}
+
+	[Fact]
 	public void OreFourTilesUp_FromACaveFloor_IsReachable()
 	{
 		// world_eye run 26: a 1000+ node search found no way to mine ore 4 tiles above the bot.

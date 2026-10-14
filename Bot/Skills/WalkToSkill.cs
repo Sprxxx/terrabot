@@ -82,6 +82,8 @@ public sealed class WalkToSkill : ISkill
 		ctx.BadEdges.RemoveWhere(e => e.Item1.ChebyshevTo(at) <= 2 || e.Item2.ChebyshevTo(at) <= 2);
 	/// <summary>Longest wait (ticks) for the ground before planning: a walk held in the air fails instead.</summary>
 	public const int MaxAirborneTicks = 180;
+	/// <summary>A no-path search at least this big is not tried again from the same place.</summary>
+	public const int BigNoPath = 20_000;
 	/// <summary>Longest swim (ticks) towards the target from deep water before the walk gives up.</summary>
 	public const int MaxSwimTicks = 60 * 20;
 	/// <summary>Ticks bobbing in water over something to stand on before that counts as landed.</summary>
@@ -434,6 +436,14 @@ public sealed class WalkToSkill : ISkill
 			forgaveHere = true;
 			Info(ctx, $"WalkTo: boxed in at {LastPlan.Start} by {forgiven} step(s) banned earlier; forgiving them and planning again");
 			waitTicks = 0;
+			return false;
+		}
+		if (LastPlan.Status == PathStatus.NoPath && LastPlan.Why.Length > 0)
+			Info(ctx, $"WalkTo: no path from {LastPlan.Start}: {LastPlan.Why}");
+		// A big search from here found nothing: another the same would too (seen in game, measured run J2: 31 searches of
+		// 40,000 nodes, 5 s each, from one cave). Fail now and let the job choose something else.
+		if (LastPlan.Status == PathStatus.NoPath && LastPlan.Expanded >= BigNoPath) {
+			NoPathCount = MaxNoPathAttempts;
 			return false;
 		}
 		NoPathCount++;

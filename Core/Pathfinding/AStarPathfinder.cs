@@ -30,6 +30,12 @@ public sealed class PathResult
 	public TilePos Start { get; init; }
 	/// <summary>Node closest to the goal by heuristic (end of a Partial path).</summary>
 	public TilePos Best { get; init; }
+	/// <summary>
+	/// Diagnostics of a search that found nothing: the start's heuristic, the lowest heuristic reached (tainted nodes too),
+	/// and the deepest and highest rows expanded. Seen in game (measured run J2): 31 searches of 40,000 nodes from a big cave
+	/// ended "no path" with no node better than the start, which the dump's replay does not reproduce.
+	/// </summary>
+	public string Why { get; init; } = "";
 
 	public override string ToString() =>
 		$"{Status}: {Steps.Count} steps, cost {Cost:0.#}t, expanded {Expanded} in {ElapsedMs:0.#} ms";
@@ -85,6 +91,8 @@ public sealed class PathSearch
 	private float bestTaintedH;
 	private int expanded;
 	private double elapsedMs;
+	private int topRow = int.MaxValue, bottomRow = int.MinValue, taintedNodes;
+	private float lowestH = float.MaxValue;
 
 	/// <summary>Null until the search has finished.</summary>
 	public PathResult Result { get; private set; }
@@ -149,10 +157,15 @@ public sealed class PathSearch
 					Result = Build(PathStatus.Partial, best, sw);
 					return true;
 				}
+				if (pos.Y < topRow) topRow = pos.Y;
+				if (pos.Y > bottomRow) bottomRow = pos.Y;
+				if (h < lowestH) lowestH = h;
+				if (rec.Tainted) taintedNodes++;
 				if (++expanded > limits.MaxExpansions) {
 					TilePos end = best != start ? best : bestTainted;
 					Result = end == start
-						? new PathResult { Status = PathStatus.NoPath, Start = start, Best = best, Expanded = expanded, ElapsedMs = elapsedMs + sw.Elapsed.TotalMilliseconds }
+						? new PathResult { Status = PathStatus.NoPath, Start = start, Best = best, Expanded = expanded, ElapsedMs = elapsedMs + sw.Elapsed.TotalMilliseconds,
+							Why = $"start h {goal.Heuristic(start):0}, lowest h {lowestH:0}, rows {topRow}..{bottomRow}, tainted {taintedNodes}" }
 						: Build(PathStatus.Partial, end, sw);
 					return true;
 				}
