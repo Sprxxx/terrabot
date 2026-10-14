@@ -423,3 +423,14 @@ what was decided and the result.
 - **Death 2:** a vulture, digging in on the surface 76 tiles from the house. **Decision:** the walk-home retreat
   applies up to 100 tiles.
 - In game, 7 fight and chain scenarios pass. 230 unit tests.
+
+### world_eye run 46: two pathfinding and home-walk fixes
+- **"No path" from the relaxed retry too,** after 40,000 nodes each, so the bot made a new furnace underground. In
+  the relaxed search a step onto what the path digs is allowed, but it taints the nodes after it. A partial plan
+  never ends at a tainted node, so when every node that got closer was tainted, the result was "no path".
+  **Decision:** in that case the partial plan ends at the best tainted node.
+- **Night walks home:** zombies killed the bot walking home 160 tiles across the surface without fighting back, and
+  twice more just below the spawn. **Decisions:** at nightfall only go home from within 150 tiles, else shelter
+  where it is. On the way home, ignore only enemies that aren't hitting it, and only within 100 tiles of the house.
+  A hurt retreat home keeps running even when hit (fighting would hand it straight back to the retreat, every tick).
+- In game, 8 scenarios pass (night_home, night_shelter, fights, walks, iron_age, settle, boss_auto). 231 unit tests.

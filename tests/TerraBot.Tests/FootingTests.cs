@@ -282,4 +282,24 @@ public class FootingTests
 		ctx.Combat.Defense = BotContext.DeepDefense;
 		Assert.False(ctx.OffLimits(new TilePos(70, 28)));
 	}
+
+	[Fact]
+	public void RelaxedSearchThroughRock_StillGivesAPartialPlan()
+	{
+		// world_eye run 46: the relaxed retry (steps onto what the path digs allowed) said "no path" after 40,000 nodes: every
+		// node that got closer was past such a step, and a partial plan never ended there.
+		var rows = Enumerable.Repeat(new string('#', 70), 60).ToList();
+		for (int y = 54; y <= 56; y++)
+			rows[y] = new string('#', 60) + "......" + "####";
+		rows[56] = new string('#', 61) + "S" + "....####";
+		rows[59] = new string('@', 70);
+		var (g, b) = TestBlockActions.Parse(rows.ToArray());
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = false };
+		TilePos start = g.Markers['S'];
+		var search = new PathSearch(ctx, start, new GoalNearTile(new TilePos(start.X, 3), 2, PhysicsParams.Default),
+			new SearchLimits { MaxExpansions = 2000, CheckBrokenSupport = false });
+		search.Step(1e9);
+		Assert.Equal(PathStatus.Partial, search.Result.Status);
+		Assert.True(search.Result.Steps.Count > 0);
+	}
 }

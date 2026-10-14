@@ -462,6 +462,8 @@ public sealed class ProgressionPlanner
 	/// </summary>
 	public TilePos? HomeToRetreatTo(BotContext ctx) =>
 		ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos home && home.ChebyshevTo(ctx.Node) <= RetreatHomeTiles ? home : null;
+	/// <summary>Farther than this from the house at nightfall, the night is spent where the bot is (a long night walk across the surface killed it, run 46).</summary>
+	public const int NightHomeTiles = 150;
 	public const int RetreatHomeTiles = 100; // 60 left a vulture death 76 tiles out on the surface (run 45)
 
 	private TilePos? HomeInside(BotContext ctx)
@@ -492,7 +494,8 @@ public sealed class ProgressionPlanner
 			return skill; // the prey only comes out at night
 		// With a house: the night is spent in it, unless the work is safely underground (zombies and demon eyes are on
 		// the surface). Seen in game: a zombie killed the bot walking home across the surface at night.
-		if (ctx.IsNight && ctx.Combat.Defense < NightOutDefense && ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos inside && NightWorkOnTheSurface(skill, ctx)) {
+		if (ctx.IsNight && ctx.Combat.Defense < NightOutDefense && ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos inside
+			&& inside.ChebyshevTo(ctx.Node) <= NightHomeTiles && NightWorkOnTheSurface(skill, ctx)) {
 			Status = $"night: staying in the house instead of {skill.Name} ({Status})";
 			return new StayHomeSkill(inside);
 		}

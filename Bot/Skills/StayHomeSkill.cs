@@ -19,6 +19,8 @@ public sealed class StayHomeSkill : ISkill
 	public string Name => "StayHome";
 	/// <summary>Inside, waiting: enemies outside the walls are left alone (see BotBrain).</summary>
 	public bool Home => home;
+	/// <summary>Where it is going.</summary>
+	public TilePos Inside => inside;
 
 	public StayHomeSkill(TilePos insideTile) => inside = insideTile;
 

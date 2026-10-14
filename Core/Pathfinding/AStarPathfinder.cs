@@ -72,6 +72,8 @@ public sealed class PathSearch
 	private readonly List<PathStep> edges = new(64);
 	private TilePos best;
 	private float bestH;
+	private TilePos bestTainted;
+	private float bestTaintedH;
 	private int expanded;
 	private double elapsedMs;
 
@@ -88,6 +90,8 @@ public sealed class PathSearch
 		this.start = start;
 		best = start;
 		bestH = goal.Heuristic(start);
+		bestTainted = start;
+		bestTaintedH = bestH;
 
 		if (!Body.IsStartable(ctx.Grid, start)) {
 			Result = new PathResult { Status = PathStatus.InvalidStart, Start = start, Best = start };
@@ -125,11 +129,18 @@ public sealed class PathSearch
 					bestH = h;
 					best = pos;
 				}
+				// ...unless every way on is tainted (the relaxed search, where such steps are allowed): then the best tainted
+				// node, as a plan that re-plans part way beats none (world_eye run 46: "no path" after 40,000 nodes, twice).
+				if (h < bestTaintedH && rec.Tainted) {
+					bestTaintedH = h;
+					bestTainted = pos;
+				}
 
 				if (++expanded > limits.MaxExpansions) {
-					Result = best == start
+					TilePos end = best != start ? best : bestTainted;
+					Result = end == start
 						? new PathResult { Status = PathStatus.NoPath, Start = start, Best = best, Expanded = expanded, ElapsedMs = elapsedMs + sw.Elapsed.TotalMilliseconds }
-						: Build(PathStatus.Partial, best, sw);
+						: Build(PathStatus.Partial, end, sw);
 					return true;
 				}
 

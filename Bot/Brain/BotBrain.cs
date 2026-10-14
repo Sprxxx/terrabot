@@ -182,7 +182,12 @@ public sealed class BotBrain
 		// fought. Seen in game: out of the house three times in one night to fight zombies at the door; the third killed it.
 		// On the way home for the night, keep going: zombies are slower than a running player and cannot open the door
 		// (seen in game, world_eye run 41: stopped at dusk to fight zombies with a copper sword, then dug in among them, dead).
-		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0 || Current is StayHomeSkill { Home: false };
+		// Only on the last stretch, and only what is not hitting it: walking without fighting back at all, zombies killed it
+		// 160 tiles out, and twice more just below the spawn (world_eye run 46).
+		// Running home hurt is a flight: hit or not it keeps going (fighting would hand it straight back to the retreat).
+		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0
+			|| Current is StayHomeSkill { Home: false } walking && walking.Inside.ChebyshevTo(ctx.Node) <= ProgressionPlanner.RetreatHomeTiles
+				&& (walking.RecoverTo > 0 || ctx.RecentAttacker < 0);
 		if (Auto && !safeAtHome && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
