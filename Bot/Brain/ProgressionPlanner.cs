@@ -1106,7 +1106,7 @@ public sealed class ProgressionPlanner
 		TilePos? found = null;
 		for (int r = reach; r <= MaxTravelTiles && found == null; r += TravelTiles)
 			foreach (int d in new[] { dir, -dir }) {
-				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c)) {
+				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X)) {
 					found = c;
 					break;
 				}
@@ -1116,6 +1116,23 @@ public sealed class ProgressionPlanner
 		travelDest = dest;
 		return Do($"no more {name} found around here; travelling to new ground at {dest}",
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
+	}
+
+	/// <summary>Surface samples (tiles apart) checked along a trip's way.</summary>
+	public const int RouteSampleTiles = 15;
+
+	/// <summary>
+	/// Does the way along the surface from <paramref name="fromX"/> to <paramref name="toX"/> cross a desert's or evil biome's
+	/// ground (or somewhere off limits) the gear is too weak for? Seen in game (world_eye run 67): a trip west went across the
+	/// corruption, and the bot was knocked into a chasm there by an eater of souls and fell 66 tiles.
+	/// </summary>
+	private static bool RouteCrossesBiome(BotContext ctx, int fromX, int toX)
+	{
+		int dir = Math.Sign(toX - fromX);
+		for (int x = fromX + dir * RouteSampleTiles; dir != 0 && (toX - x) * dir > 0; x += dir * RouteSampleTiles)
+			if (SurfaceAt(ctx.Grid, x) is TilePos c && (ctx.BiomeGround(c) || ctx.OffLimits(c)))
+				return true;
+		return false;
 	}
 
 	/// <summary>The first spot to stand on, coming down from the sky in column <paramref name="x"/>; null if none.</summary>

@@ -677,3 +677,15 @@ what was decided and the result.
   - InDanger counted hostiles that FightSkill will not take on below the depth limit (NotTooDeep: only an attacker within 4 tiles).
   - **Fix:** starting a fight uses InDanger(toFight: true), with the same depth filter. The retreat check still counts every hostile.
 - 1 new test (249 pass). fight_green_slime, shoot_demon_eye, early_game_with_slimes, night_shelter and settle_auto pass.
+
+## Run 67 (commit 98b712c), stopped after about 10 game minutes. **Best run tonight: 1 death**
+- Progress:
+  - Anvil 35 s, Silver Broadsword about 3 min, Iron Pickaxe about 4 min, **Iron Helmet worn at about 7 min**.
+  - Crowd zones and the recall-before-trip worked; no desert deaths.
+- **Death:** a trip west to (1735,269) crossed the corruption. An eater of souls fight at a chasm edge ended in a 66-tile fall (409 damage).
+  - **Fix:** TravelForOre skips destinations whose way along the surface (sampled every 15 tiles) crosses biome ground or off-limits spots the gear is too weak for (RouteCrossesBiome).
+- **Other fixes from watching it (commit abd5277):**
+  - At a trip's destination, exploring went back west across the desert. With no safer side, exploring more than 60 tiles from the spawn now goes onwards, away from it.
+  - UseItemSkill finished when the potion left the bag, but the recall teleport comes later in the use. The next walk set off from the old spot and a second potion was drunk. Now it waits for the use animation to end.
+- **Pillar mystery, diagnosed further:** four "placed True, landed back at the start" cases. Each time the block sits in a feet cell of the start node while the feet stay at that row's bottom, so the body overlaps the block. Vanilla's PlaceTile refuses blocks over a player (Collision.EmptyTile), and the blocks are dirt or stone (falling tiles are excluded). Unexplained. It costs a re-plan (and banned steps) each time.
+- 3 new tests (251 pass). iron_age_auto, settle_auto and life_crystals pass.

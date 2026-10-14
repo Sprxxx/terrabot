@@ -270,6 +270,30 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ATripForNewOre_DoesNotCrossSomewhereOffLimits()
+	{
+		// world_eye run 67: a trip west across the corruption; knocked into a chasm there, the bot fell 66 tiles.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		ctx.NoteDanger(new TilePos(80, 44), BotContext.BiomeZoneTicks, 10); // on the way east (the only way: west is off the map)
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.False(next is WalkToSkill { Travel: true });
+	}
+
+	[Fact]
 	public void ATripForNewOre_FromFarDown_StartsWithARecallPotion()
 	{
 		// world_eye run 64: the walk back to the spawn from 120 rows down followed caves into the desert; a player recalls.
