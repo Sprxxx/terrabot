@@ -381,9 +381,12 @@ public sealed class BotBrain
 			if (ctx.Node.Y > ctx.SurfaceY)
 				NoteCrowd(ctx); // underground: on the surface a night's zombies are the house's business
 			// A chest comes into sight while looking for ore or prey: go and loot it first (the planner picks it next).
-			if (Current is MineSkill or ExploreSkill or HuntSkill && ProgressionPlanner.NextChest(ctx) is ChestInfo seen)
+			// On a walk too (a trip, to a station): seen in game, the bot ran past a life crystal on its way (user report,
+			// 2026-10-14). Not during a reflex (a flight, a fight).
+			bool onAWalk = Override == null && Work is WalkToSkill;
+			if ((Current is MineSkill or ExploreSkill or HuntSkill || onAWalk) && ProgressionPlanner.NextChest(ctx) is ChestInfo seen)
 				RequestReplan($"a chest at {seen.TopLeft} came into sight");
-			else if (Current is ExploreSkill or HuntSkill || Current is MineSkill m && m.ItemType != ctx.Ids.LifeCrystal) {
+			else if (Current is ExploreSkill or HuntSkill || onAWalk || Current is MineSkill m && m.ItemType != ctx.Ids.LifeCrystal) {
 				if (ProgressionPlanner.LifeCrystalUseful(ctx) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart)
 					RequestReplan($"a life crystal at {heart} came into sight");
 			}

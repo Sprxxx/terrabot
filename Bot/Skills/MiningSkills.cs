@@ -217,10 +217,8 @@ public sealed class MineSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		foreach (TilePos c in ctx.World.FindTiles(TileType, node, SearchRadius)) {
-			if (bad.Contains(c) || ctx.UnreachableTiles.Contains(c) || !SafeToBreak(ctx, moves, c) || NextToLiquid(ctx.Grid, c))
+			if (bad.Contains(c) || !WouldMine(ctx, moves, c))
 				continue;
-			if (c.Y > ctx.DeepestRow || ctx.OffLimits(c))
-				continue; // deeper than the gear is fit for, or where the bot was killed lately
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
 			// The row the bot stands on, under its feet and a step either side, last: seen in the settle scenario, it mined
 			// the stone it stood on tile by tile, placing a block each time to keep its footing, and the count never rose.
@@ -233,6 +231,16 @@ public sealed class MineSkill : ISkill
 		}
 		return best;
 	}
+
+	/// <summary>
+	/// Would mining go for this tile? Known reachable, safe to break (lava and undermined sand aside: water beside it is
+	/// fine, as for a player), not deeper than the gear is fit for, not off limits. Shared with the planner, which picks
+	/// the job: seen in game, the planner chose "mine the life crystal" for a crystal beside water that mining then
+	/// skipped, so the bot explored away from it and was sent back, round and round, running past it (user report,
+	/// 2026-10-14).
+	/// </summary>
+	public static bool WouldMine(BotContext ctx, MoveContext moves, TilePos c) =>
+		!ctx.UnreachableTiles.Contains(c) && SafeToBreak(ctx, moves, c) && c.Y <= ctx.DeepestRow && !ctx.OffLimits(c);
 
 	/// <summary>Liquid on a side or corner: mining it means swimming (or flooding the tunnel). Players leave such ore without gear to breathe.</summary>
 	public static bool NextToLiquid(ITileGrid g, TilePos c)

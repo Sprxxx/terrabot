@@ -274,7 +274,8 @@ public sealed class ProgressionPlanner
 		foreach (TilePos c in ctx.World.FindTiles(heart, ctx.Node, CrystalRadius))
 			// Not deeper than the gear allows (mining skips those too): seen in game, a crystal 7 rows below the limit
 			// interrupted mining every second, the crystal job failing at once each time.
-			if (!ctx.UnreachableTiles.Contains(c) && c.Y <= ctx.DeepestRow && ctx.World.CanMineTarget(c.X, c.Y))
+			// As mining itself would judge it (MineSkill.WouldMine), so the job it gets is one it takes on.
+			if (ctx.World.CanMineTarget(c.X, c.Y) && MineSkill.WouldMine(ctx, ctx.Moves, c))
 				return c;
 		return null;
 	}

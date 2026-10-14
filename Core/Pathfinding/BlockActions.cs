@@ -55,8 +55,21 @@ public static class BlockRules
 		float ticks = ctx.Blocks.BreakTicks(cell.X, cell.Y);
 		if (float.IsInfinity(ticks) || float.IsNaN(ticks))
 			return float.PositiveInfinity;
-		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks + (unsafeCell ? DigAnywayTicks : 0f);
+		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks + (unsafeCell ? DigAnywayTicks : 0f)
+			+ (NextToWater(ctx.Grid, cell) ? WetBreakTicks : 0f);
 	}
+
+	/// <summary>
+	/// Extra cost of opening a cell beside water or honey: allowed (it flows in, the bot swims, surfaces for breath), but a
+	/// dry way is still taken when there is one. It used to be forbidden, so ore and a life crystal beside water were
+	/// never mined, and the bot ran past the crystal (user report, 2026-10-14: solve the problem, don't ban the place).
+	/// </summary>
+	public const float WetBreakTicks = 40f;
+
+	public static bool NextToWater(ITileGrid g, TilePos cell) =>
+		IsWater(g.Get(cell.X - 1, cell.Y)) || IsWater(g.Get(cell.X + 1, cell.Y)) || IsWater(g.Get(cell.X, cell.Y - 1)) || IsWater(g.Get(cell.X, cell.Y + 1));
+
+	private static bool IsWater(CellKind k) => k.IsLiquid() && !k.HasLava();
 
 	/// <summary>Extra cost of an unsafe break when digging anyway: only when there is nothing else.</summary>
 	public const float DigAnywayTicks = 300f;
@@ -71,11 +84,8 @@ public static class BlockRules
 		if (g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
 			|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava())
 			return true;
-		// Water too: opening a block next to it floods the tunnel (seen in game: a shaft dug down into a water pocket
-		// filled up, and the bot drowned in it).
-		if (g.Get(cell.X - 1, cell.Y).IsLiquid() || g.Get(cell.X + 1, cell.Y).IsLiquid()
-			|| g.Get(cell.X, cell.Y - 1).IsLiquid() || g.Get(cell.X, cell.Y + 1).IsLiquid())
-			return true;
+		// Not water: opening a block beside it floods the tunnel, and the bot deals with that (surfaces for breath; once a
+		// shaft into a water pocket drowned it, before surfacing existed). It costs more instead (WetBreakTicks).
 		var above = new TilePos(cell.X, cell.Y - 1);
 		return g.Get(above.X, above.Y).IsFalling() && !Contains(sameMove, above);
 	}

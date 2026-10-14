@@ -78,6 +78,34 @@ public class ContinuityTests
 		Assert.Contains("never landed", walk.FailureReason);
 	}
 
+	[Fact]
+	public void BobbingInWaterOverASlope_CountsAsLanded()
+	{
+		// world_eye (measured run B): "never landed ... (vy -0.2, feet Water/Water, under Platform, Shaped/Solid)": standing
+		// in water on a slope, the body never comes to rest at vy 0.
+		var g = new FakeGame(new[] {
+			"..........",
+			"..........",
+			"..~~~~~~..",
+			"..~~~~~~..",
+			"..~~S~~~..",
+			"##########" });
+		BotContext ctx = g.CreateContext(output);
+		TilePos start = ctx.Node;
+		var walk = new WalkToSkill(new TilePos(start.X + 3, start.Y));
+		walk.Start(ctx);
+		bool planned = false;
+		for (int t = 0; t < WalkToSkill.MaxAirborneTicks && !planned; t++) {
+			var body = ctx.Body;
+			body.VY = -0.2f;
+			ctx.Body = body;
+			walk.Tick(ctx);
+			planned = walk.State != "waiting to land";
+		}
+		output.WriteLine(walk.Describe());
+		Assert.True(planned);
+	}
+
 	/// <summary>A job that never gets anywhere: stands still, always the same state.</summary>
 	private sealed class NoProgressSkill : ISkill
 	{

@@ -75,6 +75,8 @@ public sealed class WalkToSkill : ISkill
 	private readonly IGoal fixedGoal;
 	/// <summary>Longest wait (ticks) for the ground before planning: a walk held in the air fails instead.</summary>
 	public const int MaxAirborneTicks = 180;
+	/// <summary>Ticks bobbing in water over something to stand on before that counts as landed.</summary>
+	public const int SettleInWaterTicks = 30;
 	private int airborneTicks;
 
 	private void Info(BotContext ctx, string message)
@@ -136,7 +138,12 @@ public sealed class WalkToSkill : ISkill
 					waitTicks--;
 					return SkillStatus.Running;
 				}
-				if (!ctx.Body.Grounded) {
+				// Bobbing in water on a slope is standing too (vy stays about -0.2 there, never 0): seen in game, every walk
+				// from such a spot waited to land until it gave up.
+				bool settledInWater = airborneTicks >= SettleInWaterTicks && System.Math.Abs(ctx.Body.VY) < 0.5f
+					&& (ctx.Grid.Get(node.X, node.Y).IsLiquid() || ctx.Grid.Get(node.X + 1, node.Y).IsLiquid())
+					&& (ctx.Grid.Get(node.X, node.Y + 1).CanStandOn() || ctx.Grid.Get(node.X + 1, node.Y + 1).CanStandOn());
+				if (!ctx.Body.Grounded && !settledInWater) {
 					// Not for ever: seen in game (world_eye, the first run with paused work resuming), "waiting to land" at one
 					// spot for three game days, never moving (held in the air by something: a cobweb, a ledge corner). Fights
 					// and nightfall used to throw the job away and so broke it; resumed, nothing did.

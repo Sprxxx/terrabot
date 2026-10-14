@@ -23,12 +23,14 @@ public sealed class LightKeeper
 	/// <summary>Craft torches while fewer than this are carried and gel and wood allow.</summary>
 	public const int Reserve = 20;
 	/// <summary>
-	/// Torches not placed for light: the plan needs them (furnace 3, campfire 5, the arena's own). Seen in game: the
-	/// keeper lit a detour with the arena's torches, and boss_auto then hunted gel for an hour.
+	/// Torches not placed for light: the plan needs some (furnace 3, campfire 5). Seen in game: the keeper lit a detour
+	/// with the arena's torches, and boss_auto then hunted gel for an hour. But at 12 (with 15 wood kept back below) the
+	/// bot walked the caves in the dark for long stretches, holding exactly 12 torches and 15 wood (user report,
+	/// 2026-10-14): one wood and one gel make 3 torches, and the planner gathers wood when a recipe needs it.
 	/// </summary>
-	public const int KeepForCrafting = 12;
+	public const int KeepForCrafting = 5;
 	/// <summary>Wood left alone for the plan: torches only from what is above this.</summary>
-	public const int SpareWood = 15;
+	public const int SpareWood = 5;
 	public const int CraftEvery = 300;
 
 	private int ticks;

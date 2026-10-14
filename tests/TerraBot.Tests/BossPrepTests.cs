@@ -27,6 +27,22 @@ public class BossPrepTests
 	}
 
 	[Fact]
+	public void ALifeCrystalBesideWater_IsChosen_AndMiningTakesItOn()
+	{
+		// User report (2026-10-14): the bot ran past a life crystal. The planner chose "mine the life crystal" for one beside
+		// water, and mining skipped it (no ore beside liquid), explored away, and was sent back, round and round.
+		FakeGame g = ProgressionTests.Mine();
+		g.AddHeart(16, 27);
+		g.Grid.Fill(18, 27, 19, 28, CellKind.Water); // a pool beside it
+		BotContext ctx = g.CreateContext(output);
+		TilePos heart = Assert.IsType<TilePos>(ProgressionPlanner.SeenLifeCrystal(ctx));
+		Assert.True(MineSkill.WouldMine(ctx, ctx.Moves, heart));
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1), 60 * 120);
+		output.WriteLine($"{st}, crystals {g.Count(FakeGame.LifeCrystal)}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+	}
+
+	[Fact]
 	public void UseItem_ConsumesALifeCrystal()
 	{
 		FakeGame g = EarlyGameTests.Field(30);

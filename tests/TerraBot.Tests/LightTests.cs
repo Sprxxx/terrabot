@@ -43,6 +43,24 @@ public class LightTests
 	}
 
 	[Fact]
+	public void Dark_WithTwelveTorches_StillLightsTheWay()
+	{
+		// User report (2026-10-14): walking the caves in the dark with exactly 12 torches and 15 wood, none placed: 12 were
+		// all kept for crafting, and 15 wood was all kept back from making more.
+		var (g, _, brain) = Run(light: 0.05f, torches: 12, ticks: 400);
+		int placed = g.Furniture.Values.Count(t => t == FakeGame.TileTorch);
+		output.WriteLine($"{placed} torch(es); {brain.Describe()}");
+		Assert.True(placed >= 1);
+	}
+
+	[Fact]
+	public void LowOnTorches_CraftsMoreFromTheLastFifteenWood()
+	{
+		var (g, _, _) = Run(light: 1f, torches: 0, ticks: LightKeeper.CraftEvery + 5, gel: 3, wood: 15);
+		Assert.True(g.Count(FakeGame.Torch) > 0);
+	}
+
+	[Fact]
 	public void Lit_PlacesNone()
 	{
 		var (g, _, _) = Run(light: 1f, torches: 5, ticks: 400);
