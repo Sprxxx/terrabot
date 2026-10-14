@@ -238,7 +238,12 @@ public sealed class BotContext
 	public const int DeepDefense = 16;
 	/// <summary>Rows relative to <see cref="CavernY"/>: without armour stay above the caverns (in game, 15 rows into them
 	/// was still skeletons and mother slimes); with some, this far in.</summary>
-	public const int ShallowMargin = -20, CavernDepth = 150; // -10: mining at the limit, skeletons from the caverns 10 rows down kept killing it (runs 36-47)
+	public const int ShallowMargin = -20, CavernDepth = 150;
+	/// <summary>
+	/// With an iron-tier sword or better (10+ damage) but no armour: down to 10 rows above the caverns. At 20 rows above,
+	/// the ore of that band near the spawn ran out and the bot travelled back and forth for a whole night (run 48).
+	/// </summary>
+	public const int ArmedMargin = -10, GoodWeaponDamage = 10; // -10: mining at the limit, skeletons from the caverns 10 rows down kept killing it (runs 36-47)
 
 	/// <summary>
 	/// The deepest row worth going to for ore and exploring with the armour worn, like a player who stays out of the
@@ -246,7 +251,7 @@ public sealed class BotContext
 	/// bats and black slimes killed the bot 5 times in an hour. int.MaxValue = no limit.
 	/// </summary>
 	public int DeepestRow => CavernY <= 0 ? int.MaxValue
-		: Combat.Defense < CavernDefense ? CavernY + ShallowMargin
+		: Combat.Defense < CavernDefense ? CavernY + (Combat.WeaponDamage >= GoodWeaponDamage ? ArmedMargin : ShallowMargin)
 		: Combat.Defense < DeepDefense ? CavernY + CavernDepth
 		: int.MaxValue;
 

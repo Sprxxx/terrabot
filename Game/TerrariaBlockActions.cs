@@ -30,6 +30,7 @@ public sealed class TerrariaBlockActions : IBlockActions
 	public string WeaponName { get; private set; } = "";
 	/// <summary>Estimated reach in px beyond the hitbox edge (swing arc ≈ item width × scale).</summary>
 	public float WeaponReach { get; private set; }
+	public int WeaponDamage { get; private set; }
 	/// <summary>Best arrow-firing weapon in the hotbar (by damage per tick), the arrows carried, and the launch speed
 	/// (weapon shootSpeed + the ammo vanilla would pick, Player.ChooseAmmo).</summary>
 	public int RangedSlot { get; private set; } = -1;
@@ -50,6 +51,7 @@ public sealed class TerrariaBlockActions : IBlockActions
 		NoBuilding = p.noBuilding;
 		WeaponSlot = -1;
 		WeaponName = "";
+		WeaponDamage = 0;
 		WeaponReach = 0f;
 		AxeSlot = -1;
 		AxePower = 0;
@@ -78,6 +80,7 @@ public sealed class TerrariaBlockActions : IBlockActions
 					bestWeapon = score;
 					WeaponSlot = i;
 					WeaponName = it.Name;
+					WeaponDamage = it.damage;
 					WeaponReach = it.useStyle == ItemUseStyleID.Rapier ? 24f : Math.Max(16f, it.width * it.scale);
 				}
 			}

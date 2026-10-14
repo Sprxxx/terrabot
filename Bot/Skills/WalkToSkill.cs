@@ -43,6 +43,8 @@ public sealed class WalkToSkill : ISkill
 
 	/// <summary>Used as a sub-skill (e.g. chasing a moving enemy): plan/finish lines go to Debug instead of Info.</summary>
 	public bool Quiet { get; init; }
+	/// <summary>A trip across the surface to new ground (travel for ore): surface work, so not at night without armour.</summary>
+	public bool Travel { get; init; }
 
 	/// <summary>Accept any standing node within this many tiles (Chebyshev) of the goal feet tile.</summary>
 	public int Tolerance { get; init; }

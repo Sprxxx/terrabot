@@ -81,6 +81,8 @@ public class FootingTests
 		Assert.Equal(int.MaxValue, ctx.DeepestRow); // depth unknown: no limit
 		ctx.CavernY = 400;
 		Assert.Equal(400 + BotContext.ShallowMargin, ctx.DeepestRow);
+		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage; // an iron-tier sword, still no armour (run 48)
+		Assert.Equal(400 + BotContext.ArmedMargin, ctx.DeepestRow);
 		ctx.Combat.Defense = BotContext.CavernDefense; // e.g. full iron armour
 		Assert.Equal(400 + BotContext.CavernDepth, ctx.DeepestRow);
 		ctx.Combat.Defense = BotContext.DeepDefense;

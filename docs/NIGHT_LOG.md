@@ -449,3 +449,13 @@ what was decided and the result.
   another fruitless mine, and the travel went 120 tiles further each time. **Decisions:** the count is cleared when
   mining gives up, and travel for ore goes at most 600 tiles from the spawn.
 - In game, 5 chain scenarios pass (iron_age, settle, night_home, boss_auto, life_crystals). 232 unit tests.
+
+### world_eye run 48: 0 deaths, but short of ore
+- **Progress:** the anvil about 2 minutes 20 seconds in, a recall potion home, and the **Silver Broadsword at about 3
+  minutes**, with 0 deaths over a whole day and night (the safest run so far).
+- **Problem:** at 20 rows above the caverns, the iron and silver of that band near the spawn ran out. The bot
+  travelled back and forth between the same three spots all night, also across the surface at night.
+- **Decisions:** with an iron-tier sword or better (10+ damage) but no armour, the limit is 10 rows above the
+  caverns again (20 with a copper sword). Travel for ore counts as surface work, so in no armour it waits for the
+  morning at home.
+- In game, 5 chain scenarios pass. 232 unit tests.

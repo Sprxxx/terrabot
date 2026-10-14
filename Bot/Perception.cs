@@ -49,6 +49,8 @@ public sealed class CombatInfo
 	/// <summary>How far (px) in front of the body's edge the best melee weapon reaches; 0 = no weapon.</summary>
 	public float WeaponReach { get; set; }
 	public string WeaponName { get; set; } = "";
+	/// <summary>Base damage of the melee weapon in use (0 = none).</summary>
+	public int WeaponDamage { get; set; }
 
 	/// <summary>Best bow in the hotbar and whether arrows are carried; the shot as the game will fire it.</summary>
 	public bool HasRanged { get; set; }

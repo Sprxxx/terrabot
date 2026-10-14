@@ -352,6 +352,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.Defense = Player.statDefense;
 		k.WeaponReach = Blocks.WeaponSlot >= 0 ? Blocks.WeaponReach : 0f;
 		k.WeaponName = Blocks.WeaponName;
+		k.WeaponDamage = Blocks.WeaponSlot >= 0 ? Blocks.WeaponDamage : 0;
 		k.HasRanged = Blocks.RangedSlot >= 0 && Blocks.AmmoCount > 0;
 		k.RangedName = Blocks.RangedName;
 		k.AmmoCount = Blocks.AmmoCount;

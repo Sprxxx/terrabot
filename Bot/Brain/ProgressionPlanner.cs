@@ -482,7 +482,8 @@ public sealed class ProgressionPlanner
 	/// <summary>Work that keeps the bot on or near the surface at night: gathering, hunting, and mining or exploring from up there.</summary>
 	private static bool NightWorkOnTheSurface(ISkill skill, BotContext ctx)
 	{
-		if (skill is GatherWoodSkill or LootChestSkill || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
+		// Travel too: run 48 set off across the surface for new ore at nightfall in no armour.
+		if (skill is GatherWoodSkill or LootChestSkill or WalkToSkill { Travel: true } || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
 			return true;
 		bool nearSurface = ctx.SurfaceY <= 0 || ctx.Node.Y < ctx.SurfaceY + 15;
 		return nearSurface && skill is MineSkill or ExploreSkill;
@@ -1062,7 +1063,7 @@ public sealed class ProgressionPlanner
 		if (found is not TilePos dest)
 			return null;
 		return Do($"no more {name} found around here; travelling to new ground at {dest}",
-			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true });
+			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
 	}
 
 	/// <summary>The first spot to stand on, coming down from the sky in column <paramref name="x"/>; null if none.</summary>
