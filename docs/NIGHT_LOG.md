@@ -730,3 +730,13 @@ what was decided and the result.
     - Fleeing with no walk left waits for the ground, then digs in.
     - The self-test ends a scenario at once when the bot is switched off by an exception.
 - 1 new test (255 pass). night_shelter and early_game_with_slimes pass.
+
+## Run 72 (commit 8be623d), stopped after about 4 game minutes (1 death)
+- Anvil 30 s, Iron Broadsword about 1.5 min.
+- **Death:** a devourer at the corruption's edge (1962,364), underground.
+- **The no-trip fallback worked:** "going 25 rows deeper ... back to the spawn to look from there". But it climbed 25 → 100 rows in 50 seconds, since iron and silver each ran out.
+  - **Fix (commit 88e4fd3):** at most one step deeper per 2 game hours. The step and the pending trip reset per run.
+- **What fenced the bot in:** crowd zones over the slime caves under the spawn ("7 hostiles about at (2077,442)"). Every mining job there failed at once (off limits).
+  - **Decision:** crowd zones only while the bot has no good weapon (damage < 10) and no armour. With a broadsword, slimes are mining company. The retreat at 70% among 4 or more still holds.
+- The (2125,325) stuck spot from run 62 recurred: stone, type 1, in the bot's own feet cell. So it is the world's tile (probably a slope or half block the bot stands in), not a block it placed.
+- early_game_with_slimes and settle_auto pass. 255 unit tests.

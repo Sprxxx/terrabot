@@ -175,7 +175,9 @@ public sealed class BotBrain
 	/// </summary>
 	public static void NoteCrowd(BotContext ctx)
 	{
-		if (ctx.Combat.Defense >= BotContext.CavernDefense || ctx.InDangerZone(ctx.Node))
+		// Not once armed (a broadsword): with one, the slime caves under the spawn are mining ground, and fenced off they left
+		// nowhere to mine at all (world_eye run 72). The retreat at 70% among four or more still holds.
+		if (ctx.Combat.Defense >= BotContext.CavernDefense || ctx.Combat.WeaponDamage >= BotContext.GoodWeaponDamage || ctx.InDangerZone(ctx.Node))
 			return;
 		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
 		int n = 0;

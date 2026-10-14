@@ -360,6 +360,10 @@ public class FootingTests
 		ctx.Combat.Defense = BotContext.CavernDefense; // armour: no backing off from slimes
 		BotBrain.NoteCrowd(ctx);
 		Assert.False(ctx.InDangerZone(at));
+		ctx.Combat.Defense = 0;
+		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage; // a broadsword: no backing off either (run 72)
+		BotBrain.NoteCrowd(ctx);
+		Assert.False(ctx.InDangerZone(at));
 	}
 
 	[Fact]
