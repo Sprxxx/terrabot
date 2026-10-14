@@ -305,8 +305,11 @@ public sealed class BotBrain
 		// 160 tiles out, and twice more just below the spawn (world_eye run 46).
 		// Running home hurt is a flight: hit or not it keeps going (fighting would hand it straight back to the retreat).
 		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0
+			// A hurt flight at any distance (with a worm near the retreat is home from anywhere: seen in game, world_eye run 69,
+			// 120 tiles out the fight took it back every tick and the retreat gave it up again, until a devourer killed the bot).
+			|| Current is StayHomeSkill { Home: false, RecoverTo: > 0 }
 			|| Current is StayHomeSkill { Home: false } walking && walking.Inside.ChebyshevTo(ctx.Node) <= ProgressionPlanner.RetreatHomeTiles
-				&& (walking.RecoverTo > 0 || ctx.RecentAttacker < 0);
+				&& ctx.RecentAttacker < 0;
 		if (Auto && !safeAtHome && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx, toFight: true)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");

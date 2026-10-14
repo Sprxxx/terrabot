@@ -45,6 +45,8 @@ public sealed class WalkToSkill : ISkill
 	public bool Quiet { get; init; }
 	/// <summary>A trip across the surface to new ground (travel for ore): surface work, so not at night without armour.</summary>
 	public bool Travel { get; init; }
+	/// <summary>A walk up to the surface (the start of a trip): surface work at night too, wherever it starts from.</summary>
+	public bool ToSurface { get; init; }
 
 	/// <summary>Accept any standing node within this many tiles (Chebyshev) of the goal feet tile.</summary>
 	public int Tolerance { get; init; }

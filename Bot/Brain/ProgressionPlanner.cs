@@ -488,7 +488,8 @@ public sealed class ProgressionPlanner
 	private static bool NightWorkOnTheSurface(ISkill skill, BotContext ctx)
 	{
 		// Travel too: run 48 set off across the surface for new ore at nightfall in no armour.
-		if (skill is GatherWoodSkill or LootChestSkill or WalkToSkill { Travel: true } || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
+		// And walks up to the surface from below (run 69: the start of a trip, at night, up among the zombies and a devourer).
+		if (skill is GatherWoodSkill or LootChestSkill or WalkToSkill { Travel: true } or WalkToSkill { ToSurface: true } || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
 			return true;
 		bool nearSurface = ctx.SurfaceY <= 0 || ctx.Node.Y < ctx.SurfaceY + 15;
 		// Any walk on the surface, not just mining: seen in game (world_eye run 65), respawned at night by the spawn, sent
@@ -1096,9 +1097,9 @@ public sealed class ProgressionPlanner
 			// fight and started again from wherever the bot was, drifted 100 tiles into the desert, where a charger killed it.
 			if ((ctx.OffLimits(ctx.Node) || ctx.BiomeGround(up) || ctx.OffLimitsBelow(up)) && ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > 8)
 				return Do($"no more {name} found around here; out of here and back to the spawn at {spawn} before travelling",
-					new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true });
+					new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
 			return Do($"no more {name} found around here; up to the surface before travelling, at {up}",
-				new WalkToSkill(new Core.Pathfinding.GoalNearTile(up, 4, ctx.Physics)) { Quiet = true });
+				new WalkToSkill(new Core.Pathfinding.GoalNearTile(up, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
 		}
 		return Do($"no more {name} found around here; {(fresh ? "travelling" : "on")} to new ground at {dest}",
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });

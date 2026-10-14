@@ -700,3 +700,11 @@ what was decided and the result.
   - **Fix:** TravelForOre chooses the destination first (ChooseTravelDest). With none it neither travels nor recalls. With one, it recalls only if the spawn is on the way (the bot is farther from the destination than the spawn is).
 - **Open question:** with no trip possible and the ore near the spawn mined out (within the depth limit and outside the crowd zones), where should the bot get iron? Possibly by going deeper once armed. Watching the next run.
 - 4 new tests (254 pass). iron_age_auto, settle_auto, night_home, early_game_with_slimes and night_shelter pass.
+
+## Run 69 (commit 948f21a), stopped after about 2 game minutes (1 death)
+- Fastest start yet: anvil 20 s, **Iron Broadsword 30 s**. The nightfall re-plan fired.
+- **Death:** at night the trip's "up to the surface" and "back to the spawn" walks still ran. The night rule looks at the bot's position, and the bot was still underground. They took it up among 14 hostiles by the corruption's edge (x 1962). Then a retreat/fight ping-pong every tick: hurt with a devourer near, the retreat was StayHome at any distance (worm rule). But the "flight never stops to fight" exemption only held within 100 tiles of the house, so the fight took it back each tick, until the devourer killed the bot.
+- **Fixes:**
+  - A hurt flight home (StayHome with RecoverTo) is never paused to fight, at any distance.
+  - The trip's walks up to the surface and back to the spawn are marked ToSurface and count as night surface work (StayHome instead).
+- No unit test for the flight fix (FakeGame has no worm NPCs). night_home, night_shelter and settle_auto pass. 254 unit tests.
