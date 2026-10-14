@@ -140,6 +140,8 @@ public sealed class GameIds
 	public int Door { get; init; }
 	public int Chair { get; init; }
 	public int Table { get; init; }
+	/// <summary>Tile types that make up a desert (sand, hardened sand, sandstone): the underground desert.</summary>
+	public int[] DesertTiles { get; init; } = System.Array.Empty<int>();
 	/// <summary>Blocks the bot builds frames from (any of them).</summary>
 	public int[] BuildingBlocks { get; init; } = System.Array.Empty<int>();
 	/// <summary>Boss preparation (Milestone 7).</summary>

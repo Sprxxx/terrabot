@@ -140,6 +140,11 @@ public sealed class ExploreSkill : ISkill
 				: down
 				? new TilePos(node.X + heading * FallbackSideways, node.Y + FallbackDepth)
 				: new TilePos(node.X + heading * FallbackStep, node.Y));
+			// Digging on into somewhere off limits (a death spot, the underground desert in weak gear): the other way.
+			if (frontier == null && ctx.OffLimits(t)) {
+				heading = -heading;
+				t = new TilePos(node.X + heading * (down || tooDeep ? FallbackSideways : FallbackStep), t.Y);
+			}
 			legs++;
 			legTarget = t;
 			ctx.Explored.Add(t);
@@ -220,7 +225,7 @@ public sealed class ExploreSkill : ISkill
 					continue;
 				if (aheadOnly && Math.Sign(x - n.X) != heading)
 					continue;
-				if (y > ctx.DeepestRow || ctx.InDangerZone(new TilePos(x, y)))
+				if (y > ctx.DeepestRow || ctx.OffLimits(new TilePos(x, y)))
 					continue;
 				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y) || NearVisited(ctx, x, y))
 					continue;

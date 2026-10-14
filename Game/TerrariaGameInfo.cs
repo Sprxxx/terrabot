@@ -55,6 +55,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Chair = ItemID.WoodenChair,
 		Table = ItemID.WoodenTable,
 		BuildingBlocks = new int[] { ItemID.StoneBlock, ItemID.DirtBlock },
+		DesertTiles = new int[] { TileID.Sand, TileID.HardenedSand, TileID.Sandstone, TileID.DesertFossil },
 		LifeCrystal = ItemID.LifeCrystal,
 		IronTierBow = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBow : ItemID.IronBow,
 		WoodenArrow = ItemID.WoodenArrow,

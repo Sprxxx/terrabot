@@ -132,6 +132,13 @@ public sealed class MoveContext
 	/// </summary>
 	public int AvoidBelowRow { get; init; } = int.MaxValue;
 	public float BelowRowTicks { get; init; } = 25f;
+	/// <summary>
+	/// Nodes to keep away from (where the bot was killed lately): edges ending there cost <see cref="AvoidTicks"/> more.
+	/// Seen in game (world_eye run 40): a death spot was off limits for ore and exploring, but the walks still went
+	/// through it, and rolling cacti killed the bot there three times.
+	/// </summary>
+	public System.Func<TilePos, bool> Avoid { get; init; }
+	public float AvoidTicks { get; init; } = 40f;
 
 	/// <summary>Applies the liquid, footing and depth penalties to an edge ending at <paramref name="to"/>.</summary>
 	public float Adjust(float cost, TilePos to)
@@ -142,6 +149,8 @@ public sealed class MoveContext
 		float c = Body.HeadInLiquid(Grid, to) ? cost * HeadUnderCostMultiplier : Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
 		if (to.Y > AvoidBelowRow)
 			c += BelowRowTicks;
+		if (Avoid != null && Avoid(to))
+			c += AvoidTicks;
 		return Body.IsPrecarious(Grid, to, MaxDrop + 1) ? c + PrecariousTicks : c;
 	}
 }

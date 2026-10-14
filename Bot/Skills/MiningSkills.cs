@@ -202,7 +202,7 @@ public sealed class MineSkill : ISkill
 		foreach (TilePos c in ctx.World.FindTiles(TileType, node, SearchRadius)) {
 			if (bad.Contains(c) || ctx.UnreachableTiles.Contains(c) || !SafeToBreak(ctx, moves, c) || NextToLiquid(ctx.Grid, c))
 				continue;
-			if (c.Y > ctx.DeepestRow || ctx.InDangerZone(c))
+			if (c.Y > ctx.DeepestRow || ctx.OffLimits(c))
 				continue; // deeper than the gear is fit for, or where the bot was killed lately
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
 			if (score < bestScore) {

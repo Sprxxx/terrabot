@@ -151,6 +151,48 @@ public sealed class BotContext
 		DangerZones.Add((at, Tick + DangerZoneTicks));
 	}
 
+	/// <summary>
+	/// Somewhere to stay away from for now: where the bot was killed lately, or the underground desert while the gear
+	/// is weak. Seen in game (world_eye run 40): antlion chargers, swarmers and rolling cacti killed the bot 6 times in
+	/// one run in the underground desert east of the spawn, a place players leave until they have better gear.
+	/// </summary>
+	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t);
+
+	/// <summary>Chunk side for <see cref="InUndergroundDesert"/>, and the share of seen solid tiles that makes a desert.</summary>
+	public const int DesertChunk = 16;
+	public const float DesertShare = 0.4f;
+	/// <summary>How long a chunk's desert verdict is kept before it is counted again (more of it may have been seen).</summary>
+	public const int DesertRecheckTicks = 60 * 60;
+	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, bool Desert)> desertChunks = new();
+
+	/// <summary>
+	/// Is the tile below the surface in a chunk whose seen solid tiles are mostly desert (sand, sandstone...)? Only seen
+	/// tiles count, as a player knows the desert by the look of it.
+	/// </summary>
+	public bool InUndergroundDesert(TilePos t)
+	{
+		if (World == null || Ids.DesertTiles.Length == 0 || SurfaceY <= 0 || t.Y < SurfaceY)
+			return false;
+		var key = ((int)Math.Floor(t.X / (double)DesertChunk), t.Y / DesertChunk);
+		if (desertChunks.TryGetValue(key, out var v) && Tick - v.At < DesertRecheckTicks)
+			return v.Desert;
+		int solid = 0, desert = 0;
+		for (int x = key.Item1 * DesertChunk; x < (key.Item1 + 1) * DesertChunk; x++)
+			for (int y = key.Item2 * DesertChunk; y < (key.Item2 + 1) * DesertChunk; y++) {
+				if (!World.IsRevealed(x, y))
+					continue;
+				int type = World.TileTypeAt(x, y);
+				if (type < 0)
+					continue;
+				solid++;
+				if (Array.IndexOf(Ids.DesertTiles, type) >= 0)
+					desert++;
+			}
+		bool d = solid >= 20 && desert >= DesertShare * solid;
+		desertChunks[key] = (Tick, d);
+		return d;
+	}
+
 	/// <summary>Is the tile inside a zone where the bot was recently killed?</summary>
 	public bool InDangerZone(TilePos t)
 	{
@@ -243,7 +285,7 @@ public sealed class BotContext
 			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
 				|| !ReferenceEquals(moves.Blocks, PathBlocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace
 				|| moves.AvoidBelowRow != DeepestRow)
-				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, AvoidBelowRow = DeepestRow };
+				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, AvoidBelowRow = DeepestRow, Avoid = OffLimits };
 			return moves;
 		}
 	}

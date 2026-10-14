@@ -247,4 +247,39 @@ public class FootingTests
 		Assert.Equal(PathStatus.Found, open.Result.Status);
 		Assert.NotEqual(PathStatus.Found, blocked.Result.Status);
 	}
+
+	[Fact]
+	public void PathsThroughADeathSpot_CostMore()
+	{
+		// world_eye run 40: rolling cacti killed the bot three times at one spot its walks kept passing through.
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(null);
+		TilePos spot = new(40, 24);
+		Assert.Equal(10f, ctx.Moves.Adjust(10f, spot));
+		ctx.NoteDeathByEnemy(spot);
+		Assert.Equal(10f + ctx.Moves.AvoidTicks, ctx.Moves.Adjust(10f, spot));
+		Assert.Equal(10f, ctx.Moves.Adjust(10f, new TilePos(spot.X + BotContext.DangerZoneRadius + 1, 24)));
+	}
+
+	[Fact]
+	public void TheUndergroundDesert_IsOffLimits_UntilTheGearIsGood()
+	{
+		// world_eye run 40: antlions and rolling cacti killed the bot 6 times in the underground desert.
+		FakeGame g = ProgressionTests.Mine();
+		const int Sand = 53;
+		for (int x = 64; x < 80; x++)
+			for (int y = 16; y < 32; y++)
+				if (g.Grid.Get(x, y).IsSolid())
+					g.TileTypes[new TilePos(x, y)] = Sand;
+		BotContext ctx = g.CreateContext(null);
+		ctx.Ids = new GameIds { DesertTiles = new[] { Sand } };
+		ctx.SurfaceY = 20;
+		Assert.True(ctx.InUndergroundDesert(new TilePos(70, 28)));
+		Assert.False(ctx.InUndergroundDesert(new TilePos(10, 28))); // plain stone
+		Assert.False(ctx.InUndergroundDesert(new TilePos(70, 18))); // above the surface line
+		Assert.True(ctx.OffLimits(new TilePos(70, 28)));
+		Assert.True(ctx.Moves.Adjust(10f, new TilePos(70, 28)) > 10f);
+		ctx.Combat.Defense = BotContext.DeepDefense;
+		Assert.False(ctx.OffLimits(new TilePos(70, 28)));
+	}
 }

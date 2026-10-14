@@ -129,6 +129,12 @@ public sealed class TerraBotPlayer : ModPlayer
 			: src.SourceProjectileType > 0 ? $"projectile type {src.SourceProjectileType}"
 			: src.SourceOtherIndex == 0 ? "fall damage"
 			: $"other {src.SourceOtherIndex}";
+		if (src.SourceOtherIndex == 3) {
+			// Touch damage: which tile, as the game finds it (Player.GetHurtTile).
+			Collision.HurtTile ht = Collision.HurtTiles(Player.position, Player.width, Player.height, Player);
+			if (ht.type >= 0)
+				cause += $", tile {ht.type} {(TileID.Search.TryGetName(ht.type, out string n) ? n : "?")} at ({ht.x},{ht.y})";
+		}
 		HurtCount++;
 		DamageTaken += info.Damage;
 		if (src.SourceNPCIndex >= 0 && src.SourceNPCIndex < Main.maxNPCs)

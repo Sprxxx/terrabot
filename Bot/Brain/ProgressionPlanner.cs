@@ -284,7 +284,7 @@ public sealed class ProgressionPlanner
 	public static ChestInfo? NextChest(BotContext ctx)
 	{
 		foreach (ChestInfo c in ctx.World.SeenChests(ctx.Node, LootRadius))
-			if (!c.Locked && !ctx.OpenedChests.Contains(c.TopLeft) && !ctx.InDangerZone(c.TopLeft)
+			if (!c.Locked && !ctx.OpenedChests.Contains(c.TopLeft) && !ctx.OffLimits(c.TopLeft)
 				&& c.TopLeft.Y - ChestDepthMargin <= ctx.DeepestRow)
 				return c;
 		return null;
@@ -1043,7 +1043,7 @@ public sealed class ProgressionPlanner
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
 		int x = originX + dir * TravelTiles * ((fails + 1) / 2);
 		TilePos? found = SurfaceAt(ctx.Grid, x);
-		if (found is TilePos f0 && ctx.InDangerZone(f0))
+		if (found is TilePos f0 && ctx.OffLimits(f0))
 			found = SurfaceAt(ctx.Grid, originX - dir * TravelTiles * ((fails + 1) / 2)); // the other way, away from where it died
 		if (found is not TilePos dest)
 			return null;

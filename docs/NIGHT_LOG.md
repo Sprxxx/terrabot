@@ -352,3 +352,15 @@ what was decided and the result.
   ore was out of reach from where the bot stood, round and round for 50,000 ticks. Intermittent, but it hadn't been
   seen before. **Decision:** 3 such arrivals give up the tile.
 - In game, iron_age_auto, boss_auto and settle_auto pass. 224 unit tests.
+
+### world_eye run 40: the fastest yet, then six deaths in the underground desert
+- **Progress:** the anvil about a minute in, the **Iron Broadsword at about 2 real minutes**, the **Iron Pickaxe at
+  about 3**. The silver switch worked: iron came up empty, it explored for silver, then went back to iron when it found
+  more. It got to 39 of the 45 iron for armour.
+- **Deaths:** 6, all in the underground desert east of the spawn (x 2230-2350): rolling cacti (the "other 3" touch
+  damage of runs 38-40, tile 484; 80 when one rolls), antlion chargers and swarmers.
+- **Decision:** seen chunks below the surface that are mostly sand, hardened sand, sandstone or fossil count as the
+  underground desert. It's off limits until defense 16: no ore, exploring or chests there, paths through cost more,
+  and explore legs dug toward it turn round. Death spots now also make paths cost more (before, only targets avoided
+  them). Hurt by a tile, the log now names the tile.
+- In game, 9 scenarios pass (walk, dig, fight, night_home, iron_age, settle, boss_auto). 226 unit tests.
