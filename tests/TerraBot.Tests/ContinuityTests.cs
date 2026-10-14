@@ -131,6 +131,24 @@ public class ContinuityTests
 		Assert.Equal(1, ctx.Output.Horizontal); // towards the target
 	}
 
+	[Fact]
+	public void BoxedInByOldStepBans_TheBansAreForgiven_AndTheWalkGoes()
+	{
+		// Measured run G1: "no path ... expanded 1": every step from the spot had been banned earlier, five rests followed
+		// and auto mode stopped. A ban is a guess about a step, not a fact for ever.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		TilePos n = ctx.Node;
+		for (int dx = -4; dx <= 4; dx++)
+			for (int dy = -4; dy <= 4; dy++)
+				if (dx != 0 || dy != 0)
+					ctx.BadEdges.Add((n, new TilePos(n.X + dx, n.Y + dy)));
+		var walk = new WalkToSkill(new TilePos(n.X + 15, n.Y));
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, walk, 60 * 20);
+		output.WriteLine($"{st}: {walk.Describe()}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+	}
+
 	/// <summary>A job that never gets anywhere: stands still, always the same state.</summary>
 	private sealed class NoProgressSkill : ISkill
 	{

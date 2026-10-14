@@ -75,6 +75,11 @@ public sealed class WalkToSkill : ISkill
 	}
 
 	private readonly IGoal fixedGoal;
+	private bool forgaveHere;
+
+	/// <summary>Banned steps (BotContext.BadEdges) from or to a node within 2 tiles of <paramref name="at"/> are lifted; returns how many.</summary>
+	public static int ForgiveBansAround(BotContext ctx, TilePos at) =>
+		ctx.BadEdges.RemoveWhere(e => e.Item1.ChebyshevTo(at) <= 2 || e.Item2.ChebyshevTo(at) <= 2);
 	/// <summary>Longest wait (ticks) for the ground before planning: a walk held in the air fails instead.</summary>
 	public const int MaxAirborneTicks = 180;
 	/// <summary>Longest swim (ticks) towards the target from deep water before the walk gives up.</summary>
@@ -419,6 +424,15 @@ public sealed class WalkToSkill : ISkill
 		if (LastPlan.Status == PathStatus.NoPath && !relaxed && (Limits ?? SearchLimits.Default).CheckBrokenSupport) {
 			relaxed = true;
 			Info(ctx, "WalkTo: no path that keeps off blocks it digs away; planning again allowing them (re-planning where they fail)");
+			waitTicks = 0;
+			return false;
+		}
+		// No move at all from where the bot stands, with steps from here banned earlier: the bans are forgiven and it plans
+		// again (a ban is a guess about a step, not a fact for ever: Baritone keeps none). Seen in game (measured run G1):
+		// "no path ... expanded 1" from the night's walk down, five rests in a row, and auto mode stopped.
+		if (LastPlan.Status == PathStatus.NoPath && LastPlan.Expanded <= 2 && !forgaveHere && ForgiveBansAround(ctx, LastPlan.Start) is int forgiven and > 0) {
+			forgaveHere = true;
+			Info(ctx, $"WalkTo: boxed in at {LastPlan.Start} by {forgiven} step(s) banned earlier; forgiving them and planning again");
 			waitTicks = 0;
 			return false;
 		}

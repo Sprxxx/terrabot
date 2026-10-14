@@ -45,7 +45,12 @@ public sealed class MineSkill : ISkill
 	/// <summary>Same-type tiles this close to an unreachable target are skipped too.</summary>
 	public const int UnreachableClusterRadius = 4;
 	/// <summary>A search for a mining spot gives up sooner than a general walk: there are other tiles to try.</summary>
-	public static readonly SearchLimits ReachLimits = new() { MaxExpansions = 12_000 };
+	/// <summary>
+	/// 4,000, not 12,000: seen in game (measured run G2), 42 searches for spots 10-20 tiles off that could not be reached each
+	/// ran all 12,000 nodes (over 1 s, the bot standing still), and the relaxed retry did it again. A player gives up on a
+	/// dig spot sooner and tries another; farther targets are walked in segments (SearchLimits.SegmentAfter).
+	/// </summary>
+	public static readonly SearchLimits ReachLimits = new() { MaxExpansions = 4_000 };
 
 	private readonly HashSet<TilePos> bad = new();
 	private readonly HashSet<int> ignoredDrops = new();

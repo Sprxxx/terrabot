@@ -97,6 +97,9 @@ public sealed class ProgressionPlanner
 	/// <summary>Rows below the surface (or the spawn) where the night's mining starts.</summary>
 	public const int NightMineRows = 25;
 	public const int NightMineArrivedTiles = 8;
+	/// <summary>After the walk down for the night's mining fails, the house for this long (rest of the night) instead.</summary>
+	public const int NightMineRetryTicks = 9 * 3600;
+	private long nightMineFailedAt = long.MinValue / 2;
 	/// <summary>Pickaxe power of the iron tier (Iron Pickaxe 40, Lead Pickaxe 43).</summary>
 	public const int IronTierPickPower = 40;
 	/// <summary>Max life to have before a boss: 5 life crystals (also what vanilla wants before the Eye spawns on its own).</summary>
@@ -327,6 +330,10 @@ public sealed class ProgressionPlanner
 			travelDest = null; // there, or no way there (not a death on the way)
 		if (skill is WalkToSkill { ToSurface: true } && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason))
 			exitTarget = null; // no way there: work the way out again
+		if (skill is WalkToSkill { Underground: true } && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason)) {
+			nightMineFailedAt = ctx.Tick; // no way down tonight: the house (seen in game, run G1: five rests, then auto mode stopped)
+			ctx.Log.Info($"Auto: no way down for the night's mining ({skill.FailureReason}); the house instead tonight");
+		}
 		if (skill is MineSkill mine) {
 			if (status == SkillStatus.Succeeded) {
 				exitTarget = null; // ore found after all: no trip
@@ -520,7 +527,8 @@ public sealed class ProgressionPlanner
 			// Armed, a mining job goes on underground, as a player spends the night in the mine (the caves are the same
 			// by night): straight down below the spawn first, then mining there. Seen in game (measured run E): 37% of the
 			// run was nights at home, most of them instead of mining near the surface.
-			if (skill is MineSkill && ctx.Combat.WeaponDamage >= BotContext.GoodWeaponDamage && ctx.SpawnTile is TilePos spawn && ctx.SurfaceY > 0) {
+			if (skill is MineSkill && ctx.Combat.WeaponDamage >= BotContext.GoodWeaponDamage && ctx.SpawnTile is TilePos spawn && ctx.SurfaceY > 0
+				&& ctx.Tick - nightMineFailedAt >= NightMineRetryTicks) {
 				var below = new TilePos(spawn.X, Math.Max(ctx.SurfaceY, spawn.Y) + NightMineRows);
 				if (ctx.Node.ChebyshevTo(below) > NightMineArrivedTiles) {
 					Status = $"night: down into the ground at {below} to mine there ({Status})";
