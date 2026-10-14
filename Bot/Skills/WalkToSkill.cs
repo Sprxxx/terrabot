@@ -75,6 +75,8 @@ public sealed class WalkToSkill : ISkill
 	private readonly IGoal fixedGoal;
 	/// <summary>Longest wait (ticks) for the ground before planning: a walk held in the air fails instead.</summary>
 	public const int MaxAirborneTicks = 180;
+	/// <summary>Longest swim (ticks) towards the target from deep water before the walk gives up.</summary>
+	public const int MaxSwimTicks = 60 * 20;
 	/// <summary>Ticks bobbing in water over something to stand on before that counts as landed.</summary>
 	public const int SettleInWaterTicks = 30;
 	private int airborneTicks;
@@ -147,8 +149,20 @@ public sealed class WalkToSkill : ISkill
 					// Not for ever: seen in game (world_eye, the first run with paused work resuming), "waiting to land" at one
 					// spot for three game days, never moving (held in the air by something: a cobweb, a ledge corner). Fights
 					// and nightfall used to throw the job away and so broke it; resumed, nothing did.
-					if (++airborneTicks > MaxAirborneTicks)
-						return Fail(ctx, $"never landed in {MaxAirborneTicks} ticks at {node} (vy {ctx.Body.VY:0.###}, feet {ctx.Grid.Get(node.X, node.Y)}/{ctx.Grid.Get(node.X + 1, node.Y)}, under {ctx.Grid.Get(node.X, node.Y + 1)}/{ctx.Grid.Get(node.X + 1, node.Y + 1)})");
+					// Afloat in deep water (nothing under the feet but more water): swim for it like a player, towards the
+					// target with jump strokes, until there is footing. Seen in game (measured run D): "never landed ... under
+					// Water/Water", every walk failing from the middle of a pool.
+					bool afloat = (ctx.Grid.Get(node.X, node.Y).IsLiquid() || ctx.Grid.Get(node.X + 1, node.Y).IsLiquid())
+						&& !ctx.Grid.Get(node.X, node.Y + 1).CanStandOn() && !ctx.Grid.Get(node.X + 1, node.Y + 1).CanStandOn();
+					if (afloat && airborneTicks < MaxSwimTicks) {
+						airborneTicks++;
+						ctx.Output.Horizontal = Target.X > node.X ? 1 : Target.X < node.X ? -1 : 0;
+						ctx.Output.Jump = (airborneTicks / 10) % 2 == 0; // strokes: press, release
+						State = "swimming for footing";
+						return SkillStatus.Running;
+					}
+					if (++airborneTicks > (afloat ? MaxSwimTicks : MaxAirborneTicks))
+						return Fail(ctx, $"never landed in {airborneTicks} ticks at {node} (vy {ctx.Body.VY:0.###}, feet {ctx.Grid.Get(node.X, node.Y)}/{ctx.Grid.Get(node.X + 1, node.Y)}, under {ctx.Grid.Get(node.X, node.Y + 1)}/{ctx.Grid.Get(node.X + 1, node.Y + 1)})");
 					State = "waiting to land";
 					return SkillStatus.Running;
 				}

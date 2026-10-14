@@ -106,6 +106,31 @@ public class ContinuityTests
 		Assert.True(planned);
 	}
 
+	[Fact]
+	public void AfloatInDeepWater_SwimsTowardsTheTarget()
+	{
+		// Measured run D: "never landed ... under Water/Water", every walk failing from the middle of a pool.
+		var g = new FakeGame(new[] {
+			"....................",
+			"..~~~~~~~~~~~~~~....",
+			"..~~~~S~~~~~~~~~....",
+			"..~~~~~~~~~~~~~~....",
+			"..~~~~~~~~~~~~~~....",
+			"##~~~~~~~~~~~~~~####",
+			"####################" });
+		BotContext ctx = g.CreateContext(output);
+		TilePos start = ctx.Node;
+		var walk = new WalkToSkill(new TilePos(start.X + 12, start.Y));
+		walk.Start(ctx);
+		var body = ctx.Body;
+		body.VY = -0.2f; // afloat, not landing
+		ctx.Body = body;
+		walk.Tick(ctx);
+		output.WriteLine(walk.Describe());
+		Assert.Contains("swimming", walk.Describe());
+		Assert.Equal(1, ctx.Output.Horizontal); // towards the target
+	}
+
 	/// <summary>A job that never gets anywhere: stands still, always the same state.</summary>
 	private sealed class NoProgressSkill : ISkill
 	{

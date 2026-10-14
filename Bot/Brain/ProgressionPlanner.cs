@@ -1222,9 +1222,14 @@ public sealed class ProgressionPlanner
 	/// </summary>
 	private static bool RouteCrossesBiome(BotContext ctx, int fromX, int toX)
 	{
+		// Armed (a broadsword), the surface of a desert or a corruption is crossed by day like a player crosses it: its
+		// danger is underground (antlions, chasms), and the trip stays on the surface. Seen in game (measured run C): with
+		// the route banned both ways, "nowhere to travel" 18 times while the ore round the spawn was gone (user,
+		// 2026-10-14: solve the problem, don't ban the place). Where the bot was killed lately still counts.
+		bool armed = ctx.Combat.WeaponDamage >= BotContext.GoodWeaponDamage;
 		int dir = Math.Sign(toX - fromX);
 		for (int x = fromX + dir * RouteSampleTiles; dir != 0 && (toX - x) * dir > 0; x += dir * RouteSampleTiles)
-			if (SurfaceAt(ctx.Grid, x) is TilePos c && (ctx.BiomeGround(c) || ctx.OffLimits(c)))
+			if (SurfaceAt(ctx.Grid, x) is TilePos c && (armed ? ctx.InDangerZone(c) : ctx.BiomeGround(c) || ctx.OffLimits(c)))
 				return true;
 		return false;
 	}

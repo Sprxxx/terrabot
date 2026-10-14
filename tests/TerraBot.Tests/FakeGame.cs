@@ -53,7 +53,11 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
 		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion,
+		DesertTiles = new[] { TileSand }, // only cells a test marks with it (TileTypes) count
 	};
+
+	/// <summary>A desert tile type for biome tests: set on cells through <see cref="TileTypes"/>.</summary>
+	public const int TileSand = 53;
 
 	public readonly ArrayTileGrid Grid;
 	public readonly TestBlockActions Blocks;

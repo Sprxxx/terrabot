@@ -353,6 +353,43 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ATripForNewOre_CrossesADesertsSurface_OnceArmed()
+	{
+		// Measured run C: the route across the desert's (or corruption's) surface stayed banned with a broadsword in hand,
+		// and the bot had "nowhere to travel" while the ore round the spawn was gone.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		for (int x = 50; x < 100; x++) // a desert's surface on the way east (the only way: west is off the map)
+			for (int y = 45; y < 53; y++)
+				g.TileTypes[new TilePos(x, y)] = FakeGame.TileSand;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ctx.Combat.WeaponDamage = 5; // unarmed: the desert is in the way
+		ISkill weak = p.Next(ctx);
+		output.WriteLine($"weak: {p.Status} -> {weak?.Describe()}");
+		Assert.False(weak is WalkToSkill { Travel: true });
+		var p2 = new ProgressionPlanner();
+		p2.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p2, ctx);
+		p2.NoteFruitless(FakeGame.IronOre);
+		p2.NoteFruitless(FakeGame.SilverOre);
+		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage; // a broadsword: across it on the surface, by day
+		ISkill armed = p2.Next(ctx);
+		output.WriteLine($"armed: {p2.Status} -> {armed?.Describe()}");
+		Assert.True(armed is WalkToSkill { Travel: true });
+	}
+
+	[Fact]
 	public void ATripForNewOre_FromFarDown_StartsWithARecallPotion()
 	{
 		// world_eye run 64: the walk back to the spawn from 120 rows down followed caves into the desert; a player recalls.
