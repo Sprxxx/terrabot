@@ -221,7 +221,11 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		if (!WorldGen.InWorld(x, y, 1))
 			return -1;
 		Tile t = Main.tile[x, y];
-		return t.HasTile ? t.TileType : -1;
+		if (!t.HasTile)
+			return -1;
+		// A door the bot walked through is left open (auto-open): still the house's door. Read as open, the house's
+		// blueprint lacked its door and the planner crafted and placed a new one every night (world_eye runs 51 and 55).
+		return t.TileType == TileID.OpenDoor ? TileID.ClosedDoor : t.TileType;
 	}
 
 	public IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius)

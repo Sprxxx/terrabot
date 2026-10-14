@@ -546,3 +546,22 @@ what was decided and the result.
 - **Known issue, open:** the way up from that spot was through the same flooded passage, so walk up, surface, walk up
   again. A player would swim up; the bot can't swim well without flippers.
 - In game, 4 fight, retreat and chain scenarios pass. 238 unit tests.
+
+### world_eye run 55: helmet and chainmail, 0 deaths for 8 minutes
+- **Progress:**
+  - The anvil about 15 seconds in, the **Silver Broadsword at about 33 seconds**, the **Silver Pickaxe at about 2
+    minutes**.
+  - The **Iron Helmet at about 3:50**, then the **Iron Chainmail at about 8 minutes**: the first chainmail in a real
+    world.
+  - Three chests looted (recall potions, healing and regeneration potions, an Aglet, a Step Stool, throwing knives).
+  - 0 deaths for the first 8 minutes, then 1 (a yellow slime at row 452).
+- **The end:** boxed into a 2-node pocket at the desert's west edge, probably by fossil or sandstone the silver
+  pickaxe can't mine. Dig-anyway didn't help, and auto mode stopped at about 10 minutes.
+- **Decisions:**
+  - Desert and evil biome detection counts the 80x80 around a tile at 15% (was 48x48 at 25%), so the edge where
+    most desert deaths and this trap were counts too.
+  - Region dumps are also written for tiny searches (20 nodes or fewer), to see the next pocket.
+  - An open door reads as the closed door: the house blueprint thought its door was missing and a new one was
+    crafted and placed every night (runs 51 and 55).
+- **Known issue, open:** a bridge step near the house that never places its block (likely the vanilla anchor rule).
+- In game, 6 house and chain scenarios pass. 238 unit tests.

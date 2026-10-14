@@ -248,6 +248,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	public int TileTypeAt(int x, int y)
 	{
+		if (!Grid.InBounds(x, y))
+			return -1; // as the game: no tile outside the world
 		if (Furniture.TryGetValue(new TilePos(x, y), out int f))
 			return f;
 		if (!Grid.Get(x, y).IsSolid())

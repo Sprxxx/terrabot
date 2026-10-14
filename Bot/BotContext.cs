@@ -177,7 +177,12 @@ public sealed class BotContext
 	/// itself was mostly stone (world_eye run 41).
 	/// </summary>
 	public const int DesertChunk = 16;
-	public const float DesertShare = 0.25f;
+	public const float DesertShare = 0.15f;
+	/// <summary>
+	/// Chunks either side counted (2: the 80x80 around the tile). With 1 (48x48 at 25%) the desert's edge was not desert,
+	/// and that edge is where most of the desert deaths were, and where run 55 got boxed in by tiles it could not mine.
+	/// </summary>
+	public const int BiomeChunkRadius = 2;
 	/// <summary>How long a chunk's counts are kept before it is counted again (more of it may have been seen).</summary>
 	public const int DesertRecheckTicks = 60 * 60;
 	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, int Solid, int Desert, int Evil)> desertChunks = new();
@@ -198,13 +203,13 @@ public sealed class BotContext
 	{
 		int cx = (int)Math.Floor(t.X / (double)DesertChunk), cy = t.Y / DesertChunk;
 		int solid = 0, some = 0;
-		for (int dx = -1; dx <= 1; dx++)
-			for (int dy = -1; dy <= 1; dy++) {
+		for (int dx = -BiomeChunkRadius; dx <= BiomeChunkRadius; dx++)
+			for (int dy = -BiomeChunkRadius; dy <= BiomeChunkRadius; dy++) {
 				var c = ChunkCounts(cx + dx, cy + dy);
 				solid += c.Solid;
 				some += count(c);
 			}
-		return solid >= 40 ? some / (float)solid : 0f;
+		return solid >= 80 ? some / (float)solid : 0f;
 	}
 
 	private (int Solid, int Desert, int Evil) ChunkCounts(int cx, int cy)

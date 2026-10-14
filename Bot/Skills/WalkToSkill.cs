@@ -374,7 +374,8 @@ public sealed class WalkToSkill : ISkill
 			return false;
 		}
 		NoPathCount++;
-		if (LastPlan.Status == PathStatus.NoPath && LastPlan.Expanded > 1000 && !dumped)
+		// Big searches that found nothing, and tiny ones (boxed in: run 55 sat in a 2-node pocket with nothing to show why).
+		if (LastPlan.Status == PathStatus.NoPath && (LastPlan.Expanded > 1000 || LastPlan.Expanded <= 20) && !dumped)
 			DumpRegion(ctx, LastPlan.Start);
 		State = $"no path ({LastPlan.Status}), retry {NoPathCount}/{MaxNoPath}";
 		waitTicks = NoPathRetryDelay;
