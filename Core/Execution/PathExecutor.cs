@@ -321,6 +321,13 @@ public sealed class PathExecutor
 
 		if (jumpPhase == JumpPhase.Align) {
 			float startX = Body.CanonicalLeft(step.From.X, p);
+			// Already there before the jump (a hop of a row onto a slope: aligning walked the bot up it). Seen in game
+			// (world_eye runs 68 and 73): "Jump (2077,362)->(2077,361) timed out ... at (2077,361)", the jump waiting to be
+			// back on the start, three times, then the step banned.
+			if (settled && node == step.To && node != step.From) {
+				advanced = true;
+				return true;
+			}
 			if (settled && node.ChebyshevTo(step.From) > 1) {
 				if (TryResync(node)) {
 					advanced = true;

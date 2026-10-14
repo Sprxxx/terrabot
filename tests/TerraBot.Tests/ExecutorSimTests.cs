@@ -422,6 +422,32 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void AJump_WhoseTargetIsReachedBeforeTakeOff_CountsAsDone()
+	{
+		// world_eye runs 68 and 73: "Jump (2077,362)->(2077,361) timed out ... at (2077,361)": aligning for a one-row hop onto
+		// a slope walked the bot up it, and the jump waited to be back on its start until it timed out (three times, banned).
+		var g = ArrayTileGrid.Parse(
+			"..............",
+			"..............",
+			"..............",
+			"..............",
+			"......G.......",
+			"....#####.....",
+			"..S.#####.....",
+			"##############");
+		var ctx = new MoveContext(g, PhysicsParams.Default);
+		PathResult plan = new AStarPathfinder().FindPath(ctx, g.Markers['S'], new GoalStandAt(g.Markers['G'], PhysicsParams.Default));
+		PathStep jump = plan.Steps.First(st => st.Kind == MoveKind.Jump);
+		jump = jump with { From = new TilePos(jump.To.X, jump.To.Y + 1) }; // a one-row hop, as in game (the start right below)
+		var exec = new PathExecutor(ctx, new[] { jump });
+		var sim = new SimWorld(g, PhysicsParams.Default, jump.To); // already standing on the jump's target
+		for (int t = 0; t < 300 && exec.Status == ExecStatus.Running; t++)
+			sim.Step(exec.Tick(sim.State));
+		output.WriteLine($"{exec.Status}: {exec.Reason}");
+		Assert.Equal(ExecStatus.Finished, exec.Status);
+	}
+
+	[Fact]
 	public void InvisibleWall_IsDetectedAsStuck()
 	{
 		// The planner sees flat ground; the "real" world has a wall the planner does not know about.

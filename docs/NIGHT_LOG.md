@@ -740,3 +740,10 @@ what was decided and the result.
   - **Decision:** crowd zones only while the bot has no good weapon (damage < 10) and no armour. With a broadsword, slimes are mining company. The retreat at 70% among 4 or more still holds.
 - The (2125,325) stuck spot from run 62 recurred: stone, type 1, in the bot's own feet cell. So it is the world's tile (probably a slope or half block the bot stands in), not a block it placed.
 - early_game_with_slimes and settle_auto pass. 255 unit tests.
+
+## Run 73 (commit 065eeac), stopped after about 6 game minutes, **0 deaths**
+- Anvil about 1 min, Silver Broadsword about 2 min, Silver Pickaxe about 4 min.
+- Trips west (1975,280) and east (2335,298), each started with a recall potion from the spawn. The deeper step fired once ("25 rows deeper"), now one step at a time.
+- **Recurring stuck:** "Jump (2115,360)->(2115,359) [h1 d0]" (also in run 68 at (2077,362)) timed out three times and was banned, each time with the bot already standing on the jump's target node. Aligning for a one-row hop onto a slope walked the bot up it, and the jump then waited in its align phase to be back on the start.
+  - **Fix:** in PathExecutor.TickJump's align phase, settled on the jump's target counts as done. Test ExecutorSimTests.AJump_WhoseTargetIsReachedBeforeTakeOff_CountsAsDone reproduces the game's exact "timed out after 197 ticks at (3,4)" on the old code.
+- 256 unit tests. walk_flat, gap_jump_over_lava, running_jump_no_room, pillar_up_cliff, drop_through_platforms and settle_auto pass.
