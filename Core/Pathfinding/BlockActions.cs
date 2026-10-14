@@ -74,15 +74,19 @@ public static class BlockRules
 	/// <summary>Extra cost of an unsafe break when digging anyway: only when there is nothing else.</summary>
 	public const float DigAnywayTicks = 300f;
 
+	/// <summary>
+	/// Lava beside or above the cell, which would flow into it once opened. Not below: liquid never flows up, so a block
+	/// over lava is opened safely (Baritone's rule, "always okay to break the block above liquid"); it used to count, and
+	/// ore and crystals over lava were left alone. Lava beside or above still waits for a player's answer to it (a water
+	/// bucket); vanilla refuses solid blocks placed into lava (Player.PlaceThing_Tiles_CheckLavaBlocking).
+	/// </summary>
 	public static bool NextToLava(ITileGrid g, TilePos cell) =>
-		g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
-		|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava();
+		g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava() || g.Get(cell.X, cell.Y - 1).HasLava();
 
 	/// <summary>Opening this cell would flood lava in or drop an unsupported falling block (not removed by the same move).</summary>
 	public static bool Unsafe(ITileGrid g, TilePos cell, IReadOnlyCollection<TilePos> sameMove)
 	{
-		if (g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
-			|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava())
+		if (NextToLava(g, cell))
 			return true;
 		// Not water: opening a block beside it floods the tunnel, and the bot deals with that (surfaces for breath; once a
 		// shaft into a water pocket drowned it, before surfacing existed). It costs more instead (WetBreakTicks).

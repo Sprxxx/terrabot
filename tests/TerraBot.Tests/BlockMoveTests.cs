@@ -94,13 +94,25 @@ public class BlockMoveTests
 	}
 
 	[Fact]
-	public void LavaNeighbour_IsNotOpened()
+	public void LavaAbove_IsNotOpened()
 	{
+		string[] rows = (string[])Corridor.Clone();
+		rows[0] = rows[0].Remove(10, 1).Insert(10, "!"); // lava pocket right over the wall: it would pour in
+		var (g, b) = TestBlockActions.Parse(rows);
+		b.BlockCount = 0;
+		Assert.Equal(PathStatus.NoPath, Plan(g, b).Status);
+	}
+
+	[Fact]
+	public void LavaBelow_IsNoReasonNotToDig()
+	{
+		// Liquid never flows up: the wall over a lava pocket is opened (Baritone's rule). It used to count as a lava
+		// neighbour, and ore and life crystals over lava were left alone (user, 2026-10-14: solve it, don't ban it).
 		string[] rows = (string[])Corridor.Clone();
 		rows[4] = rows[4].Remove(10, 1).Insert(10, "!"); // lava pocket right under the wall
 		var (g, b) = TestBlockActions.Parse(rows);
 		b.BlockCount = 0;
-		Assert.Equal(PathStatus.NoPath, Plan(g, b).Status);
+		Assert.Equal(PathStatus.Found, Plan(g, b).Status);
 	}
 
 	private static readonly string[] Shaft = {

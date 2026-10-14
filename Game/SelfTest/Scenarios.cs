@@ -643,11 +643,19 @@ public sealed class Scenario
 			},
 			new() {
 				Name = "lava_neighbour_not_opened",
-				Rows = WithCell(Corridor, 10, 4, '!'),
+				Rows = WithCell(Corridor, 10, 0, '!'), // lava over the wall: opening it would let it pour in
 				Dig = true,
 				ExpectSuccess = false,
 				TimeoutTicks = 60 * 20,
 				Check = r => Max(r, 0, r.Broken, "broke"),
+			},
+			new() {
+				// Lava under the wall stays put when the wall is dug (liquid never flows up): dug through, unhurt.
+				Name = "lava_below_dug_over",
+				Rows = WithCell(Corridor, 10, 4, '!'),
+				Dig = true,
+				TimeoutTicks = 60 * 20,
+				Check = r => r.LifeLost > 0 ? $"lost {r.LifeLost} life" : null,
 			},
 			new() {
 				Name = "out_of_blocks_replans",
