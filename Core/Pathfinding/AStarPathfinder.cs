@@ -42,6 +42,15 @@ public sealed class SearchLimits
 	public int MaxRadius { get; init; } = 400;
 	/// <summary>Tests can switch the broken-support check off to compare (per search: a static raced with parallel tests).</summary>
 	public bool CheckBrokenSupport { get; init; } = true;
+	/// <summary>
+	/// After this many expansions, a search whose best (untainted) node is at least <see cref="SegmentMinTiles"/> from the
+	/// start ends there with a partial plan: a segment to walk while the rest is planned from its end (Baritone plans in
+	/// time-limited segments). Seen in game (measured run E): 4,021 plans took 440 s, 99 of them over 2 s, each a 100+ tile
+	/// walk searched to the end (27,000-40,000 nodes) with the bot standing still; then a step failed and it all began again.
+	/// 0 = off.
+	/// </summary>
+	public int SegmentAfter { get; init; } = 3_000;
+	public int SegmentMinTiles { get; init; } = 12;
 
 	public static readonly SearchLimits Default = new();
 }
@@ -136,6 +145,10 @@ public sealed class PathSearch
 					bestTainted = pos;
 				}
 
+				if (limits.SegmentAfter > 0 && expanded >= limits.SegmentAfter && best != start && best.ChebyshevTo(start) >= limits.SegmentMinTiles) {
+					Result = Build(PathStatus.Partial, best, sw);
+					return true;
+				}
 				if (++expanded > limits.MaxExpansions) {
 					TilePos end = best != start ? best : bestTainted;
 					Result = end == start

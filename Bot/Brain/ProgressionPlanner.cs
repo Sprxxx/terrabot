@@ -223,6 +223,7 @@ public sealed class ProgressionPlanner
 			Plan = plan;
 		lastDeeperTick = long.MinValue / 2;
 		travelDest = null;
+		exitTarget = null;
 		KnownStations.Clear();
 		notedAt.Clear();
 		stocked.Clear();
@@ -324,8 +325,11 @@ public sealed class ProgressionPlanner
 		if (skill is WalkToSkill { Travel: true } && status != SkillStatus.Running && ctx.Combat.Life > 0
 			&& (status == SkillStatus.Succeeded || !string.IsNullOrEmpty(skill.FailureReason)))
 			travelDest = null; // there, or no way there (not a death on the way)
+		if (skill is WalkToSkill { ToSurface: true } && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason))
+			exitTarget = null; // no way there: work the way out again
 		if (skill is MineSkill mine) {
 			if (status == SkillStatus.Succeeded) {
+				exitTarget = null; // ore found after all: no trip
 				fruitlessMines.Remove(mine.ItemType);
 				travelledFor.Remove(mine.ItemType);
 			}
@@ -1122,6 +1126,9 @@ public sealed class ProgressionPlanner
 	/// limits), and the next trip went the other way: back and forth across the desert until a slime killed the bot.
 	/// </summary>
 	private TilePos? travelDest;
+	/// <summary>The way out to the surface (or the spawn) a trip set off on, held until reached.</summary>
+	private TilePos? exitTarget;
+	private string exitWhy = "";
 	public const int TravelArrivedTiles = 8;
 	/// <summary>How far (tiles) along the surface to go to look for ore in new ground.</summary>
 	public const int TravelTiles = 120;
@@ -1165,17 +1172,32 @@ public sealed class ProgressionPlanner
 			&& ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
 			return Do($"no more {name} found around here; drinking a recall potion to start the trip to {dest} from the spawn ({home.ChebyshevTo(ctx.Node)} tiles away)",
 				new UseItemSkill(ctx.Ids.RecallPotion));
+		// The way out chosen before (back to the spawn, or up to the surface at a column) holds until the bot is there: worked
+		// out again from wherever a fight left the bot, it came out different, and each time a new 3-second plan began
+		// (user report, 2026-10-14: "changes its mind and jumps out of the hole to do something else").
+		if (exitTarget is TilePos exit) {
+			if (exit.ChebyshevTo(ctx.Node) <= TravelArrivedTiles)
+				exitTarget = null;
+			else
+				return Do($"no more {name} found around here; {exitWhy} at {exit}",
+					new WalkToSkill(new Core.Pathfinding.GoalNearTile(exit, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
+		}
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
 		if (ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
 			// Out of somewhere off limits, or under a desert's or evil biome's ground: back to the spawn instead. Seen in game
 			// (world_eye run 61): "up to the surface" from the underground desert's edge, four times, each interrupted by a
 			// fight and started again from wherever the bot was, drifted 100 tiles into the desert, where a charger killed it.
-			if ((ctx.OffLimits(ctx.Node) || ctx.BiomeGround(up) || ctx.OffLimitsBelow(up)) && ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > 8)
-				return Do($"no more {name} found around here; out of here and back to the spawn at {spawn} before travelling",
-					new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
-			return Do($"no more {name} found around here; up to the surface before travelling, at {up}",
-				new WalkToSkill(new Core.Pathfinding.GoalNearTile(up, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
+			if ((ctx.OffLimits(ctx.Node) || ctx.BiomeGround(up) || ctx.OffLimitsBelow(up)) && ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > 8) {
+				exitTarget = spawn;
+				exitWhy = "out of here and back to the spawn before travelling";
+			}
+			else {
+				exitTarget = up;
+				exitWhy = "up to the surface before travelling";
+			}
+			return Do($"no more {name} found around here; {exitWhy} at {exitTarget}",
+				new WalkToSkill(new Core.Pathfinding.GoalNearTile(exitTarget.Value, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
 		}
 		return Do($"no more {name} found around here; {(fresh ? "travelling" : "on")} to new ground at {dest}",
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });

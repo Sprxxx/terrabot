@@ -21,6 +21,18 @@ namespace TerraBot.Bot.Skills;
 public sealed class MineSkill : ISkill
 {
 	public const int SearchRadius = 40;
+	/// <summary>
+	/// Ore of the same kind this close (tiles) to the last one mined is mined too once the amount is in, up to
+	/// <see cref="MaxVeinExtra"/> tiles: a player finishes the vein. Seen in game (user report, 2026-10-14): it mined
+	/// what the first item needed and left the rest, and later explored elsewhere instead of coming back for it.
+	/// </summary>
+	public const int VeinRadius = 5;
+	public const int MaxVeinExtra = 30;
+	/// <summary>
+	/// With nothing within <see cref="SearchRadius"/>: ore the bot has seen before (still on its map) this far away is
+	/// gone back to before exploring new ground, as a player looks at the map.
+	/// </summary>
+	public const int MapSearchRadius = 200;
 	public const int MaxMineTicksPerTile = 60 * 8;
 	public const int ExploreDepth = 15;
 	public const int ExploreSideways = 6;
@@ -43,6 +55,9 @@ public sealed class MineSkill : ISkill
 	private int exploreDir;
 	private int lastHave;
 	private int unreachableInARow;
+	private TilePos? lastMined;
+	private int veinExtra;
+	private bool veining;
 
 	public int ItemType { get; }
 	public int TileType { get; }
@@ -84,7 +99,25 @@ public sealed class MineSkill : ISkill
 		}
 		int have = ctx.Inventory.Count(ItemType);
 		lastHave = have;
-		if (have >= Amount && sub is not CollectDropsSkill) {
+		// Done once the amount is in, unless finishing the vein (a target of it set: carry on with that one). Ore only: a
+		// "vein" of stone or dirt is the whole world (a settle scenario mined 776 blocks and never finished).
+		if (have >= Amount && sub is not CollectDropsSkill && !(veining && target != null)) {
+			bool ore = !ctx.Ids.BuildingBlocks.Contains(ItemType);
+			if (ore && veinExtra < MaxVeinExtra && lastMined is TilePos last && Nearest(ctx, last, VeinRadius) is TilePos more) {
+				if (veinExtra == 0)
+					ctx.Log.Info($"Mine: {Label(ctx)} {have}/{Amount}; finishing the vein first");
+				veinExtra++;
+				veining = true;
+				sub?.Stop(ctx);
+				sub = null;
+				target = more;
+				mineTicks = 0;
+				arrivedOutOfReach = 0;
+				State = "finishing the vein";
+				return SkillStatus.Running;
+			}
+			sub?.Stop(ctx);
+			sub = null;
 			ctx.Log.Info($"Mine done: {Label(ctx)} {have}/{Amount}, mined {Mined} tile(s)");
 			State = "done";
 			return SkillStatus.Succeeded;
@@ -129,6 +162,15 @@ public sealed class MineSkill : ISkill
 			ctx.ExploresWithoutOre.Remove(ItemType);
 			return Fail(ctx, $"no {Label(ctx)} seen, and the explorations from here would be off limits");
 		}
+		// Ore seen before and still on the map: back for it before new ground (a player looks at the map). Not stone or dirt:
+		// those are everywhere.
+		if (!ctx.Ids.BuildingBlocks.Contains(ItemType) && Nearest(ctx, ctx.Node, MapSearchRadius) is TilePos known) {
+			target = known;
+			mineTicks = 0;
+			arrivedOutOfReach = 0;
+			ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, but some at {known} on the map ({known.ChebyshevTo(ctx.Node)} tiles away); going back for it");
+			return SkillStatus.Running;
+		}
 		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
 		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
 		// "Found" is what this skill would actually go for (not beside water, not given up on...): with "any seen", exploring
@@ -144,6 +186,7 @@ public sealed class MineSkill : ISkill
 		if (ctx.World.TileTypeAt(t.X, t.Y) != TileType) {
 			// Mined (or changed under us): the drop falls nearby; pick it up before the next tile.
 			Mined++;
+			lastMined = t;
 			unreachableInARow = 0;
 			ctx.ExploresWithoutOre.Remove(ItemType); // exploring found ore that got mined: only fruitless explorations in a row count
 			target = null;
@@ -210,6 +253,15 @@ public sealed class MineSkill : ISkill
 	}
 
 	/// <summary>Nearest safe tile of the type, weighting depth (digging down is cheap, climbing back is not).</summary>
+	/// <summary>The nearest tile of this kind within <paramref name="radius"/> of <paramref name="around"/> that mining would take on.</summary>
+	private TilePos? Nearest(BotContext ctx, TilePos around, int radius)
+	{
+		foreach (TilePos c in ctx.World.FindTiles(TileType, around, radius))
+			if (!bad.Contains(c) && WouldMine(ctx, ctx.Moves, c))
+				return c;
+		return null;
+	}
+
 	private TilePos? PickTarget(BotContext ctx)
 	{
 		TilePos node = ctx.Node;

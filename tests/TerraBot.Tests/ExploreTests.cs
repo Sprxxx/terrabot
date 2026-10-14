@@ -101,16 +101,51 @@ public class WaterTests
 	public WaterTests(ITestOutputHelper output) => this.output = output;
 
 	[Fact]
-	public void OreBesideWater_IsLeftAlone()
+	public void OreBesideWater_IsMinedToo_AndTheVeinIsFinished()
 	{
+		// It used to be left alone (a ban); user, 2026-10-14: solve the problem, don't ban the place. The bot copes with the
+		// water (surfacing for breath), and once the amount is in it finishes the vein instead of leaving ore behind.
 		FakeGame g = ProgressionTests.Mine(); // iron at columns 10-30, rows 29-31
 		for (int x = 14; x <= 20; x++)
 			g.Grid.Set(x, 28, CellKind.Water | CellKind.Empty); // a flooded pocket over part of the vein
 		BotContext ctx = g.CreateContext(output);
 		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3);
 		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, mine, 60 * 120));
-		for (int x = 13; x <= 21; x++)
-			Assert.Equal(FakeGame.TileIron, g.TileTypeAt(x, 29));
+		output.WriteLine($"mined {mine.Mined}, iron {g.Count(FakeGame.IronOre)}");
+		Assert.True(mine.Mined > 3, $"mined only {mine.Mined}: the rest of the vein left behind");
+		Assert.Equal(0, ctx.Deaths);
+	}
+
+	[Fact]
+	public void OreSeenBefore_FarAway_IsGoneBackFor_NotExploredPast()
+	{
+		// User report (2026-10-14): it left ore behind and later explored elsewhere instead of going back to it.
+		FakeGame g = ProgressionTests.Mine(width: 200); // iron at columns 10-30, seen (revealed)
+		g.Sim.State.X += 100 * 16; // now 70-90 tiles from it, beyond the 40-tile look-around
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3);
+		mine.Start(ctx);
+		for (int t = 0; t < 5; t++) {
+			g.Refresh(ctx);
+			mine.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine(mine.Describe());
+		Assert.DoesNotContain("exploring", mine.Describe());
+	}
+
+	[Fact]
+	public void MiningStone_StopsAtTheAmount_NoVeinOfTheWholeWorld()
+	{
+		// settle_auto with vein finishing: "need 20 more Stone Block" after 776 blocks broken; done was never reached (a new
+		// target was always picked first), and a "vein" of stone is the whole world.
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(output);
+		var mine = new MineSkill(FakeGame.StoneBlock, FakeGame.TileStone, 5);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, mine, 60 * 120));
+		output.WriteLine($"mined {mine.Mined}");
+		Assert.True(mine.Mined <= 8, $"mined {mine.Mined} for 5");
 	}
 
 	[Fact]

@@ -390,6 +390,42 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ATripsWayOut_HoldsWhenAFightMovesTheBot()
+	{
+		// User report (2026-10-14): "changes its mind and jumps out of the hole to do something else". The way up to the
+		// surface was worked out again from wherever a fight left the bot: another column, another plan from scratch.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 50; y++)
+			rows.Add(new string('.', 200));
+		for (int y = 50; y < 90; y++)
+			rows.Add(new string('#', 200));
+		for (int y = 80; y <= 82; y++)
+			rows[y] = new string('#', 20) + new string('.', 40) + new string('#', 140); // a cave far below the surface
+		rows[82] = new string('#', 25) + "S" + new string('.', 34) + new string('#', 140);
+		rows.Add(new string('@', 200));
+		var g = new FakeGame(rows.ToArray());
+		g.Stations[FakeGame.TileBench] = new TilePos(30, 49);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(33, 49);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(36, 49);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.Wood] = 50;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(28, 49);
+		ctx.SurfaceY = 50;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Iron);
+		p.NoteFruitless(FakeGame.IronOre);
+		ISkill first = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {first?.Describe()}");
+		var up = Assert.IsType<WalkToSkill>(first);
+		g.Sim.State.X += 20 * 16; // a fight carried it 20 tiles along the cave
+		g.Refresh(ctx);
+		ISkill again = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {again?.Describe()}");
+		Assert.Equal(((ISkill)up).Key, ((ISkill)again).Key); // the same way out, so the same job goes on
+	}
+
+	[Fact]
 	public void ATripForNewOre_FromFarDown_StartsWithARecallPotion()
 	{
 		// world_eye run 64: the walk back to the spawn from 120 rows down followed caves into the desert; a player recalls.

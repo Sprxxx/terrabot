@@ -76,13 +76,21 @@ public class DumpReplayTests
 		b.BlockCount = 136; // as in game
 		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
 		var goal = new GoalNearTile(home, 2, PhysicsParams.Default);
-		var strict = new PathSearch(ctx, start, goal, new SearchLimits());
+		// Whole-way reachability: segments off (in game the walk goes in segments, see below).
+		var strict = new PathSearch(ctx, start, goal, new SearchLimits { SegmentAfter = 0 });
 		strict.Step(1e9);
 		output.WriteLine("strict: " + strict.Result);
-		var relaxed = new PathSearch(ctx, start, goal, new SearchLimits { CheckBrokenSupport = false });
+		var relaxed = new PathSearch(ctx, start, goal, new SearchLimits { CheckBrokenSupport = false, SegmentAfter = 0 });
 		relaxed.Step(1e9);
 		output.WriteLine("relaxed: " + relaxed.Result);
 		Assert.True(strict.Result.Status == PathStatus.Found || strict.Result.Status == PathStatus.NoPath && relaxed.Result.Status == PathStatus.Found);
+		// In game: a segment of the way after a few thousand nodes, not the whole 57-row climb searched while standing still.
+		var segment = new PathSearch(ctx, start, goal, new SearchLimits());
+		segment.Step(1e9);
+		output.WriteLine("segment: " + segment.Result);
+		Assert.Equal(PathStatus.Partial, segment.Result.Status);
+		Assert.True(segment.Result.Expanded <= SearchLimits.Default.SegmentAfter + 1);
+		Assert.True(segment.Result.Best.ChebyshevTo(start) >= SearchLimits.Default.SegmentMinTiles);
 	}
 
 	[Fact]
