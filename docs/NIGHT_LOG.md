@@ -689,3 +689,14 @@ what was decided and the result.
   - UseItemSkill finished when the potion left the bag, but the recall teleport comes later in the use. The next walk set off from the old spot and a second potion was drunk. Now it waits for the use animation to end.
 - **Pillar mystery, diagnosed further:** four "placed True, landed back at the start" cases. Each time the block sits in a feet cell of the start node while the feet stay at that row's bottom, so the body overlaps the block. Vanilla's PlaceTile refuses blocks over a player (Collision.EmptyTile), and the blocks are dirt or stone (falling tiles are excluded). Unexplained. It costs a re-plan (and banned steps) each time.
 - 3 new tests (251 pass). iron_age_auto, settle_auto and life_crystals pass.
+
+## Run 68 (commit f627220), stopped after about 5 game minutes (1 death)
+- Anvil 25 s, Silver Broadsword about 2.5 min, Iron Pickaxe about 4.5 min. Crowd zones fired 6 times in the slime caves under the spawn.
+- **Death:** a walk begun by day (out of a crowd zone, back to the spawn) came up at nightfall among zombies. One zombie hit for about 20 a time; the wooden sword never killed it, and the retreat at 30% came two hits from death.
+  - **Fixes:**
+    - At nightfall, a running WalkTo, Mine, Explore or GatherWood job (defense < 6) is interrupted, so the night rule can send the bot home.
+    - The retreat threshold also covers 2.5 times the biggest hit of the last 600 ticks (capped at 70%). BotContext.NoteHit is fed from the game's hurt hook.
+- **Recall loop:** five recall potions in about a minute. The new route check found no trip at all: west crosses the corruption, east the desert. So each recall was followed by mining from the spawn, then wandering 130–160 tiles off again.
+  - **Fix:** TravelForOre chooses the destination first (ChooseTravelDest). With none it neither travels nor recalls. With one, it recalls only if the spawn is on the way (the bot is farther from the destination than the spawn is).
+- **Open question:** with no trip possible and the ore near the spawn mined out (within the depth limit and outside the crowd zones), where should the bot get iron? Possibly by going deeper once armed. Watching the next run.
+- 4 new tests (254 pass). iron_age_auto, settle_auto, night_home, early_game_with_slimes and night_shelter pass.

@@ -76,6 +76,21 @@ public sealed class BotContext
 		UnhittableEnemies.Remove(npcId);
 	}
 
+	/// <summary>The biggest hit taken (damage, as the game shows it) within <see cref="HitMemoryTicks"/>; 0 if none.</summary>
+	public int BiggestRecentHit => Tick - biggestHitTick <= HitMemoryTicks ? biggestHit : 0;
+	public const int HitMemoryTicks = 600;
+	private int biggestHit;
+	private long biggestHitTick = long.MinValue / 2;
+
+	/// <summary>The bot took a hit of <paramref name="damage"/>.</summary>
+	public void NoteHit(int damage)
+	{
+		if (damage >= BiggestRecentHit) {
+			biggestHit = damage;
+			biggestHitTick = Tick;
+		}
+	}
+
 	/// <summary>The NPC that hurt the bot within <see cref="AttackerMemoryTicks"/>, or -1.</summary>
 	public int RecentAttacker => LastAttacker >= 0 && Tick - LastAttackedTick <= AttackerMemoryTicks ? LastAttacker : -1;
 

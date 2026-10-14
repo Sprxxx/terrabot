@@ -379,6 +379,19 @@ public class FootingTests
 	}
 
 	[Fact]
+	public void HitHard_TheBotRetreatsWhileAFewMoreSuchHitsCanBeTaken()
+	{
+		// world_eye run 68: zombies hit for 20 with no armour; at 30% the bot was two hits from death.
+		var ctx = new BotContext { Tick = 1000 };
+		ctx.Combat.LifeMax = 100;
+		Assert.Equal(BotBrain.RetreatBelow, BotBrain.RetreatThreshold(ctx));
+		ctx.NoteHit(20);
+		Assert.Equal(0.5f, BotBrain.RetreatThreshold(ctx), 3);
+		ctx.Tick += BotContext.HitMemoryTicks + 1;
+		Assert.Equal(BotBrain.RetreatBelow, BotBrain.RetreatThreshold(ctx));
+	}
+
+	[Fact]
 	public void HeadInWater_ReadsFromTheHitbox_NotTheNode()
 	{
 		// world_eye run 59: breath ran from 95 to 18 while the node's head cells read empty: the bot stood a few pixels low and

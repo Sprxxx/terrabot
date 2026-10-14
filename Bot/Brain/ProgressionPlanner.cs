@@ -1063,14 +1063,30 @@ public sealed class ProgressionPlanner
 	private ISkill TravelForOre(BotContext ctx, int item, string name)
 	{
 		int fails = fruitlessMines.TryGetValue(item, out int f) ? f : 0;
-		if (fails == 0 || travelDest == null && travelledFor.TryGetValue(item, out int t) && t >= fails)
+		if (fails == 0 && travelDest == null)
 			return null;
-		// Far from the spawn (down a cave, or along the surface) with a recall potion: drink it, as a player would, rather than a long walk out. Seen in game
-		// (world_eye run 64): the walk back to the spawn from row 408 followed caves east into the desert, where antlion
-		// swarmers killed the bot.
-		if (travelDest == null && ctx.SpawnTile is TilePos home && home.ChebyshevTo(ctx.Node) > RecallDistance && ctx.Ids.RecallPotion > 0
-			&& ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
-			return Do($"no more {name} found around here; drinking a recall potion to start the trip from the spawn ({home.ChebyshevTo(ctx.Node)} tiles away)",
+		// A trip under way (whichever ore it was for) stays the trip, unless it has become off limits since.
+		if (travelDest is TilePos pending && (pending.ChebyshevTo(ctx.Node) <= TravelArrivedTiles || ctx.OffLimits(pending) || ctx.OffLimitsBelow(pending)))
+			travelDest = null;
+		bool fresh = false;
+		if (travelDest == null) {
+			if (fails == 0 || travelledFor.TryGetValue(item, out int t) && t >= fails)
+				return null;
+			travelledFor[item] = fails;
+			// Nowhere to go (seen in game, world_eye run 68: between a corruption and a desert, every way crosses one):
+			// no trip, and no recall potion drunk for one either (five were, in a minute, each followed by mining from the spawn).
+			if (ChooseTravelDest(ctx, fails) is not TilePos chosen)
+				return null;
+			travelDest = chosen;
+			fresh = true;
+		}
+		TilePos dest = travelDest.Value;
+		// Far from the spawn, the trip starting there, with a recall potion: drink it, as a player would, rather than a long
+		// walk out. Seen in game (world_eye run 64): the walk back to the spawn from row 408 followed caves east into the
+		// desert, where antlion swarmers killed the bot.
+		if (ctx.SpawnTile is TilePos home && home.ChebyshevTo(ctx.Node) > RecallDistance && dest.ChebyshevTo(ctx.Node) > dest.ChebyshevTo(home) + RecallDistance / 2
+			&& ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
+			return Do($"no more {name} found around here; drinking a recall potion to start the trip to {dest} from the spawn ({home.ChebyshevTo(ctx.Node)} tiles away)",
 				new UseItemSkill(ctx.Ids.RecallPotion));
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
@@ -1084,38 +1100,27 @@ public sealed class ProgressionPlanner
 			return Do($"no more {name} found around here; up to the surface before travelling, at {up}",
 				new WalkToSkill(new Core.Pathfinding.GoalNearTile(up, 4, ctx.Physics)) { Quiet = true });
 		}
-		// A trip under way: on to it (unless it has become off limits since).
-		if (travelDest is TilePos pending) {
-			if (pending.ChebyshevTo(ctx.Node) <= TravelArrivedTiles || ctx.OffLimits(pending) || ctx.OffLimitsBelow(pending))
-				travelDest = null;
-			else
-				return Do($"no more {name} found around here; on to new ground at {pending}",
-					new WalkToSkill(new Core.Pathfinding.GoalNearTile(pending, 4, ctx.Physics)) { Quiet = true, Travel = true });
-		}
-		if (travelledFor.TryGetValue(item, out int done) && done >= fails)
-			return null;
-		travelledFor[item] = fails;
+		return Do($"no more {name} found around here; {(fresh ? "travelling" : "on")} to new ground at {dest}",
+			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
+	}
+
+	/// <summary>
+	/// Where to go for new ore after <paramref name="fails"/> fruitless mining jobs: out from the spawn, farther each time
+	/// (east 120, west 120, east 240...), not from wherever the bot is (from the bot, east then west went straight back to the
+	/// ground just searched). Not onto somewhere off limits, nor onto or across a desert's or evil biome's ground (run 56: the
+	/// spawn between a corruption and a desert, and every trip landed in one of them), nor above known off-limits ground
+	/// (run 60: the surface by the spawn, over the underground desert's edge). Null if nowhere.
+	/// </summary>
+	private static TilePos? ChooseTravelDest(BotContext ctx, int fails)
+	{
 		int dir = fails % 2 == 1 ? 1 : -1;
-		// Out from the spawn, farther each time (east 120, west 120, east 240...), not from wherever the bot is: from
-		// the bot, east then west went straight back to the ground just searched (seen in game).
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
 		int reach = Math.Min(TravelTiles * ((fails + 1) / 2), MaxTravelTiles); // not across the world (1,900 tiles in run 47)
-		// That way, else the other way, then farther: not onto somewhere off limits, nor onto a desert or an evil biome's
-		// ground (seen in game, run 56: the spawn between a corruption and a desert, and every trip landed in one of them),
-		// nor above known off-limits ground (run 60: the surface by the spawn, over the underground desert's edge).
-		TilePos? found = null;
-		for (int r = reach; r <= MaxTravelTiles && found == null; r += TravelTiles)
-			foreach (int d in new[] { dir, -dir }) {
-				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X)) {
-					found = c;
-					break;
-				}
-			}
-		if (found is not TilePos dest)
-			return null;
-		travelDest = dest;
-		return Do($"no more {name} found around here; travelling to new ground at {dest}",
-			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
+		for (int r = reach; r <= MaxTravelTiles; r += TravelTiles)
+			foreach (int d in new[] { dir, -dir })
+				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
+					return c;
+		return null;
 	}
 
 	/// <summary>Surface samples (tiles apart) checked along a trip's way.</summary>

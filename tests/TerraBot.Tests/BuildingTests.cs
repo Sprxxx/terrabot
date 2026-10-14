@@ -270,6 +270,34 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void NowhereToTravel_NoRecallPotionIsDrunk()
+	{
+		// world_eye run 68: every way from the spawn crossed a biome, and five recall potions went in a minute, each followed by
+		// mining from the spawn again.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.Items[FakeGame.RecallPotion] = 3;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(200, 44);
+		ctx.NoteDanger(new TilePos(150, 44), BotContext.BiomeZoneTicks, 10); // west of the spawn
+		ctx.NoteDanger(new TilePos(250, 44), BotContext.BiomeZoneTicks, 10); // and east
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.IsNotType<UseItemSkill>(next);
+		Assert.False(next is WalkToSkill { Travel: true });
+	}
+
+	[Fact]
 	public void ATripForNewOre_DoesNotCrossSomewhereOffLimits()
 	{
 		// world_eye run 67: a trip west across the corruption; knocked into a chasm there, the bot fell 66 tiles.
@@ -306,7 +334,7 @@ public class BuildingTests
 		g.Items[FakeGame.IronBroadsword] = 1;
 		g.Items[FakeGame.RecallPotion] = 1;
 		BotContext ctx = g.CreateContext(output);
-		ctx.SpawnTile = new TilePos(3 - 80, 44 - 40); // as if the bot were far down and away from it
+		ctx.SpawnTile = new TilePos(303, 44 - 40); // far from the bot, the trip (west, 120 from the spawn) farther still from it
 		ctx.SurfaceY = 20;
 		var p = new ProgressionPlanner();
 		p.Reset(ProgressionPlanner.Plans.Settle);
@@ -339,6 +367,32 @@ public class BuildingTests
 		ISkill night = p.Next(ctx);
 		output.WriteLine($"{p.Status} -> {night?.Describe()}");
 		Assert.IsType<StayHomeSkill>(night);
+	}
+
+	[Fact]
+	public void AtNightfall_WorkBegunByDay_IsPlannedAgain_AndTheBotGoesHome()
+	{
+		// world_eye run 68: a walk begun by day came up at night among zombies, and one killed the bot.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, brain.Planner, ctx);
+		for (int t = 0; t < 30; t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine(brain.Describe());
+		Assert.IsNotType<StayHomeSkill>(brain.Current); // working by day
+		g.IsNight = true;
+		g.Refresh(ctx);
+		brain.Tick(ctx);
+		output.WriteLine(brain.Describe());
+		Assert.IsType<StayHomeSkill>(brain.Current);
 	}
 
 	[Fact]

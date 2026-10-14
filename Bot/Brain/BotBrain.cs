@@ -99,6 +99,8 @@ public sealed class BotBrain
 	/// runs 61 and 63), at 50% among 6-8 slimes in a cave, the bot was dead before it got away.
 	/// </summary>
 	public const float MobRetreatBelow = 0.7f;
+	/// <summary>Retreat while life still covers this many of the biggest recent hit.</summary>
+	public const float HitsInHand = 2.5f;
 	public const int MobSize = 4;
 
 	/// <summary>
@@ -112,7 +114,11 @@ public sealed class BotBrain
 		foreach (EntityInfo h in ctx.Hostiles)
 			if (h.DistanceTo(cx, cy) <= CrowdTiles * 16f)
 				near++;
-		return near >= MobSize ? MobRetreatBelow : near >= CrowdSize ? CrowdRetreatBelow : RetreatBelow;
+		float byCount = near >= MobSize ? MobRetreatBelow : near >= CrowdSize ? CrowdRetreatBelow : RetreatBelow;
+		// Hit hard: away while a few more such hits can still be taken. Seen in game (world_eye run 68): zombies hitting for
+		// 20 with no armour, the retreat at 30% was two hits from death, and the next hit came before the bot got away.
+		float byHits = ctx.Combat.LifeMax > 0 ? HitsInHand * ctx.BiggestRecentHit / (float)ctx.Combat.LifeMax : 0f;
+		return System.Math.Min(MobRetreatBelow, System.Math.Max(byCount, byHits));
 	}
 	/// <summary>Tiles round a spot where the bot ran out of breath that it no longer mines.</summary>
 	public const int DrownAvoidRadius = 6;
@@ -207,6 +213,7 @@ public sealed class BotBrain
 	public LightKeeper Light { get; } = new();
 	private int deathsSeen;
 	private int lastBreath;
+	private bool wasNight;
 	/// <summary>Life to recover to before coming out of a retreat.</summary>
 	public const float RetreatUntil = 0.8f;
 
@@ -263,6 +270,16 @@ public sealed class BotBrain
 			else
 				Begin(ShelterSkill.Recover(RetreatUntil), ctx);
 		}
+		// Nightfall: work started by day (a walk back to the spawn, a mine near the surface) is planned again, so the night
+		// rule can send the bot home. Seen in game (world_eye run 68): a walk begun by day came up at night among zombies,
+		// and one killed the bot (wooden sword, no armour).
+		bool night = ctx.IsNight;
+		if (Auto && night && !wasNight && Current is WalkToSkill or MineSkill or ExploreSkill or GatherWoodSkill
+			&& ctx.Combat.Defense < ProgressionPlanner.NightOutDefense) {
+			ctx.Log.Info($"Auto: nightfall; planning again instead of going on with {Current.Name}");
+			Interrupt(ctx);
+		}
+		wasNight = night;
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			WearAccessories(ctx);
 			NoteEvilEnemies(ctx);

@@ -137,6 +137,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		}
 		HurtCount++;
 		DamageTaken += info.Damage;
+		Context.NoteHit(info.Damage);
 		if (src.SourceNPCIndex >= 0 && src.SourceNPCIndex < Main.maxNPCs)
 			Context.NoteAttacker(src.SourceNPCIndex);
 		if (src.SourceOtherIndex == 0 && src.SourceNPCIndex < 0 && src.SourceProjectileType <= 0)
