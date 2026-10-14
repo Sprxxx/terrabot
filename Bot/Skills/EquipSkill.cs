@@ -59,7 +59,7 @@ public sealed class UseItemSkill : ISkill
 	public const int MaxTicks = 60 * 3;
 
 	private int startCount = -1;
-	private int ticks;
+	private int ticks, afterTicks;
 
 	public int ItemType { get; }
 	public string FailureReason { get; private set; } = "";
@@ -83,6 +83,10 @@ public sealed class UseItemSkill : ISkill
 			return SkillStatus.Running;
 		int have = ctx.Inventory.Count(ItemType);
 		if (have < startCount) {
+			// Used up at the start of the swing, but its effect comes during it (a recall potion teleports partway): seen in
+			// game (world_eye run 67), the next walk started from where the bot drank it, and a second potion was drunk.
+			if (ctx.Combat.ItemAnimation > 0 && ++afterTicks <= MaxTicks)
+				return SkillStatus.Running;
 			ctx.Log.Info($"Used item {ItemType} ({have} left)");
 			return SkillStatus.Succeeded;
 		}

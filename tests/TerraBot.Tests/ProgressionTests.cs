@@ -229,6 +229,24 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void UsingARecallPotion_FinishesOnlyWhenTheUseIsOver()
+	{
+		// world_eye run 67: the potion was gone at the start of the swing, the teleport came later, and the next walk set off
+		// from where the bot drank it (a second potion went the same way).
+		FakeGame g = Mine();
+		g.Items[FakeGame.RecallPotion] = 2;
+		BotContext ctx = g.CreateContext(output);
+		var use = new UseItemSkill(FakeGame.RecallPotion);
+		use.Start(ctx);
+		g.Items[FakeGame.RecallPotion] = 1;
+		g.Refresh(ctx);
+		ctx.Combat.ItemAnimation = 20; // still drinking
+		Assert.Equal(SkillStatus.Running, use.Tick(ctx));
+		ctx.Combat.ItemAnimation = 0;
+		Assert.Equal(SkillStatus.Succeeded, use.Tick(ctx));
+	}
+
+	[Fact]
 	public void FarFromTheStationsAtHome_DrinksARecallPotion()
 	{
 		// world_eye: the walk home from the mine took 4 game minutes every run; a player drinks a recall potion.

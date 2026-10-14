@@ -335,6 +335,11 @@ public class FootingTests
 		Assert.Equal(-1, ctx.SaferSide(at));
 		Assert.True(ctx.OffLimitsBelow(new TilePos(1040, 280)));
 		Assert.False(ctx.OffLimitsBelow(new TilePos(900, 280)));
+		// Out on a trip with nothing known either way: onwards, away from the spawn (run 67: back across the desert).
+		ctx.DangerZones.Clear();
+		ctx.SpawnTile = new TilePos(640, 280);
+		Assert.Equal(1, ctx.SaferSide(at));
+		Assert.Equal(1, ctx.SaferSide(at));
 	}
 
 	[Fact]

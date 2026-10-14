@@ -320,6 +320,8 @@ public sealed class BotContext
 
 	/// <summary>Which way the last exploration with no side to prefer went (alternated across mining jobs).</summary>
 	public int LastExploreSide { get; set; } = -1;
+	/// <summary>Farther than this (tiles) from the spawn, exploring with no safer side goes on outwards.</summary>
+	public const int OnwardFromSpawnTiles = 60;
 
 	/// <summary>
 	/// The side (-1 left, 1 right) with less known off-limits ground ahead and below <paramref name="from"/>; with neither
@@ -329,7 +331,10 @@ public sealed class BotContext
 	public int SaferSide(TilePos from)
 	{
 		int left = OffLimitsAhead(from, -1), right = OffLimitsAhead(from, 1);
-		int side = left < right ? -1 : right < left ? 1 : -LastExploreSide;
+		// Out on a trip (far from the spawn), neither side worse: onwards, away from the spawn, not back over the ground the
+		// trip crossed. Seen in game (world_eye run 67): 360 tiles out, every exploration headed back west across the desert.
+		int onward = SpawnTile is TilePos home && Math.Abs(from.X - home.X) > OnwardFromSpawnTiles ? Math.Sign(from.X - home.X) : 0;
+		int side = left < right ? -1 : right < left ? 1 : onward != 0 ? onward : -LastExploreSide;
 		LastExploreSide = side;
 		return side;
 	}
