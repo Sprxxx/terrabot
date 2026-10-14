@@ -1045,6 +1045,7 @@ public sealed class ProgressionPlanner
 	/// <see cref="TravelTiles"/> one way, then the other way next time, like a player trying another cave. Seen in
 	/// game: 5 iron short, the bot explored the same 50 tiles for an hour.
 	/// </summary>
+	public const int TravelFromSurfaceRows = 15;
 	public const int MaxTravelTiles = 600;
 
 	private ISkill TravelForOre(BotContext ctx, int item, string name)
@@ -1052,6 +1053,11 @@ public sealed class ProgressionPlanner
 		int fails = fruitlessMines.TryGetValue(item, out int f) ? f : 0;
 		if (fails == 0 || travelledFor.TryGetValue(item, out int t) && t >= fails)
 			return null;
+		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
+		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
+		if (ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y)
+			return Do($"no more {name} found around here; up to the surface before travelling, at {up}",
+				new WalkToSkill(new Core.Pathfinding.GoalNearTile(up, 4, ctx.Physics)) { Quiet = true });
 		travelledFor[item] = fails;
 		int dir = fails % 2 == 1 ? 1 : -1;
 		// Out from the spawn, farther each time (east 120, west 120, east 240...), not from wherever the bot is: from

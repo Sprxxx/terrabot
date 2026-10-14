@@ -148,13 +148,16 @@ public sealed class BotBrain
 
 	public static void NoteEvilEnemies(BotContext ctx)
 	{
-		if (ctx.Combat.Defense >= BotContext.CavernDefense || ctx.Ids.EvilEnemies.Length == 0)
-			return;
 		foreach (EntityInfo e in ctx.Hostiles) {
-			if (System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) < 0 || ctx.InDangerZone(e.FeetTile))
+			// The evil biome until iron-level armour, the underground desert (antlions; rolling cacti killed the bot in a
+			// desert not yet seen, run 53) until much better gear, as for their tiles (BotContext.OffLimits).
+			string biome = ctx.Combat.Defense < BotContext.CavernDefense && System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) >= 0 ? "the evil biome"
+				: ctx.Combat.Defense < BotContext.DeepDefense && System.Array.IndexOf(ctx.Ids.DesertEnemies, e.Type) >= 0 ? "the desert"
+				: null;
+			if (biome == null || ctx.InDangerZone(e.FeetTile))
 				continue;
 			ctx.NoteDanger(e.FeetTile, BotContext.BiomeZoneTicks);
-			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: the evil biome is near; keeping away from there for now");
+			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: {biome} is near; keeping away from there for now");
 		}
 	}
 

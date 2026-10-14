@@ -146,6 +146,8 @@ public sealed class GameIds
 	public int[] EvilTiles { get; init; } = System.Array.Empty<int>();
 	/// <summary>NPC types of the Corruption and the Crimson (eaters of souls, devourers, crimeras...): seen, the biome is near.</summary>
 	public int[] EvilEnemies { get; init; } = System.Array.Empty<int>();
+	/// <summary>NPC types of the underground desert (antlions, tomb crawlers): seen, the desert is near.</summary>
+	public int[] DesertEnemies { get; init; } = System.Array.Empty<int>();
 	/// <summary>Blocks the bot builds frames from (any of them).</summary>
 	public int[] BuildingBlocks { get; init; } = System.Array.Empty<int>();
 	/// <summary>Boss preparation (Milestone 7).</summary>

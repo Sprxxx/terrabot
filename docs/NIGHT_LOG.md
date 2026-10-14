@@ -522,3 +522,14 @@ what was decided and the result.
   between self-test scenarios) and let a walk test undermine sand. **Decision:** reset on SetAuto and before every
   scenario. boss_auto ran 4 wood short again: torches made from the plan's wood. **Decision:** LightKeeper leaves the
   last 15 wood alone. In game, sand, lava, early_game, iron_age, settle, night_home and boss_auto pass. 238 unit tests.
+
+### world_eye run 53: broadsword at 40 seconds, helmet at 3.5 minutes
+- **Progress:** the anvil about 17 seconds in, the **Iron Broadsword at about 40 seconds** (the fastest yet), the
+  **Silver Pickaxe at about 2 minutes**, and the **Iron Helmet worn at about 3.5 minutes**, with 0 deaths until then.
+- **Deaths:** a poison spit at row 457 (a trip to new ground from underground went down through the caverns), and a
+  rolling cactus spike in the underground desert, which exploring entered before seeing it as desert.
+- **Decisions:**
+  - From more than 15 rows underground, travel for ore first walks up to the surface above, then goes along it.
+  - Desert monsters in sight (antlions, tomb crawlers) mark 5-day danger zones until defense 16, as evil-biome
+    monsters do until defense 8.
+- In game, 5 chain scenarios pass. 238 unit tests.
