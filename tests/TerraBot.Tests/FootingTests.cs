@@ -302,4 +302,23 @@ public class FootingTests
 		Assert.Equal(PathStatus.Partial, search.Result.Status);
 		Assert.True(search.Result.Steps.Count > 0);
 	}
+
+	[Fact]
+	public void TheEvilBiome_IsOffLimits_UntilThereIsArmour()
+	{
+		// world_eye run 47: an eater of souls killed the bot in the corruption in copper gear.
+		FakeGame g = ProgressionTests.Mine();
+		const int Ebonstone = 25;
+		for (int x = 56; x < 90; x++)
+			for (int y = 16; y < 40; y++)
+				if (g.Grid.Get(x, y).IsSolid())
+					g.TileTypes[new TilePos(x, y)] = Ebonstone;
+		BotContext ctx = g.CreateContext(null);
+		ctx.Ids = new GameIds { EvilTiles = new[] { Ebonstone } };
+		Assert.True(ctx.InEvilBiome(new TilePos(70, 26)));
+		Assert.False(ctx.InEvilBiome(new TilePos(10, 26)));
+		Assert.True(ctx.OffLimits(new TilePos(70, 26)));
+		ctx.Combat.Defense = BotContext.CavernDefense; // iron armour
+		Assert.False(ctx.OffLimits(new TilePos(70, 26)));
+	}
 }

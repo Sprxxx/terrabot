@@ -1042,6 +1042,8 @@ public sealed class ProgressionPlanner
 	/// <see cref="TravelTiles"/> one way, then the other way next time, like a player trying another cave. Seen in
 	/// game: 5 iron short, the bot explored the same 50 tiles for an hour.
 	/// </summary>
+	public const int MaxTravelTiles = 600;
+
 	private ISkill TravelForOre(BotContext ctx, int item, string name)
 	{
 		int fails = fruitlessMines.TryGetValue(item, out int f) ? f : 0;
@@ -1052,10 +1054,11 @@ public sealed class ProgressionPlanner
 		// Out from the spawn, farther each time (east 120, west 120, east 240...), not from wherever the bot is: from
 		// the bot, east then west went straight back to the ground just searched (seen in game).
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
-		int x = originX + dir * TravelTiles * ((fails + 1) / 2);
+		int reach = Math.Min(TravelTiles * ((fails + 1) / 2), MaxTravelTiles); // not across the world (1,900 tiles in run 47)
+		int x = originX + dir * reach;
 		TilePos? found = SurfaceAt(ctx.Grid, x);
 		if (found is TilePos f0 && ctx.OffLimits(f0))
-			found = SurfaceAt(ctx.Grid, originX - dir * TravelTiles * ((fails + 1) / 2)); // the other way, away from where it died
+			found = SurfaceAt(ctx.Grid, originX - dir * reach); // the other way, away from where it died
 		if (found is not TilePos dest)
 			return null;
 		return Do($"no more {name} found around here; travelling to new ground at {dest}",

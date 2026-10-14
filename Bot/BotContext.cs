@@ -156,7 +156,14 @@ public sealed class BotContext
 	/// is weak. Seen in game (world_eye run 40): antlion chargers, swarmers and rolling cacti killed the bot 6 times in
 	/// one run in the underground desert east of the spawn, a place players leave until they have better gear.
 	/// </summary>
-	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t);
+	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t)
+		|| Combat.Defense < CavernDefense && InEvilBiome(t);
+
+	/// <summary>
+	/// Is the tile where the seen solid tiles around it (48x48) are largely Corruption or Crimson? Seen in game (world_eye
+	/// run 47): eaters of souls killed the bot there in copper gear. Players go in once they have armour (Milestone 10).
+	/// </summary>
+	public bool InEvilBiome(TilePos t) => World != null && Ids.EvilTiles.Length > 0 && Share(t, c => c.Evil) >= DesertShare;
 
 	/// <summary>
 	/// Chunk side for <see cref="InUndergroundDesert"/>, and the share of seen solid tiles in the 3x3 chunks around a tile
@@ -167,7 +174,7 @@ public sealed class BotContext
 	public const float DesertShare = 0.25f;
 	/// <summary>How long a chunk's counts are kept before it is counted again (more of it may have been seen).</summary>
 	public const int DesertRecheckTicks = 60 * 60;
-	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, int Solid, int Desert)> desertChunks = new();
+	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, int Solid, int Desert, int Evil)> desertChunks = new();
 
 	/// <summary>
 	/// Is the tile below the surface where the seen solid tiles around it (48x48) are largely desert (sand, sandstone...)?
@@ -177,22 +184,28 @@ public sealed class BotContext
 	{
 		if (World == null || Ids.DesertTiles.Length == 0 || SurfaceY <= 0 || t.Y < SurfaceY)
 			return false;
+		return Share(t, c => c.Desert) >= DesertShare;
+	}
+
+	/// <summary>The share of seen solid tiles in the 3x3 chunks around the tile that <paramref name="count"/> picks (0 with too few seen).</summary>
+	private float Share(TilePos t, Func<(int Solid, int Desert, int Evil), int> count)
+	{
 		int cx = (int)Math.Floor(t.X / (double)DesertChunk), cy = t.Y / DesertChunk;
-		int solid = 0, desert = 0;
+		int solid = 0, some = 0;
 		for (int dx = -1; dx <= 1; dx++)
 			for (int dy = -1; dy <= 1; dy++) {
 				var c = ChunkCounts(cx + dx, cy + dy);
 				solid += c.Solid;
-				desert += c.Desert;
+				some += count(c);
 			}
-		return solid >= 40 && desert >= DesertShare * solid;
+		return solid >= 40 ? some / (float)solid : 0f;
 	}
 
-	private (int Solid, int Desert) ChunkCounts(int cx, int cy)
+	private (int Solid, int Desert, int Evil) ChunkCounts(int cx, int cy)
 	{
 		if (desertChunks.TryGetValue((cx, cy), out var v) && Tick - v.At < DesertRecheckTicks)
-			return (v.Solid, v.Desert);
-		int solid = 0, desert = 0;
+			return (v.Solid, v.Desert, v.Evil);
+		int solid = 0, desert = 0, evil = 0;
 		for (int x = cx * DesertChunk; x < (cx + 1) * DesertChunk; x++)
 			for (int y = cy * DesertChunk; y < (cy + 1) * DesertChunk; y++) {
 				if (!World.IsRevealed(x, y))
@@ -203,9 +216,11 @@ public sealed class BotContext
 				solid++;
 				if (Array.IndexOf(Ids.DesertTiles, type) >= 0)
 					desert++;
+				else if (Array.IndexOf(Ids.EvilTiles, type) >= 0)
+					evil++;
 			}
-		desertChunks[(cx, cy)] = (Tick, solid, desert);
-		return (solid, desert);
+		desertChunks[(cx, cy)] = (Tick, solid, desert, evil);
+		return (solid, desert, evil);
 	}
 
 	/// <summary>Is the tile inside a zone where the bot was recently killed?</summary>
@@ -223,7 +238,7 @@ public sealed class BotContext
 	public const int DeepDefense = 16;
 	/// <summary>Rows relative to <see cref="CavernY"/>: without armour stay above the caverns (in game, 15 rows into them
 	/// was still skeletons and mother slimes); with some, this far in.</summary>
-	public const int ShallowMargin = -10, CavernDepth = 150;
+	public const int ShallowMargin = -20, CavernDepth = 150; // -10: mining at the limit, skeletons from the caverns 10 rows down kept killing it (runs 36-47)
 
 	/// <summary>
 	/// The deepest row worth going to for ore and exploring with the armour worn, like a player who stays out of the

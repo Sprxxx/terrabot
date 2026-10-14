@@ -69,7 +69,7 @@ public class ExploreTests
 		rows.Add(new string('@', 60));
 		var g = new FakeGame(rows.ToArray());
 		BotContext ctx = g.CreateContext(output);
-		ctx.CavernY = 30; // floor at row 20 with no armour
+		ctx.CavernY = 20 - BotContext.ShallowMargin; // floor at row 20 with no armour
 		Assert.Equal(20, ctx.DeepestRow);
 		var explore = new ExploreSkill("the way up", c => c.Node.Y <= c.DeepestRow, ExploreBias.Down, heading: 1);
 		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, explore, 60 * 60 * 2);
@@ -89,6 +89,8 @@ public class ExploreTests
 		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, mine, 60);
 		Assert.Equal(SkillStatus.Failed, s);
 		Assert.Contains("explorations", mine.FailureReason);
+		// ...and the next job, after travelling on, starts afresh (run 47: every job failed at once, travel went 1,900 tiles).
+		Assert.False(ctx.ExploresWithoutOre.ContainsKey(FakeGame.IronOre));
 	}
 }
 

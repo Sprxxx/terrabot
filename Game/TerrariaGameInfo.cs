@@ -56,6 +56,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Table = ItemID.WoodenTable,
 		BuildingBlocks = new int[] { ItemID.StoneBlock, ItemID.DirtBlock },
 		DesertTiles = new int[] { TileID.Sand, TileID.HardenedSand, TileID.Sandstone, TileID.DesertFossil },
+		EvilTiles = new int[] { TileID.Ebonstone, TileID.Crimstone, TileID.CorruptGrass, TileID.CrimsonGrass, TileID.Ebonsand, TileID.Crimsand,
+			TileID.CorruptHardenedSand, TileID.CrimsonHardenedSand, TileID.CorruptSandstone, TileID.CrimsonSandstone, TileID.CorruptIce, TileID.FleshIce },
 		LifeCrystal = ItemID.LifeCrystal,
 		IronTierBow = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBow : ItemID.IronBow,
 		WoodenArrow = ItemID.WoodenArrow,

@@ -434,3 +434,18 @@ what was decided and the result.
   where it is. On the way home, ignore only enemies that aren't hitting it, and only within 100 tiles of the house.
   A hurt retreat home keeps running even when hit (fighting would hand it straight back to the retreat, every tick).
 - In game, 8 scenarios pass (night_home, night_shelter, fights, walks, iron_age, settle, boss_auto). 231 unit tests.
+
+### world_eye run 47: anvil at 27 seconds, a Silver Broadsword, the pickaxe at 3 minutes
+- **Progress:** the anvil 27 real seconds in. Iron came up empty, so the sword was a **Silver Broadsword** (better
+  than iron), then a recall potion home from 147 tiles and the **Iron Pickaxe**.
+- **Deaths:** a skeleton at row 449, 8 rows under the limit (mining at the limit puts it in reach of the caverns), and
+  an eater of souls west of the spawn (this world has corruption too).
+- **Decisions:** without armour the depth limit is 20 rows above the caverns (was 10). The Corruption and Crimson
+  (seen stone, grass, sand and ice) are off limits like the desert, until defense 8 (an iron or silver set). Test
+  `TheEvilBiome_IsOffLimits_UntilThereIsArmour`. 232 unit tests.
+- **Later in run 47: the first armour in a real world,** an Iron Helmet, crafted and worn about 6 real minutes in.
+  Also a death to an antlion charger at row 498, and a travel target 1,900 tiles away. The cause was my run-42 fix:
+  the count of fruitless explorations survived a give-up, so every later mining job failed at once, each counting as
+  another fruitless mine, and the travel went 120 tiles further each time. **Decisions:** the count is cleared when
+  mining gives up, and travel for ore goes at most 600 tiles from the spawn.
+- In game, 5 chain scenarios pass (iron_age, settle, night_home, boss_auto, life_crystals). 232 unit tests.

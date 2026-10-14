@@ -116,8 +116,12 @@ public sealed class MineSkill : ISkill
 		// Counted on the context per item: a fight pauses the skill and the planner starts it afresh, and a count of its
 		// own went back to 0 each time (world_eye run 42: 12 game hours of the same first leg, never reaching the give-up).
 		int explores = ctx.ExploresWithoutOre[ItemType] = ctx.ExploresWithoutOre.GetValueOrDefault(ItemType) + 1;
-		if (explores > MaxExplores)
+		if (explores > MaxExplores) {
+			// Given up: the next job (after travelling to new ground) starts counting afresh. Kept, every later job failed at
+			// once, each a "fruitless" mine, and the travel target went out 120 tiles further each time (1,900 in run 47).
+			ctx.ExploresWithoutOre.Remove(ItemType);
 			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations in a row");
+		}
 		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
 		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
 		// "Found" is what this skill would actually go for (not beside water, not given up on...): with "any seen", exploring
