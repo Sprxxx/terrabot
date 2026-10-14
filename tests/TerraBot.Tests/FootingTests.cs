@@ -506,4 +506,19 @@ public class FootingTests
 		Assert.False(float.IsPositiveInfinity(BlockRules.BreakCost(anyway, new TilePos(2, 1), none)));
 		Assert.True(float.IsPositiveInfinity(BlockRules.BreakCost(anyway, new TilePos(6, 1), none))); // lava on top
 	}
+
+	[Fact]
+	public void InsideABlock_TheWalkMinesOutOfItFirst()
+	{
+		// Seen in game (measured runs K1 and L2): a pillar step's block ended up in the bot's right feet column as it came
+		// down; every plan began on top of that block and step 0 timed out 40-odd times at one spot.
+		FakeGame game = EarlyGameTests.Field(40);
+		game.Grid.Set(4, 24, CellKind.Solid);
+		BotContext ctx = game.CreateContext(null);
+		game.Refresh(ctx);
+		Assert.Equal(new TilePos(4, 24), WalkToSkill.EmbeddedIn(ctx));
+		var walk = new WalkToSkill(new TilePos(20, 24));
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(game, ctx, walk, 60 * 20));
+		Assert.False(game.Grid.Get(4, 24).IsSolid());
+	}
 }

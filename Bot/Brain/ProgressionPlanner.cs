@@ -229,6 +229,7 @@ public sealed class ProgressionPlanner
 		exitTarget = null;
 		KnownStations.Clear();
 		notedAt.Clear();
+		homeStationAt.Clear();
 		stocked.Clear();
 		Status = "";
 		Complete = false;
@@ -315,6 +316,8 @@ public sealed class ProgressionPlanner
 			if (tile >= 0) {
 				KnownStations[tile] = at;
 				notedAt[tile] = ctx.Tick;
+				if (ctx.IsNight && (tile == ctx.Ids.WorkBenchTile || tile == ctx.Ids.FurnaceTile))
+					homeStationAt[tile] = ctx.Tick; // made at home tonight (StationAtHomeTonight): not again, wherever it ended up
 			}
 		}
 		if (skill is ShelterSkill)
@@ -508,8 +511,8 @@ public sealed class ProgressionPlanner
 		// And walks up to the surface from below (run 69: the start of a trip, at night, up among the zombies and a devourer).
 		if (skill is GatherWoodSkill or LootChestSkill or WalkToSkill { Travel: true } or WalkToSkill { ToSurface: true } || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
 			return true;
-		if (skill is WalkToSkill { Underground: true })
-			return false; // on its way down for the night's mining
+		if (skill is WalkToSkill { Underground: true } or WalkToSkill { Home: true })
+			return false; // on its way down for the night's mining, or home
 		bool nearSurface = ctx.SurfaceY <= 0 || ctx.Node.Y < ctx.SurfaceY + 15;
 		// Any walk on the surface, not just mining: seen in game (world_eye run 65), respawned at night by the spawn, sent
 		// to the furnace below the house, killed by the zombies there five times in a row.
@@ -667,6 +670,8 @@ public sealed class ProgressionPlanner
 		}
 		foreach (int station in recipe.Stations)
 			if (!NearStation(ctx, station)) {
+				if (StationAtHomeTonight(station, claims, depth, ctx) is ISkill home)
+					return home;
 				if (RecallHome(ctx, KnownStations[station]) is ISkill recall)
 					return recall;
 				stationWalk = WalkToStation(KnownStations[station], ctx);
@@ -675,6 +680,40 @@ public sealed class ProgressionPlanner
 			}
 		string have = string.Join(", ", recipe.Ingredients.Select(i => $"{k.ItemName(i.Item)} {ctx.Inventory.CountAny(i.Accepts)}/{i.Stack * crafts}"));
 		return Do($"crafting {more} {name} ({have})", new CraftSkill(item, target));
+	}
+
+	/// <summary>A work bench or furnace farther than this (tiles) from the house's inside spot is not at home.</summary>
+	public const int HomeStationTiles = 8;
+	public const int HomeArrivedTiles = 3;
+	/// <summary>A station made at home is not made again for this long (one a night, wherever it ended up).</summary>
+	public const int HomeStationAgainTicks = 12 * 3600;
+	private readonly Dictionary<int, long> homeStationAt = new();
+
+	/// <summary>
+	/// At night in weak gear, with work at a cheap station (a work bench, a furnace) that stands away from the house: home,
+	/// and a new one made there, as a player keeps them in the house. Seen in game (measured run M2): nightfall with 21
+	/// iron ore and the furnace 15 rows below the house (on a site given up); the walk to it became a night in the house
+	/// doing nothing, and the anvil came a game day late. Null when that is not the case.
+	/// </summary>
+	private ISkill StationAtHomeTonight(int station, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		if (!ctx.IsNight || ctx.Combat.Defense >= NightOutDefense || station != ctx.Ids.WorkBenchTile && station != ctx.Ids.FurnaceTile
+			|| HomeInside(ctx) is not TilePos inside || !KnownStations.TryGetValue(station, out TilePos at)
+			|| at.ChebyshevTo(inside) <= HomeStationTiles || inside.ChebyshevTo(ctx.Node) > NightHomeTiles
+			|| homeStationAt.TryGetValue(station, out long made) && ctx.Tick - made < HomeStationAgainTicks)
+			return null;
+		IGameKnowledge k = ctx.Knowledge;
+		string tile = k.TileName(station);
+		if (inside.ChebyshevTo(ctx.Node) > HomeArrivedTiles)
+			return Do($"night: home first, to make a {tile} there (the one at {at} is outside the house)",
+				new WalkToSkill(new Core.Pathfinding.GoalNearTile(inside, 1, ctx.Physics)) { Quiet = true, Home = true });
+		IReadOnlyList<int> items = k.ItemsPlacing(station);
+		if (items.Count == 0)
+			return null;
+		int carried = items.FirstOrDefault(i => ctx.Inventory.Count(i) > 0, -1);
+		if (carried >= 0)
+			return Do($"night: placing a {k.ItemName(carried)} in the house (the one at {at} is outside it)", new PlaceItemSkill(carried));
+		return Resolve(new HaveItem(items[0], 1, k.ItemName(items[0])), claims, depth + 1, ctx);
 	}
 
 	/// <summary>

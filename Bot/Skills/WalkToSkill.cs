@@ -40,7 +40,7 @@ public sealed class WalkToSkill : ISkill
 	public string FailureReason { get; private set; } = "";
 
 	public string Name => "WalkTo";
-	public string Key => $"WalkTo {(fixedGoal != null ? fixedGoal.ToString() : Target.ToString())}{(Travel ? " travel" : "")}{(ToSurface ? " to surface" : "")}{(Underground ? " underground" : "")}";
+	public string Key => $"WalkTo {(fixedGoal != null ? fixedGoal.ToString() : Target.ToString())}{(Travel ? " travel" : "")}{(ToSurface ? " to surface" : "")}{(Underground ? " underground" : "")}{(Home ? " home" : "")}";
 
 	/// <summary>Used as a sub-skill (e.g. chasing a moving enemy): plan/finish lines go to Debug instead of Info.</summary>
 	public bool Quiet { get; init; }
@@ -50,6 +50,8 @@ public sealed class WalkToSkill : ISkill
 	public bool ToSurface { get; init; }
 	/// <summary>A walk down into the ground for the night's mining: not surface work, though it starts there.</summary>
 	public bool Underground { get; init; }
+	/// <summary>A walk home to the house at night (not surface work the night turns into staying home).</summary>
+	public bool Home { get; init; }
 
 	/// <summary>Accept any standing node within this many tiles (Chebyshev) of the goal feet tile.</summary>
 	public int Tolerance { get; init; }
@@ -82,6 +84,21 @@ public sealed class WalkToSkill : ISkill
 		ctx.BadEdges.RemoveWhere(e => e.Item1.ChebyshevTo(at) <= 2 || e.Item2.ChebyshevTo(at) <= 2);
 	/// <summary>Longest wait (ticks) for the ground before planning: a walk held in the air fails instead.</summary>
 	public const int MaxAirborneTicks = 180;
+	/// <summary>Ticks of mining out of a block the body is inside before planning from there anyway.</summary>
+	public const int MaxUnstickTicks = 240;
+	private int unstickTicks;
+
+	/// <summary>A solid block the player's hitbox overlaps (it should never), that the pickaxe can break; null if none.</summary>
+	public static TilePos? EmbeddedIn(BotContext ctx)
+	{
+		const float T = Body.TileSize, Margin = 0.5f;
+		float left = ctx.Body.X, top = ctx.Body.Y, right = left + ctx.Physics.Width, bottom = top + ctx.Physics.Height;
+		for (int x = (int)System.Math.Floor((left + Margin) / T); x <= (int)System.Math.Floor((right - Margin) / T); x++)
+			for (int y = (int)System.Math.Floor((top + Margin) / T); y <= (int)System.Math.Floor((bottom - Margin) / T); y++)
+				if (ctx.Grid.Get(x, y).IsSolid() && ctx.Moves.Blocks is IBlockActions b && !float.IsInfinity(b.BreakTicks(x, y)))
+					return new TilePos(x, y);
+		return null;
+	}
 	/// <summary>A no-path search at least this big is not tried again from the same place.</summary>
 	public const int BigNoPath = 20_000;
 	/// <summary>Longest swim (ticks) towards the target from deep water before the walk gives up.</summary>
@@ -176,6 +193,20 @@ public sealed class WalkToSkill : ISkill
 					return SkillStatus.Running;
 				}
 				airborneTicks = 0;
+				// Inside a block (a pillar step's block, placed as the bot came down beside it): mine it out first, as a player
+				// does. Seen in game (measured runs K1 and L2): "feet cells Empty/Solid" after a pillar step; every plan from
+				// then on began on top of the block the bot was in, and step 0 timed out 40-odd times at one spot.
+				if (unstickTicks < MaxUnstickTicks && EmbeddedIn(ctx) is TilePos inside) {
+					if (unstickTicks++ == 0)
+						Info(ctx, $"WalkTo: inside the block at {inside} (bot at {node}); mining out of it first");
+					ctx.Output.Tool = ToolRequest.Pickaxe;
+					ctx.Output.UseItem = true;
+					ctx.Output.Aim(inside.X, inside.Y);
+					State = $"mining out of {inside}";
+					return SkillStatus.Running;
+				}
+				if (EmbeddedIn(ctx) == null)
+					unstickTicks = 0;
 				StartSearch(ctx, node);
 			}
 			// Stand still while searching; long searches are spread over several ticks.

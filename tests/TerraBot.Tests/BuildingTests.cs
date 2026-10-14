@@ -168,6 +168,32 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void Night_WithTheFurnaceOutsideTheHouse_MakesANewOneAtHome()
+	{
+		// Measured run M2: nightfall with 21 iron ore and the furnace 15 rows below the house (on a site given up); the walk to
+		// it became a night in the house doing nothing, and the anvil came a game day late. A player keeps them in the house.
+		FakeGame g = ProgressionTests.Mine(110);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(80, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.Items[FakeGame.IronOre] = 21;
+		g.Items[FakeGame.StoneBlock] = 40;
+		g.Items[FakeGame.Wood] = 30;
+		g.Items[FakeGame.Torch] = 10;
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.IsNotType<StayHomeSkill>(next);
+		Assert.True(next is WalkToSkill { Home: true } || next is CraftSkill { ItemType: FakeGame.Furnace }, p.Status);
+		Assert.Contains("night", p.Status);
+	}
+
+	[Fact]
 	public void InTheMorning_WaitsInTheHouseForTheZombiesOutsideToGo()
 	{
 		// world_eye run 63: out of the house at first light among 6 zombies, killed below it.
@@ -478,9 +504,10 @@ public class BuildingTests
 	}
 
 	[Fact]
-	public void AtNight_AWalkToAStationOutside_WaitsForTheMorningInTheHouse()
+	public void AtNight_AWalkToAStationOutside_IsNotMade_TheBotGoesHome()
 	{
 		// world_eye run 65: respawned at night, sent to the furnace below the house, killed by zombies there five times.
+		// Home instead: to stay, or to make a furnace there (Night_WithTheFurnaceOutsideTheHouse_MakesANewOneAtHome).
 		FakeGame g = ProgressionTests.Mine();
 		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
 		g.Stations[FakeGame.TileFurnace] = new TilePos(60, 24);
@@ -497,7 +524,7 @@ public class BuildingTests
 		g.Refresh(ctx);
 		ISkill night = p.Next(ctx);
 		output.WriteLine($"{p.Status} -> {night?.Describe()}");
-		Assert.IsType<StayHomeSkill>(night);
+		Assert.True(night is StayHomeSkill || night is WalkToSkill { Home: true }, p.Status);
 	}
 
 	[Fact]
