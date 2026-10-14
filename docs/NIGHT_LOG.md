@@ -405,3 +405,11 @@ what was decided and the result.
   home and waits inside until 80% life. The brain doesn't stop that walk to fight. Elsewhere it still digs in.
   Test `BadlyHurt_NearTheHouse_RetreatsHome_NotIntoAHole`. 229 unit tests.
 - In game, 5 scenarios pass (fights, night_shelter, night_home, settle, boss_auto).
+
+### world_eye run 44: zigzag staircases again, in full plans
+- Walking back to the furnace from a mine, the full (Found) plans had steps onto blocks an earlier step digs away:
+  allowed at +1500, and still the cheapest. 10+ re-plans of 2 s each, the plan invalid 2-4 steps in.
+- **Decision:** the normal search bans every step held up only by what its own path digs (8 steps back), not just
+  step-ups and the last 2 steps. When that leaves no path at all (the cave below the spawn), WalkTo plans again
+  without the ban (penalty only), as added for run 38. The cave replay: strict no path, relaxed found (73 steps).
+- In game, 13 walk, dig and chain scenarios pass. 229 unit tests.
