@@ -131,14 +131,14 @@ public sealed class MoveContext
 	/// crawdads and skeletons killed the bot twice. int.MaxValue = off.
 	/// </summary>
 	public int AvoidBelowRow { get; init; } = int.MaxValue;
-	public float BelowRowTicks { get; init; } = 25f;
+	public float BelowRowTicks { get; init; } = 120f; // 25 was cheaper than digging: a trip to new ground went through the caverns (run 51)
 	/// <summary>
 	/// Nodes to keep away from (where the bot was killed lately): edges ending there cost <see cref="AvoidTicks"/> more.
 	/// Seen in game (world_eye run 40): a death spot was off limits for ore and exploring, but the walks still went
 	/// through it, and rolling cacti killed the bot there three times.
 	/// </summary>
 	public System.Func<TilePos, bool> Avoid { get; init; }
-	public float AvoidTicks { get; init; } = 40f;
+	public float AvoidTicks { get; init; } = 150f; // 40: a trip east crossed the underground desert, killed by an antlion charger (run 51)
 
 	/// <summary>Applies the liquid, footing and depth penalties to an edge ending at <paramref name="to"/>.</summary>
 	public float Adjust(float cost, TilePos to)

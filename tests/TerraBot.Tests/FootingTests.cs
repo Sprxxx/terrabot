@@ -340,4 +340,19 @@ public class FootingTests
 		BotBrain.NoteEvilEnemies(ctx);
 		Assert.False(ctx.InDangerZone(eater.FeetTile));
 	}
+
+	[Fact]
+	public void AStepWithASlopeOnTop_IsNotAStepUp()
+	{
+		// world_eye run 51: a block with a slope on it is more than vanilla's one-tile step: pressing right, three times.
+		bool HasStepUp(params string[] rows)
+		{
+			var g = ArrayTileGrid.Parse(rows);
+			var es = new System.Collections.Generic.List<PathStep>();
+			new Core.Pathfinding.Moves.StepUpMove().Expand(new MoveContext(g, PhysicsParams.Default), g.Markers['S'], es);
+			return es.Any(e => e.To.X > e.From.X);
+		}
+		Assert.True(HasStepUp("........", "........", "........", ".S.#....", "########"));
+		Assert.False(HasStepUp("........", "........", ".../....", ".S.#....", "########"));
+	}
 }

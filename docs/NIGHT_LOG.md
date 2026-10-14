@@ -494,3 +494,14 @@ what was decided and the result.
     zombies), then digs.
   - Zones from monster sightings last 5 game days (biomes don't move); death zones still 1.25.
 - In game, 7 fight and retreat scenarios pass. 235 unit tests.
+
+### world_eye run 51
+- **Progress:** the anvil a minute in, the Iron Broadsword, then iron and silver for the pickaxe.
+- **Problems:**
+  - A step-up onto a block with a slope on top: more than vanilla's one-tile step, pressing right three times.
+    **Decision:** a step-up needs the cell above the step fully open. Test `AStepWithASlopeOnTop_IsNotAStepUp`.
+  - A trip to new ground went through the caverns (rows 452-471), where a skeleton killed the bot, and across the
+    underground desert (an antlion charger). The path penalties (+25 below the limit, +40 off limits) were cheaper
+    than digging. **Decision:** +120 below the depth limit, +150 in off-limits areas.
+  - A jellyfish while surfacing.
+- In game, 11 walk and chain scenarios pass. 236 unit tests.
