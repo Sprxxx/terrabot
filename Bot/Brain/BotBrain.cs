@@ -320,6 +320,7 @@ public sealed class BotBrain
 		LastResult = $"{Current.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
 		ctx.Log.Info($"Skill finished: {LastResult}");
 		bool wasFight = Current is FightSkill;
+		ISkill skill = Current;
 		if (Auto)
 			Planner.OnSkillFinished(Current, status, ctx);
 		Current.Stop(ctx);
@@ -349,6 +350,12 @@ public sealed class BotBrain
 					ctx.NoPlace.Clear();
 					ctx.NoBreak.Clear();
 					ctx.ActionFailures.Clear();
+					// Walks failing in a row far from home with a recall potion in the bag: drink it, as a player stuck in a
+					// shaft would. Seen in game (world_eye run 62): 120 rows down, every walk to the surface failed on the same
+					// steps for a game hour, with 3 recall potions carried.
+					if (skill is WalkToSkill && ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > ProgressionPlanner.RecallDistance
+						&& Planner.RequestRecall(ctx))
+						ctx.Log.Info($"Auto: walks keep failing {spawn.ChebyshevTo(ctx.Node)} tiles from the spawn; drinking a recall potion next");
 				}
 			}
 		}

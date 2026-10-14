@@ -627,3 +627,17 @@ what was decided and the result.
   - ProgressionPlanner remembers the trip's destination, shared across ores, and goes on to it after an interruption until the bot is within 8 tiles. It is dropped when the walk succeeds or fails with a reason, or when the destination becomes off limits.
   - "Up to the surface before travelling" now goes back to the spawn instead when the bot stands off limits, or when the surface above is biome ground or has off-limits ground below.
 - The test fixture ProgressionTests.Mine gained a `sky` height (travel looks for the surface from row 40 down). 1 new test (243 pass). iron_age_auto and settle_auto pass.
+
+## Run 62 (commit d80a190), about 8 game minutes, **0 deaths**, stopped for a fix
+- Anvil about 40 s, Iron Broadsword about 1.5 min, Iron Pickaxe about 2 min. A chest looted. No deaths: the desert changes worked.
+- **Stuck instead:** from about game minute 5, in shafts 80–120 rows down, the walks to the surface kept failing on the same steps.
+  - Pillars "placed" a block and still landed back on the start.
+  - Walks pressed into cells the grid reads as open.
+  - This brought on five rests of "3 failures in a row", with 3 recall potions carried.
+- **Decisions:**
+  - Escape like a player: after walks fail in a row more than 50 tiles from the spawn, the planner drinks a recall potion next (ProgressionPlanner.RequestRecall).
+  - Diagnostics for next time:
+    - A pillar's off-path landing now logs the left px, the start px, the feet and below cell kinds, and the feet px.
+    - A banned step logs the tile types in the body at the target.
+  - The cause of the pillar failures is still unknown.
+- 1 new test (244 pass). settle_auto and pillar_up_cliff pass.

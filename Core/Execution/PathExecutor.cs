@@ -500,7 +500,10 @@ public sealed class PathExecutor
 				Phase = "Pillar retry";
 				return true;
 			}
-			Finish(ExecStatus.OffPath, $"step {StepIndex} pillar {step.From}->{step.To} landed at {node} (placed {placed})");
+			// Where it came down against what is in the feet cells: seen in game (world_eye run 62), pillars in a shaft
+			// "placed" and still landed back on the start, many times over.
+			Finish(ExecStatus.OffPath, $"step {StepIndex} pillar {step.From}->{step.To} landed at {node} (placed {placed}; left {s.X:0.#} px, start {startX:0.#},"
+				+ $" feet cells {g.Get(step.From.X, step.From.Y)}/{g.Get(step.From.X + 1, step.From.Y)}, below {g.Get(step.From.X, step.From.Y + 1)}/{g.Get(step.From.X + 1, step.From.Y + 1)}, feet at {s.Y + p.Height:0.#} px)");
 			return false;
 		}
 

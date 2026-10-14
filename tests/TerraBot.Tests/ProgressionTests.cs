@@ -214,6 +214,21 @@ public class ProgressionTests
 	}
 
 	[Fact]
+	public void ARecallRequested_AfterWalksKeptFailing_IsDrunkNext_OnlyIfCarried()
+	{
+		// world_eye run 62: 120 rows down, every walk to the surface failed for a game hour with 3 recall potions carried.
+		FakeGame g = Mine();
+		g.Items[FakeGame.WoodenSword] = 1;
+		var first = NextFor(g, out ProgressionPlanner p, out BotContext ctx);
+		Assert.False(p.RequestRecall(ctx)); // none carried
+		g.Items[FakeGame.RecallPotion] = 1;
+		g.Refresh(ctx);
+		Assert.True(p.RequestRecall(ctx));
+		var use = Assert.IsType<UseItemSkill>(p.Next(ctx));
+		Assert.Equal(FakeGame.RecallPotion, use.ItemType);
+	}
+
+	[Fact]
 	public void FarFromTheStationsAtHome_DrinksARecallPotion()
 	{
 		// world_eye: the walk home from the mine took 4 game minutes every run; a player drinks a recall potion.

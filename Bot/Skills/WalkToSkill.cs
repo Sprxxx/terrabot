@@ -184,7 +184,7 @@ public sealed class WalkToSkill : ISkill
 					sameStuck = ctx.StepFailures[(cur.From, cur.To)] = (ctx.StepFailures.TryGetValue((cur.From, cur.To), out int f) ? f : 0) + 1;
 				if (sameStuck >= MaxSameStuck) {
 					if (Executor.Current is PathStep bad && ctx.BadEdges.Add((bad.From, bad.To)))
-						ctx.Log.Info($"WalkTo: never planning {bad.Kind} {bad.From}->{bad.To} again; around it (F from, T to, / slope or half block):\n{Around(ctx, bad.From, bad.To)}");
+						ctx.Log.Info($"WalkTo: never planning {bad.Kind} {bad.From}->{bad.To} again; around it (F from, T to, / slope or half block):\n{Around(ctx, bad.From, bad.To)}\n    tile types of the body at T (rows {bad.To.Y - 2}..{bad.To.Y}, both columns): {BodyTileTypes(ctx, bad.To)}");
 					Executor = null;
 					return Fail(ctx, $"the same step failed {sameStuck} times: {stuckStep}");
 				}
@@ -286,6 +286,20 @@ public sealed class WalkToSkill : ISkill
 	/// A small map of the cells round a failed step, for the log. Solid cells the path may not break are 'X' (too hard
 	/// for the pickaxe, under furniture, vetoed, protected) and 'U' (unsafe: liquid or a falling block next to it).
 	/// </summary>
+	/// <summary>
+	/// The tile types where the body would be at <paramref name="at"/> (-1 for none): a "pressing left without moving"
+	/// against cells the grid reads open (world_eye run 62) needs to know what is there.
+	/// </summary>
+	private static string BodyTileTypes(BotContext ctx, TilePos at)
+	{
+		if (ctx.World == null)
+			return "?";
+		var parts = new System.Collections.Generic.List<string>();
+		for (int y = at.Y - 2; y <= at.Y; y++)
+			parts.Add($"{ctx.World.TileTypeAt(at.X, y)}/{ctx.World.TileTypeAt(at.X + 1, y)}");
+		return string.Join(" ", parts);
+	}
+
 	internal static string Around(BotContext ctx, TilePos from, TilePos to) =>
 		Around(ctx, from, to, System.Math.Min(from.X, to.X) - 3, System.Math.Max(from.X, to.X) + 4,
 			System.Math.Min(from.Y, to.Y) - 4, System.Math.Max(from.Y, to.Y) + 2);

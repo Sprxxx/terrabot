@@ -1139,6 +1139,15 @@ public sealed class ProgressionPlanner
 
 	/// <summary>Set when the way back to the stations is lost and a recall potion is carried: drink it next.</summary>
 	private bool recallNext;
+
+	/// <summary>Drink a recall potion as the next thing, if one is carried (false if none).</summary>
+	public bool RequestRecall(BotContext ctx)
+	{
+		if (ctx.Ids.RecallPotion <= 0 || ctx.Inventory.Count(ctx.Ids.RecallPotion) <= 0)
+			return false;
+		recallNext = true;
+		return true;
+	}
 	private readonly Dictionary<int, int> stationWalkFailures = new();
 	/// <summary>
 	/// Failed walks to a known station before it is forgotten and a new one made where the bot is, like a player who
