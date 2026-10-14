@@ -459,3 +459,12 @@ what was decided and the result.
   caverns again (20 with a copper sword). Travel for ore counts as surface work, so in no armour it waits for the
   morning at home.
 - In game, 5 chain scenarios pass. 232 unit tests.
+
+### world_eye run 49: anvil at 15 seconds, broadsword at about 65
+- **Progress:** the anvil 15 real seconds in and the **Iron Broadsword at about 65 seconds**, both the fastest yet.
+- **Drowned:** the surfacing skill's walk to air 9 tiles off (placing blocks under water) used all 900 ticks, and the
+  pillar-up fallback never ran. **Decision:** after 3 s, or below 35% breath, the walk gives way to pillaring up.
+- **Known gap, open:** no way out of a pocket whose only way up is straight up through the ceiling (beside an old
+  minecart track: its row can't be placed on, and the row under it can't be broken). The planner has no "mine above
+  the head and pillar" move, only diagonal climbs. The fallback (new stations where it is) keeps the run going. Dump
+  kept as Dumps/nopath_2114_359_to_2080_281.txt for when that move is added.

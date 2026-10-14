@@ -21,6 +21,9 @@ public sealed class SurfaceSkill : ISkill
 	private bool walkFailed;
 	/// <summary>How far (cells, through water and air) to look for a dry place to stand.</summary>
 	public const int AirSearchCells = 600;
+	public const int MaxWalkTicks = 180;
+	public const float GiveUpWalkBreath = 0.35f;
+	private int walkStart;
 
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
@@ -89,9 +92,18 @@ public sealed class SurfaceSkill : ISkill
 				ctx.Log.Info($"Surface: heading for air at {air}");
 				walk = new WalkToSkill(air) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 				walk.Start(ctx);
+				walkStart = ticks;
 			}
 			else
 				walkFailed = true;
+		}
+		// A walk that is not getting there gives way to pillaring up: seen in game (world_eye run 49), a walk to air 9 tiles
+		// off, placing blocks under water, used all 900 ticks and the bot drowned with the pillar never tried.
+		if (walk != null && (ticks - walkStart > MaxWalkTicks || ctx.Combat.Breath < ctx.Combat.BreathMax * GiveUpWalkBreath)) {
+			ctx.Log.Info($"Surface: the walk to air is too slow (breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax}); pillaring up instead");
+			walk.Stop(ctx);
+			walk = null;
+			walkFailed = true;
 		}
 		if (walk != null) {
 			SkillStatus ws = walk.Tick(ctx);
