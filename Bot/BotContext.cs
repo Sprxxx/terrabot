@@ -158,27 +158,43 @@ public sealed class BotContext
 	/// </summary>
 	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t);
 
-	/// <summary>Chunk side for <see cref="InUndergroundDesert"/>, and the share of seen solid tiles that makes a desert.</summary>
+	/// <summary>
+	/// Chunk side for <see cref="InUndergroundDesert"/>, and the share of seen solid tiles in the 3x3 chunks around a tile
+	/// that makes it desert. One chunk at 40% missed the desert's edges: an antlion swarmer killed the bot where the chunk
+	/// itself was mostly stone (world_eye run 41).
+	/// </summary>
 	public const int DesertChunk = 16;
-	public const float DesertShare = 0.4f;
-	/// <summary>How long a chunk's desert verdict is kept before it is counted again (more of it may have been seen).</summary>
+	public const float DesertShare = 0.25f;
+	/// <summary>How long a chunk's counts are kept before it is counted again (more of it may have been seen).</summary>
 	public const int DesertRecheckTicks = 60 * 60;
-	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, bool Desert)> desertChunks = new();
+	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, int Solid, int Desert)> desertChunks = new();
 
 	/// <summary>
-	/// Is the tile below the surface in a chunk whose seen solid tiles are mostly desert (sand, sandstone...)? Only seen
-	/// tiles count, as a player knows the desert by the look of it.
+	/// Is the tile below the surface where the seen solid tiles around it (48x48) are largely desert (sand, sandstone...)?
+	/// Only seen tiles count, as a player knows the desert by the look of it.
 	/// </summary>
 	public bool InUndergroundDesert(TilePos t)
 	{
 		if (World == null || Ids.DesertTiles.Length == 0 || SurfaceY <= 0 || t.Y < SurfaceY)
 			return false;
-		var key = ((int)Math.Floor(t.X / (double)DesertChunk), t.Y / DesertChunk);
-		if (desertChunks.TryGetValue(key, out var v) && Tick - v.At < DesertRecheckTicks)
-			return v.Desert;
+		int cx = (int)Math.Floor(t.X / (double)DesertChunk), cy = t.Y / DesertChunk;
 		int solid = 0, desert = 0;
-		for (int x = key.Item1 * DesertChunk; x < (key.Item1 + 1) * DesertChunk; x++)
-			for (int y = key.Item2 * DesertChunk; y < (key.Item2 + 1) * DesertChunk; y++) {
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++) {
+				var c = ChunkCounts(cx + dx, cy + dy);
+				solid += c.Solid;
+				desert += c.Desert;
+			}
+		return solid >= 40 && desert >= DesertShare * solid;
+	}
+
+	private (int Solid, int Desert) ChunkCounts(int cx, int cy)
+	{
+		if (desertChunks.TryGetValue((cx, cy), out var v) && Tick - v.At < DesertRecheckTicks)
+			return (v.Solid, v.Desert);
+		int solid = 0, desert = 0;
+		for (int x = cx * DesertChunk; x < (cx + 1) * DesertChunk; x++)
+			for (int y = cy * DesertChunk; y < (cy + 1) * DesertChunk; y++) {
 				if (!World.IsRevealed(x, y))
 					continue;
 				int type = World.TileTypeAt(x, y);
@@ -188,9 +204,8 @@ public sealed class BotContext
 				if (Array.IndexOf(Ids.DesertTiles, type) >= 0)
 					desert++;
 			}
-		bool d = solid >= 20 && desert >= DesertShare * solid;
-		desertChunks[key] = (Tick, d);
-		return d;
+		desertChunks[(cx, cy)] = (Tick, solid, desert);
+		return (solid, desert);
 	}
 
 	/// <summary>Is the tile inside a zone where the bot was recently killed?</summary>

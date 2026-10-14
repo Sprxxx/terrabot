@@ -199,9 +199,15 @@ public sealed class WalkToSkill : ISkill
 	{
 		// Only the action that was actually being worked on: a step stuck before its actions began (positioning) says
 		// nothing about them (seen in game: cells vetoed that were never tried).
-		if (Executor.CurrentAction is not BlockAction current || Executor.Current is not PathStep step || !step.HasActions)
+		if (Executor.Current is not PathStep step || !step.HasActions)
 			return;
-		foreach (BlockAction a in new[] { current }) {
+		// A pillar's block is placed mid-jump, outside the action list: a pillar that failed is its block not going in.
+		// Seen in game (runs 36-41): beside the work bench at the spawn the block never went in (nothing solid next to
+		// the cell to hold it, and no wall: vanilla PlaceThing_Tiles_BlockPlacementForAssortedThings), so every walk home
+		// after a death planned the same pillar.
+		BlockAction[] tried = step.Kind == MoveKind.Pillar ? step.Actions.Where(a => a.Kind == ActionKind.Place).ToArray()
+			: Executor.CurrentAction is BlockAction current ? new[] { current } : System.Array.Empty<BlockAction>();
+		foreach (BlockAction a in tried) {
 			bool place = a.Kind == ActionKind.Place;
 			CellKind cell = ctx.Grid.Get(a.Cell.X, a.Cell.Y);
 			if (place ? cell.IsSolid() : !cell.IsBlockTile())

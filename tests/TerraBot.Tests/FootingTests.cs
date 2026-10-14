@@ -267,8 +267,8 @@ public class FootingTests
 		// world_eye run 40: antlions and rolling cacti killed the bot 6 times in the underground desert.
 		FakeGame g = ProgressionTests.Mine();
 		const int Sand = 53;
-		for (int x = 64; x < 80; x++)
-			for (int y = 16; y < 32; y++)
+		for (int x = 56; x < 90; x++)
+			for (int y = 16; y < 40; y++)
 				if (g.Grid.Get(x, y).IsSolid())
 					g.TileTypes[new TilePos(x, y)] = Sand;
 		BotContext ctx = g.CreateContext(null);

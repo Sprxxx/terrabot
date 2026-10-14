@@ -320,6 +320,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// <summary>Simplified WorldGen.StartRoomCheck + RoomNeeds.</summary>
 	public string CheckHousing(int x, int y)
 	{
+		bool Frame(int i, int j) => Grid.Get(i, j).IsSolid() || Furniture.TryGetValue(new TilePos(i, j), out int d) && d == TileDoor;
 		if (Grid.Get(x, y).IsSolid())
 			return "starts in a solid tile";
 		var seen = new HashSet<TilePos>();
@@ -336,12 +337,12 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				return "open to the edge";
 			if (Furniture.TryGetValue(c, out int f))
 				types.Add(f);
-			if (Grid.Get(c.X, c.Y).IsSolid())
+			if (Frame(c.X, c.Y))
 				continue; // frame (closed doors included)
 			bool row = false, col = false;
 			for (int k = -2; k <= 2; k++) {
-				row |= Walls.Contains(new TilePos(c.X + k, c.Y)) || Grid.Get(c.X + k, c.Y).IsSolid();
-				col |= Walls.Contains(new TilePos(c.X, c.Y + k)) || Grid.Get(c.X, c.Y + k).IsSolid();
+				row |= Walls.Contains(new TilePos(c.X + k, c.Y)) || Frame(c.X + k, c.Y);
+				col |= Walls.Contains(new TilePos(c.X, c.Y + k)) || Frame(c.X, c.Y + k);
 			}
 			if (!row || !col)
 				return $"hole in the wall near {c}";
@@ -541,8 +542,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		for (int cx = x - ox; cx < x - ox + w; cx++)
 			for (int cy = y - oy; cy < y - oy + h; cy++) {
 				Furniture[new TilePos(cx, cy)] = tile;
+				// A closed door: open space for walking, as the game's auto-open makes it (TerrariaTileGrid); part of the
+				// frame for the housing check.
 				if (tile == TileDoor)
-					Grid.Set(cx, cy, CellKind.Solid);
+					Grid.Set(cx, cy, CellKind.Empty);
 				else if (tile is not (TileChair or TileTorch or TileCampfire or TileLantern) && cy == y - oy)
 					Grid.Set(cx, cy, CellKind.Platform);
 			}

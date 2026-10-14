@@ -191,6 +191,35 @@ public class BuildingTests
 		Assert.Equal(FakeGame.SilverHelmet, Assert.IsType<EquipSkill>(next).ItemType);
 	}
 
+	[Fact]
+	public void WalkingHomeAtNight_DoesNotStopToFight()
+	{
+		// world_eye run 41: stopped at dusk to fight zombies with a copper sword on the way home, then dug in among them.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, brain.Planner, ctx);
+		g.Sim.State.X += 30 * 16; // out mining, some way from the house
+		g.IsNight = true;
+		bool walkedHome = false, fought = false;
+		for (int t = 0; t < 60 * 20 && !(brain.Current is StayHomeSkill { Home: true }); t++) {
+			if (t == 5)
+				g.AddSlime(9, (int)(g.Sim.State.X / 16) - 6, 24); // on the way home
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+			walkedHome |= brain.Current is StayHomeSkill;
+			fought |= walkedHome && brain.Current is FightSkill;
+		}
+		output.WriteLine(brain.Describe());
+		Assert.True(walkedHome);
+		Assert.False(fought);
+	}
+
 	/// <summary>Builds a valid house next to the start through the fake's own placement, and tells the planner about it.</summary>
 	private void HouseAlreadyThere(FakeGame g, ProgressionPlanner p, BotContext ctx)
 	{

@@ -364,3 +364,22 @@ what was decided and the result.
   and explore legs dug toward it turn round. Death spots now also make paths cost more (before, only targets avoided
   them). Hurt by a tile, the log now names the tile.
 - In game, 9 scenarios pass (walk, dig, fight, night_home, iron_age, settle, boss_auto). 226 unit tests.
+
+### world_eye run 41 (desert off limits)
+- **Progress:** the anvil, then a recall potion home from 168 tiles away, the Iron Broadsword, the Iron Pickaxe.
+- **Death 1:** walking home at dusk, the brain stopped to fight zombies (copper sword), lost, and dug in among them.
+  **Decision:** on the way home for the night the bot keeps walking (zombies are slower and can't open doors), and
+  the low-life dig-in doesn't interrupt it either (going home is the retreat). Test
+  `WalkingHomeAtNight_DoesNotStopToFight` (fails on the old brain). The fake game's doors are now open space for
+  walking too, as in the game since the door fix.
+- **Known issue, open:** after a death, the first walk home from the spawn plans a pillar beside the work bench at
+  (2091,281) that never places its block (seen in runs 36, 38, 41). It's banned after 3 failures, so it costs one
+  night outside per run. Cause not found yet.
+- **Later in run 41:** the Iron Pickaxe, then armour from **silver** (iron came up empty: 55 of 60 silver ore). 5
+  deaths: 2 zombies on the surface, a ghost, and 2 in the desert band.
+- **The spawn pillar, found:** vanilla only places a block next to a solid tile (or a beam, rope or wall). A work
+  bench is only solid on top, so a pillar from on top of it never places. **Decision:** a pillar that fails counts
+  as a failed placement at its cell (twice, and the planner routes round it), as other placements already did.
+- **A desert death the detection missed:** one 16x16 chunk at 40% missed the desert's edges. **Decision:** the 48x48
+  around a tile, at 25% desert tiles among the seen solid ones.
+- In game, 7 scenarios pass (pillar, out of blocks, blocked wall, night_home, iron_age, settle, boss_auto). 227 unit tests.

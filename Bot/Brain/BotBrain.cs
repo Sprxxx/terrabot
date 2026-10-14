@@ -154,7 +154,7 @@ public sealed class BotBrain
 		}
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
-		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill { Home: true }
+		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill
 			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			Interrupt(ctx);
@@ -176,7 +176,9 @@ public sealed class BotBrain
 		}
 		// In the house for the night, zombies and demon eyes outside cannot get in: only what actually hits the bot is
 		// fought. Seen in game: out of the house three times in one night to fight zombies at the door; the third killed it.
-		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0;
+		// On the way home for the night, keep going: zombies are slower than a running player and cannot open the door
+		// (seen in game, world_eye run 41: stopped at dusk to fight zombies with a copper sword, then dug in among them, dead).
+		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0 || Current is StayHomeSkill { Home: false };
 		if (Auto && !safeAtHome && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
