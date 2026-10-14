@@ -573,3 +573,13 @@ what was decided and the result.
 - **Decision:** a trip to new ground looks at the seen ground under its destination (13 wide, 8 deep). If it's largely
   desert or evil-biome tiles in too weak gear, it tries the other side, then farther. In game, iron_age, settle and
   boss_auto pass. 238 unit tests.
+
+### world_eye run 57: a slime fight for 42 game hours
+- **Progress:** the anvil about 47 seconds in, the **Silver Broadsword at about 2.5 minutes**, 0 deaths, then 20 of 30
+  iron for the pickaxe.
+- **Stall:** two slimes 2.7 tiles off behind a ledge. They took turns as the target and hopped in and out of reach, so
+  neither the per-enemy no-closer rule nor the no-damage rule ever fired. The approach walk "arrived" about 1,500
+  times on the bot's own spot.
+- **Decision:** a whole-fight backstop: if no enemy loses any life for 1,200 ticks, the fight ends and the enemies
+  around are ignored for a while, even close by.
+- In game, 6 fight and chain scenarios pass. 238 unit tests.

@@ -49,6 +49,10 @@ public sealed class FightSkill : ISkill
 	private readonly Dictionary<int, (float Best, int Since)> progress = new();
 	/// <summary>Ticks without getting closer before an enemy is left alone.</summary>
 	public const int MaxTicksNoCloser = 600;
+	/// <summary>A fight in which no enemy loses life for this long is given up altogether.</summary>
+	public const int MaxTicksNoProgress = 1200;
+	private readonly Dictionary<int, int> lifeSeen = new();
+	private int ticksRun, lastProgress, killsSeen;
 	private bool wasInReach;
 	/// <summary>An enemy given up on is left alone this long (also by later fights and the danger check).</summary>
 	public const int IgnoreTicks = 60 * 30;
@@ -111,6 +115,28 @@ public sealed class FightSkill : ISkill
 			FailureReason = "no weapon in the hotbar (melee, or a bow with arrows)";
 			ctx.Log.Warn("Fight failed: " + FailureReason);
 			return SkillStatus.Failed;
+		}
+		// The whole fight going nowhere: no enemy has lost any life for a long while. Seen in game (world_eye run 57): two
+		// slimes 2.7 tiles off behind a ledge, taking turns as the target and hopping in and out of reach, so no
+		// per-enemy rule ever fired, for 24 game hours. Leave them all alone for a while, even close by.
+		bool hurtOne = false;
+		foreach (EntityInfo h in ctx.Hostiles) {
+			if (lifeSeen.TryGetValue(h.Id, out int was) && h.Life < was)
+				hurtOne = true;
+			lifeSeen[h.Id] = h.Life;
+		}
+		if (hurtOne || Kills > killsSeen) {
+			killsSeen = Kills;
+			lastProgress = ticksRun;
+		}
+		if (++ticksRun - lastProgress > MaxTicksNoProgress) {
+			float bx = ctx.Body.CenterX(ctx.Physics), by = ctx.Body.CenterY(ctx.Physics);
+			foreach (EntityInfo h in ctx.Hostiles)
+				if (h.DistanceTo(bx, by) <= EngageRadius)
+					ctx.IgnoreEvenClose(h.Id, IgnoreTicks);
+			ctx.Log.Info($"Fight: no enemy hurt in {MaxTicksNoProgress} ticks; leaving the ones around alone");
+			State = "done";
+			return SkillStatus.Succeeded;
 		}
 
 		PhysicsParams p = ctx.Physics;
