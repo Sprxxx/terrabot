@@ -268,6 +268,22 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	private void RefreshContext()
 	{
+		// On a mount (a minecart picked up off a track, a mount item used): off it again, as a player presses the mount key.
+		// Seen in game (measured run H1): "paused: mounted" for hours, every skill waiting, until the watchdog gave the job
+		// up, four times. Mount.Dismount is what the mount key and the mount buff's click do.
+		if (Enabled && Player.mount.Active) {
+			Mod.Logger.Info($"Dismounting (mount type {Player.mount.Type}, holding {Player.HeldItem?.Name ?? "nothing"}) at {FeetTile()}");
+			Player.mount.Dismount(Player);
+		}
+		// Likewise hanging on a rope (walked into one) or held by a grappling hook: let go, as a player does.
+		if (Enabled && Player.pulley) {
+			Mod.Logger.Info($"Letting go of a rope at {FeetTile()}");
+			Player.pulley = false;
+		}
+		if (Enabled && Player.grappling[0] >= 0) {
+			Mod.Logger.Info($"Releasing a grappling hook at {FeetTile()}");
+			Player.RemoveAllGrapplingHooks();
+		}
 		Context.Tick = Main.GameUpdateCount;
 		Context.Physics = LivePhysics;
 		Context.Body = new BodyState {
