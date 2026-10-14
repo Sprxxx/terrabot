@@ -128,6 +128,31 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void ShelterFlight_OverInMidAir_WaitsForTheGround_WithoutThrowing()
+	{
+		// world_eye run 71: the flight ended while the bot was in the air; the next tick ticked the dropped walk, and the
+		// exception switched the bot off among zombies.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.AddSlime(9, ctx.Node.X + 3, ctx.Node.Y);
+		g.Refresh(ctx);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		Assert.Equal("Fleeing", shelter.State);
+		g.Slimes.Clear();
+		g.Refresh(ctx);
+		var air = ctx.Body;
+		air.VY = 2f; // falling: the flight is over (nothing near) but not on the ground
+		ctx.Body = air;
+		Assert.Equal(SkillStatus.Running, shelter.Tick(ctx));
+		Assert.Equal(SkillStatus.Running, shelter.Tick(ctx)); // threw here
+		air.VY = 0f;
+		ctx.Body = air;
+		Assert.Equal(SkillStatus.Running, shelter.Tick(ctx));
+		Assert.Equal("Digging", shelter.State);
+	}
+
+	[Fact]
 	public void SwordOnly_HoldsGroundAgainstAFlier_AndSwingsAsItComes()
 	{
 		// Classic demon eyes cost 150 life while the bot chased their "feet tile"; it now stands and meets them.

@@ -266,11 +266,15 @@ public sealed class ShelterSkill : ISkill
 			return SkillStatus.Running;
 		switch (phase) {
 			case Phase.Fleeing: {
-				SkillStatus fs = dig.Tick(ctx);
-				if (fs == SkillStatus.Running && ++fleeTicks <= MaxFleeTicks && NearestHostile(ctx, out _) <= FleeClearPx)
-					return SkillStatus.Running;
-				dig.Stop(ctx);
-				dig = null;
+				// The flight over but still in the air: the walk is gone, wait for the ground (world_eye run 71: the next tick
+				// ticked the dropped walk, and the exception switched the bot off among zombies).
+				if (dig != null) {
+					SkillStatus fs = dig.Tick(ctx);
+					if (fs == SkillStatus.Running && ++fleeTicks <= MaxFleeTicks && NearestHostile(ctx, out _) <= FleeClearPx)
+						return SkillStatus.Running;
+					dig.Stop(ctx);
+					dig = null;
+				}
 				if (!ctx.Body.Grounded)
 					return SkillStatus.Running; // dig in from the ground
 				StartDigging(ctx);

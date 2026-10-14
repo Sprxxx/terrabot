@@ -330,6 +330,11 @@ public sealed class SelfTestSystem : ModSystem
 					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > 2;
 				if (!finished && s.FinishOnLog != null && phaseTicks % 30 == 0)
 					finished = tee.Lines.Any(l => l.Contains(s.FinishOnLog));
+				// Switched off by an exception: over now (world_eye run 71 went on for a game day of deaths at the spawn after it).
+				if (!finished && !bot.Enabled && phaseTicks > 2) {
+					Mod.Logger.Warn($"SELFTEST {s.Name}: the bot was switched off (exception); ending the scenario");
+					finished = true;
+				}
 				if (!finished && phaseTicks < s.TimeoutTicks)
 					return;
 				Mod.Logger.Info($"SELFTEST speed {s.Name}: {phaseTicks} ticks in {runClock.Elapsed.TotalSeconds:0} s = {Speed(phaseTicks, runClock)} normal");

@@ -720,3 +720,13 @@ what was decided and the result.
     - If more than 30 tiles from the spawn, go back there first, by recall potion if more than 50 tiles off, else on foot.
 - Pillar mystery: a banned step's tile-type log showed dirt (type 0) in the bot's own feet cell. So the bot really stands inside a block. No mod code places tiles directly (all through vanilla item use). A sloped dirt cell hidden by the 'F' marker is possible. Still open.
 - Tests updated (254 pass). iron_age_auto and settle_auto pass.
+
+## Run 71 (commit 037ed8f): **crash** at about 6 game minutes
+- Good until then, with 0 deaths:
+  - Anvil 15 s, Silver Broadsword about 1.5 min, Silver Pickaxe about 4 min.
+  - A recall home to the stations, then a recall to start a trip east to (2455,208).
+- **Crash:** NullReferenceException in ShelterSkill.Tick (Fleeing). The flight ended in mid-air: the walk was dropped, but the phase stayed Fleeing, so the next tick ticked the null walk. The bot was switched off among zombies, and the self-test went on for a game day of deaths at the spawn.
+  - **Fixes:**
+    - Fleeing with no walk left waits for the ground, then digs in.
+    - The self-test ends a scenario at once when the bot is switched off by an exception.
+- 1 new test (255 pass). night_shelter and early_game_with_slimes pass.
