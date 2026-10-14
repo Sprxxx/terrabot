@@ -314,7 +314,8 @@ public sealed class FightSkill : ISkill
 	/// Not chased down into the depths the gear is not fit for; what just bit the bot only while it is on the bot. Seen in
 	/// game (world_eye run 45): cave bats hit and flew off down, and the bot followed them into the caverns and died.
 	/// </summary>
-	private static bool NotTooDeep(BotContext ctx, EntityInfo e, float d) =>
+	/// <summary>Not below the depth the gear allows, unless it is hitting the bot from close by (also what counts as danger).</summary>
+	public static bool NotTooDeep(BotContext ctx, EntityInfo e, float d) =>
 		e.FeetTile.Y - DeepChaseMargin <= ctx.DeepestRow || e.Id == ctx.RecentAttacker && d <= DeepAttackerWithin;
 
 	private EntityInfo? PickTarget(BotContext ctx, float cx, float cy)

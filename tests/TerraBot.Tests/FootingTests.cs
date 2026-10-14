@@ -358,6 +358,22 @@ public class FootingTests
 	}
 
 	[Fact]
+	public void AHostileBelowTheDepthLimit_DoesNotStartAFight_ButStillCountsForRetreating()
+	{
+		// world_eye run 66: at row 461 every walk up stopped for a fight that ended at once (nothing it would fight there).
+		FakeGame g = ProgressionTests.Mine();
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(null);
+		TilePos at = ctx.Node;
+		g.AddSlime(7, at.X + 5, at.Y);
+		g.Refresh(ctx);
+		Assert.True(ProgressionPlanner.InDanger(ctx, toFight: true));
+		ctx.CavernY = at.Y - 20 - BotContext.ShallowMargin; // the depth limit 20 rows above the bot and the slime
+		Assert.False(ProgressionPlanner.InDanger(ctx, toFight: true));
+		Assert.True(ProgressionPlanner.InDanger(ctx));
+	}
+
+	[Fact]
 	public void HeadInWater_ReadsFromTheHitbox_NotTheNode()
 	{
 		// world_eye run 59: breath ran from 95 to 18 while the node's head cells read empty: the bot stood a few pixels low and

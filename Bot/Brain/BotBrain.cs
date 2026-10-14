@@ -290,7 +290,7 @@ public sealed class BotBrain
 		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0
 			|| Current is StayHomeSkill { Home: false } walking && walking.Inside.ChebyshevTo(ctx.Node) <= ProgressionPlanner.RetreatHomeTiles
 				&& (walking.RecoverTo > 0 || ctx.RecentAttacker < 0);
-		if (Auto && !safeAtHome && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx)) {
+		if (Auto && !safeAtHome && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx, toFight: true)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
 			Interrupt(ctx);

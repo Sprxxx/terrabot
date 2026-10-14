@@ -1179,12 +1179,16 @@ public sealed class ProgressionPlanner
 	}
 
 	/// <summary>Hostile close enough that the brain should drop everything and fight.</summary>
-	public static bool InDanger(BotContext ctx)
+	/// <param name="toFight">Only hostiles a fight would take on (not below the depth limit): for starting a fight.</param>
+	public static bool InDanger(BotContext ctx, bool toFight = false)
 	{
 		Core.Physics.PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
 		// Only hostiles we can see: one behind solid blocks cannot reach us right now (and must not interrupt a build).
+		// Nor ones the fight would not take on below the depth limit: seen in game (world_eye run 66), at row 461 every walk
+		// up was stopped for a fight that ended at once with nothing to fight, a few times a second for 6 game hours.
 		return (ctx.Combat.HasWeapon || ctx.Combat.HasRanged) && ctx.Hostiles.Any(h => ctx.Fightable(h.Id, h.DistanceTo(cx, cy), FightSkill.IgnoredDangerWithin) && h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f
+			&& (!toFight || FightSkill.NotTooDeep(ctx, h, h.DistanceTo(cx, cy)))
 			&& (!FightSkill.InWater(ctx, h) || h.Id == ctx.RecentAttacker)
 			&& FightSkill.ClearShot(ctx, cx, cy, h.CenterX, h.CenterY));
 	}

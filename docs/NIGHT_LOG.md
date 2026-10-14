@@ -670,3 +670,10 @@ what was decided and the result.
   - **Fix:** any WalkTo near the surface at night (defense < 6, house within 150 tiles) waits for the morning in the house.
 - Seen too: a few "InvalidStart" plans from (1963,399), which caused rests. Not followed up yet.
 - 1 new test (248 pass). night_home, night_shelter and settle_auto pass.
+
+## Run 66 (commit 3879996), stopped after about 3 game minutes (0 deaths, but stuck)
+- Anvil at about 1.5 min. No deaths, and no night deaths at the furnace.
+- **Stuck:** from about 2 min, at (2117,461), below the depth limit. Every explore leg or walk up was interrupted by "Danger: pausing ... to fight", and each fight ended at once with 0 kills, several times a second for 6 game hours (a selftest stall).
+  - InDanger counted hostiles that FightSkill will not take on below the depth limit (NotTooDeep: only an attacker within 4 tiles).
+  - **Fix:** starting a fight uses InDanger(toFight: true), with the same depth filter. The retreat check still counts every hostile.
+- 1 new test (249 pass). fight_green_slime, shoot_demon_eye, early_game_with_slimes, night_shelter and settle_auto pass.
