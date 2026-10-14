@@ -413,6 +413,8 @@ public sealed class SelfTestSystem : ModSystem
 		Note("first life crystal", p.statLifeMax > 100);
 		Note("max life 200", p.statLifeMax >= 200);
 		Note("summon item", Has(new int[] { ItemID.SuspiciousLookingEye }));
+		Note("arena site", plan.ArenaSite != null);
+		Note("Eye fight", NPC.AnyNPCs(NPCID.EyeofCthulhu));
 		Note("Eye of Cthulhu defeated", NPC.downedBoss1);
 	}
 

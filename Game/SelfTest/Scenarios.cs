@@ -185,8 +185,9 @@ public sealed class Scenario
 			Build = true,
 			DayTime = 3000,
 			// A fixed game-time budget, so runs can be compared by the milestones they reach in it (SELFTEST milestone lines):
-			// 5 in-game days (a day is 86,400 ticks), a few real minutes with -Fast -DrawEvery 16 at its usual 20-30x.
-			TimeoutTicks = 5 * 86400,
+			// 10 in-game days (a day is 86,400 ticks), 15-20 real minutes with -Fast -DrawEvery 16 at its usual 13-20x. Was 5:
+			// the best runs got full armour by day 5, and the stages after it (life, bow, arena, the fight) were never seen.
+			TimeoutTicks = 10 * 86400,
 			Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
 		},
 			new() {
