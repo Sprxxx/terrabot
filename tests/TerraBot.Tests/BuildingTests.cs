@@ -217,6 +217,37 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ATripForNewOre_StoppedByAFight_GoesOnToTheSamePlace()
+	{
+		// world_eye run 61: a fight stopped the trip in the desert, mining there failed at once, and the next trip went the other way.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ISkill trip = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {trip?.Describe()}");
+		Assert.True(trip is WalkToSkill { Travel: true });
+		Assert.Contains("travelling to new ground at (123,", p.Status);
+		// Interrupted (no finish reported), then the mining job fails again where the bot stands:
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ISkill again = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {again?.Describe()}");
+		Assert.True(again is WalkToSkill { Travel: true });
+		Assert.Contains("on to new ground at (123,", p.Status);
+	}
+
+	[Fact]
 	public void WalkingHomeAtNight_DoesNotStopToFight()
 	{
 		// world_eye run 41: stopped at dusk to fight zombies with a copper sword on the way home, then dug in among them.

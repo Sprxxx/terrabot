@@ -17,20 +17,20 @@ public class ProgressionTests
 	public ProgressionTests(ITestOutputHelper output) => this.output = output;
 
 	/// <summary>Surface feet row 24 over 2 rows of dirt, stone rows 27-36 with an iron vein (rows 29.., x 10..), '@' floor.</summary>
-	public static FakeGame Mine(int width = 90, int oreRows = 3, int veinWidth = 21, int[] treeColumns = null)
+	public static FakeGame Mine(int width = 90, int oreRows = 3, int veinWidth = 21, int[] treeColumns = null, int sky = 25)
 	{
 		treeColumns ??= System.Array.Empty<int>();
-		var rows = Enumerable.Repeat(new string('.', width), 25).ToList();
-		char[] feet = rows[24].ToCharArray();
+		var rows = Enumerable.Repeat(new string('.', width), sky).ToList();
+		char[] feet = rows[sky - 1].ToCharArray();
 		feet[3] = 'S';
 		foreach (int x in treeColumns)
 			feet[x] = 'T';
-		rows[24] = new string(feet);
+		rows[sky - 1] = new string(feet);
 		rows.Add(new string('#', width));
 		rows.Add(new string('#', width));
-		for (int y = 27; y < 37; y++) {
+		for (int y = sky + 2; y < sky + 12; y++) {
 			char[] r = new string('s', width).ToCharArray();
-			if (y >= 29 && y < 29 + oreRows)
+			if (y >= sky + 4 && y < sky + 4 + oreRows)
 				for (int x = 10; x < 10 + veinWidth; x++)
 					r[x] = 'i';
 			rows.Add(new string(r));

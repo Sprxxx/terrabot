@@ -617,3 +617,13 @@ what was decided and the result.
   - The first exploration of a mining job goes the safer side (BotContext.SaferSide: fewer known off-limits spots out to 60 tiles ahead and below). With neither side worse, it alternates across jobs.
   - TravelForOre skips spots with known off-limits ground below them (OffLimitsBelow: 30 tiles either side, down to 100 rows).
 - 1 new test (242 pass). iron_age_auto and settle_auto pass.
+
+## Run 61 (commit 8f0a515), stopped after about 4 game minutes and 5 deaths
+- Deaths:
+  - A crowd of 8 slimes at row 420, with only a copper shortsword.
+  - Antlion charger, umbrella slime and demon eye, all in the desert or at its edge.
+- **Thrash:** the trip for new ore, (2455,208) east or (1975,280) west, was stopped by a fight in the surface desert. The mining job that followed failed at once (off limits). Each failure counted as fruitless, so the next trip went the other way, back and forth over the desert.
+- **Fixes:**
+  - ProgressionPlanner remembers the trip's destination, shared across ores, and goes on to it after an interruption until the bot is within 8 tiles. It is dropped when the walk succeeds or fails with a reason, or when the destination becomes off limits.
+  - "Up to the surface before travelling" now goes back to the spawn instead when the bot stands off limits, or when the surface above is biome ground or has off-limits ground below.
+- The test fixture ProgressionTests.Mine gained a `sky` height (travel looks for the surface from row 40 down). 1 new test (243 pass). iron_age_auto and settle_auto pass.

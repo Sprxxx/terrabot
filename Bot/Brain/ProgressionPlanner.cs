@@ -315,6 +315,9 @@ public sealed class ProgressionPlanner
 			stayHomeFailedAt = ctx.Tick;
 			ctx.Log.Info($"Auto: cannot get home ({skill.FailureReason}); sheltering where I am tonight");
 		}
+		if (skill is WalkToSkill { Travel: true } && status != SkillStatus.Running && ctx.Combat.Life > 0
+			&& (status == SkillStatus.Succeeded || !string.IsNullOrEmpty(skill.FailureReason)))
+			travelDest = null; // there, or no way there (not a death on the way)
 		if (skill is MineSkill mine) {
 			if (status == SkillStatus.Succeeded) {
 				fruitlessMines.Remove(mine.ItemType);
@@ -1035,6 +1038,13 @@ public sealed class ProgressionPlanner
 	/// <summary>Mining jobs that ran out of places to look (explorations in a row found nothing), per item, since the last success.</summary>
 	private readonly Dictionary<int, int> fruitlessMines = new();
 	private readonly Dictionary<int, int> travelledFor = new();
+	/// <summary>
+	/// Where the current trip for new ore is going, until the bot gets there (whichever ore it was for). Seen in game
+	/// (world_eye run 61): a fight stopped the trip in the surface desert, mining started there and failed at once (off
+	/// limits), and the next trip went the other way: back and forth across the desert until a slime killed the bot.
+	/// </summary>
+	private TilePos? travelDest;
+	public const int TravelArrivedTiles = 8;
 	/// <summary>How far (tiles) along the surface to go to look for ore in new ground.</summary>
 	public const int TravelTiles = 120;
 	/// <summary>A work bench farther than this from the spawn does not anchor the house; the spawn does.</summary>
@@ -1051,13 +1061,30 @@ public sealed class ProgressionPlanner
 	private ISkill TravelForOre(BotContext ctx, int item, string name)
 	{
 		int fails = fruitlessMines.TryGetValue(item, out int f) ? f : 0;
-		if (fails == 0 || travelledFor.TryGetValue(item, out int t) && t >= fails)
+		if (fails == 0 || travelDest == null && travelledFor.TryGetValue(item, out int t) && t >= fails)
 			return null;
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
-		if (ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y)
+		if (ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
+			// Out of somewhere off limits, or under a desert's or evil biome's ground: back to the spawn instead. Seen in game
+			// (world_eye run 61): "up to the surface" from the underground desert's edge, four times, each interrupted by a
+			// fight and started again from wherever the bot was, drifted 100 tiles into the desert, where a charger killed it.
+			if ((ctx.OffLimits(ctx.Node) || ctx.BiomeGround(up) || ctx.OffLimitsBelow(up)) && ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > 8)
+				return Do($"no more {name} found around here; out of here and back to the spawn at {spawn} before travelling",
+					new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true });
 			return Do($"no more {name} found around here; up to the surface before travelling, at {up}",
 				new WalkToSkill(new Core.Pathfinding.GoalNearTile(up, 4, ctx.Physics)) { Quiet = true });
+		}
+		// A trip under way: on to it (unless it has become off limits since).
+		if (travelDest is TilePos pending) {
+			if (pending.ChebyshevTo(ctx.Node) <= TravelArrivedTiles || ctx.OffLimits(pending) || ctx.OffLimitsBelow(pending))
+				travelDest = null;
+			else
+				return Do($"no more {name} found around here; on to new ground at {pending}",
+					new WalkToSkill(new Core.Pathfinding.GoalNearTile(pending, 4, ctx.Physics)) { Quiet = true, Travel = true });
+		}
+		if (travelledFor.TryGetValue(item, out int done) && done >= fails)
+			return null;
 		travelledFor[item] = fails;
 		int dir = fails % 2 == 1 ? 1 : -1;
 		// Out from the spawn, farther each time (east 120, west 120, east 240...), not from wherever the bot is: from
@@ -1077,6 +1104,7 @@ public sealed class ProgressionPlanner
 			}
 		if (found is not TilePos dest)
 			return null;
+		travelDest = dest;
 		return Do($"no more {name} found around here; travelling to new ground at {dest}",
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
 	}
