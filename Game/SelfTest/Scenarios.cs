@@ -668,6 +668,23 @@ public sealed class Scenario
 				Check = r => r.Deaths > 0 ? $"died {r.Deaths} time(s)" : null,
 			},
 			new() {
+				// Seen in game (measured run O1): surfacing at 3/4 breath with air 22 rows up, drowned on the way. Deep water under
+				// a two-row ceiling: straight up, mining through.
+				Name = "flooded_deep_shaft",
+				Rows = Grid(
+					Repeat("@....................@", 3),
+					Repeat("@ssssssssssssssssssss@", 2),
+					Repeat("@~~~~~~~~~~~~~~~~~~~~@", 17),
+					"@~~S~~~~~~~~~~~~~~~~~@",
+					"@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "surface",
+				Dig = true,
+				Build = true,
+				Blocks = 60,
+				TimeoutTicks = 60 * 60,
+				Check = r => r.Deaths > 0 ? $"died {r.Deaths} time(s)" : null,
+			},
+			new() {
 				// Lava under the wall stays put when the wall is dug (liquid never flows up): dug through, unhurt.
 				Name = "lava_below_dug_over",
 				Rows = WithCell(Corridor, 10, 4, '!'),

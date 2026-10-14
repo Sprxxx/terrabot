@@ -101,6 +101,6 @@ public class BreathTests
 		brain.Tick(ctx);
 		output.WriteLine(brain.Describe());
 		var surface = Assert.IsType<Bot.Skills.SurfaceSkill>(brain.Current);
-		Assert.Contains("air", surface.Describe()); // walking to the nearest dry spot (or pillaring up)
+		Assert.True(surface.Describe().Contains("air") || surface.Describe().Contains("pillaring up"), surface.Describe()); // walking to a dry spot, or straight up
 	}
 }

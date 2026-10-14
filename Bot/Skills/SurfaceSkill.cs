@@ -17,8 +17,8 @@ public sealed class SurfaceSkill : ISkill
 	/// at 21, then a second one that had no air left.
 	/// </summary>
 	public const int MaxTicks = 60 * 30;
-	/// <summary>Blocks in the way up a column that are mined through on the way (a ceiling over the water).</summary>
-	public const int MaxCeilingBlocks = 3;
+	/// <summary>Rows of blocks in the way up a column that are mined through on the way (a ceiling over the water).</summary>
+	public const int MaxCeilingBlocks = 4;
 	public const int SearchColumns = 16, SearchUp = 25;
 
 	private int ticks;
@@ -109,6 +109,12 @@ public sealed class SurfaceSkill : ISkill
 			return SkillStatus.Running; // head out: just wait here for breath to come back
 		}
 		TilePos n = ctx.Node;
+		if (column == null || ticks % 30 == 0)
+			column = EscapeUp(ctx).Column;
+		// Straight up is the way out (no sideways swim): no walk. Seen in game (measured run O1): the walk to air 13 tiles off
+		// sideways, then a swim that way, covered 9 tiles in a whole breath; rising is about 20 ticks a row, mining included.
+		if (column == n.X)
+			walkFailed = true;
 		// First choice: walk (the pathfinder digs through a ceiling and pillars) to the nearest spot where the head is out.
 		if (walk == null && !walkFailed && ctx.Body.Grounded) {
 			if (NearestAir(ctx) is TilePos air) {
@@ -140,8 +146,6 @@ public sealed class SurfaceSkill : ISkill
 			walkFailed = ws == SkillStatus.Failed;
 			return SkillStatus.Running;
 		}
-		if (column == null || ticks % 30 == 0)
-			column = AirColumn(ctx);
 		// A ceiling over the head in this column: mine it, as a player digs up out of a flooded cave. Seen in game (measured
 		// runs L1, M1, M2): air 3-11 rows up, through a block or two; the old column search skipped any column with a block
 		// in it, so the bot drifted sideways under the ceiling, never rose, and drowned (5 of 17 deaths).
@@ -184,40 +188,47 @@ public sealed class SurfaceSkill : ISkill
 		return SkillStatus.Running;
 	}
 
+	/// <summary>Estimated ticks per row risen under water (jump, a block underfoot), per tile swum sideways, per block mined.</summary>
+	public const int RiseTicksPerRow = 25, SidewaysTicksPerTile = 60, MineTicksPerBlock = 25;
+	/// <summary>Breath lost per tick under water: one every 7 ticks (vanilla Player.breathCDMax without gear).</summary>
+	public const int TicksPerBreath = 7;
+
 	/// <summary>
-	/// The nearest column (by sideways distance plus height to swim, plus blocks to mine) with an air cell above the water,
-	/// through at most <see cref="MaxCeilingBlocks"/> blocks the pickaxe can break.
+	/// The way up out of the water: the column (the body's left one) with air above both body columns that is quickest to
+	/// reach by the estimate (sideways swimming is slow, rising fast, blocks in either column mined on the way, at most
+	/// <see cref="MaxCeilingBlocks"/> rows of them), and the ticks it takes. No column: (null, int.MaxValue).
 	/// </summary>
-	private static int? AirColumn(BotContext ctx)
+	public static (int? Column, int Ticks) EscapeUp(BotContext ctx)
 	{
 		TilePos n = ctx.Node;
 		int? best = null;
-		int bestCost = int.MaxValue;
+		int bestTicks = int.MaxValue;
 		for (int dx = 0; dx <= SearchColumns; dx++)
 			foreach (int x in dx == 0 ? new[] { n.X } : new[] { n.X - dx, n.X + dx }) {
-				int blocks = 0;
+				int sideways = dx * SidewaysTicksPerTile;
+				if (sideways >= bestTicks)
+					continue;
+				int blockRows = 0, blocks = 0;
 				for (int y = n.Y - 2; y >= n.Y - 2 - SearchUp; y--) {
-					CellKind k = ctx.Grid.Get(x, y);
-					if (k.IsSolid()) {
-						if (++blocks > MaxCeilingBlocks || !Breakable(ctx, new TilePos(x, y)))
+					CellKind a = ctx.Grid.Get(x, y), b = ctx.Grid.Get(x + 1, y);
+					if (a.IsSolid() || b.IsSolid()) {
+						if (a.IsSolid() && !Breakable(ctx, new TilePos(x, y)) || b.IsSolid() && !Breakable(ctx, new TilePos(x + 1, y)) || ++blockRows > MaxCeilingBlocks)
 							break; // too thick, or nothing the pickaxe breaks: no air this way
+						blocks += (a.IsSolid() ? 1 : 0) + (b.IsSolid() ? 1 : 0);
 						continue;
 					}
-					if (!k.IsLiquid()) {
-						int cost = dx * 2 + (n.Y - y) + blocks * CeilingBlockCost;
-						if (cost < bestCost) {
-							bestCost = cost;
+					if (!a.IsLiquid() && !b.IsLiquid()) {
+						int t = sideways + (n.Y - 2 - y) * RiseTicksPerRow + blocks * MineTicksPerBlock;
+						if (t < bestTicks) {
+							bestTicks = t;
 							best = x;
 						}
 						break;
 					}
 				}
 			}
-		return best;
+		return (best, bestTicks);
 	}
-
-	/// <summary>A block mined on the way up weighs as this many tiles of swimming.</summary>
-	public const int CeilingBlockCost = 4;
 
 	private static bool Breakable(BotContext ctx, TilePos c) =>
 		ctx.Grid.Get(c.X, c.Y).IsSolid() && ctx.Moves.Blocks is Core.Pathfinding.IBlockActions b && !float.IsInfinity(b.BreakTicks(c.X, c.Y));

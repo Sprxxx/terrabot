@@ -341,7 +341,10 @@ public sealed class BotBrain
 				LogBreathMystery(ctx);
 		}
 		// Out of breath under water comes before everything: drowning skips the hurt event and kills in seconds.
-		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && SurfaceSkill.HeadUnder(ctx)) {
+		// Or sooner, when the way up would take more than half the breath left: seen in game (measured run O1), surfacing at
+		// 3/4 breath with air 22 rows up, and drowned on the way.
+		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax && SurfaceSkill.HeadUnder(ctx)
+			&& (ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 || ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks)) {
 			ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}, and avoiding this water from now on");
 			// Remember the spot: no ore around here, no exploring legs here (seen in game: back to the same flooded cave until it drowned).
 			TilePos here = ctx.Node;
