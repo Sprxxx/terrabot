@@ -1064,10 +1064,16 @@ public sealed class ProgressionPlanner
 		// the bot, east then west went straight back to the ground just searched (seen in game).
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
 		int reach = Math.Min(TravelTiles * ((fails + 1) / 2), MaxTravelTiles); // not across the world (1,900 tiles in run 47)
-		int x = originX + dir * reach;
-		TilePos? found = SurfaceAt(ctx.Grid, x);
-		if (found is TilePos f0 && ctx.OffLimits(f0))
-			found = SurfaceAt(ctx.Grid, originX - dir * reach); // the other way, away from where it died
+		// That way, else the other way, then farther: not onto somewhere off limits, nor onto a desert or an evil biome's
+		// ground (seen in game, run 56: the spawn between a corruption and a desert, and every trip landed in one of them).
+		TilePos? found = null;
+		for (int r = reach; r <= MaxTravelTiles && found == null; r += TravelTiles)
+			foreach (int d in new[] { dir, -dir }) {
+				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !ctx.OffLimits(c) && !ctx.BiomeGround(c)) {
+					found = c;
+					break;
+				}
+			}
 		if (found is not TilePos dest)
 			return null;
 		return Do($"no more {name} found around here; travelling to new ground at {dest}",

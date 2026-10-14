@@ -234,6 +234,33 @@ public sealed class BotContext
 		return (solid, desert, evil);
 	}
 
+	/// <summary>
+	/// Is the ground under this surface spot (13 wide, 8 deep) largely desert or evil-biome tiles the bot has seen, while
+	/// its gear is too weak for them (as <see cref="OffLimits"/>)? For choosing where to travel.
+	/// </summary>
+	public bool BiomeGround(TilePos t)
+	{
+		if (World == null)
+			return false;
+		int solid = 0, desert = 0, evil = 0;
+		for (int x = t.X - 6; x <= t.X + 6; x++)
+			for (int y = t.Y + 1; y <= t.Y + 8; y++) {
+				if (!World.IsRevealed(x, y))
+					continue;
+				int type = World.TileTypeAt(x, y);
+				if (type < 0)
+					continue;
+				solid++;
+				if (Array.IndexOf(Ids.DesertTiles, type) >= 0)
+					desert++;
+				else if (Array.IndexOf(Ids.EvilTiles, type) >= 0)
+					evil++;
+			}
+		if (solid < 20)
+			return false;
+		return Combat.Defense < DeepDefense && desert >= 0.3f * solid || Combat.Defense < CavernDefense && evil >= 0.3f * solid;
+	}
+
 	/// <summary>Is the tile inside a zone where the bot was recently killed?</summary>
 	public bool InDangerZone(TilePos t)
 	{

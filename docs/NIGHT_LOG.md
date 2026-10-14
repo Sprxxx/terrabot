@@ -565,3 +565,11 @@ what was decided and the result.
     crafted and placed every night (runs 51 and 55).
 - **Known issue, open:** a bridge step near the house that never places its block (likely the vanilla anchor rule).
 - In game, 6 house and chain scenarios pass. 238 unit tests.
+
+### world_eye run 56: the spawn sits between a corruption and a desert
+- Two chests (9 recall potions, healing potions, an Aglet, a Step Stool), but no anvil: the iron near the spawn ran
+  out, and every trip to new ground landed in the desert (a demon eye on the way, then a rolling cactus) or toward
+  the corruption.
+- **Decision:** a trip to new ground looks at the seen ground under its destination (13 wide, 8 deep). If it's largely
+  desert or evil-biome tiles in too weak gear, it tries the other side, then farther. In game, iron_age, settle and
+  boss_auto pass. 238 unit tests.

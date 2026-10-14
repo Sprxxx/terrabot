@@ -281,6 +281,8 @@ public class FootingTests
 		Assert.False(ctx.InUndergroundDesert(new TilePos(70, 18))); // above the surface line
 		Assert.True(ctx.OffLimits(new TilePos(70, 28)));
 		Assert.True(ctx.Moves.Adjust(10f, new TilePos(70, 28)) > 10f);
+		Assert.True(ctx.BiomeGround(new TilePos(70, 24))); // a desert's surface: not somewhere to travel to (run 56)
+		Assert.False(ctx.BiomeGround(new TilePos(10, 24)));
 		ctx.Combat.Defense = BotContext.DeepDefense;
 		Assert.False(ctx.OffLimits(new TilePos(70, 28)));
 	}
