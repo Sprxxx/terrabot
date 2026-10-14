@@ -355,4 +355,21 @@ public class FootingTests
 		Assert.True(HasStepUp("........", "........", "........", ".S.#....", "########"));
 		Assert.False(HasStepUp("........", "........", ".../....", ".S.#....", "########"));
 	}
+
+	[Fact]
+	public void DigAnyway_BreaksUnderSand_ButNeverBesideLava()
+	{
+		// world_eye run 52: shut in by sand in the underground desert, the bot switched itself off after five rests.
+		var (g, b) = TestBlockActions.Parse(
+			"..%...!.",
+			"..#...#.",
+			"..S.....",
+			"########");
+		var normal = new MoveContext(g, PhysicsParams.Default) { Blocks = b };
+		var anyway = new MoveContext(g, PhysicsParams.Default) { Blocks = b, DigAnyway = true };
+		var none = System.Array.Empty<TilePos>();
+		Assert.True(float.IsPositiveInfinity(BlockRules.BreakCost(normal, new TilePos(2, 1), none))); // sand on top
+		Assert.False(float.IsPositiveInfinity(BlockRules.BreakCost(anyway, new TilePos(2, 1), none)));
+		Assert.True(float.IsPositiveInfinity(BlockRules.BreakCost(anyway, new TilePos(6, 1), none))); // lava on top
+	}
 }

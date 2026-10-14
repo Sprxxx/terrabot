@@ -18,6 +18,12 @@ public sealed class MoveContext
 	public IBlockActions Blocks { get; init; }
 	public bool AllowBreak { get; init; } = true;
 	public bool AllowPlace { get; init; } = true;
+	/// <summary>
+	/// Last resort when boxed in: blocks under sand or beside water may be broken (at <see cref="BlockRules.DigAnywayTicks"/>
+	/// more). Seen in game (world_eye run 52): shut in by sand in the underground desert, a 14-node search, and after five
+	/// rests the bot switched itself off.
+	/// </summary>
+	public bool DigAnyway { get; init; }
 
 	public bool CanBreak => Blocks != null && AllowBreak;
 

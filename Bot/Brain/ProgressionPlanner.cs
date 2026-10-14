@@ -309,7 +309,9 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
-		if (skill is StayHomeSkill && status == SkillStatus.Failed) {
+		// Not a death on the way (no failure reason): the house is still reachable, and after the respawn at the spawn it
+		// is a few steps off (run 52: killed just below the house, then sheltered outside all night).
+		if (skill is StayHomeSkill && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason)) {
 			stayHomeFailedAt = ctx.Tick;
 			ctx.Log.Info($"Auto: cannot get home ({skill.FailureReason}); sheltering where I am tonight");
 		}

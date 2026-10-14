@@ -327,11 +327,14 @@ public sealed class BotContext
 		get {
 			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
 				|| !ReferenceEquals(moves.Blocks, PathBlocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace
-				|| moves.AvoidBelowRow != DeepestRow)
-				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, AvoidBelowRow = DeepestRow, Avoid = OffLimits };
+				|| moves.AvoidBelowRow != DeepestRow || moves.DigAnyway != DigAnyway)
+				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, AvoidBelowRow = DeepestRow, Avoid = OffLimits, DigAnyway = DigAnyway };
 			return moves;
 		}
 	}
 
 	public TilePos Node => Core.Pathfinding.Body.NodeOf(Body, Physics);
+
+	/// <summary>Boxed in after all the rests: dig through sand and beside water anyway (MoveContext.DigAnyway) until a skill succeeds.</summary>
+	public bool DigAnyway { get; set; }
 }

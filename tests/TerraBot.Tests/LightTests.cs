@@ -12,12 +12,13 @@ public class LightTests
 	private readonly ITestOutputHelper output;
 	public LightTests(ITestOutputHelper output) => this.output = output;
 
-	private (FakeGame g, BotContext ctx, BotBrain brain) Run(float light, int torches, int ticks, int gel = 0)
+	private (FakeGame g, BotContext ctx, BotBrain brain) Run(float light, int torches, int ticks, int gel = 0, int wood = 0)
 	{
 		FakeGame g = EarlyGameTests.Field(80, 30, 40, 50);
 		g.Light = light;
 		g.Items[FakeGame.Torch] = torches;
 		g.Items[FakeGame.Gel] = gel;
+		g.Items[FakeGame.Wood] = wood;
 		BotContext ctx = g.CreateContext(output);
 		var brain = new BotBrain();
 		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Early);
@@ -51,7 +52,7 @@ public class LightTests
 	[Fact]
 	public void LowOnTorches_CraftsMoreFromGelAndWood()
 	{
-		var (g, _, _) = Run(light: 1f, torches: 0, ticks: LightKeeper.CraftEvery + 5, gel: 3);
+		var (g, _, _) = Run(light: 1f, torches: 0, ticks: LightKeeper.CraftEvery + 5, gel: 3, wood: LightKeeper.SpareWood + 5);
 		Assert.True(g.Count(FakeGame.Torch) > 0);
 	}
 }

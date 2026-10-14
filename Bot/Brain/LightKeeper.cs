@@ -27,6 +27,8 @@ public sealed class LightKeeper
 	/// keeper lit a detour with the arena's torches, and boss_auto then hunted gel for an hour.
 	/// </summary>
 	public const int KeepForCrafting = 12;
+	/// <summary>Wood left alone for the plan: torches only from what is above this.</summary>
+	public const int SpareWood = 15;
 	public const int CraftEvery = 300;
 
 	private int ticks;
@@ -111,7 +113,8 @@ public sealed class LightKeeper
 
 	private static void KeepStock(BotContext ctx, int torch)
 	{
-		if (ctx.Inventory.Count(torch) >= Reserve || ctx.Inventory.Count(ctx.Ids.Gel) <= 0 || ctx.Inventory.Count(ctx.Ids.Wood) <= 0 || ctx.Crafter == null)
+		// The last of the wood is the plan's: torches made from it left the boss scenario 4 wood short in an arena with no trees.
+		if (ctx.Inventory.Count(torch) >= Reserve || ctx.Inventory.Count(ctx.Ids.Gel) <= 0 || ctx.Inventory.Count(ctx.Ids.Wood) <= SpareWood || ctx.Crafter == null)
 			return;
 		CraftResult r = ctx.Crafter.TryCraft(torch);
 		if (r == CraftResult.Crafted)

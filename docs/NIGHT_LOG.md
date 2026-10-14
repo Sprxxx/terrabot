@@ -505,3 +505,20 @@ what was decided and the result.
     than digging. **Decision:** +120 below the depth limit, +150 in off-limits areas.
   - A jellyfish while surfacing.
 - In game, 11 walk and chain scenarios pass. 236 unit tests.
+
+### world_eye run 52: auto mode switched itself off
+- **Progress:** the anvil about 20 seconds in, the **Silver Broadsword at about 3 minutes**.
+- **Deaths:** a zombie just below the house on the way home, and a drowning during a mine with no surfacing at all.
+- **The end:** shut into a tiny pocket (a 14-node search) in the underground desert, probably by sand it won't mine
+  under. After 5 rests auto mode stopped, at 7 real minutes.
+- **Decisions:**
+  - Before switching off, once: dig anyway (under sand, beside water; never beside lava, +300 a block), and start
+    the rests over. Cleared when a skill succeeds. Test `DigAnyway_BreaksUnderSand_ButNeverBesideLava`.
+  - A death on the way home is not "cannot get home". It had sheltered outside all night after the respawn, a few
+    steps from the house. Test `DyingOnTheWayHome_IsNotCannotGetHome`.
+  - Breath falling without the head cells reading as liquid is now logged, to find the cause of that drowning.
+- 238 unit tests.
+- **Regression findings:** "dig anyway" leaked from boss_auto into the next scenario (the bot's context carries over
+  between self-test scenarios) and let a walk test undermine sand. **Decision:** reset on SetAuto and before every
+  scenario. boss_auto ran 4 wood short again: torches made from the plan's wood. **Decision:** LightKeeper leaves the
+  last 15 wood alone. In game, sand, lava, early_game, iron_age, settle, night_home and boss_auto pass. 238 unit tests.

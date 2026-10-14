@@ -66,6 +66,7 @@ public sealed class BotBrain
 		Auto = on;
 		failures = 0;
 		backoffs = 0;
+		ctx.DigAnyway = false; // a last resort of the run before, not of this one (it leaked into the next self-test scenario)
 		backoffUntil = -1;
 		Planner.Reset(plan);
 		ctx.UnreachableTiles.Clear();
@@ -117,6 +118,21 @@ public sealed class BotBrain
 	/// as a player knows a biome by its monsters too. Seen in game (runs 47 and 49): three deaths to them on the
 	/// corruption's edge west of the spawn, where too few of the seen tiles were corruption for the tile count.
 	/// </summary>
+	/// <summary>
+	/// Before giving up for good: once, dig through what is normally unsafe (sand overhead, water beside) and start the
+	/// rests again, like a trapped player who digs out regardless.
+	/// </summary>
+	private bool TryDigAnyway(BotContext ctx)
+	{
+		if (ctx.DigAnyway)
+			return false;
+		ctx.DigAnyway = true;
+		backoffs = 0;
+		failures = 0;
+		ctx.Log.Warn("Auto: still stuck after all the rests; digging through sand and beside water anyway (not lava)");
+		return true;
+	}
+
 	/// <summary>Vanilla aiStyle of worms (devourers, giant worms, the eater of worlds): they burrow through blocks.</summary>
 	public const int WormAi = 6;
 	public const float WormNearPx = 30 * 16f;
@@ -169,6 +185,13 @@ public sealed class BotBrain
 					Planner.OnSkillFinished(Current, SkillStatus.Failed, ctx);
 				Interrupt(ctx);
 			}
+		}
+		// Losing breath without the head cells reading as liquid (world_eye run 52: drowned from full life during a mine
+		// with no surfacing at all): say what the head cells are, to find out why.
+		if (Auto && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax / 2 && !SurfaceSkill.HeadUnder(ctx) && ctx.Tick % 60 == 0) {
+			TilePos hn = ctx.Node;
+			ctx.Log.Warn($"Breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} but the head cells read {ctx.Grid.Get(hn.X, hn.Y - 2)}/{ctx.Grid.Get(hn.X + 1, hn.Y - 2)}"
+				+ $" (above {ctx.Grid.Get(hn.X, hn.Y - 3)}/{ctx.Grid.Get(hn.X + 1, hn.Y - 3)}) at {hn}");
 		}
 		// Out of breath under water comes before everything: drowning skips the hurt event and kills in seconds.
 		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && SurfaceSkill.HeadUnder(ctx)) {
@@ -254,7 +277,7 @@ public sealed class BotBrain
 					// Not the end: rest and try again with the given-up sites forgotten (seen in game: "no building site"
 					// stopped a run that had just made its iron pickaxe). Only after the rests run out does auto mode stop.
 					LastResult = "auto: " + Planner.Status;
-					if (++backoffs > MaxBackoffs) {
+					if (++backoffs > MaxBackoffs && !TryDigAnyway(ctx)) {
 						ctx.Log.Warn("Auto: " + Planner.Status + $"; still stuck after {MaxBackoffs} rests, stopping auto mode");
 						Auto = false;
 					}
@@ -296,10 +319,12 @@ public sealed class BotBrain
 		}
 		if (Auto) {
 			failures = status == SkillStatus.Failed ? failures + 1 : 0;
-			if (status == SkillStatus.Succeeded && !wasFight)
+			if (status == SkillStatus.Succeeded && !wasFight) {
 				backoffs = 0;
+				ctx.DigAnyway = false;
+			}
 			if (failures >= MaxConsecutiveFailures) {
-				if (++backoffs > MaxBackoffs) {
+				if (++backoffs > MaxBackoffs && !TryDigAnyway(ctx)) {
 					ctx.Log.Warn($"Auto: {failures} failures in a row after {MaxBackoffs} rests, stopping auto mode ({LastResult})");
 					Auto = false;
 				}

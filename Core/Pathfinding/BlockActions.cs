@@ -47,14 +47,23 @@ public static class BlockRules
 	/// </summary>
 	public static float BreakCost(MoveContext ctx, TilePos cell, IReadOnlyCollection<TilePos> sameMove)
 	{
-		if (Unsafe(ctx.Grid, cell, sameMove))
+		bool unsafeCell = Unsafe(ctx.Grid, cell, sameMove);
+		// Boxed in (MoveContext.DigAnyway): sand and water may be dug beside after all, at a price; lava never.
+		if (unsafeCell && (!ctx.DigAnyway || NextToLava(ctx.Grid, cell)))
 			return float.PositiveInfinity;
 
 		float ticks = ctx.Blocks.BreakTicks(cell.X, cell.Y);
 		if (float.IsInfinity(ticks) || float.IsNaN(ticks))
 			return float.PositiveInfinity;
-		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks;
+		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks + (unsafeCell ? DigAnywayTicks : 0f);
 	}
+
+	/// <summary>Extra cost of an unsafe break when digging anyway: only when there is nothing else.</summary>
+	public const float DigAnywayTicks = 300f;
+
+	public static bool NextToLava(ITileGrid g, TilePos cell) =>
+		g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava()
+		|| g.Get(cell.X, cell.Y - 1).HasLava() || g.Get(cell.X, cell.Y + 1).HasLava();
 
 	/// <summary>Opening this cell would flood lava in or drop an unsupported falling block (not removed by the same move).</summary>
 	public static bool Unsafe(ITileGrid g, TilePos cell, IReadOnlyCollection<TilePos> sameMove)

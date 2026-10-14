@@ -155,11 +155,36 @@ public class BuildingTests
 		output.WriteLine($"{p.Status} -> {next?.Describe()}");
 		var home = Assert.IsType<StayHomeSkill>(next);
 
-		// Seen in game: no path home, and the same failing walk again and again until the brain gave up.
-		p.OnSkillFinished(home, SkillStatus.Failed, ctx);
+		// Seen in game: no path home, and the same failing walk again and again until the brain gave up. A real failure: a
+		// walk home to a spot sealed off in solid rock.
+		var sealedOff = new StayHomeSkill(new TilePos(40, 33));
+		ctx.AllowBreak = false; // no digging there
+		ctx.AllowPlace = false;
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, sealedOff, 60 * 30));
+		p.OnSkillFinished(sealedOff, SkillStatus.Failed, ctx);
 		next = p.Next(ctx);
 		output.WriteLine($"{p.Status} -> {next?.Describe()}");
 		Assert.IsNotType<StayHomeSkill>(next);
+	}
+
+	[Fact]
+	public void DyingOnTheWayHome_IsNotCannotGetHome()
+	{
+		// world_eye run 52: killed just below the house, the death counted as "cannot get home", and after the respawn a
+		// few steps from the house the bot sheltered outside all night.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.IsNight = true;
+		g.Refresh(ctx);
+		var home = Assert.IsType<StayHomeSkill>(p.Next(ctx));
+		p.OnSkillFinished(home, SkillStatus.Failed, ctx); // what the brain reports after a death (no failure reason)
+		Assert.IsType<StayHomeSkill>(p.Next(ctx));
 	}
 
 	[Fact]
