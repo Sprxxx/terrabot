@@ -168,6 +168,28 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void InTheMorning_WaitsInTheHouseForTheZombiesOutsideToGo()
+	{
+		// world_eye run 63: out of the house at first light among 6 zombies, killed below it.
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(output);
+		var stay = new StayHomeSkill(ctx.Node); // already there
+		g.IsNight = true;
+		g.Refresh(ctx);
+		stay.Start(ctx);
+		Assert.Equal(SkillStatus.Running, stay.Tick(ctx));
+		Assert.True(stay.Home);
+		g.IsNight = false;
+		g.AddSlime(7, ctx.Node.X + 10, ctx.Node.Y);
+		g.Refresh(ctx);
+		Assert.Equal(SkillStatus.Running, stay.Tick(ctx));
+		Assert.Contains("waiting for 1 hostile", stay.Describe());
+		g.Slimes.Clear();
+		g.Refresh(ctx);
+		Assert.Equal(SkillStatus.Succeeded, stay.Tick(ctx));
+	}
+
+	[Fact]
 	public void DyingOnTheWayHome_IsNotCannotGetHome()
 	{
 		// world_eye run 52: killed just below the house, the death counted as "cannot get home", and after the respawn a

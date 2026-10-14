@@ -94,6 +94,12 @@ public sealed class BotBrain
 	/// <summary>With <see cref="CrowdSize"/> or more hostiles within <see cref="CrowdTiles"/>, retreat already below this.</summary>
 	public const float CrowdRetreatBelow = 0.5f;
 	public const int CrowdSize = 2, CrowdTiles = 8;
+	/// <summary>
+	/// With <see cref="MobSize"/> or more within <see cref="CrowdTiles"/>, retreat below this already: seen in game (world_eye
+	/// runs 61 and 63), at 50% among 6-8 slimes in a cave, the bot was dead before it got away.
+	/// </summary>
+	public const float MobRetreatBelow = 0.7f;
+	public const int MobSize = 4;
 
 	/// <summary>
 	/// Life fraction below which the bot retreats to dig in. Earlier against a crowd: seen in game, digging in at 30%
@@ -104,9 +110,9 @@ public sealed class BotBrain
 		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
 		int near = 0;
 		foreach (EntityInfo h in ctx.Hostiles)
-			if (h.DistanceTo(cx, cy) <= CrowdTiles * 16f && ++near >= CrowdSize)
-				return CrowdRetreatBelow;
-		return RetreatBelow;
+			if (h.DistanceTo(cx, cy) <= CrowdTiles * 16f)
+				near++;
+		return near >= MobSize ? MobRetreatBelow : near >= CrowdSize ? CrowdRetreatBelow : RetreatBelow;
 	}
 	/// <summary>Tiles round a spot where the bot ran out of breath that it no longer mines.</summary>
 	public const int DrownAvoidRadius = 6;
@@ -151,6 +157,28 @@ public sealed class BotBrain
 			if (e.AiStyle == WormAi && e.DistanceTo(cx, cy) <= WormNearPx)
 				return true;
 		return false;
+	}
+
+	/// <summary>Hostiles in sight at once (within <see cref="MobZoneTiles"/>) that make a place one to keep away from without armour.</summary>
+	public const int MobZoneSize = 5, MobZoneTiles = 20, MobZoneRadius = 25;
+
+	/// <summary>
+	/// A crowd of hostiles in weak gear (no armour): somewhere to stay away from for a while, as a player backs off from a
+	/// cave full of slimes. Seen in game (world_eye runs 61 and 63): 7-8 slimes in one cave killed the bot twice.
+	/// </summary>
+	public static void NoteCrowd(BotContext ctx)
+	{
+		if (ctx.Combat.Defense >= BotContext.CavernDefense || ctx.InDangerZone(ctx.Node))
+			return;
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		int n = 0;
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (e.DistanceTo(cx, cy) <= MobZoneTiles * 16f)
+				n++;
+		if (n < MobZoneSize)
+			return;
+		ctx.NoteDanger(ctx.Node, BotContext.DangerZoneTicks, MobZoneRadius);
+		ctx.Log.Info($"Danger: {n} hostiles about at {ctx.Node}; keeping away from here for now");
 	}
 
 	public static void NoteEvilEnemies(BotContext ctx)
@@ -238,6 +266,8 @@ public sealed class BotBrain
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			WearAccessories(ctx);
 			NoteEvilEnemies(ctx);
+			if (ctx.Node.Y > ctx.SurfaceY)
+				NoteCrowd(ctx); // underground: on the surface a night's zombies are the house's business
 			// A chest comes into sight while looking for ore or prey: go and loot it first (the planner picks it next).
 			if (Current is MineSkill or ExploreSkill or HuntSkill && ProgressionPlanner.NextChest(ctx) is ChestInfo seen) {
 				ctx.Log.Info($"Auto: a chest at {seen.TopLeft} came into sight; pausing {Current.Name} to loot it");

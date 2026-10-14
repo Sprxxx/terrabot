@@ -41,6 +41,12 @@ public sealed class StayHomeSkill : ISkill
 	{
 		ctx.Output = MoveInput.None;
 		if (RecoverTo > 0 ? home && ctx.Combat.LifeFraction >= RecoverTo : !ctx.IsNight) {
+			// Morning, but the night's zombies still at the door: wait in for them to go (they leave by day). Seen in game
+			// (world_eye run 63): out at first light among 6 zombies, killed below the house.
+			if (home && HostilesOutside(ctx) is int n and > 0 && ++morningWait <= MaxMorningWaitTicks) {
+				State = $"morning; waiting for {n} hostile(s) outside to go";
+				return SkillStatus.Running;
+			}
 			State = RecoverTo > 0 ? "recovered" : "morning";
 			Stop(ctx);
 			return SkillStatus.Succeeded;
@@ -65,6 +71,22 @@ public sealed class StayHomeSkill : ISkill
 		home = true;
 		ctx.Log.Info($"StayHome: inside at {ctx.Node}; waiting for the morning");
 		return SkillStatus.Running;
+	}
+
+	/// <summary>Longest a morning wait for the hostiles outside to leave (3 game hours).</summary>
+	public const int MaxMorningWaitTicks = 3 * 3600;
+	/// <summary>Hostiles this close (tiles) keep the bot in after the night.</summary>
+	public const int OutsideTiles = 25;
+	private int morningWait;
+
+	private static int HostilesOutside(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		int n = 0;
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (e.DistanceTo(cx, cy) <= OutsideTiles * 16f)
+				n++;
+		return n;
 	}
 
 	private WalkToSkill StartWalk(BotContext ctx)

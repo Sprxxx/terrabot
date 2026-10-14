@@ -641,3 +641,13 @@ what was decided and the result.
     - A banned step logs the tile types in the body at the target.
   - The cause of the pillar failures is still unknown.
 - 1 new test (244 pass). settle_auto and pillar_up_cliff pass.
+
+## Run 63 (commit 669cf21), stopped after about 3 game minutes (2 deaths)
+- Anvil about 15 s, Iron Broadsword about 80 s.
+- **Death 1:** 7 slimes in the cave at row 428 (the same cave as run 61's crowd). The bot retreated at 48% (the crowd rule), was hit four more times while fleeing, and a bat killed it while it dug in.
+- **Death 2:** at first light the StayHome night ended. The bot walked out at once among 6 zombies still at the door and was killed just below the house.
+- **Fixes:**
+  - StayHomeSkill: in the morning it waits inside while hostiles are within 25 tiles, for up to 3 game hours.
+  - Retreat at 70% with 4 or more hostiles within 8 tiles (MobRetreatBelow).
+  - BotBrain.NoteCrowd: 5 or more hostiles within 20 tiles, underground, in no-armour gear (defense < 8), marks a danger zone of radius 25 for the death-zone time, so mining and exploring stay away from that cave.
+- 2 new tests (246 pass). night_home, early_game_with_slimes, fight_two_slimes_both_sides and settle_auto pass.

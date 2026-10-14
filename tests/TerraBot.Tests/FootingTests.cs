@@ -338,6 +338,26 @@ public class FootingTests
 	}
 
 	[Fact]
+	public void ACrowdOfSlimes_InWeakGear_MeansRetreatingSooner_AndAZoneToAvoid()
+	{
+		// world_eye runs 61 and 63: 7-8 slimes in one cave; at 50% life the bot was dead before it got away.
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(null);
+		TilePos at = ctx.Node;
+		for (int i = 0; i < 5; i++)
+			g.AddSlime(10 + i, at.X + 2 + i, at.Y);
+		g.Refresh(ctx);
+		ctx.SurfaceY = 0; // as if underground
+		Assert.Equal(BotBrain.MobRetreatBelow, BotBrain.RetreatThreshold(ctx));
+		BotBrain.NoteCrowd(ctx);
+		Assert.True(ctx.InDangerZone(at));
+		ctx.DangerZones.Clear();
+		ctx.Combat.Defense = BotContext.CavernDefense; // armour: no backing off from slimes
+		BotBrain.NoteCrowd(ctx);
+		Assert.False(ctx.InDangerZone(at));
+	}
+
+	[Fact]
 	public void HeadInWater_ReadsFromTheHitbox_NotTheNode()
 	{
 		// world_eye run 59: breath ran from 95 to 18 while the node's head cells read empty: the bot stood a few pixels low and
