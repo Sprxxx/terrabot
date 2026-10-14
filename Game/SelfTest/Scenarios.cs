@@ -34,6 +34,8 @@ public sealed class RunResult
 	public bool SwordOnHotbar;
 	/// <summary>NPC.downedBoss1 at the end (the Eye of Cthulhu).</summary>
 	public bool EyeDefeated;
+	/// <summary>Real-world runs: the milestones reached, in order, with the tick each came at.</summary>
+	public string Milestones = "";
 	/// <summary>The planner's arena: null = finished (floor, open air, torches, campfire), else why not.</summary>
 	public string Arena = "no arena";
 	/// <summary>A heart lantern hangs where the house blueprint puts it.</summary>
@@ -182,7 +184,9 @@ public sealed class Scenario
 			Dig = true,
 			Build = true,
 			DayTime = 3000,
-			TimeoutTicks = 60 * 60 * 60 * 4, // four game hours: about 8 min with -Fast -DrawEvery 16
+			// A fixed game-time budget, so runs can be compared by the milestones they reach in it (SELFTEST milestone lines):
+			// 5 in-game days (a day is 86,400 ticks), a few real minutes with -Fast -DrawEvery 16 at its usual 20-30x.
+			TimeoutTicks = 5 * 86400,
 			Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
 		},
 			new() {

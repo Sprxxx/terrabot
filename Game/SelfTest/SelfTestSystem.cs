@@ -237,6 +237,8 @@ public sealed class SelfTestSystem : ModSystem
 				if (phaseTicks < SettleTicks)
 					return;
 				result = new RunResult { MaxFeetRow = int.MinValue };
+				milestones.Clear();
+				milestoneSeen.Clear();
 				before = s.RealWorld ? null : arena.SnapshotSolid(s.Rows, s.Width);
 				seenFalling.Clear();
 				bot.HurtCount = 0;
@@ -301,6 +303,8 @@ public sealed class SelfTestSystem : ModSystem
 						return $"#{i} {n.FullName} active {n.active} life {n.life} at ({n.Center.X / 16f:0},{n.Center.Y / 16f:0}) chase {n.CanBeChasedBy()}";
 					})) + $" | bot sees {bot.Context.Hostiles.Count} | {bot.Brain.Describe()}");
 				TrackRun(p, bot, s);
+				if (s.RealWorld && phaseTicks % 60 == 0)
+					TrackMilestones(p, bot);
 				// Heartbeat, so a watcher can tell a frozen game (no lines at all) from a quiet one.
 				if (phaseTicks > 0 && phaseTicks % HeartbeatTicks == 0) {
 					Mod.Logger.Info($"SELFTEST heartbeat {s.Name} t{phaseTicks} speed {Speed(HeartbeatTicks, beatClock)} ({Main.frameRate} fps, present {Main.instance.GraphicsDevice.PresentationParameters.PresentationInterval}, "
@@ -363,6 +367,48 @@ public sealed class SelfTestSystem : ModSystem
 		Mod.Logger.Info($"SELFTEST spawned {string.Join(", ", spawned.Where(i => i >= 0 && i < Main.maxNPCs).Select(i => $"{Main.npc[i].FullName} #{i}"))}{(spawnFailed ? " (SPAWN FAILED)" : "")}");
 	}
 
+	private readonly List<string> milestones = new();
+	private readonly HashSet<string> milestoneSeen = new();
+	private static readonly int[] OreBroadswords = { ItemID.IronBroadsword, ItemID.LeadBroadsword, ItemID.SilverBroadsword, ItemID.TungstenBroadsword, ItemID.GoldBroadsword, ItemID.PlatinumBroadsword };
+	private static readonly int[] OrePickaxes = { ItemID.IronPickaxe, ItemID.LeadPickaxe, ItemID.SilverPickaxe, ItemID.TungstenPickaxe, ItemID.GoldPickaxe, ItemID.PlatinumPickaxe };
+	private static readonly int[] OreBows = { ItemID.IronBow, ItemID.LeadBow, ItemID.SilverBow, ItemID.TungstenBow, ItemID.GoldBow, ItemID.PlatinumBow };
+
+	/// <summary>In-game time since the scenario started, as "day N +H h" (a day is 86,400 ticks, an hour 3,600).</summary>
+	private static string GameClock(int ticks) => $"day {ticks / 86400 + 1} +{ticks % 86400 / 3600}h{ticks % 3600 / 60:00}";
+
+	/// <summary>
+	/// Real-world runs: log each progression milestone the first time it is reached, with the game time and deaths so far,
+	/// so that commits can be compared by how far a fixed game-time budget gets (not by watching, nor by wall-clock time,
+	/// which the fast mode stretches between 4x and 35x).
+	/// </summary>
+	private void TrackMilestones(Player p, TerraBotPlayer bot)
+	{
+		var plan = bot.Brain.Planner;
+		bool Has(int[] types) => Enumerable.Range(0, 58).Any(i => !p.inventory[i].IsAir && Array.IndexOf(types, p.inventory[i].type) >= 0);
+		void Note(string name, bool reached)
+		{
+			if (!reached || !milestoneSeen.Add(name))
+				return;
+			milestones.Add($"{name} t{phaseTicks}");
+			Mod.Logger.Info($"SELFTEST milestone {name} at t{phaseTicks} ({GameClock(phaseTicks)}), deaths {bot.Context.Deaths - deathsAtStart}");
+		}
+		Note("work bench", plan.KnownStations.ContainsKey(TileID.WorkBenches));
+		Note("furnace", plan.KnownStations.ContainsKey(TileID.Furnaces));
+		Note("anvil", plan.KnownStations.ContainsKey(TileID.Anvils));
+		Note("house", plan.HouseSite != null);
+		Note("ore broadsword", Has(OreBroadswords));
+		Note("ore pickaxe", Has(OrePickaxes));
+		Note("ore bow", Has(OreBows));
+		Note("helmet worn", !p.armor[0].IsAir);
+		Note("chest armour worn", !p.armor[1].IsAir);
+		Note("leg armour worn", !p.armor[2].IsAir);
+		Note("full armour", !p.armor[0].IsAir && !p.armor[1].IsAir && !p.armor[2].IsAir);
+		Note("first life crystal", p.statLifeMax > 100);
+		Note("max life 200", p.statLifeMax >= 200);
+		Note("summon item", Has(new int[] { ItemID.SuspiciousLookingEye }));
+		Note("Eye of Cthulhu defeated", NPC.downedBoss1);
+	}
+
 	private void TrackRun(Player p, TerraBotPlayer bot, Scenario s)
 	{
 		TilePos node = Body.NodeOf(p.position.X, p.position.Y, bot.LivePhysics);
@@ -395,6 +441,7 @@ public sealed class SelfTestSystem : ModSystem
 		result.Wood = bot.GameInfo.Count(ItemID.Wood);
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
 		result.EyeDefeated = NPC.downedBoss1;
+		result.Milestones = string.Join(", ", milestones);
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		// The hotbar is restocked every 30 ticks, one swap at a time: a pickaxe crafted on the last tick can still be in
 		// the backpack, behind another swap.
@@ -448,7 +495,7 @@ public sealed class SelfTestSystem : ModSystem
 		string line = $"SELFTEST {(ok ? "PASS" : "FAIL")} {s.Name}{(ok ? "" : " -- " + reason)} | {result.Outcome} | ticks {result.Ticks}, " +
 			$"plans {plans}, replans {replans}, broken {result.Broken}, placed {result.Placed}, lowest feet row {result.MaxFeetRow}, " +
 			$"fall hits {result.FallDamageHits}, falling blocks {result.FallingBlocksSeen}, life lost {result.LifeLost}, hits {result.Hits} ({result.DamageTaken} damage), deaths {result.Deaths}, enemies left {result.EnemiesLeft}, " +
-			$"wood {result.Wood}, swords {result.Swords}, bench {result.BenchPlaced}";
+			$"wood {result.Wood}, swords {result.Swords}, bench {result.BenchPlaced}" + (s.RealWorld ? $", milestones [{result.Milestones}]" : "");
 		summary.Add(line);
 		Mod.Logger.Info(line);
 	}
