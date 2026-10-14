@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Pathfinding;
 using TerraBot.Core.Physics;
@@ -74,7 +75,9 @@ public sealed class CraftSkill : ISkill
 /// range if needed (<see cref="GoalReachTile"/>), aim at it and use the item until the stack shrinks. Cells the
 /// bot could not reach, or that stayed refused once in range, are skipped. The game check also refuses cells
 /// whose footprint overlaps the player, so a spot is re-picked when the bot ends up standing on it.
-/// With no acceptable cell around, it walks to look elsewhere (±25, then ±50 tiles from where it started).
+/// With no acceptable cell around, it makes one: a pocket beside the bot, on the floor it stands on, dug out to the
+/// footprint (gaps in the floor under it filled with blocks), as a player does in a cave. Only when no pocket can be
+/// made there does it walk to look elsewhere (±25, then ±50 tiles from where it started).
 /// </summary>
 public sealed class PlaceItemSkill : ISkill
 {
@@ -86,6 +89,20 @@ public sealed class PlaceItemSkill : ISkill
 	public const int MaxBadSpots = 6;
 	public const int MaxWanders = 4;
 	public const int WanderTiles = 25;
+	/// <summary>
+	/// Pockets dug before walking off to look. Seen in game (measured run L1): underground on uneven cave floor, "no free
+	/// floor within 20 tiles" 75 times, and the furnace went down 99,000 ticks (over a game day) later, after walking about.
+	/// </summary>
+	public const int MaxPockets = 3;
+	/// <summary>Ticks on one cell of a pocket (mining it, or filling the floor under it) before that pocket is given up.</summary>
+	public const int MaxTicksPerPocketCell = 180;
+	private readonly System.Collections.Generic.List<TilePos> pocketWork = new();
+	private readonly System.Collections.Generic.HashSet<TilePos> pocketFills = new();
+	private readonly System.Collections.Generic.HashSet<TilePos> badPockets = new();
+	private TilePos? pocketAim;
+	private TilePos pocketFrom;
+	private int pockets;
+	private int pocketCellTicks;
 	private WalkToSkill wander;
 	private int wanders;
 	private int wanderDir = 1;
@@ -141,12 +158,16 @@ public sealed class PlaceItemSkill : ISkill
 			wander.Stop(ctx);
 			wander = null;
 		}
+		if (pocketAim != null && WorkPocket(ctx, node))
+			return SkillStatus.Running;
 		if (spot == null) {
 			spot = FindSpot(ctx, node);
 			useTicks = 0;
 			if (spot == null) {
 				if (ticks <= 30)
 					return SkillStatus.Running; // give perception a moment (just landed, a drop being picked up...)
+				if (pockets < MaxPockets && ctx.Body.Grounded && StartPocket(ctx, node))
+					return SkillStatus.Running;
 				if (++wanders > MaxWanders)
 					return Fail(ctx, $"no free floor within {SearchX} tiles, here or {MaxWanders} places around");
 				// Uneven or dug-up ground: walk a bit (alternating sides) and look again.
@@ -196,6 +217,122 @@ public sealed class PlaceItemSkill : ISkill
 		}
 		return SkillStatus.Running;
 	}
+
+	/// <summary>
+	/// Choose a pocket beside the bot for the footprint, its bottom row on the floor the bot stands on: every cell in it
+	/// empty or a block it may mine, the floor under it solid or a gap a block can fill, all in reach from here, no
+	/// liquid. The fewest cells to change wins.
+	/// </summary>
+	private bool StartPocket(BotContext ctx, TilePos node)
+	{
+		var (w, h, ox, oy) = ctx.World.Footprint(ItemType);
+		if (w <= 0 || h <= 0 || ctx.Blocks == null)
+			return false;
+		ITileGrid g = ctx.Grid;
+		System.Collections.Generic.List<TilePos> bestWork = null;
+		System.Collections.Generic.HashSet<TilePos> bestFills = null;
+		TilePos bestAim = default;
+		int bestCost = int.MaxValue;
+		foreach (int side in new[] { 1, -1 }) {
+			for (int gap = 0; gap <= 1; gap++) {
+				int x0 = side > 0 ? node.X + Body.WidthTiles + gap : node.X - w - gap;
+				int y0 = node.Y - h + 1;
+				var aim = new TilePos(x0 + ox, y0 + oy);
+				if (badPockets.Contains(aim) || bad.Contains(aim))
+					continue;
+				var fills = new System.Collections.Generic.List<TilePos>();
+				var digs = new System.Collections.Generic.List<TilePos>();
+				bool ok = true;
+				for (int cx = x0; cx < x0 + w && ok; cx++) {
+					var floor = new TilePos(cx, node.Y + 1);
+					CellKind f = g.Get(floor.X, floor.Y);
+					if (f.IsLiquid() || !InReach(ctx, node, floor))
+						ok = false;
+					else if (!f.IsSolid()) {
+						if (f.IsBlockTile() || !ctx.Blocks.CanPlaceAt(floor.X, floor.Y))
+							ok = false; // a slope or half block: not a floor for furniture, and not a cell a block goes into
+						else
+							fills.Add(floor);
+					}
+					for (int cy = y0; cy <= node.Y && ok; cy++) {
+						var c = new TilePos(cx, cy);
+						CellKind k = g.Get(c.X, c.Y);
+						if (k.IsLiquid() || !InReach(ctx, node, c))
+							ok = false;
+						else if (k.IsBlockTile()) {
+							if (!MineSkill.SafeToBreak(ctx, ctx.Moves, c))
+								ok = false;
+							else
+								digs.Add(c);
+						}
+						else if (k.IsPlatform())
+							ok = false;
+					}
+				}
+				if (!ok || fills.Count > ctx.Blocks.BlockCount)
+					continue;
+				int cost = digs.Count + 2 * fills.Count + gap;
+				if (cost < bestCost) {
+					bestCost = cost;
+					bestAim = aim;
+					bestFills = new System.Collections.Generic.HashSet<TilePos>(fills);
+					digs.Sort((a, b) => a.Y != b.Y ? a.Y.CompareTo(b.Y) : a.X.CompareTo(b.X)); // top down: nothing left hanging over the bot
+					bestWork = fills.Concat(digs).ToList();
+				}
+			}
+		}
+		if (bestWork == null)
+			return false;
+		pockets++;
+		pocketAim = bestAim;
+		pocketFrom = node;
+		pocketCellTicks = 0;
+		pocketWork.Clear();
+		pocketWork.AddRange(bestWork);
+		pocketFills.Clear();
+		pocketFills.UnionWith(bestFills);
+		ctx.Log.Info($"Place: no free floor within {SearchX} tiles of {node}; making room at {bestAim} ({pocketWork.Count - pocketFills.Count} to mine, {pocketFills.Count} to fill)");
+		return true;
+	}
+
+	private static bool InReach(BotContext ctx, TilePos node, TilePos c) => new GoalReachTile(c, ctx.Physics).InRange(node);
+
+	/// <summary>One tick of digging the pocket; false once it is done (the spot is then its aim) or given up.</summary>
+	private bool WorkPocket(BotContext ctx, TilePos node)
+	{
+		TilePos aim = pocketAim.Value;
+		if (node != pocketFrom) {
+			// Knocked off the spot (a fight, a fall): choose again from where the bot is now.
+			pocketAim = null;
+			return false;
+		}
+		while (pocketWork.Count > 0 && PocketCellDone(ctx, pocketWork[0])) {
+			pocketWork.RemoveAt(0);
+			pocketCellTicks = 0;
+		}
+		if (pocketWork.Count == 0) {
+			pocketAim = null;
+			spot = aim;
+			useTicks = 0;
+			return false;
+		}
+		TilePos c = pocketWork[0];
+		if (++pocketCellTicks > MaxTicksPerPocketCell) {
+			ctx.Log.Info($"Place: could not {(pocketFills.Contains(c) ? "fill" : "mine")} {c} for the pocket at {aim}; trying elsewhere");
+			badPockets.Add(aim);
+			pocketAim = null;
+			return false;
+		}
+		if (!ctx.Body.Grounded)
+			return true;
+		ctx.Output.UseItem = true;
+		ctx.Output.Aim(c.X, c.Y);
+		ctx.Output.Tool = pocketFills.Contains(c) ? ToolRequest.Block : ToolRequest.Pickaxe;
+		return true;
+	}
+
+	private bool PocketCellDone(BotContext ctx, TilePos c) =>
+		pocketFills.Contains(c) ? ctx.Grid.Get(c.X, c.Y).IsSolid() : !ctx.Grid.Get(c.X, c.Y).IsBlockTile();
 
 	/// <summary>Nearest acceptable cell (same row first, then rows above/below), skipping spots that failed.</summary>
 	private TilePos? FindSpot(BotContext ctx, TilePos node)

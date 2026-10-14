@@ -95,23 +95,66 @@ public class EarlyGameTests
 		Assert.True(game.Stations.ContainsKey(FakeGame.TileFurnace));
 	}
 
-	[Fact]
-	public void PlaceItem_LooksElsewhere_WhenNoFloorIsFlatNearby()
+	/// <summary>Bumpy ground (every other column a step up) for 45 columns: no 3-wide flat floor near the start.</summary>
+	private static FakeGame Bumpy()
 	{
-		// Bumpy ground (every other column a step up) for 40 columns around the start: no 3-wide flat floor for a
-		// furnace within reach of the search; flat ground beyond. (Seen in game: no free floor where the bot stood.)
 		FakeGame game = Field(110);
 		for (int x = 0; x <= 45; x += 2)
 			game.Grid.Set(x, 24, Core.Grid.CellKind.Solid);
 		game.Grid.Set(3, 24, Core.Grid.CellKind.Empty);
 		game.Grid.Set(4, 24, Core.Grid.CellKind.Empty);
 		game.Grid.Set(5, 24, Core.Grid.CellKind.Solid); // the start gap is 2 wide: the 3-wide furnace never fits in it
+		return game;
+	}
+
+	[Fact]
+	public void PlaceItem_LooksElsewhere_WhenNoRoomCanBeMadeNearby()
+	{
+		// The bumps cannot be mined (as with a weak pickaxe): no pocket; flat ground beyond them.
+		FakeGame game = Bumpy();
+		for (int x = 0; x <= 45; x++)
+			game.Blocks.Unbreakable.Add(new Core.Grid.TilePos(x, 24));
 		BotContext ctx = game.CreateContext(output);
 		game.Items[FakeGame.Furnace] = 1;
 		var place = new PlaceItemSkill(FakeGame.Furnace);
 		Assert.Equal(SkillStatus.Succeeded, RunSkill(game, ctx, place, 60 * 60));
 		output.WriteLine($"placed at {place.PlacedAt} after {game.Sim.Ticks} ticks");
 		Assert.True(place.PlacedAt.Value.X > 45);
+	}
+
+	[Fact]
+	public void PlaceItem_DigsRoom_WhenNoFloorIsFlatNearby()
+	{
+		// Seen in game (measured run L1): underground on uneven cave floor, "no free floor within 20 tiles" 75 times and the
+		// furnace placed a game day later, after walking about. A player mines out room for it where they stand.
+		FakeGame game = Bumpy();
+		BotContext ctx = game.CreateContext(output);
+		game.Items[FakeGame.Furnace] = 1;
+		var place = new PlaceItemSkill(FakeGame.Furnace);
+		Assert.Equal(SkillStatus.Succeeded, RunSkill(game, ctx, place, 60 * 20));
+		output.WriteLine($"placed at {place.PlacedAt} after {game.Sim.Ticks} ticks, mined {game.Sim.Broken}");
+		Assert.True(System.Math.Abs(place.PlacedAt.Value.X - 3) <= 6, $"placed at {place.PlacedAt}");
+		Assert.True(game.Sim.Broken > 0);
+	}
+
+	[Fact]
+	public void PlaceItem_FillsTheFloor_UnderTheRoomItMakes()
+	{
+		// A shaft in every other column of the ground (one wide, all the way down): no 3-wide floor but where the bot
+		// stands; blocks go into the shaft tops under the furnace.
+		FakeGame game = Field(40);
+		for (int x = 0; x < 40; x += 2)
+			if (x != 4)
+				for (int y = 25; y < 30; y++)
+					game.Grid.Set(x, y, Core.Grid.CellKind.Empty);
+		BotContext ctx = game.CreateContext(output);
+		game.Items[FakeGame.Furnace] = 1;
+		game.Items[FakeGame.StoneBlock] = 10;
+		var place = new PlaceItemSkill(FakeGame.Furnace);
+		Assert.Equal(SkillStatus.Succeeded, RunSkill(game, ctx, place, 60 * 20));
+		output.WriteLine($"placed at {place.PlacedAt} after {game.Sim.Ticks} ticks, blocks placed {game.Sim.Placed}");
+		Assert.True(System.Math.Abs(place.PlacedAt.Value.X - 3) <= 6, $"placed at {place.PlacedAt}");
+		Assert.True(game.Sim.Placed > 0);
 	}
 
 	[Fact]
