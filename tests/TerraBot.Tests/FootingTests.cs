@@ -322,6 +322,22 @@ public class FootingTests
 	}
 
 	[Fact]
+	public void Exploring_StartsOnTheSideAwayFromADangerZone_AndTravelSkipsGroundAboveIt()
+	{
+		// world_eye run 60: every mining job explored right first, into the underground desert by the spawn, and a trip for
+		// new ore ended on the surface just above it.
+		var ctx = new BotContext { Tick = 100 };
+		var at = new TilePos(1000, 300);
+		Assert.Equal(1, ctx.SaferSide(at)); // nothing known either way: alternates
+		Assert.Equal(-1, ctx.SaferSide(at));
+		ctx.NoteDanger(new TilePos(1050, 360), BotContext.BiomeZoneTicks, BotContext.BiomeZoneRadius);
+		Assert.Equal(-1, ctx.SaferSide(at));
+		Assert.Equal(-1, ctx.SaferSide(at));
+		Assert.True(ctx.OffLimitsBelow(new TilePos(1040, 280)));
+		Assert.False(ctx.OffLimitsBelow(new TilePos(900, 280)));
+	}
+
+	[Fact]
 	public void HeadInWater_ReadsFromTheHitbox_NotTheNode()
 	{
 		// world_eye run 59: breath ran from 95 to 18 while the node's head cells read empty: the bot stood a few pixels low and

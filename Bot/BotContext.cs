@@ -317,6 +317,43 @@ public sealed class BotContext
 	public System.Collections.Generic.HashSet<TilePos> UnreachableTiles { get; } = new();
 	/// <summary>Per ore item: explorations in a row that found none (MineSkill), across restarts of the skill.</summary>
 	public System.Collections.Generic.Dictionary<int, int> ExploresWithoutOre { get; } = new();
+
+	/// <summary>Which way the last exploration with no side to prefer went (alternated across mining jobs).</summary>
+	public int LastExploreSide { get; set; } = -1;
+
+	/// <summary>
+	/// The side (-1 left, 1 right) with less known off-limits ground ahead and below <paramref name="from"/>; with neither
+	/// worse, the other side from last time. Seen in game (world_eye run 60): every mining job (restarted after each fight)
+	/// explored right first, into the underground desert by the spawn, and antlion chargers killed the bot twice.
+	/// </summary>
+	public int SaferSide(TilePos from)
+	{
+		int left = OffLimitsAhead(from, -1), right = OffLimitsAhead(from, 1);
+		int side = left < right ? -1 : right < left ? 1 : -LastExploreSide;
+		LastExploreSide = side;
+		return side;
+	}
+
+	/// <summary>How many of the spots ahead on one side (out to 60 tiles, down to 60 rows) are off limits.</summary>
+	public int OffLimitsAhead(TilePos from, int side)
+	{
+		int n = 0;
+		for (int dx = 15; dx <= 60; dx += 15)
+			for (int dy = -10; dy <= 60; dy += 14)
+				if (OffLimits(new TilePos(from.X + side * dx, from.Y + dy)))
+					n++;
+		return n;
+	}
+
+	/// <summary>Known off-limits ground under a surface spot (the underground desert, a biome zone): not somewhere to mine from.</summary>
+	public bool OffLimitsBelow(TilePos surface)
+	{
+		for (int dx = -30; dx <= 30; dx += 15)
+			for (int dy = 20; dy <= 100; dy += 20)
+				if (OffLimits(new TilePos(surface.X + dx, surface.Y + dy)))
+					return true;
+		return false;
+	}
 	/// <summary>Cells path moves must neither mine nor fill (a building in progress); null or empty = none.</summary>
 	public System.Collections.Generic.IReadOnlySet<TilePos> Reserved { get; set; }
 	private ReservedBlocks reservedBlocks;

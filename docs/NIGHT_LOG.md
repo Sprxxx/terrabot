@@ -605,3 +605,15 @@ what was decided and the result.
 - Breath mystery found: vanilla's drown box (Collision.DrownCollision) is 10×12 px starting 2 px above the hitbox top. When the bot stands a few px low (on a slope), the box reaches water in the row below the node's head cells.
   - **Fix:** SurfaceSkill.HeadUnder now mirrors that box on the real hitbox.
 - 3 new tests (241 pass). Regressions iron_age_auto, settle_auto and life_crystals: all pass.
+
+## Run 60 (commit 0d3a121), stopped after 3 deaths in about 2 game minutes
+- The new give-up worked ("every way from here is off limits", then mining failed and the bot travelled). But the bot still died:
+  - Two antlion chargers on the desert's underground edge, by the spawn.
+  - A vulture on the surface desert.
+- **Causes:**
+  - Every mining job (a new one after each fight) explored right first, which is east, into the desert.
+  - The trip for new ore went to (2215,279), on the surface right above the underground desert's edge.
+- **Fixes:**
+  - The first exploration of a mining job goes the safer side (BotContext.SaferSide: fewer known off-limits spots out to 60 tiles ahead and below). With neither side worse, it alternates across jobs.
+  - TravelForOre skips spots with known off-limits ground below them (OffLimitsBelow: 30 tiles either side, down to 100 rows).
+- 1 new test (242 pass). iron_age_auto and settle_auto pass.

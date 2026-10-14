@@ -40,7 +40,7 @@ public sealed class MineSkill : ISkill
 	private ISkill sub;
 	private TilePos? target;
 	private int mineTicks;
-	private int exploreDir = 1;
+	private int exploreDir;
 	private int lastHave;
 	private int unreachableInARow;
 
@@ -132,8 +132,9 @@ public sealed class MineSkill : ISkill
 		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
 		// "Found" is what this skill would actually go for (not beside water, not given up on...): with "any seen", exploring
 		// stopped at ore that mining then skipped, and mining explored again, round and round.
+		// The first exploration of a job goes the safer way (BotContext.SaferSide), later ones alternate.
+		exploreDir = exploreDir == 0 ? ctx.SaferSide(ctx.Node) : -exploreDir;
 		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, ExploreBias.Down, exploreDir), "exploring");
-		exploreDir = -exploreDir;
 		return SkillStatus.Running;
 	}
 
