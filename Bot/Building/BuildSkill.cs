@@ -144,6 +144,7 @@ public sealed class BuildSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Build";
+	public string Key => $"Build {bp.GetType().Name} {Origin} {bp.Width}x{bp.Height}";
 
 	public BuildSkill(Blueprint blueprint, TilePos origin)
 	{

@@ -17,6 +17,7 @@ public sealed class EquipSkill : ISkill
 	public int ItemType { get; }
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Equip";
+	public string Key => $"Equip {ItemType}";
 
 	public EquipSkill(int itemType) => ItemType = itemType;
 
@@ -64,6 +65,7 @@ public sealed class UseItemSkill : ISkill
 	public int ItemType { get; }
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Use";
+	public string Key => $"Use {ItemType}";
 
 	public UseItemSkill(int itemType) => ItemType = itemType;
 
@@ -118,6 +120,7 @@ public sealed class WaitSkill : ISkill
 	public int MaxTicks { get; }
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Wait";
+	public string Key => $"Wait {What}";
 
 	public WaitSkill(string what, System.Func<BotContext, bool> until, int maxTicks)
 	{

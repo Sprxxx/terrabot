@@ -17,6 +17,7 @@ public sealed class StayHomeSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "StayHome";
+	public string Key => $"StayHome {inside} {RecoverTo}";
 	/// <summary>Inside, waiting: enemies outside the walls are left alone (see BotBrain).</summary>
 	public bool Home => home;
 	/// <summary>Where it is going.</summary>

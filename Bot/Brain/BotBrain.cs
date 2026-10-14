@@ -8,10 +8,13 @@ namespace TerraBot.Bot.Brain;
 /// Chooses what to do and sequences skills.
 /// <list type="bullet">
 /// <item>Manual: one movement target (<see cref="SetTarget"/>) or one explicit skill (<see cref="StartSkill"/>).</item>
-/// <item>Auto (<see cref="SetAuto"/>): asks <see cref="ProgressionPlanner"/> for the next skill whenever nothing runs,
-/// and pre-empts anything but a fight (or a sealed shelter) when a hostile comes close; after a fight it picks up
-/// the loot, then re-plans from the new situation.
-/// A skill that fails three times in a row stops auto mode, so a stuck goal cannot loop forever.</item>
+/// <item>Auto (<see cref="SetAuto"/>): asks <see cref="ProgressionPlanner"/> for the next skill (the <see cref="Work"/>)
+/// whenever nothing runs. Reflexes (surfacing, a retreat, a fight, picking up its loot) take over as the
+/// <see cref="Override"/>: the work is paused, not dropped, and when the override is over the planner is asked again;
+/// if it still wants the same job (<see cref="ISkill.Key"/>), the paused instance resumes with what it had learnt
+/// (AltoClef's interrupt-and-resume). Seen in game: every fight restarted the job from scratch, and state had to be
+/// moved out of the skills one patch at a time to survive it.
+/// Work that fails three times in a row brings a rest, and auto mode stops only after the rests run out.</item>
 /// </list>
 /// </summary>
 public sealed class BotBrain
@@ -33,7 +36,14 @@ public sealed class BotBrain
 	private long backoffUntil = -1;
 
 	public TilePos? Target { get; private set; }
-	public ISkill Current { get; private set; }
+	/// <summary>The job: the planner's skill (or the manual walk or skill). Paused while an <see cref="Override"/> runs.</summary>
+	public ISkill Work { get; private set; }
+	/// <summary>A reflex that has taken over from the work: surfacing, a retreat, a fight, picking up its loot.</summary>
+	public ISkill Override { get; private set; }
+	/// <summary>What runs now.</summary>
+	public ISkill Current => Override ?? Work;
+	private bool replan;
+	private string replanWhy = "";
 	public string LastResult { get; private set; } = "";
 	public bool Auto { get; private set; }
 	public ProgressionPlanner Planner { get; } = new();
@@ -55,7 +65,7 @@ public sealed class BotBrain
 		Auto = false;
 		Target = null;
 		LastResult = "";
-		Current = skill;
+		Work = skill;
 		skill.Start(ctx);
 	}
 
@@ -83,11 +93,58 @@ public sealed class BotBrain
 		Auto = false;
 	}
 
-	/// <summary>Stop the running skill but keep the target/mode (bot switched off; resumes with a fresh plan).</summary>
+	/// <summary>Stop the running skills (override and work) but keep the target/mode (bot switched off; resumes with a fresh plan).</summary>
 	public void Interrupt(BotContext ctx)
 	{
-		Current?.Stop(ctx);
-		Current = null;
+		Override?.Stop(ctx);
+		Override = null;
+		Work?.Stop(ctx);
+		Work = null;
+		replan = false;
+	}
+
+	/// <summary>
+	/// A reflex takes over: the work is paused (its controls and sub-skills released, the instance kept), or a weaker
+	/// reflex is replaced.
+	/// </summary>
+	private void BeginOverride(ISkill skill, BotContext ctx)
+	{
+		if (Override != null)
+			Override.Stop(ctx);
+		else
+			Work?.Stop(ctx);
+		Override = skill;
+		skill.Start(ctx);
+	}
+
+	/// <summary>Ask the planner again at the next chance (nightfall, a chest in sight...): the same job goes on, another replaces it.</summary>
+	private void RequestReplan(string why)
+	{
+		replan = true;
+		replanWhy = why;
+	}
+
+	private static bool SameJob(ISkill a, ISkill b) => a != null && b != null && a.Key != null && a.Key == b.Key;
+
+	/// <summary>
+	/// The planner's choice now against the (paused or running) work: the same job keeps its instance, another replaces it.
+	/// <paramref name="paused"/>: the work was stopped for an override and is started again if it goes on.
+	/// </summary>
+	private void ChooseWork(BotContext ctx, bool paused, string why)
+	{
+		ISkill next = Planner.Next(ctx);
+		if (SameJob(next, Work)) {
+			if (paused) {
+				ctx.Log.Info($"Auto: back to {Work.Name} after {why}");
+				Work.Start(ctx);
+			}
+			return;
+		}
+		ctx.Log.Info($"Auto: {Planner.Status}{(next != null ? " -> " + next.Name : "")} (after {why}, instead of {(paused ? "going back to" : "going on with")} {Work.Name})");
+		if (!paused)
+			Work.Stop(ctx);
+		Work = next;
+		next?.Start(ctx);
 	}
 
 	/// <summary>Hurt this badly with no potion to drink and enemies about: dig in and recover instead of fighting on.</summary>
@@ -228,10 +285,14 @@ public sealed class BotBrain
 		if (ctx.Deaths != deathsSeen) {
 			deathsSeen = ctx.Deaths;
 			if (Current != null && Current is not BossFightSkill) {
-				ctx.Log.Info($"Died during {Current.Name}; starting afresh from {ctx.Node}");
+				ctx.Log.Info($"Died during {Current.Name}{(Override != null && Work != null ? $" (paused: {Work.Name})" : "")}; starting afresh from {ctx.Node}");
 				LastResult = $"{Current.Name} Failed: died";
-				if (Auto)
-					Planner.OnSkillFinished(Current, SkillStatus.Failed, ctx);
+				if (Auto) {
+					if (Override != null)
+						Planner.OnSkillFinished(Override, SkillStatus.Failed, ctx);
+					if (Work != null)
+						Planner.OnSkillFinished(Work, SkillStatus.Failed, ctx);
+				}
 				Interrupt(ctx);
 			}
 		}
@@ -253,8 +314,7 @@ public sealed class BotBrain
 				for (int dy = -DrownAvoidRadius; dy <= DrownAvoidRadius; dy++)
 					ctx.UnreachableTiles.Add(new TilePos(here.X + dx, here.Y + dy));
 			ctx.Explored.Add(here);
-			Interrupt(ctx);
-			Begin(new SurfaceSkill(), ctx);
+			BeginOverride(new SurfaceSkill(), ctx);
 		}
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
@@ -266,22 +326,19 @@ public sealed class BotBrain
 			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)
 			&& ((retreatHome = Planner.HomeToRetreatTo(ctx, anyDistance: wormNear = WormNear(ctx))) != null || !wormNear)) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
-			Interrupt(ctx);
 			// Home if it is near (enemies cannot get through the door), else dig in where it is.
 			if (retreatHome is TilePos home)
-				Begin(new StayHomeSkill(home) { RecoverTo = RetreatUntil }, ctx);
+				BeginOverride(new StayHomeSkill(home) { RecoverTo = RetreatUntil }, ctx);
 			else
-				Begin(ShelterSkill.Recover(RetreatUntil), ctx);
+				BeginOverride(ShelterSkill.Recover(RetreatUntil), ctx);
 		}
 		// Nightfall: work started by day (a walk back to the spawn, a mine near the surface) is planned again, so the night
 		// rule can send the bot home. Seen in game (world_eye run 68): a walk begun by day came up at night among zombies,
 		// and one killed the bot (wooden sword, no armour).
 		bool night = ctx.IsNight;
-		if (Auto && night && !wasNight && Current is WalkToSkill or MineSkill or ExploreSkill or GatherWoodSkill
-			&& ctx.Combat.Defense < ProgressionPlanner.NightOutDefense) {
-			ctx.Log.Info($"Auto: nightfall; planning again instead of going on with {Current.Name}");
-			Interrupt(ctx);
-		}
+		if (Auto && night && !wasNight && Work is WalkToSkill or MineSkill or ExploreSkill or GatherWoodSkill
+			&& ctx.Combat.Defense < ProgressionPlanner.NightOutDefense)
+			RequestReplan("nightfall");
 		wasNight = night;
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			WearAccessories(ctx);
@@ -289,15 +346,11 @@ public sealed class BotBrain
 			if (ctx.Node.Y > ctx.SurfaceY)
 				NoteCrowd(ctx); // underground: on the surface a night's zombies are the house's business
 			// A chest comes into sight while looking for ore or prey: go and loot it first (the planner picks it next).
-			if (Current is MineSkill or ExploreSkill or HuntSkill && ProgressionPlanner.NextChest(ctx) is ChestInfo seen) {
-				ctx.Log.Info($"Auto: a chest at {seen.TopLeft} came into sight; pausing {Current.Name} to loot it");
-				Interrupt(ctx);
-			}
+			if (Current is MineSkill or ExploreSkill or HuntSkill && ProgressionPlanner.NextChest(ctx) is ChestInfo seen)
+				RequestReplan($"a chest at {seen.TopLeft} came into sight");
 			else if (Current is ExploreSkill or HuntSkill || Current is MineSkill m && m.ItemType != ctx.Ids.LifeCrystal) {
-				if (ProgressionPlanner.LifeCrystalUseful(ctx) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart) {
-					ctx.Log.Info($"Auto: a life crystal at {heart} came into sight; pausing {Current.Name} to get it");
-					Interrupt(ctx);
-				}
+				if (ProgressionPlanner.LifeCrystalUseful(ctx) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart)
+					RequestReplan($"a life crystal at {heart} came into sight");
 			}
 		}
 		// In the house for the night, zombies and demon eyes outside cannot get in: only what actually hits the bot is
@@ -316,8 +369,12 @@ public sealed class BotBrain
 		if (Auto && !safeAtHome && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx, toFight: true)) {
 			if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
-			Interrupt(ctx);
-			Begin(new FightSkill(), ctx);
+			BeginOverride(new FightSkill(), ctx);
+		}
+		// Work asked to be planned again (nightfall, a chest in sight): only between reflexes, and the same job goes on.
+		if (replan && Override == null && Work != null && Auto) {
+			replan = false;
+			ChooseWork(ctx, paused: false, replanWhy);
 		}
 		if (Current == null && Target != null)
 			Begin(new WalkToSkill(Target.Value), ctx);
@@ -369,24 +426,36 @@ public sealed class BotBrain
 		if (status == SkillStatus.Running)
 			return;
 
-		string why = Current.FailureReason;
-		LastResult = $"{Current.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
-		ctx.Log.Info($"Skill finished: {LastResult}");
-		bool wasFight = Current is FightSkill;
 		ISkill skill = Current;
+		string why = skill.FailureReason;
+		LastResult = $"{skill.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
+		ctx.Log.Info($"Skill finished: {LastResult}");
+		bool wasFight = skill is FightSkill;
 		if (Auto)
-			Planner.OnSkillFinished(Current, status, ctx);
-		Current.Stop(ctx);
-		Current = null;
-		Target = null;
-		if (Auto && wasFight && CollectDropsSkill.AnyInRange(ctx, _ => true, LootRadiusTiles)) {
-			ctx.Log.Info("Auto: picking up loot after the fight");
-			Begin(new CollectDropsSkill(_ => true, LootRadiusTiles), ctx);
+			Planner.OnSkillFinished(skill, status, ctx);
+		skill.Stop(ctx);
+		if (Override != null) {
+			// A reflex is over: its loot, then back to the paused work if the planner still wants it. Reflexes do not count
+			// as failures or successes of the work.
+			Override = null;
+			if (Auto && wasFight && CollectDropsSkill.AnyInRange(ctx, _ => true, LootRadiusTiles)) {
+				ctx.Log.Info("Auto: picking up loot after the fight");
+				BeginOverride(new CollectDropsSkill(_ => true, LootRadiusTiles), ctx);
+				return;
+			}
+			if (Work != null) {
+				if (Auto)
+					ChooseWork(ctx, paused: true, skill.Name.ToLowerInvariant());
+				else
+					Work.Start(ctx);
+			}
 			return;
 		}
+		Work = null;
+		Target = null;
 		if (Auto) {
 			failures = status == SkillStatus.Failed ? failures + 1 : 0;
-			if (status == SkillStatus.Succeeded && !wasFight) {
+			if (status == SkillStatus.Succeeded) {
 				backoffs = 0;
 				ctx.DigAnyway = false;
 			}
@@ -416,7 +485,7 @@ public sealed class BotBrain
 
 	private void Begin(ISkill skill, BotContext ctx)
 	{
-		Current = skill;
+		Work = skill;
 		skill.Start(ctx);
 	}
 

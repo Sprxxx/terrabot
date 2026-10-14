@@ -27,6 +27,7 @@ public sealed class LootChestSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "LootChest";
+	public string Key => $"LootChest {Chest}";
 
 	public LootChestSkill(TilePos chestTopLeft) => Chest = chestTopLeft;
 

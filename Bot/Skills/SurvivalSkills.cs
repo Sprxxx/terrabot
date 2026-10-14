@@ -28,6 +28,7 @@ public sealed class HuntSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Hunt";
+	public string Key => $"Hunt {ItemType} {AiStyle} {Amount}";
 
 	public HuntSkill(int itemType, int aiStyle, int amount)
 	{
@@ -161,6 +162,7 @@ public sealed class ShelterSkill : ISkill
 	public string State => phase.ToString();
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Shelter";
+	public string Key => $"Shelter {why}";
 
 	public string Describe() => $"Shelter [{phase}]" + (dig != null ? " > " + dig.Describe() : "");
 

@@ -51,6 +51,7 @@ public sealed class MineSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Mine";
+	public string Key => $"Mine {ItemType} {TileType} {Amount}";
 
 	public MineSkill(int itemType, int tileType, int amount)
 	{

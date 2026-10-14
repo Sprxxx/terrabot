@@ -21,6 +21,7 @@ public sealed class ChopTreeSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "ChopTree";
+	public string Key => $"ChopTree {Base}";
 
 	public ChopTreeSkill(TilePos treeBase) => Base = treeBase;
 
@@ -202,6 +203,7 @@ public sealed class GatherWoodSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "GatherWood";
+	public string Key => $"GatherWood {ItemType} {Amount}";
 
 	public GatherWoodSkill(int itemType, int amount)
 	{

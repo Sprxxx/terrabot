@@ -87,6 +87,7 @@ public sealed class BossFightSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Boss";
+	public string Key => $"Boss {BossType} {SummonItem}";
 
 	public BossFightSkill(int summonItem, int bossType, params int[] minionTypes)
 	{

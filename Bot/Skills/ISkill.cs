@@ -28,4 +28,11 @@ public interface ISkill
 
 	/// <summary>Why the skill failed (empty while running or after success).</summary>
 	string FailureReason => "";
+
+	/// <summary>
+	/// What job this is, from its defining parameters only (e.g. "Mine 11 6 24"), or null for "never the same job". Two
+	/// skills with the same key are the same job: one paused by a fight resumes (the same instance, with what it has
+	/// learnt) when the planner's next choice has its key, instead of a fresh one starting over (AltoClef's Task.isEqual).
+	/// </summary>
+	string Key => null;
 }

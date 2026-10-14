@@ -23,6 +23,7 @@ public sealed class CraftSkill : ISkill
 	public CraftResult LastResult { get; private set; }
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Craft";
+	public string Key => $"Craft {ItemType} {Count}";
 
 	public CraftSkill(int itemType, int count = 1)
 	{
@@ -100,6 +101,7 @@ public sealed class PlaceItemSkill : ISkill
 	public int ItemType { get; }
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Place";
+	public string Key => $"Place {ItemType}";
 	public TilePos? PlacedAt { get; private set; }
 
 	public PlaceItemSkill(int itemType) => ItemType = itemType;

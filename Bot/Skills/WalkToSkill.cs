@@ -40,6 +40,7 @@ public sealed class WalkToSkill : ISkill
 	public string FailureReason { get; private set; } = "";
 
 	public string Name => "WalkTo";
+	public string Key => $"WalkTo {(fixedGoal != null ? fixedGoal.ToString() : Target.ToString())}{(Travel ? " travel" : "")}{(ToSurface ? " to surface" : "")}";
 
 	/// <summary>Used as a sub-skill (e.g. chasing a moving enemy): plan/finish lines go to Debug instead of Info.</summary>
 	public bool Quiet { get; init; }
