@@ -651,3 +651,14 @@ what was decided and the result.
   - Retreat at 70% with 4 or more hostiles within 8 tiles (MobRetreatBelow).
   - BotBrain.NoteCrowd: 5 or more hostiles within 20 tiles, underground, in no-armour gear (defense < 8), marks a danger zone of radius 25 for the death-zone time, so mining and exploring stay away from that cave.
 - 2 new tests (246 pass). night_home, early_game_with_slimes, fight_two_slimes_both_sides and settle_auto pass.
+
+## Run 64 (commit aa781de), stopped after about 4 game minutes (2 deaths)
+- Iron Broadsword and Iron Pickaxe at about 3 min. Recall potions were drunk to get home to the stations.
+- The crowd zones fired ("8 hostiles about at (2104,408)"; "5 at (2038,417)").
+- **Death 1:** the walk "back to the spawn" from row 408 followed caves east into the desert, and antlion swarmers killed the bot.
+  - **Fix (commit 4500e64):** a trip for new ore starts with a recall potion when the bot is more than 50 tiles from the spawn and carries one.
+- **Death 2:** yellow slimes at row 420 (the slime caves west of the spawn).
+- **Bug found:** the fight weapon was chosen by raw damage per tick, so the copper shortsword beat the wooden sword, while the hotbar stocking (correctly) takes the typical defense off. The bot fought slime crowds at a point or two a hit.
+  - **Fix:** the fight weapon now uses the same defense-adjusted score.
+- Not yet used: throwing knives from chests (222 in one), since thrown weapons are not counted as weapons yet.
+- fight_green_slime, fight_two_slimes_both_sides, early_game_with_slimes and settle_auto pass.

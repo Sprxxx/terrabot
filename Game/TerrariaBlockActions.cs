@@ -75,7 +75,9 @@ public sealed class TerrariaBlockActions : IBlockActions
 				AxeSlot = i;
 			}
 			if (IsMeleeWeapon(it)) {
-				float score = it.damage * 60f / Math.Max(1, it.useAnimation);
+				// As the hotbar stocking (defense taken off): by raw damage a tick the copper shortsword beat the wooden sword, and
+				// the bot fought slime crowds with it, a point or two a hit (world_eye runs 61-64).
+				float score = WeaponScore(it);
 				if (score > bestWeapon) {
 					bestWeapon = score;
 					WeaponSlot = i;
