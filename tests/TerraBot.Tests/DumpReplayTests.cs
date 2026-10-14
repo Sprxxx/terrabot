@@ -106,6 +106,21 @@ public class DumpReplayTests
 		Assert.Equal(PathStatus.Found, relaxed.Result.Status);
 	}
 
+	[Fact]
+	public void PocketBesideAMinecartTrack_DigsUpThroughTheCeiling()
+	{
+		// world_eye run 49: the only way on from this pocket was straight up through its ceiling, and no move did that, so
+		// every walk home found "no path" (strict and relaxed). Pillars now mine the row above the head first.
+		string file = Path.Combine(AppContext.BaseDirectory, "Dumps", "nopath_2114_359_to_2080_281.txt");
+		var (g, b, start, home) = Load(file);
+		b.BlockCount = 588;
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
+		var search = new PathSearch(ctx, start, GoalOf(file, home), new SearchLimits());
+		search.Step(1e9);
+		output.WriteLine(search.Result.ToString());
+		Assert.NotEqual(PathStatus.NoPath, search.Result.Status);
+	}
+
 	[Fact(Skip = "debug aid: prints which nodes the moves reach from a dump's start")]
 	public void Debug_ReachableFromCave()
 	{

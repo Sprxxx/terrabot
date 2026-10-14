@@ -227,6 +227,9 @@ public sealed class TerrariaBlockActions : IBlockActions
 		// Furniture, doors, chests, trees, altars: never part of a path.
 		if (Main.tileFrameImportant[type] || Main.tileContainer[type] || Main.tileAxe[type] || Main.tileHammer[type])
 			return float.PositiveInfinity;
+		// Explosives go off when mined: 542 damage, dead at once (world_eye run 49).
+		if (type == TileID.Explosives)
+			return float.PositiveInfinity;
 		// Never undermine furniture: a work bench, furnace, anvil, chair or door standing on this tile would break
 		// and drop as an item (seen in game: the bot mined out the floor under its own bench and anvil).
 		Tile above = Main.tile[x, y - 1];

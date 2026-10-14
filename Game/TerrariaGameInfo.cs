@@ -58,6 +58,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		DesertTiles = new int[] { TileID.Sand, TileID.HardenedSand, TileID.Sandstone, TileID.DesertFossil },
 		EvilTiles = new int[] { TileID.Ebonstone, TileID.Crimstone, TileID.CorruptGrass, TileID.CrimsonGrass, TileID.Ebonsand, TileID.Crimsand,
 			TileID.CorruptHardenedSand, TileID.CrimsonHardenedSand, TileID.CorruptSandstone, TileID.CrimsonSandstone, TileID.CorruptIce, TileID.FleshIce },
+		EvilEnemies = new int[] { NPCID.EaterofSouls, NPCID.DevourerHead, NPCID.DevourerBody, NPCID.DevourerTail, NPCID.Crimera,
+			NPCID.FaceMonster, NPCID.BloodCrawler, NPCID.BloodCrawlerWall },
 		LifeCrystal = ItemID.LifeCrystal,
 		IronTierBow = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBow : ItemID.IronBow,
 		WoodenArrow = ItemID.WoodenArrow,

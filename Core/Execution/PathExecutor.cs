@@ -443,6 +443,26 @@ public sealed class PathExecutor
 			return true;
 		}
 
+		// Digging up: the ceiling above the head first, mined standing on the start node, then the jump.
+		if (jumpPhase == JumpPhase.Align && step.HasActions) {
+			foreach (BlockAction a in step.Actions) {
+				if (a.Kind != ActionKind.Break || !g.Get(a.Cell.X, a.Cell.Y).IsBlockTile())
+					continue;
+				if (settled && node.ChebyshevTo(step.From) > 1) {
+					Finish(ExecStatus.OffPath, $"step {StepIndex} pillar: expected to start at {step.From}, standing at {node}");
+					return false;
+				}
+				CurrentAction = a;
+				input.Tool = ToolRequest.Pickaxe;
+				input.UseItem = true;
+				input.Aim(a.Cell.X, a.Cell.Y);
+				if (s.Grounded)
+					input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 3f);
+				Phase = $"Pillar: mining {a.Cell}";
+				return true;
+			}
+		}
+
 		if (jumpPhase == JumpPhase.Align) {
 			if (settled && node.ChebyshevTo(step.From) > 1) {
 				if (TryResync(node)) {

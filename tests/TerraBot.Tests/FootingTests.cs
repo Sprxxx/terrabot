@@ -323,4 +323,21 @@ public class FootingTests
 		ctx.Combat.Defense = BotContext.CavernDefense; // iron armour
 		Assert.False(ctx.OffLimits(new TilePos(70, 26)));
 	}
+
+	[Fact]
+	public void AnEvilBiomeMonsterInSight_MarksADangerZone_InWeakGear()
+	{
+		// Runs 47 and 49: eaters of souls and devourers killed the bot three times on the corruption's edge.
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(null);
+		ctx.Ids = new GameIds { EvilEnemies = new[] { 6 } };
+		var eater = new EntityInfo(3, 6, "Eater of Souls", 40 * 16f, 20 * 16f, 30, 30, 0, 0, 30, 30, 15);
+		ctx.Hostiles = new[] { eater };
+		BotBrain.NoteEvilEnemies(ctx);
+		Assert.True(ctx.InDangerZone(eater.FeetTile));
+		ctx.DangerZones.Clear();
+		ctx.Combat.Defense = BotContext.CavernDefense; // armoured: no need
+		BotBrain.NoteEvilEnemies(ctx);
+		Assert.False(ctx.InDangerZone(eater.FeetTile));
+	}
 }

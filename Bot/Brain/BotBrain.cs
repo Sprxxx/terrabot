@@ -112,6 +112,23 @@ public sealed class BotBrain
 	/// <summary>How often (ticks) the brain checks for accessories to put on and chests in sight.</summary>
 	public const int HabitEvery = 60;
 
+	/// <summary>
+	/// An eater of souls or a devourer in sight in weak gear: the evil biome is there, so the spot becomes a danger zone,
+	/// as a player knows a biome by its monsters too. Seen in game (runs 47 and 49): three deaths to them on the
+	/// corruption's edge west of the spawn, where too few of the seen tiles were corruption for the tile count.
+	/// </summary>
+	public static void NoteEvilEnemies(BotContext ctx)
+	{
+		if (ctx.Combat.Defense >= BotContext.CavernDefense || ctx.Ids.EvilEnemies.Length == 0)
+			return;
+		foreach (EntityInfo e in ctx.Hostiles) {
+			if (System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) < 0 || ctx.InDangerZone(e.FeetTile))
+				continue;
+			ctx.NoteDeathByEnemy(e.FeetTile);
+			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: the evil biome is near; keeping away from there for now");
+		}
+	}
+
 	/// <summary>Put on carried accessories while a slot is free (Hermes Boots from a chest, a Band of Regeneration...).</summary>
 	private static void WearAccessories(BotContext ctx)
 	{
@@ -166,6 +183,7 @@ public sealed class BotBrain
 		}
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			WearAccessories(ctx);
+			NoteEvilEnemies(ctx);
 			// A chest comes into sight while looking for ore or prey: go and loot it first (the planner picks it next).
 			if (Current is MineSkill or ExploreSkill or HuntSkill && ProgressionPlanner.NextChest(ctx) is ChestInfo seen) {
 				ctx.Log.Info($"Auto: a chest at {seen.TopLeft} came into sight; pausing {Current.Name} to loot it");

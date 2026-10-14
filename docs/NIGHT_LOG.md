@@ -468,3 +468,15 @@ what was decided and the result.
   minecart track: its row can't be placed on, and the row under it can't be broken). The planner has no "mine above
   the head and pillar" move, only diagonal climbs. The fallback (new stations where it is) keeps the run going. Dump
   kept as Dumps/nopath_2114_359_to_2080_281.txt for when that move is added.
+- **Later in run 49:** the **Silver Pickaxe**, two chests looted (9 recall potions, 4 lesser healing potions, an
+  Aglet and a Step Stool, both worn), and the **Iron Helmet**, worn. Deaths: a yellow slime, a devourer, and
+  **Explosives** (542 damage: the bot mined an explosives tile while exploring).
+- **Decisions:** explosives tiles are never mined. **Digging straight up:** a pillar now mines the two cells above
+  the head first (standing), then jumps and places. A dug feet cell counts as open (as DigMove's in-body cells), and
+  pillars are exempt from the broken-support ban (they stand on the block they place). The run-49 pocket replay now
+  finds a 153-step way home; simulator test `Sim_DigsUpThroughACeiling` (6 mined, 5 placed). 234 unit tests.
+- Run 49 ended at 5 deaths: drowned, a yellow slime, two devourers on the corruption's edge west of the spawn, and
+  explosives. **Decision:** in weak gear, an eater of souls, devourer, crimera, face monster or blood crawler in
+  sight marks a danger zone there (the biome is near), as a player knows a biome by its monsters. Test
+  `AnEvilBiomeMonsterInSight_MarksADangerZone_InWeakGear`. In game, 13 walk, dig and chain scenarios pass with the
+  dig-up pillars. 235 unit tests.

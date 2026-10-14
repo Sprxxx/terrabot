@@ -39,7 +39,8 @@ public sealed class BuildMove : IMoveType
 			ITileGrid g = ctx.Grid;
 			bool placed = g.Get(step.From.X, step.From.Y).IsSolid() || g.Get(step.From.X + 1, step.From.Y).IsSolid();
 			TilePos pillarCell = PillarCell(g, step.From);
-			return PillarHeadroomClear(g, step.From) && (placed || (ctx.CanPlace && ctx.Blocks.CanPlaceAt(pillarCell.X, pillarCell.Y)));
+			bool headroom = PillarHeadroomClear(g, step.From) || ctx.CanBreak && step.CountActions(ActionKind.Break) > 0;
+			return headroom && (placed || (ctx.CanPlace && ctx.Blocks.CanPlaceAt(pillarCell.X, pillarCell.Y)));
 		}
 		// Bridge: fine if the block is already there (placed by us) or can still be placed.
 		TilePos cell = BridgeCell(step.From, step.Dir);
@@ -90,16 +91,37 @@ public sealed class BuildMove : IMoveType
 	{
 		ITileGrid g = ctx.Grid;
 		step = default;
-		if (!PillarHeadroomClear(g, from))
-			return false;
+		// The row above the head: free, or (digging up) blocks to mine first from where the bot stands. Seen in game
+		// (world_eye run 49): a pocket whose only way on was straight up through its ceiling had no move out at all.
+		var breaks = new List<TilePos>(2);
+		foreach (TilePos h in new[] { new TilePos(from.X, from.Y - Body.HeightTiles), new TilePos(from.X + 1, from.Y - Body.HeightTiles) }) {
+			CellKind hk = g.Get(h.X, h.Y);
+			if (hk.IsHeadroom())
+				continue;
+			if (!ctx.CanBreak || hk.HasLava() || !hk.IsBlockTile())
+				return false;
+			breaks.Add(h);
+		}
 		TilePos cell = PillarCell(g, from);
 		CellKind k = g.Get(cell.X, cell.Y);
-		if (k.CanStandOn() || k.HasLava() || !ctx.Blocks.CanPlaceAt(cell.X, cell.Y))
+		// The block goes into the feet cell, inside the body: solid on the (unedited) grid only if an earlier step of the
+		// plan mined it (digging up a shaft), so then it is open by the time this step runs (as DigMove's InBody).
+		bool dugEarlier = k.IsSolid();
+		if (!dugEarlier && (k.CanStandOn() || k.HasLava() || !ctx.Blocks.CanPlaceAt(cell.X, cell.Y)))
 			return false;
 		var to = new TilePos(from.X, from.Y - 1);
 		float cost = ctx.PillarAirTicks + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks + ctx.PillarRiskTicks;
-		step = new PathStep(MoveKind.Pillar, from, to, ctx.Adjust(cost, to),
-			Actions: new[] { new BlockAction(ActionKind.Place, cell) }, Source: this);
+		foreach (TilePos b in breaks) {
+			float bc = BlockRules.BreakCost(ctx, b, breaks);
+			if (float.IsPositiveInfinity(bc))
+				return false;
+			cost += bc;
+		}
+		var actions = new List<BlockAction>(3);
+		foreach (TilePos b in breaks)
+			actions.Add(new BlockAction(ActionKind.Break, b));
+		actions.Add(new BlockAction(ActionKind.Place, cell));
+		step = new PathStep(MoveKind.Pillar, from, to, ctx.Adjust(cost, to), Actions: actions.ToArray(), Source: this);
 		return true;
 	}
 

@@ -296,6 +296,27 @@ public class BlockMoveTests
 	}
 
 	[Fact]
+	public void Sim_DigsUpThroughACeiling()
+	{
+		// world_eye run 49: a pocket whose only way on was straight up through the rock above (walls that cannot be mined).
+		var (g, b) = TestBlockActions.Parse(
+			"..........",
+			"..........",
+			"...G......",
+			"@@@##@@@@@",
+			"@@@##@@@@@",
+			"@@@##@@@@@",
+			"@@@..@@@@@",
+			"@@@..@@@@@",
+			"@@@S.@@@@@",
+			"@@@@@@@@@@");
+		b.BlockCount = 20;
+		var (status, skill, sim) = Run(g, b);
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.True(sim.Broken >= 6, $"broken {sim.Broken}");
+	}
+
+	[Fact]
 	public void Sim_RunningOutOfBlocks_ReplansCleanly()
 	{
 		var (g, b) = TestBlockActions.Parse(Cliff);

@@ -183,7 +183,8 @@ public sealed class PathSearch
 			// plan never stands on what it digs away (zigzag staircases re-planned every few steps, 2 s each: runs 15, 32, 44).
 			// A ban can leave no way at all (A* keeps one path per node: seen in game, no way out of a cave), so WalkToSkill
 			// then plans again with CheckBrokenSupport off, where such steps only cost BrokenSupportPenalty.
-			bool undermined = SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath);
+			// (Not pillars: they stand on the block they place, whatever was mined there before.)
+			bool undermined = e.Kind != MoveKind.Pillar && SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath);
 			if (undermined && limits.CheckBrokenSupport)
 				continue;
 			float brokenPenalty = undermined ? BrokenSupportPenalty : 0f;
