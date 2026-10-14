@@ -94,6 +94,27 @@ public class BlockMoveTests
 	}
 
 	[Fact]
+	public void AGoalWalledOffAbove_IsGivenUpAfterAFewThousandNodes_NotForty()
+	{
+		// Measured run K1: "start h 26, lowest h 26, rows 335..416": 40,000 nodes flooding the ground below, none of them
+		// nearer the goal than the start, seconds each time with the bot standing still.
+		var rows = new System.Collections.Generic.List<string> { new string('@', 120), "@@@@@@@@@@..@@@" + new string('@', 105), new string('@', 120) };
+		for (int y = 3; y <= 5; y++)
+			rows.Add("@" + new string('.', 118) + "@");
+		rows[5] = "@.........S" + new string('.', 108) + "@"; // right under the goal: nothing is nearer it than the start
+		for (int y = 6; y < 70; y++)
+			rows.Add("@" + new string('#', 118) + "@"); // diggable rock below: thousands of nodes, every one farther from the goal
+		rows.Add(new string('@', 120));
+		var (g, b) = TestBlockActions.Parse(rows.ToArray());
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = false };
+		var search = new PathSearch(ctx, g.Markers['S'], new GoalNearTile(new TilePos(10, 1), 0, PhysicsParams.Default));
+		search.Step(1e9);
+		output.WriteLine(search.Result + " " + search.Result.Why);
+		Assert.Equal(PathStatus.NoPath, search.Result.Status);
+		Assert.True(search.Result.Expanded <= 2 * SearchLimits.Default.SegmentAfter + 1, $"{search.Result.Expanded} nodes");
+	}
+
+	[Fact]
 	public void LavaAbove_IsNotOpened()
 	{
 		string[] rows = (string[])Corridor.Clone();

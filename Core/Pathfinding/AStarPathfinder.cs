@@ -153,6 +153,14 @@ public sealed class PathSearch
 					bestTainted = pos;
 				}
 
+				// Not one node closer to the goal than the start after the segment's worth of nodes: the goal is walled off from
+				// here, and the rest of the search only floods the cave (seen in game, measured run K1: "start h 26, lowest h
+				// 26, rows 335..416", 40,000 nodes and seconds each time). Baritone ends a search that is getting nowhere too.
+				if (limits.SegmentAfter > 0 && expanded >= 2 * limits.SegmentAfter && lowestH >= goal.Heuristic(start) - 0.01f && bestTainted == start) {
+					Result = new PathResult { Status = PathStatus.NoPath, Start = start, Best = best, Expanded = expanded, ElapsedMs = elapsedMs + sw.Elapsed.TotalMilliseconds,
+						Why = $"no node closer than the start in {expanded} (start h {goal.Heuristic(start):0}, rows {topRow}..{bottomRow})" };
+					return true;
+				}
 				if (limits.SegmentAfter > 0 && expanded >= limits.SegmentAfter && best != start && best.ChebyshevTo(start) >= limits.SegmentMinTiles) {
 					Result = Build(PathStatus.Partial, best, sw);
 					return true;
