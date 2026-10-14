@@ -491,7 +491,9 @@ public sealed class ProgressionPlanner
 		if (skill is GatherWoodSkill or LootChestSkill or WalkToSkill { Travel: true } || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
 			return true;
 		bool nearSurface = ctx.SurfaceY <= 0 || ctx.Node.Y < ctx.SurfaceY + 15;
-		return nearSurface && skill is MineSkill or ExploreSkill;
+		// Any walk on the surface, not just mining: seen in game (world_eye run 65), respawned at night by the spawn, sent
+		// to the furnace below the house, killed by the zombies there five times in a row.
+		return nearSurface && skill is MineSkill or ExploreSkill or WalkToSkill;
 	}
 
 	private ISkill AtNight(ISkill skill, BotContext ctx)

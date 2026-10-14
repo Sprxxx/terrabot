@@ -295,6 +295,29 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AtNight_AWalkToAStationOutside_WaitsForTheMorningInTheHouse()
+	{
+		// world_eye run 65: respawned at night, sent to the furnace below the house, killed by zombies there five times.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(60, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronOre] = 30;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		ISkill day = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {day?.Describe()}");
+		Assert.IsType<WalkToSkill>(day); // to the furnace, by day
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ISkill night = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {night?.Describe()}");
+		Assert.IsType<StayHomeSkill>(night);
+	}
+
+	[Fact]
 	public void WalkingHomeAtNight_DoesNotStopToFight()
 	{
 		// world_eye run 41: stopped at dusk to fight zombies with a copper sword on the way home, then dug in among them.

@@ -662,3 +662,11 @@ what was decided and the result.
   - **Fix:** the fight weapon now uses the same defense-adjusted score.
 - Not yet used: throwing knives from chests (222 in one), since thrown weapons are not counted as weapons yet.
 - fight_green_slime, fight_two_slimes_both_sides, early_game_with_slimes and settle_auto pass.
+
+## Run 65 (commit af7038b), stopped after about 4 game minutes (6 deaths)
+- The bot now fights with the wooden sword, and slime fights ended quickly. Anvil about 15 s. Silver ore (32) mined, and a Silver Broadsword at about 5 min.
+- **Death loop at night:** respawned at the spawn and sent to the furnace below the house ("walking to the Furnaces to craft Silver Bar"). It fought zombies in the pit there and died 5 times in a row (zombies hit 17–23).
+  - The night rule only held back mining, exploring, gathering and travel.
+  - **Fix:** any WalkTo near the surface at night (defense < 6, house within 150 tiles) waits for the morning in the house.
+- Seen too: a few "InvalidStart" plans from (1963,399), which caused rests. Not followed up yet.
+- 1 new test (248 pass). night_home, night_shelter and settle_auto pass.
