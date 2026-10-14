@@ -415,6 +415,33 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AtNight_Armed_AMiningJobGoesDownIntoTheGround_InsteadOfHome()
+	{
+		// Measured run E: 37% of the run was nights at home, most instead of mining near the surface. A player with a sword
+		// spends the night in the mine.
+		FakeGame g = ProgressionTests.Mine(width: 120, sky: 45, oreRows: 0);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		ctx.SurfaceY = 40;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ctx.Combat.WeaponDamage = 5;
+		ISkill weak = p.Next(ctx);
+		output.WriteLine($"weak: {p.Status} -> {weak?.Describe()}");
+		Assert.IsType<StayHomeSkill>(weak);
+		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage;
+		ISkill armed = p.Next(ctx);
+		output.WriteLine($"armed: {p.Status} -> {armed?.Describe()}");
+		Assert.True(armed is WalkToSkill { Underground: true });
+	}
+
+	[Fact]
 	public void AtNight_AWalkToAStationOutside_WaitsForTheMorningInTheHouse()
 	{
 		// world_eye run 65: respawned at night, sent to the furnace below the house, killed by zombies there five times.

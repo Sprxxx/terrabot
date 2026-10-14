@@ -94,6 +94,9 @@ public sealed class ProgressionPlanner
 	/// iron armour and 200 life, sat in the house all night instead of getting its last wood for the summon.
 	/// </summary>
 	public const int NightOutDefense = 6;
+	/// <summary>Rows below the surface (or the spawn) where the night's mining starts.</summary>
+	public const int NightMineRows = 25;
+	public const int NightMineArrivedTiles = 8;
 	/// <summary>Pickaxe power of the iron tier (Iron Pickaxe 40, Lead Pickaxe 43).</summary>
 	public const int IronTierPickPower = 40;
 	/// <summary>Max life to have before a boss: 5 life crystals (also what vanilla wants before the Eye spawns on its own).</summary>
@@ -494,6 +497,8 @@ public sealed class ProgressionPlanner
 		// And walks up to the surface from below (run 69: the start of a trip, at night, up among the zombies and a devourer).
 		if (skill is GatherWoodSkill or LootChestSkill or WalkToSkill { Travel: true } or WalkToSkill { ToSurface: true } || skill is HuntSkill h && !NocturnalAiStyles.Contains(h.AiStyle))
 			return true;
+		if (skill is WalkToSkill { Underground: true })
+			return false; // on its way down for the night's mining
 		bool nearSurface = ctx.SurfaceY <= 0 || ctx.Node.Y < ctx.SurfaceY + 15;
 		// Any walk on the surface, not just mining: seen in game (world_eye run 65), respawned at night by the spawn, sent
 		// to the furnace below the house, killed by the zombies there five times in a row.
@@ -508,6 +513,16 @@ public sealed class ProgressionPlanner
 		// the surface). Seen in game: a zombie killed the bot walking home across the surface at night.
 		if (ctx.IsNight && ctx.Combat.Defense < NightOutDefense && ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos inside
 			&& inside.ChebyshevTo(ctx.Node) <= NightHomeTiles && NightWorkOnTheSurface(skill, ctx)) {
+			// Armed, a mining job goes on underground, as a player spends the night in the mine (the caves are the same
+			// by night): straight down below the spawn first, then mining there. Seen in game (measured run E): 37% of the
+			// run was nights at home, most of them instead of mining near the surface.
+			if (skill is MineSkill && ctx.Combat.WeaponDamage >= BotContext.GoodWeaponDamage && ctx.SpawnTile is TilePos spawn && ctx.SurfaceY > 0) {
+				var below = new TilePos(spawn.X, Math.Max(ctx.SurfaceY, spawn.Y) + NightMineRows);
+				if (ctx.Node.ChebyshevTo(below) > NightMineArrivedTiles) {
+					Status = $"night: down into the ground at {below} to mine there ({Status})";
+					return new WalkToSkill(new Core.Pathfinding.GoalNearTile(below, 3, ctx.Physics)) { Quiet = true, Underground = true };
+				}
+			}
 			Status = $"night: staying in the house instead of {skill.Name} ({Status})";
 			return new StayHomeSkill(inside);
 		}

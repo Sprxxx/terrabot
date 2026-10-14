@@ -40,7 +40,7 @@ public sealed class WalkToSkill : ISkill
 	public string FailureReason { get; private set; } = "";
 
 	public string Name => "WalkTo";
-	public string Key => $"WalkTo {(fixedGoal != null ? fixedGoal.ToString() : Target.ToString())}{(Travel ? " travel" : "")}{(ToSurface ? " to surface" : "")}";
+	public string Key => $"WalkTo {(fixedGoal != null ? fixedGoal.ToString() : Target.ToString())}{(Travel ? " travel" : "")}{(ToSurface ? " to surface" : "")}{(Underground ? " underground" : "")}";
 
 	/// <summary>Used as a sub-skill (e.g. chasing a moving enemy): plan/finish lines go to Debug instead of Info.</summary>
 	public bool Quiet { get; init; }
@@ -48,6 +48,8 @@ public sealed class WalkToSkill : ISkill
 	public bool Travel { get; init; }
 	/// <summary>A walk up to the surface (the start of a trip): surface work at night too, wherever it starts from.</summary>
 	public bool ToSurface { get; init; }
+	/// <summary>A walk down into the ground for the night's mining: not surface work, though it starts there.</summary>
+	public bool Underground { get; init; }
 
 	/// <summary>Accept any standing node within this many tiles (Chebyshev) of the goal feet tile.</summary>
 	public int Tolerance { get; init; }
