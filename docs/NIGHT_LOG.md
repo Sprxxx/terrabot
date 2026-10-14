@@ -747,3 +747,6 @@ what was decided and the result.
 - **Recurring stuck:** "Jump (2115,360)->(2115,359) [h1 d0]" (also in run 68 at (2077,362)) timed out three times and was banned, each time with the bot already standing on the jump's target node. Aligning for a one-row hop onto a slope walked the bot up it, and the jump then waited in its align phase to be back on the start.
   - **Fix:** in PathExecutor.TickJump's align phase, settled on the jump's target counts as done. Test ExecutorSimTests.AJump_WhoseTargetIsReachedBeforeTakeOff_CountsAsDone reproduces the game's exact "timed out after 197 ticks at (3,4)" on the old code.
 - 256 unit tests. walk_flat, gap_jump_over_lava, running_jump_no_room, pillar_up_cliff, drop_through_platforms and settle_auto pass.
+
+## Stopped by the user at 06:53 (run 74 had just reached the anvil, at about 17 s)
+Last commit 9bb83c8; tree clean apart from this note.
