@@ -61,11 +61,27 @@ public sealed class SurfaceSkill : ISkill
 		return null;
 	}
 
-	/// <summary>Is the head cell (top of the 2×3 body) in liquid?</summary>
-	public static bool HeadUnder(BotContext ctx)
+	/// <summary>
+	/// Is the head in water or honey? As vanilla's Collision.DrownCollision: a 10x12 px box at the top of the hitbox (from
+	/// 2 px above it), against any cell with that liquid (the liquid's level aside). The head cells of the node missed it
+	/// when the bot stood a few pixels low (on a slope): breath ran down from 95 to 18 while they read empty (world_eye run 59).
+	/// </summary>
+	public static bool HeadUnder(BotContext ctx) => HeadUnder(ctx.Grid, ctx.Body.X, ctx.Body.Y, ctx.Physics);
+
+	public const int HeadBoxWidth = 10, HeadBoxHeight = 12, HeadBoxAbove = 2;
+
+	public static bool HeadUnder(ITileGrid g, float left, float top, PhysicsParams p)
 	{
-		TilePos n = ctx.Node;
-		return ctx.Grid.Get(n.X, n.Y - 2).IsLiquid() || ctx.Grid.Get(n.X + 1, n.Y - 2).IsLiquid();
+		float x0 = left + p.Width / 2 - HeadBoxWidth / 2, y0 = top - HeadBoxAbove;
+		int cx0 = (int)Math.Floor(x0 / 16f), cx1 = (int)Math.Floor((x0 + HeadBoxWidth - 0.01f) / 16f);
+		int cy0 = (int)Math.Floor(y0 / 16f), cy1 = (int)Math.Floor((y0 + HeadBoxHeight - 0.01f) / 16f);
+		for (int x = cx0; x <= cx1; x++)
+			for (int y = cy0; y <= cy1; y++) {
+				CellKind k = g.Get(x, y);
+				if ((k & (CellKind.Water | CellKind.Honey)) != 0)
+					return true;
+			}
+		return false;
 	}
 
 	public SkillStatus Tick(BotContext ctx)

@@ -592,3 +592,16 @@ what was decided and the result.
 - **Decisions:** monster-sighting zones cover 60 tiles round (death zones 30). With a good sword but no armour, the
   depth limit is 15 rows above the caverns (was 10). In game, iron_age, settle, boss_auto and life_crystals pass.
   238 unit tests.
+
+## Run 59 (commit 182d37d), ~8 game min, stopped for fixes
+- Anvil about 1 min, Iron Broadsword and Iron Pickaxe about 4–6 min, **Iron Helmet worn at about 8 min**. 3 deaths.
+- Deaths 1 and 2: in the underground desert east of the spawn (a Giant Antlion Charger at x 2258, then an Antlion Charger plus rolling cacti at x 2400). Explore legs kept going through the desert:
+  - **Cause A:** BotContext cached chunk counts for a game minute, including chunks counted from far off (by a path search) before the bot had seen them. The desert read as "nothing seen" while the bot was inside it.
+    - **Fix:** a chunk not yet fully seen is recounted after 60 ticks.
+  - **Cause B:** when every fallback leg was off limits, ExploreSkill went ahead with the off-limits leg anyway.
+    - **Fix:** Explore now fails ("every way from here is off limits").
+    - **Fix:** MineSkill no longer explores when the bot itself stands off limits. It fails with an "explorations" reason, so the planner travels to new ground.
+- Death 3: a cave bat during a shelter flight (not addressed yet).
+- Breath mystery found: vanilla's drown box (Collision.DrownCollision) is 10×12 px starting 2 px above the hitbox top. When the bot stands a few px low (on a slope), the box reaches water in the row below the node's head cells.
+  - **Fix:** SurfaceSkill.HeadUnder now mirrors that box on the real hitbox.
+- 3 new tests (241 pass). Regressions iron_age_auto, settle_auto and life_crystals: all pass.

@@ -188,7 +188,9 @@ public sealed class BotContext
 	public const int BiomeChunkRadius = 2;
 	/// <summary>How long a chunk's counts are kept before it is counted again (more of it may have been seen).</summary>
 	public const int DesertRecheckTicks = 60 * 60;
-	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, int Solid, int Desert, int Evil)> desertChunks = new();
+	/// <summary>How soon a chunk not all seen yet is counted again.</summary>
+	public const int PartlySeenRecheckTicks = 60;
+	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, bool AllSeen, int Solid, int Desert, int Evil)> desertChunks = new();
 
 	/// <summary>
 	/// Is the tile below the surface where the seen solid tiles around it (48x48) are largely desert (sand, sandstone...)?
@@ -217,13 +219,16 @@ public sealed class BotContext
 
 	private (int Solid, int Desert, int Evil) ChunkCounts(int cx, int cy)
 	{
-		if (desertChunks.TryGetValue((cx, cy), out var v) && Tick - v.At < DesertRecheckTicks)
+		// A chunk not yet all seen is counted again soon: counted from afar (a path search) before the bot got there, the
+		// underground desert stayed "not desert" for a game minute while the bot explored it (world_eye run 59).
+		if (desertChunks.TryGetValue((cx, cy), out var v) && Tick - v.At < (v.AllSeen ? DesertRecheckTicks : PartlySeenRecheckTicks))
 			return (v.Solid, v.Desert, v.Evil);
-		int solid = 0, desert = 0, evil = 0;
+		int solid = 0, desert = 0, evil = 0, seen = 0;
 		for (int x = cx * DesertChunk; x < (cx + 1) * DesertChunk; x++)
 			for (int y = cy * DesertChunk; y < (cy + 1) * DesertChunk; y++) {
 				if (!World.IsRevealed(x, y))
 					continue;
+				seen++;
 				int type = World.TileTypeAt(x, y);
 				if (type < 0)
 					continue;
@@ -233,7 +238,7 @@ public sealed class BotContext
 				else if (Array.IndexOf(Ids.EvilTiles, type) >= 0)
 					evil++;
 			}
-		desertChunks[(cx, cy)] = (Tick, solid, desert, evil);
+		desertChunks[(cx, cy)] = (Tick, seen == DesertChunk * DesertChunk, solid, desert, evil);
 		return (solid, desert, evil);
 	}
 

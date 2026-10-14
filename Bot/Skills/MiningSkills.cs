@@ -122,6 +122,12 @@ public sealed class MineSkill : ISkill
 			ctx.ExploresWithoutOre.Remove(ItemType);
 			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations in a row");
 		}
+		// Standing somewhere off limits (a biome zone, the underground desert): no exploring here, but somewhere new. Seen in
+		// game (world_eye run 59): explorations in the underground desert went on until antlion chargers killed the bot.
+		if (ctx.OffLimits(ctx.Node)) {
+			ctx.ExploresWithoutOre.Remove(ItemType);
+			return Fail(ctx, $"no {Label(ctx)} seen, and the explorations from here would be off limits");
+		}
 		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
 		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
 		// "Found" is what this skill would actually go for (not beside water, not given up on...): with "any seen", exploring

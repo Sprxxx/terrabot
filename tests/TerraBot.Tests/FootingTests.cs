@@ -288,6 +288,64 @@ public class FootingTests
 	}
 
 	[Fact]
+	public void ADesertSeenAfterItWasFirstCounted_IsDesertSoon()
+	{
+		// world_eye run 59: chunks counted by a path search before the bot got there kept "nothing seen" for a game minute,
+		// and the bot explored on into the underground desert until antlion chargers killed it.
+		FakeGame g = ProgressionTests.Mine();
+		const int Sand = 53;
+		for (int x = 56; x < 90; x++)
+			for (int y = 16; y < 40; y++) {
+				if (g.Grid.Get(x, y).IsSolid())
+					g.TileTypes[new TilePos(x, y)] = Sand;
+				g.Unrevealed.Add(new TilePos(x, y));
+			}
+		BotContext ctx = g.CreateContext(null);
+		ctx.Ids = new GameIds { DesertTiles = new[] { Sand } };
+		ctx.SurfaceY = 20;
+		Assert.False(ctx.InUndergroundDesert(new TilePos(70, 28))); // not seen yet
+		g.Unrevealed.Clear();
+		ctx.Tick += BotContext.PartlySeenRecheckTicks + 1;
+		Assert.True(ctx.InUndergroundDesert(new TilePos(70, 28)));
+	}
+
+	[Fact]
+	public void MiningFromInsideADangerZone_GivesUpRatherThanExploring()
+	{
+		// world_eye run 59: after an antlion charger was seen, explore legs went on through the desert zone, every way off limits.
+		FakeGame g = ProgressionTests.Mine(oreRows: 0);
+		BotContext ctx = g.CreateContext(null);
+		ctx.NoteDanger(ctx.Node, BotContext.BiomeZoneTicks, BotContext.BiomeZoneRadius);
+		var mine = new Bot.Skills.MineSkill(FakeGame.IronOre, FakeGame.TileIron, 6);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, mine, 600));
+		Assert.Contains("explorations", mine.FailureReason); // the planner travels on, as when exploring found nothing
+	}
+
+	[Fact]
+	public void HeadInWater_ReadsFromTheHitbox_NotTheNode()
+	{
+		// world_eye run 59: breath ran from 95 to 18 while the node's head cells read empty: the bot stood a few pixels low and
+		// vanilla's head box (Collision.DrownCollision) reached the water in the row below them.
+		var g = ArrayTileGrid.Parse(
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"~~~~~~~~~~",
+			"~~~~~~~~~~",
+			"##########");
+		PhysicsParams p = PhysicsParams.Default;
+		float left = 5 * 16 + 6, top = 11 * 16 - p.Height; // standing on row 11 at node (5,10): head in row 8
+		Assert.False(Bot.Skills.SurfaceSkill.HeadUnder(g, left, top, p));
+		Assert.True(Bot.Skills.SurfaceSkill.HeadUnder(g, left, top + 4, p));
+	}
+
+	[Fact]
 	public void RelaxedSearchThroughRock_StillGivesAPartialPlan()
 	{
 		// world_eye run 46: the relaxed retry (steps onto what the path digs allowed) said "no path" after 40,000 nodes: every

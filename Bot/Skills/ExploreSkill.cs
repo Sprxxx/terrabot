@@ -150,11 +150,17 @@ public sealed class ExploreSkill : ISkill
 					new TilePos(node.X + heading * FallbackStep, node.Y),
 					new TilePos(node.X - heading * FallbackStep, node.Y),
 				};
+				TilePos? open = null;
 				foreach (TilePos o in options)
 					if (!Barred(ctx, o)) {
-						t = o;
+						open = o;
 						break;
 					}
+				// Every way off limits (inside a biome zone): give up rather than dig on into it. Seen in game (world_eye run
+				// 59): legs went on through the underground desert after an antlion charger was seen, and the bot died there.
+				if (open == null && ctx.OffLimits(t))
+					return Fail(ctx, "every way from here is off limits");
+				t = open ?? t;
 			}
 			legs++;
 			legTarget = t;
