@@ -1063,6 +1063,13 @@ public sealed class ProgressionPlanner
 		int fails = fruitlessMines.TryGetValue(item, out int f) ? f : 0;
 		if (fails == 0 || travelDest == null && travelledFor.TryGetValue(item, out int t) && t >= fails)
 			return null;
+		// Far from the spawn (down a cave, or along the surface) with a recall potion: drink it, as a player would, rather than a long walk out. Seen in game
+		// (world_eye run 64): the walk back to the spawn from row 408 followed caves east into the desert, where antlion
+		// swarmers killed the bot.
+		if (travelDest == null && ctx.SpawnTile is TilePos home && home.ChebyshevTo(ctx.Node) > RecallDistance && ctx.Ids.RecallPotion > 0
+			&& ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
+			return Do($"no more {name} found around here; drinking a recall potion to start the trip from the spawn ({home.ChebyshevTo(ctx.Node)} tiles away)",
+				new UseItemSkill(ctx.Ids.RecallPotion));
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
 		if (ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {

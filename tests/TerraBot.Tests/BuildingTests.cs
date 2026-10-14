@@ -270,6 +270,31 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ATripForNewOre_FromFarDown_StartsWithARecallPotion()
+	{
+		// world_eye run 64: the walk back to the spawn from 120 rows down followed caves into the desert; a player recalls.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.Items[FakeGame.RecallPotion] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3 - 80, 44 - 40); // as if the bot were far down and away from it
+		ctx.SurfaceY = 20;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Equal(FakeGame.RecallPotion, Assert.IsType<UseItemSkill>(next).ItemType);
+	}
+
+	[Fact]
 	public void WalkingHomeAtNight_DoesNotStopToFight()
 	{
 		// world_eye run 41: stopped at dusk to fight zombies with a copper sword on the way home, then dug in among them.
