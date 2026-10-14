@@ -26,6 +26,7 @@ public sealed class MineSkill : ISkill
 	public const int ExploreSideways = 6;
 	/// <summary>Explorations (each up to <see cref="ExploreSkill.MaxLegs"/> legs) before giving up.</summary>
 	public const int MaxExplores = 3;
+	public const float UnderFootPenalty = 30f;
 	public const int CollectRadius = 12;
 	/// <summary>Unreachable targets in a row before giving up (nearby tiles tend to be unreachable for the same reason).</summary>
 	public const int MaxUnreachableInARow = 4;
@@ -39,7 +40,6 @@ public sealed class MineSkill : ISkill
 	private ISkill sub;
 	private TilePos? target;
 	private int mineTicks;
-	private int explores;
 	private int exploreDir = 1;
 	private int lastHave;
 	private int unreachableInARow;
@@ -61,8 +61,10 @@ public sealed class MineSkill : ISkill
 
 	public string Describe() => $"Mine tile {TileType} for item {ItemType} {lastHave}/{Amount} [{State}]" + (sub != null ? " > " + sub.Describe() : "");
 
-	public void Start(BotContext ctx) =>
+	public void Start(BotContext ctx)
+	{
 		ctx.Log.Info($"Mine start: {Label(ctx)} x{Amount} (have {ctx.Inventory.Count(ItemType)}), pick power {ctx.PickPower}");
+	}
 
 	public void Stop(BotContext ctx)
 	{
@@ -111,7 +113,10 @@ public sealed class MineSkill : ISkill
 			ctx.Log.Debug($"Mine: target {next}");
 			return SkillStatus.Running;
 		}
-		if (++explores > MaxExplores)
+		// Counted on the context per item: a fight pauses the skill and the planner starts it afresh, and a count of its
+		// own went back to 0 each time (world_eye run 42: 12 game hours of the same first leg, never reaching the give-up).
+		int explores = ctx.ExploresWithoutOre[ItemType] = ctx.ExploresWithoutOre.GetValueOrDefault(ItemType) + 1;
+		if (explores > MaxExplores)
 			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations in a row");
 		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
 		ctx.Log.Info($"Mine: no {Label(ctx)} seen within {SearchRadius} tiles; exploring");
@@ -128,7 +133,7 @@ public sealed class MineSkill : ISkill
 			// Mined (or changed under us): the drop falls nearby; pick it up before the next tile.
 			Mined++;
 			unreachableInARow = 0;
-			explores = 0; // exploring found ore that got mined: only fruitless explorations in a row count
+			ctx.ExploresWithoutOre.Remove(ItemType); // exploring found ore that got mined: only fruitless explorations in a row count
 			target = null;
 			sub?.Stop(ctx);
 			sub = null;
@@ -205,6 +210,10 @@ public sealed class MineSkill : ISkill
 			if (c.Y > ctx.DeepestRow || ctx.OffLimits(c))
 				continue; // deeper than the gear is fit for, or where the bot was killed lately
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
+			// The row the bot stands on, under its feet and a step either side, last: seen in the settle scenario, it mined
+			// the stone it stood on tile by tile, placing a block each time to keep its footing, and the count never rose.
+			if (c.Y == node.Y + 1 && c.X >= node.X - 1 && c.X <= node.X + 2)
+				score += UnderFootPenalty;
 			if (score < bestScore) {
 				bestScore = score;
 				best = c;

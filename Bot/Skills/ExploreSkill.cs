@@ -140,10 +140,21 @@ public sealed class ExploreSkill : ISkill
 				: down
 				? new TilePos(node.X + heading * FallbackSideways, node.Y + FallbackDepth)
 				: new TilePos(node.X + heading * FallbackStep, node.Y));
-			// Digging on into somewhere off limits (a death spot, the underground desert in weak gear): the other way.
-			if (frontier == null && ctx.OffLimits(t)) {
-				heading = -heading;
-				t = new TilePos(node.X + heading * (down || tooDeep ? FallbackSideways : FallbackStep), t.Y);
+			// Digging on into somewhere off limits (a death spot, the underground desert in weak gear), or where a leg already
+			// found no path: the other way, then level either way. Seen in game (world_eye run 42): a fight every few
+			// seconds restarted mining, and with it the same unreachable first leg, for 12 game hours.
+			if (frontier == null && Barred(ctx, t)) {
+				int step = down || tooDeep ? FallbackSideways : FallbackStep;
+				var options = new[] {
+					new TilePos(node.X - heading * step, t.Y),
+					new TilePos(node.X + heading * FallbackStep, node.Y),
+					new TilePos(node.X - heading * FallbackStep, node.Y),
+				};
+				foreach (TilePos o in options)
+					if (!Barred(ctx, o)) {
+						t = o;
+						break;
+					}
 			}
 			legs++;
 			legTarget = t;
@@ -193,6 +204,8 @@ public sealed class ExploreSkill : ISkill
 			ctx.Log.Info($"Explore: leg {legs} to {legTarget} went nowhere; turning round");
 			heading = -heading;
 		}
+		if (s == SkillStatus.Failed && walk.FailureReason.StartsWith("no path") && legTarget is TilePos lt0)
+			ctx.UnreachableTiles.Add(lt0); // not again until the brain's rest forgets the unreachable
 		if (s == SkillStatus.Failed) {
 			// Down blocked (the bottom, lava): tunnel sideways from now on; a sideways tunnel blocked: turn round.
 			ctx.Log.Info($"Explore: leg {legs} to {legTarget} failed ({walk.FailureReason})"
@@ -207,6 +220,8 @@ public sealed class ExploreSkill : ISkill
 		walk = null;
 		return SkillStatus.Running;
 	}
+
+	private static bool Barred(BotContext ctx, TilePos t) => ctx.OffLimits(t) || ctx.UnreachableTiles.Contains(t);
 
 	/// <summary>The best frontier in view, or null.</summary>
 	private TilePos? PickFrontier(BotContext ctx, TilePos n, bool aheadOnly)

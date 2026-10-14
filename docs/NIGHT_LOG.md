@@ -383,3 +383,17 @@ what was decided and the result.
 - **A desert death the detection missed:** one 16x16 chunk at 40% missed the desert's edges. **Decision:** the 48x48
   around a tile, at 25% desert tiles among the seen solid ones.
 - In game, 7 scenarios pass (pillar, out of blocks, blocked wall, night_home, iron_age, settle, boss_auto). 227 unit tests.
+
+### world_eye run 42: the broadsword at 90 real seconds, then a mining loop
+- **Progress:** the anvil about a minute in, then a recall potion home and the **Iron Broadsword about 90 seconds
+  in**, the fastest yet. 21 of the 30 iron for the pickaxe.
+- **Loop for 18 game hours:** 10 rows below the depth limit, on a ledge over a pool, the dig-up leg had no path. A
+  fight every few seconds (skeletons and slimes around) paused mining, and the planner started it afresh each time,
+  with its count of fruitless explorations back at 0 and the same failing first leg. **Decision:** (1) the count is
+  kept on the context per ore, so it reaches the give-up and the travel; (2) a leg with no path marks its target
+  unreachable, and the next leg tries the other way, then level either way. Test
+  `FruitlessExplorations_AreCountedAcrossRestarts`. 228 unit tests.
+- **settle_auto regression:** the bot climbed out of the arena and mined the stone row it stood on, tile by tile,
+  placing a block each time to keep its footing (1,258 planned placements), so the stone count never rose.
+  **Decision:** tiles under the feet are mining's last choice. settle_auto passes again (21,919 ticks), as do
+  iron_age_auto, early_game_auto, life_crystals and boss_auto.

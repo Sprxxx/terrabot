@@ -245,6 +245,8 @@ public sealed class BotContext
 	/// restarts so a fresh skill does not spend its time on them again. Cleared when auto mode starts.
 	/// </summary>
 	public System.Collections.Generic.HashSet<TilePos> UnreachableTiles { get; } = new();
+	/// <summary>Per ore item: explorations in a row that found none (MineSkill), across restarts of the skill.</summary>
+	public System.Collections.Generic.Dictionary<int, int> ExploresWithoutOre { get; } = new();
 	/// <summary>Cells path moves must neither mine nor fill (a building in progress); null or empty = none.</summary>
 	public System.Collections.Generic.IReadOnlySet<TilePos> Reserved { get; set; }
 	private ReservedBlocks reservedBlocks;

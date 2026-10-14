@@ -77,6 +77,19 @@ public class ExploreTests
 		Assert.Equal(SkillStatus.Succeeded, s);
 		Assert.True(explore.Legs <= 3, $"{explore.Legs} legs");
 	}
+
+	[Fact]
+	public void FruitlessExplorations_AreCountedAcrossRestarts()
+	{
+		// world_eye run 42: a fight every few seconds restarted mining, its own count went back to 0, and it never gave up.
+		FakeGame g = ProgressionTests.Mine(oreRows: 0);
+		BotContext ctx = g.CreateContext(output);
+		ctx.ExploresWithoutOre[FakeGame.IronOre] = MineSkill.MaxExplores;
+		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, mine, 60);
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.Contains("explorations", mine.FailureReason);
+	}
 }
 
 /// <summary>Water: ore beside it is left alone, swimming with the head under costs a lot.</summary>
