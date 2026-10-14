@@ -59,6 +59,8 @@ public sealed class SelfTestSystem : ModSystem
 	private int lifeAtStart;
 	private int deathsAtStart;
 	/// <summary>Ticks between heartbeat lines during a scenario (30 game seconds).</summary>
+	/// <summary>Mode "surface": ticks under water before surfacing starts (breath about 140/200, as when the brain's reflex fires).</summary>
+	public const int SurfaceAfterTicks = 420;
 	public const int HeartbeatTicks = 1800;
 	/// <summary>Enemy spawns stay on (real-world scenarios); otherwise the self-test turns them off.</summary>
 	public static bool SpawnsOn { get; private set; }
@@ -281,6 +283,9 @@ public sealed class SelfTestSystem : ModSystem
 				else if (s.Mode == "auto") {
 					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
 				}
+				else if (s.Mode == "surface") {
+					// Started once breath is down, in the Running phase (SurfaceAfterTicks), as the brain's reflex would.
+				}
 				else {
 					TilePos goal = Arena.Find(s.Rows, 'G');
 					bot.SetTarget(arena.ToWorld(goal.X, goal.Y, s.Rows.Length), "selftest");
@@ -295,6 +300,8 @@ public sealed class SelfTestSystem : ModSystem
 			case Phase.Running: {
 				Scenario s = queue[index];
 				s.During?.Invoke(arena, phaseTicks);
+				if (s.Mode == "surface" && phaseTicks == SurfaceAfterTicks)
+					bot.Brain.StartSkill(new Bot.Skills.SurfaceSkill(), bot.Context);
 				if (s.EnemyType != 0 && s.SpawnAtTick > 0 && phaseTicks == s.SpawnAtTick)
 					SpawnEnemies(s);
 				if (spawned.Count > 0 && phaseTicks % 30 == 0)
@@ -331,7 +338,7 @@ public sealed class SelfTestSystem : ModSystem
 						+ "inventory " + string.Join(", ", Enumerable.Range(0, 50).Where(i => !p.inventory[i].IsAir).Select(i => $"{p.inventory[i].Name} x{p.inventory[i].stack}")));
 				bool finished = s.Mode == "auto"
 					? phaseTicks > 2 && (!bot.Brain.Auto || (bot.Brain.Planner.Complete && bot.Brain.Current == null))
-					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > 2;
+					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > (s.Mode == "surface" ? SurfaceAfterTicks + 2 : 2);
 				if (!finished && s.FinishOnLog != null && phaseTicks % 30 == 0)
 					finished = tee.Lines.Any(l => l.Contains(s.FinishOnLog));
 				// Switched off by an exception: over now (world_eye run 71 went on for a game day of deaths at the spawn after it).

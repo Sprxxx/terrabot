@@ -650,6 +650,23 @@ public sealed class Scenario
 				Check = r => Max(r, 0, r.Broken, "broke"),
 			},
 			new() {
+				// Seen in game (measured runs L1, M1, M2): 5 of 17 deaths were drownings, the bot under water with air a few rows
+				// up through a ceiling, pillaring at a column it could not rise in. Mine up through the ceiling instead.
+				Name = "flooded_under_a_ceiling",
+				Rows = Grid(
+					Repeat("@....................@", 3),
+					"@ssssssssssssssssssss@",
+					Repeat("@~~~~~~~~~~~~~~~~~~~~@", 4),
+					"@~~S~~~~~~~~~~~~~~~~~@",
+					"@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "surface",
+				Dig = true,
+				Build = true,
+				Blocks = 30,
+				TimeoutTicks = 60 * 60,
+				Check = r => r.Deaths > 0 ? $"died {r.Deaths} time(s)" : null,
+			},
+			new() {
 				// Lava under the wall stays put when the wall is dug (liquid never flows up): dug through, unhurt.
 				Name = "lava_below_dug_over",
 				Rows = WithCell(Corridor, 10, 4, '!'),

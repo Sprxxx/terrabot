@@ -11,7 +11,14 @@ namespace TerraBot.Bot.Skills;
 /// </summary>
 public sealed class SurfaceSkill : ISkill
 {
-	public const int MaxTicks = 60 * 15;
+	/// <summary>
+	/// Longer than a full breath (200 at one per 7 ticks): under water there is nothing better to do than keep going up.
+	/// Seen in game (measured runs L1, M1, M2): every drowning was a surfacing that gave up after 900 ticks with breath
+	/// at 21, then a second one that had no air left.
+	/// </summary>
+	public const int MaxTicks = 60 * 30;
+	/// <summary>Blocks in the way up a column that are mined through on the way (a ceiling over the water).</summary>
+	public const int MaxCeilingBlocks = 3;
 	public const int SearchColumns = 16, SearchUp = 25;
 
 	private int ticks;
@@ -135,6 +142,23 @@ public sealed class SurfaceSkill : ISkill
 		}
 		if (column == null || ticks % 30 == 0)
 			column = AirColumn(ctx);
+		// A ceiling over the head in this column: mine it, as a player digs up out of a flooded cave. Seen in game (measured
+		// runs L1, M1, M2): air 3-11 rows up, through a block or two; the old column search skipped any column with a block
+		// in it, so the bot drifted sideways under the ceiling, never rose, and drowned (5 of 17 deaths).
+		if (column == null || column == n.X) {
+			foreach (int dx in new[] { 0, 1 }) {
+				var above = new TilePos(n.X + dx, n.Y - Core.Pathfinding.Body.HeightTiles);
+				if (Breakable(ctx, above)) {
+					ctx.Output.Tool = ToolRequest.Pickaxe;
+					ctx.Output.UseItem = true;
+					ctx.Output.Aim(above.X, above.Y);
+					ctx.Output.Jump = false;
+					jumpedLastTick = false;
+					State = $"mining up through {above}";
+					return SkillStatus.Running;
+				}
+			}
+		}
 		// Fallback: vanilla has no swimming up without flippers or a float (a new jump needs footing: Player.JumpMovement
 		// wants velocity.Y == 0). Seen in game: holding jump in a flooded shaft moved the bot 6 tiles in 15 s and it
 		// drowned. So pillar up like a player: jump off whatever is underfoot, a block under the feet on the way up.
@@ -160,20 +184,27 @@ public sealed class SurfaceSkill : ISkill
 		return SkillStatus.Running;
 	}
 
-	/// <summary>The nearest column (by sideways distance plus height to swim) with an air cell above the water and nothing solid in the way.</summary>
+	/// <summary>
+	/// The nearest column (by sideways distance plus height to swim, plus blocks to mine) with an air cell above the water,
+	/// through at most <see cref="MaxCeilingBlocks"/> blocks the pickaxe can break.
+	/// </summary>
 	private static int? AirColumn(BotContext ctx)
 	{
 		TilePos n = ctx.Node;
 		int? best = null;
 		int bestCost = int.MaxValue;
 		for (int dx = 0; dx <= SearchColumns; dx++)
-			foreach (int x in dx == 0 ? new[] { n.X } : new[] { n.X - dx, n.X + dx })
+			foreach (int x in dx == 0 ? new[] { n.X } : new[] { n.X - dx, n.X + dx }) {
+				int blocks = 0;
 				for (int y = n.Y - 2; y >= n.Y - 2 - SearchUp; y--) {
 					CellKind k = ctx.Grid.Get(x, y);
-					if (k.IsSolid())
-						break; // a ceiling: no air this way
+					if (k.IsSolid()) {
+						if (++blocks > MaxCeilingBlocks || !Breakable(ctx, new TilePos(x, y)))
+							break; // too thick, or nothing the pickaxe breaks: no air this way
+						continue;
+					}
 					if (!k.IsLiquid()) {
-						int cost = dx * 2 + (n.Y - y);
+						int cost = dx * 2 + (n.Y - y) + blocks * CeilingBlockCost;
 						if (cost < bestCost) {
 							bestCost = cost;
 							best = x;
@@ -181,6 +212,13 @@ public sealed class SurfaceSkill : ISkill
 						break;
 					}
 				}
+			}
 		return best;
 	}
+
+	/// <summary>A block mined on the way up weighs as this many tiles of swimming.</summary>
+	public const int CeilingBlockCost = 4;
+
+	private static bool Breakable(BotContext ctx, TilePos c) =>
+		ctx.Grid.Get(c.X, c.Y).IsSolid() && ctx.Moves.Blocks is Core.Pathfinding.IBlockActions b && !float.IsInfinity(b.BreakTicks(c.X, c.Y));
 }
