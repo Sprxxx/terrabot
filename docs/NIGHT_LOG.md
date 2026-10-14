@@ -311,3 +311,15 @@ what was decided and the result.
 - The PLAN now has an M9 section and the milestones after the Eye, in order (M10 Brain of Cthulhu through M18 Moon
   Lord).
 - In game, 7 scenarios pass (early_game, iron_age, settle, night_home, life_crystals, tunnel, dig-down). 219 unit tests.
+
+### world_eye run 37: one fight for 7 game days
+- **Progress:** the anvil after 30 real seconds, the fastest yet, and 0 deaths. Then it never got past "19 more
+  iron ore".
+- **Cause:** two red slimes out of reach above took turns as the fight's target every tick. Each switch reset the
+  "no closer for 600 ticks, give up" count, so the fight never ended. **Decision:** the count is per enemy. The new
+  test `TwoUnreachableEnemies_TakingTurnsAsTarget_AreStillGivenUp` is still running after 3600 ticks on the old code
+  and gives up at tick 1294 on the new.
+- **Missed for 30 minutes:** the monitor filter dropped the status lines. **Decision:** real-world runs log
+  "SELFTEST stall" when the plan status hasn't changed for 3 game hours.
+- **Flaky unit test:** a static switch (`CheckBrokenSupport`) raced with parallel tests. It's now per search.
+- In game, 5 fight scenarios pass, including boss_auto. 220 unit tests.

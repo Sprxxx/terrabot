@@ -48,6 +48,10 @@ public sealed class SelfTestSystem : ModSystem
 	private RunResult result;
 	private bool[,] before;
 	private TeeLog tee;
+	private string stallStatus;
+	private int stallSince;
+	/// <summary>3 game hours (3600 ticks each).</summary>
+	private const int StallTicks = 3 * 3600;
 	private IBotLog originalLog;
 	private readonly HashSet<int> seenFalling = new();
 	private readonly List<int> spawned = new();
@@ -301,6 +305,17 @@ public sealed class SelfTestSystem : ModSystem
 						+ $"{beatClock.Elapsed.TotalMilliseconds / HeartbeatTicks:0.00} ms/tick of which bot {TerraBotPlayer.BotTime.Elapsed.TotalMilliseconds / HeartbeatTicks:0.00}) at {bot.FeetTile()}, life {p.statLife}/{p.statLifeMax2}: {bot.Brain.Describe()}");
 					beatClock.Restart();
 					TerraBotPlayer.BotTime.Reset();
+				}
+				// Real-world runs: a plan status unchanged for game hours is a stall (seen: one fight for 7 game days, found
+				// late because nothing else was logged at INFO).
+				if (s.RealWorld && phaseTicks % HeartbeatTicks == 0) {
+					string st = bot.Brain.Planner.Status;
+					if (st != stallStatus) {
+						stallStatus = st;
+						stallSince = phaseTicks;
+					}
+					else if (phaseTicks - stallSince >= StallTicks && (phaseTicks - stallSince) % StallTicks < HeartbeatTicks)
+						Mod.Logger.Warn($"SELFTEST stall: plan [{st}] unchanged for {(phaseTicks - stallSince) / 3600} game hours; {bot.Brain.Describe()}");
 				}
 				// Real-world runs: every 2 minutes, what the bot has and where the plan is.
 				if (s.RealWorld && phaseTicks % (HeartbeatTicks * 4) == 0)

@@ -76,10 +76,8 @@ public class DumpReplayTests
 		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
 		var goal = new GoalNearTile(home, 2, PhysicsParams.Default);
 		output.WriteLine($"start {start} startable {Body.IsStartable(g, start)} home {home}");
-		PathSearch.CheckBrokenSupport = false;
-		var off = new PathSearch(ctx, start, goal, new SearchLimits());
+		var off = new PathSearch(ctx, start, goal, new SearchLimits { CheckBrokenSupport = false });
 		off.Step(1e9);
-		PathSearch.CheckBrokenSupport = true;
 		output.WriteLine("without the broken-support check: " + off.Result);
 		var search = new PathSearch(ctx, start, goal, new SearchLimits());
 		var sw = System.Diagnostics.Stopwatch.StartNew();

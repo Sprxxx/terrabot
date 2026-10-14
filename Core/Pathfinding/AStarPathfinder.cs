@@ -40,6 +40,8 @@ public sealed class SearchLimits
 	public int MaxExpansions { get; init; } = 40_000;
 	/// <summary>Nodes farther than this (Chebyshev, tiles) from the start are ignored.</summary>
 	public int MaxRadius { get; init; } = 400;
+	/// <summary>Tests can switch the broken-support check off to compare (per search: a static raced with parallel tests).</summary>
+	public bool CheckBrokenSupport { get; init; } = true;
 
 	public static readonly SearchLimits Default = new();
 }
@@ -171,9 +173,9 @@ public sealed class PathSearch
 			// runs; replayed, a 73-step path exists).
 			// Mined by one of the last BrokenBanSteps steps: banned (that path really mines it; the zigzag staircase of run 15
 			// re-planned 26 times otherwise). Mined further back: only a penalty.
-			if (CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, e.Kind == MoveKind.StepUp ? brokenOnPath : brokenRecently))
+			if (limits.CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, e.Kind == MoveKind.StepUp ? brokenOnPath : brokenRecently))
 				continue; // a step up onto a stair an earlier step of the path digs away never works (zigzag stairs, runs 15 and 32)
-			float brokenPenalty = CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath) ? BrokenSupportPenalty : 0f;
+			float brokenPenalty = limits.CheckBrokenSupport && SupportOnlyFromBroken(ctx.Grid, e.To, brokenOnPath) ? BrokenSupportPenalty : 0f;
 			if (float.IsPositiveInfinity(e.Cost))
 				continue; // lava
 			float g = g0 + e.Cost + brokenPenalty;
@@ -187,8 +189,6 @@ public sealed class PathSearch
 
 	/// <summary>How many steps back along the path <see cref="BrokenOnPathTo"/> looks for mined cells.</summary>
 	public const int BrokenLookback = 8;
-	/// <summary>Tests can switch the broken-support check off to compare.</summary>
-	public static bool CheckBrokenSupport = true;
 	/// <summary>Extra cost of a step held up only by cells its own path mines: such plans re-plan when they get there.</summary>
 	public const float BrokenSupportPenalty = 1500f;
 	private readonly HashSet<TilePos> brokenOnPath = new();

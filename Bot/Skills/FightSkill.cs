@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Physics;
@@ -40,9 +41,12 @@ public sealed class FightSkill : ISkill
 	/// <summary>NPC AI styles that fly (vanilla NPCAIStyleID: 2 Demon Eye, 4 Eye of Cthulhu, 5 Flying, 14 Bat).</summary>
 	public static readonly int[] FlyingAiStyles = { 2, 4, 5, 14 };
 	private const int RetargetPathTicks = 30;
-	private int progressTarget = -1;
-	private float bestDistance;
-	private int sinceCloser;
+	/// <summary>
+	/// Per enemy: the closest it has been and the ticks spent on it since. Per enemy, not per target switch: seen in
+	/// game (world_eye run 37), two red slimes out of reach above took turns as the target every tick, each switch reset
+	/// the count, and one fight lasted 7 game days.
+	/// </summary>
+	private readonly Dictionary<int, (float Best, int Since)> progress = new();
 	/// <summary>Ticks without getting closer before an enemy is left alone.</summary>
 	public const int MaxTicksNoCloser = 600;
 	private bool wasInReach;
@@ -130,19 +134,19 @@ public sealed class FightSkill : ISkill
 		EntityInfo t = target.Value;
 		targetDistance = t.DistanceTo(cx, cy);
 		// No closer for a long while (in reach does not count as stuck): give up on it, like an enemy with no path to it.
-		if (t.Id != progressTarget || targetDistance < bestDistance - 16f) {
-			progressTarget = t.Id;
-			bestDistance = targetDistance;
-			sinceCloser = 0;
-		}
-		else if (++sinceCloser > MaxTicksNoCloser && !wasInReach) {
+		bool known = progress.TryGetValue(t.Id, out var pr);
+		if (!known || targetDistance < pr.Best - 16f)
+			progress[t.Id] = (targetDistance, 0);
+		else if (++pr.Since <= MaxTicksNoCloser || wasInReach)
+			progress[t.Id] = pr;
+		else {
 			// Not "within 6 tiles": seen in game, a red slime 3.8 tiles off (out of sword reach, no way closer) was
 			// chased for over 7000 ticks without a step taken.
 			unreachable.Add(t.Id);
 			ctx.Ignore(t.Id, IgnoreTicks);
 			ctx.Log.Info($"Fight: no closer to {t.Name} in {MaxTicksNoCloser} ticks ({targetDistance / 16f:0.0} tiles); leaving it");
 			targetId = -1;
-			sinceCloser = 0;
+			progress.Remove(t.Id);
 			State = "giving up on it";
 			return SkillStatus.Running;
 		}
@@ -152,7 +156,7 @@ public sealed class FightSkill : ISkill
 		float reachY = p.Height * 0.5f + t.Height * 0.5f + 8f;
 		bool inReach = ctx.Combat.HasWeapon && Math.Abs(dx) <= reachX && Math.Abs(dy) <= reachY && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY);
 		if (inReach)
-			sinceCloser = 0; // swinging at it is progress (the no-damage rule covers swings that do nothing)
+			progress[t.Id] = (Math.Min(targetDistance, progress[t.Id].Best), 0); // swinging at it is progress (the no-damage rule covers swings that do nothing)
 		wasInReach = inReach;
 
 		if (!inReach && UseRanged(ctx, t, cx, cy)) {

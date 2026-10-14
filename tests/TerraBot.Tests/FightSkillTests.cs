@@ -328,6 +328,43 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void TwoUnreachableEnemies_TakingTurnsAsTarget_AreStillGivenUp()
+	{
+		// world_eye run 37: two red slimes out of reach above took turns as the target, each switch reset the "no closer"
+		// count, and one fight lasted 7 game days.
+		var g = ArrayTileGrid.Parse(
+			"..............................",
+			"..............................",
+			"..............................",
+			"..............................",
+			"..............................",
+			"...........S..................",
+			"##############################");
+		PhysicsParams p = PhysicsParams.Default;
+		var sim = new SimWorld(g, p, g.Markers['S']);
+		var ctx = new BotContext { Grid = g, Log = new Log(output), Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword", Facing = 1 } };
+		EntityInfo a = new(7, 1, "Slime A", 12 * 16f, 1 * 16f - 8f, 16, 16, 0, 0, 60, 60, 10);
+		EntityInfo b = new(8, 1, "Slime B", 13 * 16f, 1 * 16f - 8f, 16, 16, 0, 0, 60, 60, 10);
+		var skill = new FightSkill();
+		ctx.Body = sim.State;
+		ctx.Hostiles = new[] { a, b };
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		int t = 0;
+		for (; t < 60 * 60 && status == SkillStatus.Running; t++) {
+			ctx.Body = sim.State;
+			ctx.Hostiles = new[] { a, b };
+			ctx.Tick = t;
+			ctx.NoteAttacker(t % 2 == 0 ? a.Id : b.Id); // the target flips every tick
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+		}
+		output.WriteLine($"{status} after {t} ticks");
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.True(t < 60 * 60, "the fight never gave up");
+	}
+
+	[Fact]
 	public void GivesUpOnEnemyOutOfReachButClose_WhenNoWayCloser()
 	{
 		// world_eye run 21: a red slime 3.8 tiles off (out of reach, no way to it) was chased for 7000+ ticks: the
