@@ -50,8 +50,8 @@ public sealed class SelfTestSystem : ModSystem
 	private TeeLog tee;
 	private string stallStatus;
 	private int stallSince;
-	/// <summary>3 game hours (3600 ticks each).</summary>
-	private const int StallTicks = 3 * 3600;
+	/// <summary>6 game hours (3600 ticks each): slow mining often holds one status for 3.</summary>
+	private const int StallTicks = 6 * 3600;
 	private IBotLog originalLog;
 	private readonly HashSet<int> seenFalling = new();
 	private readonly List<int> spawned = new();

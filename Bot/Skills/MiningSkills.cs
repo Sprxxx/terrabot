@@ -107,6 +107,7 @@ public sealed class MineSkill : ISkill
 		if (PickTarget(ctx) is TilePos next) {
 			target = next;
 			mineTicks = 0;
+			arrivedOutOfReach = 0;
 			ctx.Log.Debug($"Mine: target {next}");
 			return SkillStatus.Running;
 		}
@@ -137,6 +138,7 @@ public sealed class MineSkill : ISkill
 		var reach = new GoalReachTile(t, ctx.Physics, ctx.PickRangeBoost);
 		TilePos node = ctx.Node;
 		if (ctx.Body.Grounded && reach.IsGoal(node)) {
+			arrivedOutOfReach = 0;
 			sub?.Stop(ctx);
 			sub = null;
 			if (++mineTicks > MaxMineTicksPerTile)
@@ -166,10 +168,19 @@ public sealed class MineSkill : ISkill
 		if (s == SkillStatus.Succeeded) {
 			sub.Stop(ctx);
 			sub = null;
+			// "Arrived" but still out of reach: seen in the settle scenario, the walk's search started on a node beside the
+			// bot that reaches the tile, said "done" at once, and the two went round in a loop for 50,000 ticks.
+			if (ctx.Body.Grounded && ++arrivedOutOfReach >= MaxArrivedOutOfReach) {
+				arrivedOutOfReach = 0;
+				return GiveUp(ctx, t, $"walked there {MaxArrivedOutOfReach} times and still out of reach from {ctx.Node}");
+			}
 		}
 		State = $"walking to {t}";
 		return SkillStatus.Running;
 	}
+
+	private int arrivedOutOfReach;
+	public const int MaxArrivedOutOfReach = 3;
 
 	private SkillStatus GiveUp(BotContext ctx, TilePos t, string why)
 	{

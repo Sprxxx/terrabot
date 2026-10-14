@@ -34,6 +34,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int LeadOre = 700, LeadBar = 704, LeadAnvil = 716, LeadPickaxe = 3497, WoodPlatform = 94, IronFence = 2333;
 	public const int WoodWall = 93, Door = 25, Chair = 34, Table = 32;
 	public const int IronBroadsword = 4, IronHelmet = 90, IronChainmail = 81, IronGreaves = 77;
+	public const int SilverOre = 14, SilverBar = 21, SilverHelmet = 92, SilverChainmail = 83, SilverGreaves = 79, TileSilver = 9;
 	public const int TileDirt = 0, TileStone = 1, TileIron = 6, TileLead = 167, TileAnvil = 16, TileFurnace = 17, TileBench = 18;
 	public const int TileTorch = 4, TileDoor = 10, TileTable = 14, TileChair = 15;
 	public const int LifeCrystal = 29, TileHeart = 12;
@@ -46,6 +47,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
 		Gel = Gel, Torch = Torch, FurnaceTile = TileFurnace, AnvilTile = TileAnvil, IronTierPickaxe = IronPickaxe,
 		IronTierBroadsword = IronBroadsword, IronTierHelmet = IronHelmet, IronTierChainmail = IronChainmail, IronTierGreaves = IronGreaves,
+		SilverTierHelmet = SilverHelmet, SilverTierChainmail = SilverChainmail, SilverTierGreaves = SilverGreaves,
 		WoodWall = WoodWall, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
@@ -125,6 +127,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = IronHelmet, Ingredients = new[] { new Ingredient(15, IronBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = IronChainmail, Ingredients = new[] { new Ingredient(25, IronBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = IronGreaves, Ingredients = new[] { new Ingredient(20, IronBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = SilverBar, Ingredients = new[] { new Ingredient(4, SilverOre) }, Stations = new[] { TileFurnace } });
+		Add(new RecipeInfo { Result = SilverHelmet, Ingredients = new[] { new Ingredient(15, SilverBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = SilverChainmail, Ingredients = new[] { new Ingredient(25, SilverBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = SilverGreaves, Ingredients = new[] { new Ingredient(20, SilverBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = WoodWall, ResultStack = 4, Ingredients = new[] { new Ingredient(1, Wood) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Door, Ingredients = new[] { new Ingredient(6, Wood) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Chair, Ingredients = new[] { new Ingredient(4, Wood) }, Stations = new[] { TileBench } });
@@ -169,6 +175,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		StoneBlock => new ItemSource(SourceKind.Mine, TileStone),
 		DirtBlock => new ItemSource(SourceKind.Mine, TileDirt),
 		IronOre => new ItemSource(SourceKind.Mine, TileIron),
+		SilverOre => new ItemSource(SourceKind.Mine, TileSilver),
 		LifeCrystal => new ItemSource(SourceKind.Mine, TileHeart),
 		Lens => new ItemSource(SourceKind.Hunt, NpcAiStyle: DemonEyeAi),
 		_ => ItemSource.None, // lead ore: not in this world

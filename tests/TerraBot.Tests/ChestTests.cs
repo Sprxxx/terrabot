@@ -67,6 +67,19 @@ public class ChestTests
 	}
 
 	[Fact]
+	public void ChestFarBelowTheDepthLimit_WaitsForArmour()
+	{
+		// A chest 22 rows into the caverns drew the bot down in four runs (world_eye runs 35-38).
+		FakeGame g = WithChest(30);
+		BotContext ctx = g.CreateContext(output);
+		Assert.NotNull(ProgressionPlanner.NextChest(ctx));
+		ctx.CavernY = 23 - ProgressionPlanner.ChestDepthMargin - 1 - BotContext.ShallowMargin; // the chest (row 23) 1 row too deep
+		Assert.Null(ProgressionPlanner.NextChest(ctx));
+		ctx.Combat.Defense = BotContext.CavernDefense; // armour: the limit goes down
+		Assert.NotNull(ProgressionPlanner.NextChest(ctx));
+	}
+
+	[Fact]
 	public void LootChestSkill_WalksUpAndLoots()
 	{
 		FakeGame g = WithChest(25);

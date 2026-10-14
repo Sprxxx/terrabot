@@ -320,7 +320,7 @@ what was decided and the result.
   test `TwoUnreachableEnemies_TakingTurnsAsTarget_AreStillGivenUp` is still running after 3600 ticks on the old code
   and gives up at tick 1294 on the new.
 - **Missed for 30 minutes:** the monitor filter dropped the status lines. **Decision:** real-world runs log
-  "SELFTEST stall" when the plan status hasn't changed for 3 game hours.
+  "SELFTEST stall" when the plan status hasn't changed for 3 game hours (later 6).
 - **Flaky unit test:** a static switch (`CheckBrokenSupport`) raced with parallel tests. It's now per search.
 - In game, 5 fight scenarios pass, including boss_auto. 220 unit tests.
 
@@ -339,3 +339,16 @@ what was decided and the result.
 - **Next:** iron is scarce near the spawn after 114 ore (anvil, sword, pickaxe, armour). A player would also take
   lead, silver or tungsten armour, or go farther; the plan only knows iron-tier armour. To do if it keeps stalling.
 - In game, 12 walk, dig and chain scenarios pass. 222 unit tests.
+
+### Iron runs out: silver tier as a second choice (from runs 38 and 39)
+- **Run 39** stalled for 12 game hours on the last 8 iron for the broadsword, with deaths in the caverns. Its log was
+  lost: the next game launch overwrites client.log, and I now copy real-world logs before starting another game.
+- **Decision:** the broadsword, pickaxe and each armour piece take the iron tier or the silver tier (Silver or
+  Tungsten, per world). An ore that mining keeps coming back without costs more in the planner each time, so it
+  switches when iron runs out. Test `Armour_SwitchesToSilver_WhenIronKeepsRunningOut`.
+- **The chest at row 463** (22 rows into the caverns) drew the bot down in four runs, and most deaths were around
+  it. **Decision:** chests more than 15 rows below the depth limit wait for armour (the limit goes down with it).
+- **A mining livelock in settle_auto:** the walk said "arrived" (its search started on a node beside the bot) but the
+  ore was out of reach from where the bot stood, round and round for 50,000 ticks. Intermittent, but it hadn't been
+  seen before. **Decision:** 3 such arrivals give up the tile.
+- In game, iron_age_auto, boss_auto and settle_auto pass. 224 unit tests.

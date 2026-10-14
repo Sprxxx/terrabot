@@ -162,6 +162,35 @@ public class BuildingTests
 		Assert.IsNotType<StayHomeSkill>(next);
 	}
 
+	[Fact]
+	public void Armour_SwitchesToSilver_WhenIronKeepsRunningOut()
+	{
+		// world_eye run 38: 114 iron for anvil, sword, pickaxe and armour, and the iron near the spawn ran out.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Contains($"item{FakeGame.IronOre}", p.Status); // iron first: 3 ore a bar, silver 4
+		p.NoteFruitless(FakeGame.IronOre);
+		next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Contains($"item{FakeGame.SilverOre}", p.Status);
+
+		g.Items[FakeGame.SilverHelmet] = 1; // a silver helmet is a helmet
+		next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Equal(FakeGame.SilverHelmet, Assert.IsType<EquipSkill>(next).ItemType);
+	}
+
 	/// <summary>Builds a valid house next to the start through the fake's own placement, and tells the planner about it.</summary>
 	private void HouseAlreadyThere(FakeGame g, ProgressionPlanner p, BotContext ctx)
 	{

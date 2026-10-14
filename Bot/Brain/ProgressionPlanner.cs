@@ -26,7 +26,11 @@ public sealed record HaveItem(IReadOnlyList<int> Accepts, int Count, string Labe
 public sealed record StationPlaced(int TileType, string Label) : Need(Label);
 
 /// <summary>The best hotbar pickaxe has at least <see cref="Power"/>; otherwise get <see cref="Item"/>.</summary>
-public sealed record PickaxeAtLeast(int Power, int Item, string Label) : Need(Label);
+/// <summary>A pickaxe of at least <see cref="Power"/>; when there is none, one of <see cref="Items"/> (in tiers, cheapest first).</summary>
+public sealed record PickaxeAtLeast(int Power, IReadOnlyList<int> Items, string Label) : Need(Label)
+{
+	public PickaxeAtLeast(int power, int item, string label) : this(power, new[] { item }, label) { }
+}
 
 /// <summary>A house (<see cref="Building.Blueprint.SmallHouse"/>) that passes the game's housing check, optionally with a heart lantern hung inside.</summary>
 public sealed record HouseBuilt(string Label, bool HeartLantern = false) : Need(Label);
@@ -35,7 +39,15 @@ public sealed record HouseBuilt(string Label, bool HeartLantern = false) : Need(
 public sealed record ArenaBuilt(string Label) : Need(Label);
 
 /// <summary>The item is worn (armour).</summary>
-public sealed record Wearing(int Item, string Label) : Need(Label);
+/// <summary>
+/// Wearing any of <see cref="Items"/> (the armour pieces for one slot, in tiers: iron or lead, silver or tungsten).
+/// Seen in game (world_eye run 38): 114 iron for anvil, sword, pickaxe and armour, and the iron near the spawn ran out;
+/// a player takes whichever ore there is.
+/// </summary>
+public sealed record Wearing(IReadOnlyList<int> Items, string Label) : Need(Label)
+{
+	public Wearing(int item, string label) : this(new[] { item }, label) { }
+}
 
 /// <summary>Max life (from life crystals) is at least <see cref="Life"/>.</summary>
 public sealed record LifeAtLeast(int Life, string Label) : Need(Label);
@@ -178,13 +190,13 @@ public sealed class ProgressionPlanner
 		// The sword before the pickaxe: in a real world, mining the pickaxe's 30 ore with a copper shortsword (5 damage, a
 		// point or two a hit against a yellow slime) cost 9 deaths in one run.
 		if (plan != Plans.Iron)
-			stages.Add(new HaveItem(ids.IronTierBroadsword, 1, "iron-tier broadsword"));
-		stages.Add(new PickaxeAtLeast(IronTierPickPower, ids.IronTierPickaxe, "iron-tier pickaxe"));
+			stages.Add(new HaveItem(Tiers(ids.IronTierBroadsword, ids.SilverTierBroadsword), 1, "iron-tier broadsword"));
+		stages.Add(new PickaxeAtLeast(IronTierPickPower, Tiers(ids.IronTierPickaxe, ids.SilverTierPickaxe), "iron-tier pickaxe"));
 		if (plan == Plans.Iron)
 			return stages;
-		stages.Add(new Wearing(ids.IronTierHelmet, "helmet"));
-		stages.Add(new Wearing(ids.IronTierChainmail, "chainmail"));
-		stages.Add(new Wearing(ids.IronTierGreaves, "greaves"));
+		stages.Add(new Wearing(Tiers(ids.IronTierHelmet, ids.SilverTierHelmet), "helmet"));
+		stages.Add(new Wearing(Tiers(ids.IronTierChainmail, ids.SilverTierChainmail), "chainmail"));
+		stages.Add(new Wearing(Tiers(ids.IronTierGreaves, ids.SilverTierGreaves), "greaves"));
 		if (plan == Plans.Settle)
 			return stages;
 		stages.Add(new PrepFor(ids.EyeBoss, new LifeAtLeast(BossLife, "max life")));
@@ -195,6 +207,12 @@ public sealed class ProgressionPlanner
 		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu"));
 		return stages;
 	}
+
+	/// <summary>Mining for this item found none around here (more travel, and a higher cost for it in recipes).</summary>
+	public void NoteFruitless(int item) => fruitlessMines[item] = fruitlessMines.GetValueOrDefault(item) + 1;
+
+	/// <summary>The known items of a list (0 = not in this game's ids), each once.</summary>
+	private static int[] Tiers(params int[] items) => items.Where(i => i > 0).Distinct().ToArray();
 
 	public void Reset(string plan = null)
 	{
@@ -266,10 +284,18 @@ public sealed class ProgressionPlanner
 	public static ChestInfo? NextChest(BotContext ctx)
 	{
 		foreach (ChestInfo c in ctx.World.SeenChests(ctx.Node, LootRadius))
-			if (!c.Locked && !ctx.OpenedChests.Contains(c.TopLeft) && !ctx.InDangerZone(c.TopLeft))
+			if (!c.Locked && !ctx.OpenedChests.Contains(c.TopLeft) && !ctx.InDangerZone(c.TopLeft)
+				&& c.TopLeft.Y - ChestDepthMargin <= ctx.DeepestRow)
 				return c;
 		return null;
 	}
+
+	/// <summary>
+	/// How far below the depth limit a chest is still worth the trip. Deeper ones wait for better armour (the limit
+	/// goes down with it). Seen in game: a chest 22 rows into the caverns drew the bot down in four runs, and most of
+	/// those runs' deaths were around it.
+	/// </summary>
+	public const int ChestDepthMargin = 15;
 
 	/// <summary>Tell the planner about a finished skill (so a just-placed station counts before the next scan).</summary>
 	public void OnSkillFinished(ISkill skill, SkillStatus status, BotContext ctx)
@@ -293,7 +319,7 @@ public sealed class ProgressionPlanner
 				travelledFor.Remove(mine.ItemType);
 			}
 			else if (status == SkillStatus.Failed && mine.FailureReason.Contains("explorations"))
-				fruitlessMines[mine.ItemType] = (fruitlessMines.TryGetValue(mine.ItemType, out int fm) ? fm : 0) + 1;
+				NoteFruitless(mine.ItemType);
 		}
 		if (skill is CraftSkill && status == SkillStatus.Failed && skill.FailureReason.StartsWith(nameof(CraftResult.NeedsStation))) {
 			stationMissed = true;
@@ -478,7 +504,7 @@ public sealed class ProgressionPlanner
 		}
 		return need switch {
 			StationPlaced s => ResolveStation(s, claims, depth, ctx),
-			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Item, 1, p.Label), claims, depth + 1, ctx),
+			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Items, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
 			HouseBuilt hb => ResolveHouse(hb.HeartLantern, claims, depth, ctx),
 			ArenaBuilt => ResolveArena(claims, depth, ctx),
@@ -487,9 +513,9 @@ public sealed class ProgressionPlanner
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
 				: ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 ? Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new UseItemSkill(ctx.Ids.LifeCrystal))
 				: Resolve(new HaveItem(ctx.Ids.LifeCrystal, 1, "life crystal"), claims, depth + 1, ctx),
-			Wearing wr => ctx.Inventory.IsEquipped(wr.Item) ? null
-				: ctx.Inventory.Count(wr.Item) > 0 ? Do($"putting on the {wr.Label}", new EquipSkill(wr.Item))
-				: Resolve(new HaveItem(wr.Item, 1, wr.Label), claims, depth + 1, ctx),
+			Wearing wr => wr.Items.Any(ctx.Inventory.IsEquipped) ? null
+				: wr.Items.FirstOrDefault(i => ctx.Inventory.Count(i) > 0) is int carried and > 0 ? Do($"putting on the {wr.Label}", new EquipSkill(carried))
+				: Resolve(new HaveItem(wr.Items, 1, wr.Label), claims, depth + 1, ctx),
 			_ => null,
 		};
 	}
@@ -849,7 +875,9 @@ public sealed class ProgressionPlanner
 				continue;
 			ItemSource src = k.SourceOf(i);
 			current[i] = src.Kind switch {
-				SourceKind.Tree => TreeCost, SourceKind.Mine => MineCost, SourceKind.Hunt => HuntCost, _ => float.PositiveInfinity,
+				// An ore that mining keeps coming back without costs more each time, so an item with another tier (armour)
+				// switches to an ore that is still there.
+				SourceKind.Tree => TreeCost, SourceKind.Mine => MineCost * (1 + fruitlessMines.GetValueOrDefault(i)), SourceKind.Hunt => HuntCost, _ => float.PositiveInfinity,
 			};
 			if (src.Kind != SourceKind.None)
 				continue;

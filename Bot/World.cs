@@ -129,6 +129,12 @@ public sealed class GameIds
 	public int IronTierHelmet { get; init; }
 	public int IronTierChainmail { get; init; }
 	public int IronTierGreaves { get; init; }
+	/// <summary>This world's silver-tier armour (Silver or Tungsten): another way to the armour when iron runs out. 0 = none.</summary>
+	public int SilverTierHelmet { get; init; }
+	public int SilverTierPickaxe { get; init; }
+	public int SilverTierBroadsword { get; init; }
+	public int SilverTierChainmail { get; init; }
+	public int SilverTierGreaves { get; init; }
 	/// <summary>Furniture and walls for a house.</summary>
 	public int WoodWall { get; init; }
 	public int Door { get; init; }
