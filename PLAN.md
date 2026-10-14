@@ -510,7 +510,7 @@ Eye has 2800 life and dashes properly. The first try: 18 hits, a death at 94 bos
 * Result: `eye_of_cthulhu` on Classic won in 7955 ticks, 5 hits, no deaths, 157/200 life left.
 
 ## Milestone 8: a boss arena
-From the guides (docs/RESEARCH.md): build an arena before the fight, keep it away from the house, add
+From the guides (DesktopProjekt	errabotdocsRESEARCH.md): build an arena before the fight, keep it away from the house, add
 regeneration.
 
 ### Verified (decompiled Recipe.cs / Item.cs)
@@ -620,7 +620,7 @@ UI click would call:
 Scenario `world_eye`: the copied real world (Peppe on "Noxious Vision of Organs", a small Crimson world), the
 character's own inventory, normal spawns, starting at the world spawn. Run with `-Fast -DrawEvery 16` (about 30x)
 and with the window unfocused (the focus pause is hooked off). Run by run, decisions and results go in
-`docs/NIGHT_LOG.md`.
+`DesktopProjekt	errabotdocsNIGHT_LOG.md` (outside the repo).
 
 Done so far:
 * Survival: depth limits by defense, death spots avoided, retreat and rest, recall potions, and a night spent in
