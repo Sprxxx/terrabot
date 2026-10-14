@@ -462,7 +462,7 @@ public sealed class ProgressionPlanner
 	/// </summary>
 	public TilePos? HomeToRetreatTo(BotContext ctx) =>
 		ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos home && home.ChebyshevTo(ctx.Node) <= RetreatHomeTiles ? home : null;
-	public const int RetreatHomeTiles = 60;
+	public const int RetreatHomeTiles = 100; // 60 left a vulture death 76 tiles out on the surface (run 45)
 
 	private TilePos? HomeInside(BotContext ctx)
 	{

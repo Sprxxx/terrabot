@@ -413,3 +413,13 @@ what was decided and the result.
   step-ups and the last 2 steps. When that leaves no path at all (the cave below the spawn), WalkTo plans again
   without the ban (penalty only), as added for run 38. The cave replay: strict no path, relaxed found (73 steps).
 - In game, 13 walk, dig and chain scenarios pass. 229 unit tests.
+
+### world_eye run 45: anvil at 75 seconds, broadsword soon after; two deaths
+- **Death 1:** cave bats bit the bot during a sideways explore at row 432 and flew off down. The fight's "what bit
+  us goes first" rule picked them at any depth (the depth filter didn't apply to it), so it chased them into the
+  caverns (row 469) and a skeleton killed it. **Decision:** the depth rule applies to attackers too: below the limit,
+  one is only fought within 4 tiles. The chase margin is now 5 rows (was 10). Test
+  `AnAttackerBelowTheDepthLimit_IsNotChasedDown`.
+- **Death 2:** a vulture, digging in on the surface 76 tiles from the house. **Decision:** the walk-home retreat
+  applies up to 100 tiles.
+- In game, 7 fight and chain scenarios pass. 230 unit tests.

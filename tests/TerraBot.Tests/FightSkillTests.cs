@@ -365,6 +365,47 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void AnAttackerBelowTheDepthLimit_IsNotChasedDown()
+	{
+		// world_eye run 45: cave bats hit the bot and flew off down; it followed them into the caverns and died there.
+		var g = ArrayTileGrid.Parse(
+			"..............................",
+			"..............................",
+			"...........S..................",
+			"######################....####",
+			"######################....####",
+			"######################....####",
+			"######################....####",
+			"######################....####",
+			"######################....####",
+			"######################....####",
+			"##############################");
+		PhysicsParams p = PhysicsParams.Default;
+		var sim = new SimWorld(g, p, g.Markers['S']);
+		var ctx = new BotContext { Grid = g, Log = new Log(output), Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword", Facing = 1 } };
+		ctx.CavernY = 2 - BotContext.ShallowMargin; // depth limit at row 2, where the bot stands
+		EntityInfo bat = new(7, 1, "Cave Bat", 23 * 16f, 9 * 16f - 8f, 16, 16, 0, 0, 16, 16, 10);
+		var skill = new FightSkill();
+		ctx.Body = sim.State;
+		ctx.Hostiles = new[] { bat };
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		int lowest = 0;
+		for (int t = 0; t < 60 * 20 && status == SkillStatus.Running; t++) {
+			ctx.Body = sim.State;
+			ctx.Hostiles = new[] { bat };
+			ctx.Tick = t;
+			if (t < 30)
+				ctx.NoteAttacker(bat.Id); // it just bit us
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+			lowest = Math.Max(lowest, sim.Node.Y);
+		}
+		output.WriteLine($"{status}, lowest feet row {lowest}");
+		Assert.True(lowest <= 2 + FightSkill.DeepChaseMargin, $"chased down to row {lowest}");
+	}
+
+	[Fact]
 	public void GivesUpOnEnemyOutOfReachButClose_WhenNoWayCloser()
 	{
 		// world_eye run 21: a red slime 3.8 tiles off (out of reach, no way to it) was chased for 7000+ ticks: the

@@ -57,7 +57,9 @@ public sealed class FightSkill : ISkill
 	/// <summary>An ignored enemy starts a fight (the brain's danger check) only this close: less than <see cref="IgnoredStillFoughtWithin"/>, for hysteresis.</summary>
 	public const float IgnoredDangerWithin = 2 * 16f;
 	/// <summary>Enemies more than this many rows below <see cref="BotContext.DeepestRow"/> are not chased (unless they bite).</summary>
-	public const int DeepChaseMargin = 10;
+	public const int DeepChaseMargin = 5;
+	/// <summary>Below the depth limit, an attacker is still fought this close (it is on the bot), not chased off after.</summary>
+	public const float DeepAttackerWithin = 4 * 16f;
 	/// <summary>Swinging at a target in reach this long without it losing life: it cannot be hit from here; leave it.</summary>
 	public const int MaxSwingTicksNoDamage = 300;
 	private int swingWatchId = -1, swingWatchLife, swingTicksNoDamage;
@@ -282,6 +284,13 @@ public sealed class FightSkill : ISkill
 		return true;
 	}
 
+	/// <summary>
+	/// Not chased down into the depths the gear is not fit for; what just bit the bot only while it is on the bot. Seen in
+	/// game (world_eye run 45): cave bats hit and flew off down, and the bot followed them into the caverns and died.
+	/// </summary>
+	private static bool NotTooDeep(BotContext ctx, EntityInfo e, float d) =>
+		e.FeetTile.Y - DeepChaseMargin <= ctx.DeepestRow || e.Id == ctx.RecentAttacker && d <= DeepAttackerWithin;
+
 	private EntityInfo? PickTarget(BotContext ctx, float cx, float cy)
 	{
 		// With a bow, anything within shooting range is a target (a demon eye circling at 30 tiles, a boss).
@@ -294,7 +303,7 @@ public sealed class FightSkill : ISkill
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
 			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
-				&& (e.FeetTile.Y - DeepChaseMargin <= ctx.DeepestRow || e.Id == ctx.RecentAttacker) // not chased down into the depths
+				&& NotTooDeep(ctx, e, d)
 				&& (!InWater(ctx, e) || e.Id == ctx.RecentAttacker); // nor into water after jellyfish and piranhas
 			if (e.Id == targetId && candidate)
 				current = e;
@@ -317,7 +326,7 @@ public sealed class FightSkill : ISkill
 		int attacker = ctx.RecentAttacker;
 		if (attacker >= 0 && attacker != pick?.Id && !unreachable.Contains(attacker))
 			foreach (EntityInfo e in ctx.Hostiles)
-				if (e.Id == attacker && e.DistanceTo(cx, cy) <= engage) {
+				if (e.Id == attacker && e.DistanceTo(cx, cy) <= engage && NotTooDeep(ctx, e, e.DistanceTo(cx, cy))) {
 					pick = e;
 					break;
 				}
