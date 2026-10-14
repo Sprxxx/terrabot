@@ -480,3 +480,17 @@ what was decided and the result.
   sight marks a danger zone there (the biome is near), as a player knows a biome by its monsters. Test
   `AnEvilBiomeMonsterInSight_MarksADangerZone_InWeakGear`. In game, 13 walk, dig and chain scenarios pass with the
   dig-up pillars. 235 unit tests.
+
+### world_eye run 50: the fastest yet (helmet at about 3 minutes)
+- **Progress:** the anvil about 35 seconds in, the **Silver Broadsword at about 90 seconds**, the **Iron Pickaxe at
+  2 minutes**, and the **Iron Helmet worn at about 3 minutes**, with 0 deaths until then. The evil-biome monster
+  sighting worked (devourers marked west of the spawn).
+- **Deaths after that:** devourers twice (dug in beside one, then back after the zone lapsed), a spore bat and a
+  yellow slime, all while digging in to recover, and the house walk failed once.
+- **Decisions:**
+  - A worm (devourer, giant worm) burrows: with one near, the hurt retreat goes home at any distance, or fights
+    on if there's no house, never into a hole.
+  - With something on it, a hurt dig-in first runs about 25 tiles away (up to 6 s; the bot outruns slimes and
+    zombies), then digs.
+  - Zones from monster sightings last 5 game days (biomes don't move); death zones still 1.25.
+- In game, 7 fight and retreat scenarios pass. 235 unit tests.

@@ -460,8 +460,8 @@ public sealed class ProgressionPlanner
 	/// The house to run to when badly hurt, if there is one within <see cref="RetreatHomeTiles"/> and getting home has not
 	/// just failed. Seen in game: most deaths of the night runs came while digging in to recover, hit as it dug.
 	/// </summary>
-	public TilePos? HomeToRetreatTo(BotContext ctx) =>
-		ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos home && home.ChebyshevTo(ctx.Node) <= RetreatHomeTiles ? home : null;
+	public TilePos? HomeToRetreatTo(BotContext ctx, bool anyDistance = false) =>
+		ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos home && (anyDistance || home.ChebyshevTo(ctx.Node) <= RetreatHomeTiles) ? home : null;
 	/// <summary>Farther than this from the house at nightfall, the night is spent where the bot is (a long night walk across the surface killed it, run 46).</summary>
 	public const int NightHomeTiles = 150;
 	public const int RetreatHomeTiles = 100; // 60 left a vulture death 76 tiles out on the surface (run 45)

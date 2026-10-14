@@ -126,7 +126,7 @@ public sealed class ShelterSkill : ISkill
 	public const int Depth = 5;
 	public const int MaxActionTicks = 60 * 6;
 
-	private enum Phase { Digging, Sealing, Waiting, Unsealing }
+	private enum Phase { Fleeing, Digging, Sealing, Waiting, Unsealing }
 
 	private Phase phase;
 	private WalkToSkill dig;
@@ -166,6 +166,43 @@ public sealed class ShelterSkill : ISkill
 
 	public void Start(BotContext ctx)
 	{
+		// Hurt with something on it: run off first (the bot outruns slimes and zombies), then dig. Seen in game: most
+		// deaths of the night runs were while digging in with the attacker beside the hole, or in it.
+		if (Retreat && NearestHostile(ctx, out float hx) <= FleeWithinPx) {
+			TilePos n0 = ctx.Node;
+			int dir = hx > ctx.Body.CenterX(ctx.Physics) ? -1 : 1;
+			var away = new TilePos(n0.X + dir * FleeTiles, n0.Y);
+			ctx.Log.Info($"Shelter start at {n0}: something on me; running {(dir > 0 ? "right" : "left")} first, then digging in {why}");
+			dig = new WalkToSkill(new Core.Pathfinding.GoalNearTile(away, FleeTolerance, ctx.Physics)) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
+			dig.Start(ctx);
+			phase = Phase.Fleeing;
+			return;
+		}
+		StartDigging(ctx);
+	}
+
+	/// <summary>Running off before digging in: an enemy this close, this far, at most this long.</summary>
+	public const float FleeWithinPx = 6 * 16f, FleeClearPx = 14 * 16f;
+	public const int FleeTiles = 25, FleeTolerance = 8, MaxFleeTicks = 60 * 6;
+	private int fleeTicks;
+
+	private static float NearestHostile(BotContext ctx, out float x)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics), best = float.MaxValue;
+		x = cx;
+		foreach (EntityInfo e in ctx.Hostiles) {
+			float d = e.DistanceTo(cx, cy);
+			if (d < best) {
+				best = d;
+				x = e.CenterX;
+			}
+		}
+		return best;
+	}
+
+	private void StartDigging(BotContext ctx)
+	{
+		phase = Phase.Digging;
 		TilePos n = ctx.Node;
 		TilePos target = DigTarget(ctx, n);
 		ctx.Log.Info($"Shelter start at {n}: digging in {why} at column {target.X}");
@@ -222,6 +259,17 @@ public sealed class ShelterSkill : ISkill
 		if (ctx.BodyIssue != null)
 			return SkillStatus.Running;
 		switch (phase) {
+			case Phase.Fleeing: {
+				SkillStatus fs = dig.Tick(ctx);
+				if (fs == SkillStatus.Running && ++fleeTicks <= MaxFleeTicks && NearestHostile(ctx, out _) <= FleeClearPx)
+					return SkillStatus.Running;
+				dig.Stop(ctx);
+				dig = null;
+				if (!ctx.Body.Grounded)
+					return SkillStatus.Running; // dig in from the ground
+				StartDigging(ctx);
+				return SkillStatus.Running;
+			}
 			case Phase.Digging: {
 				SkillStatus s = dig.Tick(ctx);
 				if (s == SkillStatus.Running)

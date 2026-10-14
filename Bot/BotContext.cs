@@ -145,11 +145,17 @@ public sealed class BotContext
 	public System.Collections.Generic.List<(TilePos At, long Until)> DangerZones { get; } = new();
 	public const int DangerZoneRadius = 30, DangerZoneTicks = 60 * 60 * 30;
 
-	public void NoteDeathByEnemy(TilePos at)
+	public void NoteDeathByEnemy(TilePos at) => NoteDanger(at, DangerZoneTicks);
+
+	/// <summary>A danger zone at <paramref name="at"/> for <paramref name="ticks"/>.</summary>
+	public void NoteDanger(TilePos at, long ticks)
 	{
 		DangerZones.RemoveAll(z => z.Until <= Tick);
-		DangerZones.Add((at, Tick + DangerZoneTicks));
+		DangerZones.Add((at, Tick + ticks));
 	}
+
+	/// <summary>An evil biome seen by its monsters stays where it is: kept 5 game days (a death spot, 1.25). Run 50 went back after it lapsed.</summary>
+	public const long BiomeZoneTicks = 5L * 86400;
 
 	/// <summary>
 	/// Somewhere to stay away from for now: where the bot was killed lately, or the underground desert while the gear

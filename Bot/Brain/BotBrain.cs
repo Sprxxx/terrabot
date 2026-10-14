@@ -117,6 +117,19 @@ public sealed class BotBrain
 	/// as a player knows a biome by its monsters too. Seen in game (runs 47 and 49): three deaths to them on the
 	/// corruption's edge west of the spawn, where too few of the seen tiles were corruption for the tile count.
 	/// </summary>
+	/// <summary>Vanilla aiStyle of worms (devourers, giant worms, the eater of worlds): they burrow through blocks.</summary>
+	public const int WormAi = 6;
+	public const float WormNearPx = 30 * 16f;
+
+	private static bool WormNear(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (e.AiStyle == WormAi && e.DistanceTo(cx, cy) <= WormNearPx)
+				return true;
+		return false;
+	}
+
 	public static void NoteEvilEnemies(BotContext ctx)
 	{
 		if (ctx.Combat.Defense >= BotContext.CavernDefense || ctx.Ids.EvilEnemies.Length == 0)
@@ -124,7 +137,7 @@ public sealed class BotBrain
 		foreach (EntityInfo e in ctx.Hostiles) {
 			if (System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) < 0 || ctx.InDangerZone(e.FeetTile))
 				continue;
-			ctx.NoteDeathByEnemy(e.FeetTile);
+			ctx.NoteDanger(e.FeetTile, BotContext.BiomeZoneTicks);
 			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: the evil biome is near; keeping away from there for now");
 		}
 	}
@@ -171,12 +184,17 @@ public sealed class BotBrain
 		}
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
+		// A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place: home at any distance, or fight on.
+		// Seen in game (run 50): dug in beside a devourer, killed in the hole.
+		bool wormNear = false;
+		TilePos? retreatHome = null;
 		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill
-			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)) {
+			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)
+			&& ((retreatHome = Planner.HomeToRetreatTo(ctx, anyDistance: wormNear = WormNear(ctx))) != null || !wormNear)) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			Interrupt(ctx);
 			// Home if it is near (enemies cannot get through the door), else dig in where it is.
-			if (Planner.HomeToRetreatTo(ctx) is TilePos home)
+			if (retreatHome is TilePos home)
 				Begin(new StayHomeSkill(home) { RecoverTo = RetreatUntil }, ctx);
 			else
 				Begin(ShelterSkill.Recover(RetreatUntil), ctx);
