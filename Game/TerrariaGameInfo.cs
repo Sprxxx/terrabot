@@ -363,6 +363,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	}
 
 	public string ItemName(int itemType) => Lang.GetItemNameValue(itemType);
+	public int ItemValue(int itemType) => itemType > 0 && itemType < Terraria.ModLoader.ItemLoader.ItemCount ? ContentSamples.ItemsByType[itemType].value : 0;
 
 	public string TileName(int tileType) => TileID.Search.TryGetName(tileType, out string name) ? name : $"tile {tileType}";
 
@@ -451,6 +452,45 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 			if (player.IsItemSlotUnlockedAndUsable(i) && player.armor[i].IsAir)
 				return true;
 		return false;
+	}
+
+	public int FreeSlots
+	{
+		get {
+			int n = 0;
+			for (int i = 0; i < MainInventorySlots; i++)
+				if (player.inventory[i].IsAir)
+					n++;
+			return n;
+		}
+	}
+
+	public IReadOnlyList<(int Type, int Stack)> Stacks()
+	{
+		var list = new List<(int, int)>();
+		for (int i = 0; i < MainInventorySlots; i++)
+			if (!player.inventory[i].IsAir)
+				list.Add((player.inventory[i].type, player.inventory[i].stack));
+		return list;
+	}
+
+	/// <summary>Ctrl-click quick trash (vanilla ItemSlot): the slot's item into the trash slot, the old trash gone.</summary>
+	public bool TryTrash(int itemType)
+	{
+		if (player.whoAmI != Main.myPlayer)
+			return false;
+		int best = -1;
+		for (int i = 0; i < MainInventorySlots; i++) {
+			Item it = player.inventory[i];
+			if (!it.IsAir && it.type == itemType && !it.favorited && i != player.selectedItem && (best < 0 || it.stack < player.inventory[best].stack))
+				best = i;
+		}
+		if (best < 0)
+			return false;
+		player.trashItem = player.inventory[best].Clone();
+		player.inventory[best].TurnToAir();
+		Recipe.FindRecipes();
+		return true;
 	}
 
 	public IReadOnlyList<int> UnwornAccessories()

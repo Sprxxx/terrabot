@@ -70,6 +70,12 @@ public interface IInventory
 
 	/// <summary>Accessories carried but not worn (no vanity), one entry per type.</summary>
 	IReadOnlyList<int> UnwornAccessories();
+
+	/// <summary>Empty main-inventory slots.</summary>
+	int FreeSlots { get; }
+
+	/// <summary>Every stack in the main inventory (hotbar included), slot by slot.</summary>
+	IReadOnlyList<(int Type, int Stack)> Stacks();
 }
 
 public enum CraftResult
@@ -98,6 +104,9 @@ public interface ICrafter
 
 	/// <summary>Take a worn accessory off into a free inventory slot, like shift-clicking it. False if it could not.</summary>
 	bool TryTakeOff(int itemType);
+
+	/// <summary>Trash the smallest stack of this item, like ctrl-clicking it (vanilla ItemSlot quick trash). False if none.</summary>
+	bool TryTrash(int itemType);
 
 	/// <summary>
 	/// Open the chest at <paramref name="topLeft"/> and take everything, like right-clicking it and pressing Loot All

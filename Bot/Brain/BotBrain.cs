@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Physics;
@@ -345,6 +347,45 @@ public sealed class BotBrain
 			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && ctx.Crafter.TryEquip(item))
 				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)}");
 	}
+	/// <summary>
+	/// Free slots kept in the bag: one for what is mined or dropped next, one for a chest's best item. Seen in game (measured
+	/// run S9): the bag full of dirt, stone, mud, cobwebs and seeds, a mined life crystal could not be picked up (the bot
+	/// walked round its drop and gave up), and chests kept Hermes Boots and a Band of Regeneration ("inventory full?").
+	/// </summary>
+	public const int MinFreeSlots = 2;
+
+	/// <summary>
+	/// The bag nearly full: trash stacks worth nothing (vanilla Item.value 0) that nothing the bot does needs, a spare stack
+	/// of a building block first (one of each is kept), as AltoClef throws away junk to make room for what it wants.
+	/// </summary>
+	public static void KeepRoom(BotContext ctx)
+	{
+		if (ctx.Inventory == null || ctx.Knowledge == null || ctx.Crafter == null)
+			return;
+		for (int guard = 0; guard < MinFreeSlots && ctx.Inventory.FreeSlots < MinFreeSlots; guard++) {
+			IReadOnlyList<(int Type, int Stack)> stacks = ctx.Inventory.Stacks();
+			GameIds ids = ctx.Ids;
+			int[] kept = { ids.Wood, ids.Gel, ids.Torch, ids.WorkBenchItem, ids.WoodWall, ids.Door, ids.Chair, ids.Table, ids.Acorn,
+				ids.WoodenArrow, ids.Lens, ids.LifeCrystal, ids.RecallPotion, ids.Campfire, ids.HeartLantern, ids.SuspiciousEye };
+			int junk = -1, junkStacks = 0;
+			foreach (var g in stacks.GroupBy(s => s.Type)) {
+				int n = g.Count();
+				bool block = ids.BuildingBlocks.Contains(g.Key);
+				if (ctx.Knowledge.ItemValue(g.Key) != 0 || !block && kept.Contains(g.Key) || block && n < 2)
+					continue;
+				// Spare block stacks before the rest, then whatever has the most stacks.
+				int rank = (block ? 1000 : 0) + n;
+				if (rank > junkStacks) {
+					junkStacks = rank;
+					junk = g.Key;
+				}
+			}
+			if (junk < 0 || !ctx.Crafter.TryTrash(junk))
+				return;
+			ctx.Log.Info($"Inventory: {ctx.Inventory.FreeSlots} free slot(s) after trashing a stack of {ctx.Knowledge.ItemName(junk)} (worth nothing)");
+		}
+	}
+
 	/// <summary>Torches in the dark, so a watcher can see (auto mode).</summary>
 	public LightKeeper Light { get; } = new();
 	private int deathsSeen;
@@ -420,6 +461,7 @@ public sealed class BotBrain
 		if (Auto && ctx.Tick % HabitEvery == 0)
 			WatchPlace(ctx);
 		if (Auto && ctx.Tick % HabitEvery == 0) {
+			KeepRoom(ctx);
 			WearAccessories(ctx);
 			NoteEvilEnemies(ctx);
 			if (ctx.Node.Y > ctx.SurfaceY)

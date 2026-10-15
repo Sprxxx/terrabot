@@ -205,6 +205,32 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	};
 
 	public string ItemName(int itemType) => $"item{itemType}";
+	/// <summary>Item values (copper) for inventory tests; unlisted items are worth 1.</summary>
+	public readonly Dictionary<int, int> Values = new();
+	public int ItemValue(int itemType) => Values.TryGetValue(itemType, out int v) ? v : 1;
+	/// <summary>Main-inventory slots (stacks of 999); unlimited unless a test sets it.</summary>
+	public int SlotLimit = int.MaxValue;
+	public const int MaxStack = 999;
+	public int FreeSlots => SlotLimit == int.MaxValue ? 50 : SlotLimit - Stacks().Count;
+	public IReadOnlyList<(int Type, int Stack)> Stacks()
+	{
+		var list = new List<(int, int)>();
+		foreach (var (type, n) in Items)
+			for (int left = n; left > 0; left -= MaxStack)
+				list.Add((type, Math.Min(left, MaxStack)));
+		return list;
+	}
+	public bool TryTrash(int itemType)
+	{
+		int n = Count(itemType);
+		if (n <= 0)
+			return false;
+		int smallest = n % MaxStack == 0 ? MaxStack : n % MaxStack;
+		Items[itemType] = n - smallest;
+		Trashed.Add(itemType);
+		return true;
+	}
+	public readonly List<int> Trashed = new();
 	public string TileName(int tileType) => $"tile{tileType}";
 
 	// ---------- IWorldInfo ----------

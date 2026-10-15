@@ -64,6 +64,9 @@ public interface IGameKnowledge
 
 	string ItemName(int itemType);
 	string TileName(int tileType);
+
+	/// <summary>What a shop pays for the item (vanilla Item.value, in copper); 0: worth nothing.</summary>
+	int ItemValue(int itemType);
 }
 
 public static class InventoryExtensions

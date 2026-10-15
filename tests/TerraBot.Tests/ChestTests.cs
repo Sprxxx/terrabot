@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
@@ -68,6 +69,37 @@ public class ChestTests
 		RunAuto(worn, 60 * 5);
 		Assert.DoesNotContain(FakeGame.InnerTube, worn.Equipped);
 		Assert.Equal(1, worn.Count(FakeGame.InnerTube));
+	}
+
+	/// <summary>Measured run S9: a full bag (dirt, stone, mud, cobwebs) left a mined life crystal on the floor.</summary>
+	[Fact]
+	public void AFullBag_TrashesWorthlessStacks_NotTheOnesInUse()
+	{
+		FakeGame g = EarlyGameTests.Field(80);
+		BotContext ctx = g.CreateContext(output);
+		const int cobweb = 150, mud = 176;
+		g.Items.Clear();
+		g.Items[FakeGame.DirtBlock] = 2 * FakeGame.MaxStack; // two stacks: one is spare
+		g.Items[FakeGame.StoneBlock] = 500;
+		g.Items[cobweb] = 61;
+		g.Items[mud] = 300;
+		g.Items[FakeGame.Wood] = 40;
+		g.Items[FakeGame.Gel] = 10;
+		foreach (int junk in new[] { FakeGame.DirtBlock, FakeGame.StoneBlock, cobweb, mud, FakeGame.Wood, FakeGame.Gel })
+			g.Values[junk] = 0;
+		for (int i = 0; i < 43; i++)
+			g.Items[1000 + i] = 1; // worth something
+		g.SlotLimit = 50;
+		Assert.Equal(0, g.FreeSlots);
+		BotBrain.KeepRoom(ctx);
+		output.WriteLine($"trashed: {string.Join(", ", g.Trashed)}; free {g.FreeSlots}");
+		Assert.True(g.FreeSlots >= BotBrain.MinFreeSlots);
+		Assert.Equal(FakeGame.DirtBlock, g.Trashed[0]); // the spare block stack first
+		Assert.Equal(FakeGame.MaxStack, g.Count(FakeGame.DirtBlock));
+		Assert.Equal(500, g.Count(FakeGame.StoneBlock));
+		Assert.Equal(40, g.Count(FakeGame.Wood));
+		Assert.Equal(10, g.Count(FakeGame.Gel));
+		Assert.All(Enumerable.Range(1000, 43), t => Assert.Equal(1, g.Count(t)));
 	}
 
 	[Fact]

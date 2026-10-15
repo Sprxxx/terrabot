@@ -524,6 +524,26 @@ public sealed class Scenario
 				Check = r => r.LogHas("could not place a life crystal") ? "fixture: a crystal was not placed" : r.FallDamageHits > 0 ? "fall damage" : null,
 			},
 			new() {
+				// Measured run S9: the bag full of dirt, stone, mud, cobwebs and seeds, a mined life crystal could not be picked
+				// up, and chests kept their best items. The worthless stacks go to the trash.
+				Name = "life_crystals_full_bag",
+				Rows = CrystalCave(),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Crystals,
+				ResetLife = true,
+				Dig = true,
+				Build = true,
+				Blocks = 50,
+				Inventory = p => {
+					int[] junk = { Terraria.ID.ItemID.Cobweb, Terraria.ID.ItemID.MudBlock, Terraria.ID.ItemID.SiltBlock, Terraria.ID.ItemID.ClayBlock, Terraria.ID.ItemID.DirtBlock };
+					for (int i = 0, k = 0; i < 50; i++)
+						if (p.inventory[i].IsAir)
+							p.inventory[i] = new Terraria.Item(junk[k++ % junk.Length], 99);
+				},
+				TimeoutTicks = 60 * 60 * 6,
+				Check = r => r.LogHas("could not place a life crystal") ? "fixture: a crystal was not placed" : r.FallDamageHits > 0 ? "fall damage" : null,
+			},
+			new() {
 				// Nightfall with nothing built yet: dig in and seal the hole, ignore the zombie that turns up, open up in
 				// the morning and get on with the early chain.
 				Name = "night_shelter",
