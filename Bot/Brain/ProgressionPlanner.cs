@@ -1281,6 +1281,17 @@ public sealed class ProgressionPlanner
 
 	private ISkill TravelForOre(BotContext ctx, int item, string name)
 	{
+		// The way out chosen before (back to the spawn, or up to the surface at a column) holds until the bot is there: worked
+		// out again from wherever a fight left the bot, it came out different, and each time a new 3-second plan began
+		// (user report, 2026-10-14: "changes its mind and jumps out of the hole to do something else"). Before anything else:
+		// seen in game (measured run S7), the walk back to the spawn, broken off by a fight, became a mining job again that
+		// failed at once in the off-limits spot, 40 times over.
+		if (exitTarget is TilePos exit) {
+			if (exitIsRow ? ctx.Node.Y <= exit.Y : exit.ChebyshevTo(ctx.Node) <= TravelArrivedTiles)
+				exitTarget = null;
+			else
+				return Do($"no more {name} found around here; {exitWhy} at {(exitIsRow ? $"row {exit.Y}" : exit.ToString())}", ExitWalk(ctx, exit));
+		}
 		int fails = fruitlessMines.TryGetValue(item, out int f) ? f : 0;
 		if (fails == 0 && travelDest == null)
 			return null;
@@ -1308,15 +1319,6 @@ public sealed class ProgressionPlanner
 			&& ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
 			return Do($"no more {name} found around here; drinking a recall potion to start the trip to {dest} from the spawn ({home.ChebyshevTo(ctx.Node)} tiles away)",
 				new UseItemSkill(ctx.Ids.RecallPotion));
-		// The way out chosen before (back to the spawn, or up to the surface at a column) holds until the bot is there: worked
-		// out again from wherever a fight left the bot, it came out different, and each time a new 3-second plan began
-		// (user report, 2026-10-14: "changes its mind and jumps out of the hole to do something else").
-		if (exitTarget is TilePos exit) {
-			if (exitIsRow ? ctx.Node.Y <= exit.Y : exit.ChebyshevTo(ctx.Node) <= TravelArrivedTiles)
-				exitTarget = null;
-			else
-				return Do($"no more {name} found around here; {exitWhy} at {(exitIsRow ? $"row {exit.Y}" : exit.ToString())}", ExitWalk(ctx, exit));
-		}
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
 		if (ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
@@ -1361,8 +1363,11 @@ public sealed class ProgressionPlanner
 			if (ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0 && spawn.ChebyshevTo(ctx.Node) > RecallDistance)
 				return Do($"no more {name} found around here and nowhere to travel; drinking a recall potion to look again from the spawn",
 					new UseItemSkill(ctx.Ids.RecallPotion));
-			return Do($"no more {name} found around here and nowhere to travel; back to the spawn at {spawn} to look from there",
-				UpFirst(ctx, spawn) ?? new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
+			// Held like any way out (see TravelForOre).
+			exitTarget = spawn;
+			exitIsRow = false;
+			exitWhy = "nowhere to travel; back to the spawn to look from there";
+			return Do($"no more {name} found around here and nowhere to travel; back to the spawn at {spawn} to look from there", ExitWalk(ctx, spawn));
 		}
 		return null;
 	}

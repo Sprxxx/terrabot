@@ -416,6 +416,39 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void TheWalkBackToTheSpawn_WithNowhereToTravel_HoldsAfterAFight()
+	{
+		// Measured run S7: "nowhere to travel; back to the spawn to look from there", broken off by a fight, became a
+		// mining job again that failed at once (standing off limits), 40 times over.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		for (int x = 50; x < 100; x++) // a desert's surface on the way east (the only way: west is off the map)
+			for (int y = 45; y < 53; y++)
+				g.TileTypes[new TilePos(x, y)] = FakeGame.TileSand;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.Sim.State.X += 40 * 16; // mining took it away from the spawn
+		g.Refresh(ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ctx.Combat.WeaponDamage = 5; // unarmed: the desert is in the way, nowhere to travel
+		ISkill back = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {back?.Describe()}");
+		Assert.Contains("back to the spawn", p.Status);
+		ISkill again = p.Next(ctx); // after a fight
+		output.WriteLine($"{p.Status} -> {again?.Describe()}");
+		Assert.Equal(back.Key, again.Key);
+	}
+
+	[Fact]
 	public void ATripsWayOut_HoldsWhenAFightMovesTheBot()
 	{
 		// User report (2026-10-14): "changes its mind and jumps out of the hole to do something else". The way up to the
