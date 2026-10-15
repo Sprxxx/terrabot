@@ -4,7 +4,7 @@ namespace TerraBot.Core.Grid;
 
 /// <summary>What the pathfinder needs to know about one tile cell. Flags so liquids can combine with blocks.</summary>
 [Flags]
-public enum CellKind : byte
+public enum CellKind : ushort
 {
 	Empty = 0,
 	/// <summary>Blocks movement from every side (Main.tileSolid and not solid-top). Out-of-world cells are Solid too.</summary>
@@ -26,6 +26,12 @@ public enum CellKind : byte
 	/// either. Seen in game (world_eye run 38): crimson thorns read as open space, and the bot died in the same patch twice.
 	/// </summary>
 	Hazard = 128,
+	/// <summary>
+	/// With Platform | Shaped: a half block (not a slope). The body standing on it is a whole half tile up, never with its
+	/// feet in the cell, so a node with one in its feet row is not a place to stand. Seen in game (measured run S1): plans
+	/// stood the body "in" half blocks, then dug down from there while it stood on them, 71 drops waiting at the edge.
+	/// </summary>
+	HalfBlock = 256,
 }
 
 public static class CellKindExtensions
@@ -34,6 +40,7 @@ public static class CellKindExtensions
 	public static bool IsPlatform(this CellKind k) => (k & CellKind.Platform) != 0;
 	public static bool IsFalling(this CellKind k) => (k & CellKind.Falling) != 0;
 	public static bool IsShaped(this CellKind k) => (k & CellKind.Shaped) != 0;
+	public static bool IsHalfBlock(this CellKind k) => (k & CellKind.HalfBlock) != 0;
 	/// <summary>Room for the body above the feet: passable and not a slope or half block (those only open at the feet).</summary>
 	public static bool IsHeadroom(this CellKind k) => k.IsPassable() && !k.IsShaped();
 
@@ -54,6 +61,7 @@ public static class CellKindExtensions
 	{
 		if ((k & CellKind.Hazard) != 0) return '^';
 		if (k.IsSolid()) return k.IsFalling() ? '%' : '#';
+		if (k.IsHalfBlock()) return '-';
 		if (k.IsShaped()) return '/';
 		if (k.IsPlatform()) return '=';
 		if ((k & CellKind.Lava) != 0) return '!';
@@ -67,7 +75,8 @@ public static class CellKindExtensions
 		'#' or '@' => CellKind.Solid,
 		'%' => CellKind.Solid | CellKind.Falling,
 		'=' => CellKind.Platform,
-		'/' => CellKind.Platform | CellKind.Shaped, // a slope or half block, as TerrariaTileGrid reads them
+		'/' => CellKind.Platform | CellKind.Shaped, // a slope, as TerrariaTileGrid reads them
+		'-' => CellKind.Platform | CellKind.Shaped | CellKind.HalfBlock,
 		'~' => CellKind.Water,
 		'!' => CellKind.Lava,
 		'h' => CellKind.Honey,

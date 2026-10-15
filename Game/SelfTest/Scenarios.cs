@@ -614,6 +614,15 @@ public sealed class Scenario
 				Check = r => r.LogHas("timed out") || r.LogHas("Re-plan") ? "a step timed out or re-planned" : null,
 			},
 			new() {
+				// Measured run S1: drops from a node with a half block in its feet row waited 330-650 ticks "at the edge" (71
+				// times): the body stood on the half block a row up and never fell. Now: plan again from where it stands.
+				Name = "dig_down_under_half_blocks",
+				Rows = Grid(Repeat("........................", 3), "..S...hh................", Repeat("@@@@@@##@@@@@@@@@@@@@@@@", 2),
+					Repeat("@......................@", 2), "@..........G...........@", "@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Dig = true,
+				Check = r => r.LogHas("timed out") ? "a step timed out" : null,
+			},
+			new() {
 				// Measured run R1: on a minecart track along a cave floor nothing could be placed (the track fills the cell)
 				// or broken (tracks counted as furniture): no pillar, no way up, hours back and forth.
 				Name = "pillar_up_from_a_track",

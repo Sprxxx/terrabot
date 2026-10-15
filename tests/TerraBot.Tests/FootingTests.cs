@@ -552,4 +552,23 @@ public class FootingTests
 		Assert.True(Core.Execution.PathExecutor.SameNode(g, planned, planned));
 		Assert.False(Core.Execution.PathExecutor.SameNode(g, new TilePos(2, 2), new TilePos(2, 3))); // flat: a row up is not there
 	}
+
+	[Fact]
+	public void AHalfBlockInTheFeetRow_IsNoPlaceToStand_TheBodyIsOnTopOfIt()
+	{
+		// Measured run S1: plans stood the body "in" a half block and dug down from there while it stood on top, 71 drops
+		// waiting at the edge. The body on a half block is a row up; a walk steps up onto it.
+		var g = ArrayTileGrid.Parse(
+			"........",
+			"........",
+			"........",
+			"....--..",
+			"########");
+		Assert.False(Body.IsStandable(g, new TilePos(4, 3))); // feet in the half blocks
+		Assert.True(Body.IsStandable(g, new TilePos(4, 2)));  // on top of them
+		var ctx = new MoveContext(g, PhysicsParams.Default);
+		var edges = new System.Collections.Generic.List<PathStep>();
+		new Core.Pathfinding.Moves.StepUpMove().Expand(ctx, new TilePos(2, 3), edges);
+		Assert.Contains(edges, e => e.To == new TilePos(3, 2));
+	}
 }

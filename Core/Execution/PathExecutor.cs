@@ -161,6 +161,7 @@ public sealed class PathExecutor
 			if (ticksInStep > Budget(step))
 				return Finish(ExecStatus.Stuck, $"step {StepIndex} {step.Kind} {step.From}->{step.To} timed out after {ticksInStep} ticks at {Body.NodeOf(s, ctx.Physics)}"
 					+ $" [{Phase}; left {s.X - Body.CanonicalLeft(step.From.X, ctx.Physics):+0.0;-0.0} px off the start, vx {s.VX:0.00} vy {s.VY:0.00}{(s.Grounded ? ", grounded" : "")}{(step.Template != null ? ", " + step.Template.Variant : "")}"
+					+ $"; from feet {ctx.Grid.Get(step.From.X, step.From.Y)}/{ctx.Grid.Get(step.From.X + 1, step.From.Y)} under {ctx.Grid.Get(step.From.X, step.From.Y + 1)}/{ctx.Grid.Get(step.From.X + 1, step.From.Y + 1)}"
 					+ $"; to feet {ctx.Grid.Get(step.To.X, step.To.Y)}/{ctx.Grid.Get(step.To.X + 1, step.To.Y)} under {ctx.Grid.Get(step.To.X, step.To.Y + 1)}/{ctx.Grid.Get(step.To.X + 1, step.To.Y + 1)}]");
 
 			MoveInput input;
@@ -229,11 +230,30 @@ public sealed class PathExecutor
 	/// feet row: the grid lets feet stand in such a cell, but the body rides on top of it, 8 px up, and reads a row higher.
 	/// Seen in game (measured run R1): 54 walks and drops reached the right column a row "too high" and timed out there.
 	/// </summary>
+	/// Platforms (and table tops) likewise: passable for the grid, stood on by the body (measured run S0: 140 jumps and
+	/// actions waited for the bot to come down a row onto a node it already stood a row above).
 	public static bool SameNode(ITileGrid g, TilePos node, TilePos planned) =>
-		node == planned || node.X == planned.X && node.Y == planned.Y - 1
-			&& (g.Get(planned.X, planned.Y).IsShaped() || g.Get(planned.X + 1, planned.Y).IsShaped());
+		node == planned || node.X == planned.X && node.Y == planned.Y - 1 && (RiddenOn(g.Get(planned.X, planned.Y)) || RiddenOn(g.Get(planned.X + 1, planned.Y)));
+
+	/// <summary>A cell the grid lets feet stand in that the body rides on top of instead: a slope, a half block, a platform.</summary>
+	private static bool RiddenOn(CellKind k) => k.IsShaped() || k.IsPlatform() && !k.IsSolid();
 
 	private bool At(TilePos node, TilePos planned) => SameNode(ctx.Grid, node, planned);
+
+	/// <summary>
+	/// Settled a row above the step's start, on a slope, half block or platform in the start's feet row. Arriving there
+	/// counts (<see cref="SameNode"/>), but a step that must begin at the node itself (a drop, a dig, a jump, a pillar, block
+	/// work) cannot: seen in game (measured run S1), 71 drops "at the edge" waited 330-650 ticks each, the bot standing on
+	/// the very half block the drop meant it to leave.
+	/// </summary>
+	private bool RidingAboveStart(TilePos node, in PathStep step) => settled && node != step.From && SameNode(ctx.Grid, node, step.From);
+
+	/// <summary>Ends the plan at once so the walk plans again from where the body really is (a few ms), and returns false.</summary>
+	private bool RideOff(in PathStep step, TilePos node)
+	{
+		Finish(ExecStatus.OffPath, $"step {StepIndex} {step.Kind} {step.From}->{step.To}: standing a row above its start at {node} (on a slope, half block or platform); planning from here");
+		return false;
+	}
 
 	/// <summary>Returns and clears the latest informational message (e.g. a resync) for the caller to log.</summary>
 	public string PopNotice()
@@ -304,6 +324,9 @@ public sealed class PathExecutor
 			return true;
 		}
 
+		// A drop from a node the body rides a row above (a half block or platform in its feet row) never drops: plan from here.
+		if (step.Kind is MoveKind.Drop or MoveKind.DropThrough && ticksInStep <= 2 && RidingAboveStart(node, step))
+			return RideOff(step, node);
 		// Walking passes through To while grounded every tick; a drop must actually have landed.
 		bool landed = step.Kind is MoveKind.Drop or MoveKind.DropThrough ? settled : s.Grounded;
 		if (landed && At(node, step.To)) {
@@ -362,7 +385,9 @@ public sealed class PathExecutor
 				Finish(ExecStatus.OffPath, $"step {StepIndex} jump: expected to start at {step.From}, standing at {node}");
 				return false;
 			}
-			bool aligned = settled && At(node, step.From) && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
+			if (RidingAboveStart(node, step))
+				return RideOff(step, node);
+			bool aligned = settled && node == step.From && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
 				&& Math.Abs(s.VX) <= 0.05f && !lastJumpPressed && s.ReleaseJump; // templates assume take-off from rest
 			if (!aligned) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);
@@ -429,7 +454,11 @@ public sealed class PathExecutor
 				Finish(ExecStatus.OffPath, $"step {StepIndex} {step}: expected to start at {step.From}, standing at {node}");
 				return -1;
 			}
-			if (!settled || !At(node, step.From)) {
+			if (RidingAboveStart(node, step)) {
+				RideOff(step, node);
+				return -1;
+			}
+			if (!settled || node != step.From) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 2f);
 				Phase = "Actions: positioning";
 				return 0;
@@ -512,7 +541,9 @@ public sealed class PathExecutor
 				Finish(ExecStatus.OffPath, $"step {StepIndex} pillar: expected to start at {step.From}, standing at {node}");
 				return false;
 			}
-			bool aligned = settled && At(node, step.From) && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
+			if (RidingAboveStart(node, step))
+				return RideOff(step, node);
+			bool aligned = settled && node == step.From && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
 				&& Math.Abs(s.VX) <= 0.1f && !lastJumpPressed && s.ReleaseJump;
 			if (!aligned) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);

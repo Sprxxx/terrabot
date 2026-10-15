@@ -24,7 +24,7 @@ public static class Body
 		for (int dy = -HeightTiles + 1; dy <= 0; dy++)
 			for (int dx = 0; dx < WidthTiles; dx++) {
 				CellKind k = g.Get(x + dx, y + dy);
-				if (dy < 0 ? !k.IsHeadroom() : !k.IsPassable())
+				if (dy < 0 ? !k.IsHeadroom() : !k.IsPassable() || k.IsHalfBlock())
 					return false;
 			}
 		return true;

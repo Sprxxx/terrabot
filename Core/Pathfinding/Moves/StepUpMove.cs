@@ -32,6 +32,8 @@ public sealed class StepUpMove : IMoveType
 		int frontColumn = dir > 0 ? from.X + Body.WidthTiles : from.X - 1;
 		// Right above the step it must be fully open: a slope or half block on top of the step block makes it more than the
 		// one tile vanilla lifts the player (seen in game, world_eye run 51: pressing right into it, three times).
-		return g.Get(frontColumn, from.Y).IsSolid() && g.Get(frontColumn, from.Y - 1).IsHeadroom() && Body.IsClear(g, to);
+		// A half block in front lifts the walking body too (Collision.StepUp), onto the node a row up.
+		CellKind front = g.Get(frontColumn, from.Y);
+		return (front.IsSolid() || front.IsHalfBlock()) && g.Get(frontColumn, from.Y - 1).IsHeadroom() && Body.IsClear(g, to);
 	}
 }
