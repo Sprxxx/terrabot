@@ -249,6 +249,13 @@ public sealed class PathExecutor
 
 	private bool At(TilePos node, TilePos planned) => SameNode(ctx.Grid, node, planned);
 
+	/// <summary>A platform (not solid) in the node's feet row, under either body column.</summary>
+	private bool PlatformAt(TilePos n)
+	{
+		CellKind a = ctx.Grid.Get(n.X, n.Y), b = ctx.Grid.Get(n.X + 1, n.Y);
+		return a.IsPlatform() && !a.IsSolid() || b.IsPlatform() && !b.IsSolid();
+	}
+
 	/// <summary>
 	/// Settled a row above the step's start, on a slope, half block or platform in the start's feet row. Arriving there
 	/// counts (<see cref="SameNode"/>), but a step that must begin at the node itself (a drop, a dig, a jump, a pillar, block
@@ -365,6 +372,14 @@ public sealed class PathExecutor
 		if (step.Kind == MoveKind.DropThrough) {
 			input.Down = s.Y + p.Height <= (step.From.Y + 1) * Body.TileSize + 4f;
 			Phase = input.Down ? "DropThrough (holding Down)" : "DropThrough fall";
+		}
+		// A drop that starts on a platform in its own feet row (a sloped one: the plan stands the body in it, the body rides
+		// on top) goes down through it, as DropThrough does. Seen in game (measured run S9): all 34 "Drop edge" stalls were
+		// "from feet Platform, Shaped", the body still and grounded on the platform until the step timed out.
+		else if (step.Kind == MoveKind.Drop && grounded && PlatformAt(step.From)) {
+			input.Down = s.Y + p.Height <= (step.From.Y + 1) * Body.TileSize + 4f;
+			if (input.Down)
+				Phase = "Drop (through the platform, holding Down)";
 		}
 		return true;
 	}

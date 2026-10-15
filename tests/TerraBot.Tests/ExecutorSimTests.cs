@@ -448,6 +448,34 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void ADropFromAPlatformInItsFeetRow_GoesDownThroughIt()
+	{
+		// Measured run S9: all 34 "Drop edge" stalls began "from feet Platform, Shaped": the plan stood the body in a sloped
+		// platform, the body stood on top of it, and the drop down waited, grounded, until it timed out.
+		var g = ArrayTileGrid.Parse(
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"....==....",
+			"..........",
+			"##########");
+		var ctx = new MoveContext(g, PhysicsParams.Default);
+		var drop = new PathStep(MoveKind.Drop, new TilePos(4, 6), new TilePos(4, 7), 20f);
+		var exec = new PathExecutor(ctx, new[] { drop });
+		var sim = new SimWorld(g, PhysicsParams.Default, new TilePos(4, 5)); // on top of the platform
+		sim.State.Y -= 4f; // coming down onto it, not yet settled
+		sim.State.VY = 1f;
+		for (int t = 0; t < 400 && exec.Status == ExecStatus.Running; t++)
+			sim.Step(exec.Tick(sim.State));
+		output.WriteLine($"{exec.Status}: {exec.Reason} at {sim.Node}");
+		Assert.Equal(ExecStatus.Finished, exec.Status);
+		Assert.Equal(new TilePos(4, 7), sim.Node);
+	}
+
+	[Fact]
 	public void InvisibleWall_IsDetectedAsStuck()
 	{
 		// The planner sees flat ground; the "real" world has a wall the planner does not know about.
