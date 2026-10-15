@@ -157,37 +157,4 @@ public class WaterTests
 		float under = moves.Adjust(10f, new TilePos(1, 3)); // body rows 1..3, all water
 		Assert.True(under >= wading * 4f, $"under {under}, wading {wading}");
 	}
-
-	[Fact]
-	public void NoCaveInView_DigsAKeptMine_StairsThenTunnels_UntilOreShows()
-	{
-		// Measured run R1: with no cave in view, 126 legs of 20-25 tiles dug from wherever the bot stood, none kept, exploring
-		// 13% of the run. Now: one mine, a staircase down (2 across, 2 down a leg) and tunnels every 12 rows, kept on the context.
-		var rows = new System.Collections.Generic.List<string>();
-		for (int y = 0; y < 70; y++)
-			rows.Add(new string('s', 70));
-		for (int y = 20; y <= 22; y++)
-			rows[y] = new string('s', 28) + (y == 22 ? "..S..." : "......") + new string('s', 36);
-		rows.Add(new string('@', 70));
-		var g = new FakeGame(rows.ToArray());
-		for (int x = 58; x <= 60; x++)
-			for (int y = 33; y <= 35; y++)
-				g.TileTypes[new TilePos(x, y)] = FakeGame.TileIron;
-		for (int x = 0; x < 70; x++)
-			for (int y = 0; y < 71; y++)
-				if (System.Math.Abs(x - 30) > 8 || System.Math.Abs(y - 22) > 8)
-					g.Unrevealed.Add(new TilePos(x, y));
-		BotContext ctx = g.CreateContext(output);
-		var explore = new ExploreSkill("iron ore", c => c.World.FindTiles(FakeGame.TileIron, c.Node, MineSkill.SearchRadius).Count > 0, ExploreBias.Down, heading: 1);
-		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, explore, 60 * 60 * 5);
-		output.WriteLine($"{st} after {g.Sim.Ticks} ticks, {explore.Legs} legs, at {g.Sim.Node}; {ctx.Mine}");
-		Assert.Equal(SkillStatus.Succeeded, st);
-		Assert.NotNull(ctx.Mine);
-		Assert.True(ctx.Mine.Tunnels.Count >= 1, "a tunnel dug at the mine's first tunnel row");
-		// Kept: a new exploration goes on with the same mine, not a new one.
-		BranchMine kept = ctx.Mine;
-		var again = new ExploreSkill("gold ore", _ => false, ExploreBias.Down, heading: -1);
-		EarlyGameTests.RunSkill(g, ctx, again, 600);
-		Assert.Same(kept, ctx.Mine);
-	}
 }

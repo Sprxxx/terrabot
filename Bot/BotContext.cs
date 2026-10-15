@@ -384,8 +384,6 @@ public sealed class BotContext
 	/// ever: the world changes, the bot gets better tools, and a crystal in such a set was passed by with no reason given.
 	/// </summary>
 	public ExpiringSet<TilePos> UnreachableTiles { get; } = new(UnreachableTicks);
-	/// <summary>The bot's own mine (staircase and tunnels), dug on whenever exploring finds no cave to go into.</summary>
-	public Skills.BranchMine Mine { get; set; }
 	public const long UnreachableTicks = 3600; // a game hour
 	/// <summary>Per ore item: explorations in a row that found none (MineSkill), across restarts of the skill.</summary>
 	public System.Collections.Generic.Dictionary<int, int> ExploresWithoutOre { get; } = new();
