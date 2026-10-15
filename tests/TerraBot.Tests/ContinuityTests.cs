@@ -258,4 +258,27 @@ public class ContinuityTests
 		Assert.Contains("swimming", walk.Describe());
 		Assert.Equal(-1, ctx.Output.Horizontal); // to the dry shore on the left, not into the wall
 	}
+
+	[Fact]
+	public void InTheSamePlaceForHours_WhateverTheJobs_TheBotActs()
+	{
+		// Measured run S2: afloat in a pocket for 490,000 ticks while fights, loot and mining took turns (the work watchdog
+		// never fired). After three game hours in one place the bot drinks a recall potion or climbs out.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 20; y++)
+			rows.Add(new string('@', 30));
+		rows[10] = new string('@', 10) + "....." + new string('@', 15);
+		rows[11] = new string('@', 10) + "....." + new string('@', 15);
+		rows[12] = new string('@', 10) + "..S.." + new string('@', 15);
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		var brain = new Bot.Brain.BotBrain();
+		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early); // wants wood: no tree in here
+		for (int t = 0; t < Bot.Brain.BotBrain.SamePlaceTicks + 600 && brain.Auto; t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("in the same place"));
+	}
 }

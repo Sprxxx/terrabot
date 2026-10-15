@@ -61,6 +61,35 @@ public sealed class BotBrain
 	/// <summary>Skills that wait in place on purpose: the night at home or dug in, a wait, a boss fight.</summary>
 	private static bool WaitsOnPurpose(ISkill s) => s is StayHomeSkill or ShelterSkill or WaitSkill or BossFightSkill;
 
+	/// <summary>
+	/// The body in the same place (within <see cref="SamePlaceTiles"/>) for <see cref="SamePlaceTicks"/>, not waiting on purpose:
+	/// whatever the jobs are, it is stuck there (seen in game, measured run S2: afloat in a pocket for 490,000 ticks while
+	/// fights, loot and mining took turns, so the work watchdog never fired). A player drinks a recall potion, or climbs out.
+	/// </summary>
+	public const int SamePlaceTiles = 15, SamePlaceTicks = 3 * 3600;
+	private TilePos placeAnchor;
+	private long placeSince;
+
+	private void WatchPlace(BotContext ctx)
+	{
+		TilePos n = ctx.Node;
+		if (Current != null && WaitsOnPurpose(Current) || n.ChebyshevTo(placeAnchor) > SamePlaceTiles) {
+			placeAnchor = n;
+			placeSince = ctx.Tick;
+			return;
+		}
+		if (ctx.Tick - placeSince < SamePlaceTicks)
+			return;
+		placeSince = ctx.Tick;
+		if (ctx.SpawnTile is TilePos home && home.ChebyshevTo(n) > SamePlaceTiles && Planner.RequestRecall(ctx)) {
+			ctx.Log.Warn($"Auto: in the same place ({n}) for {SamePlaceTicks / 3600} game hours; drinking a recall potion");
+			Interrupt(ctx);
+			return;
+		}
+		ctx.Log.Warn($"Auto: in the same place ({n}) for {SamePlaceTicks / 3600} game hours; climbing out");
+		BeginOverride(new WalkToSkill(new Core.Pathfinding.GoalRow(n.Y - 2 * SamePlaceTiles, n.X, ctx.Physics)) { Quiet = true, ToSurface = true }, ctx);
+	}
+
 	/// <summary>True if the work is stuck (and is failed now).</summary>
 	private bool WorkStuck(BotContext ctx)
 	{
@@ -380,6 +409,8 @@ public sealed class BotBrain
 			&& ctx.Combat.Defense < ProgressionPlanner.NightOutDefense)
 			RequestReplan("nightfall");
 		wasNight = night;
+		if (Auto && ctx.Tick % HabitEvery == 0)
+			WatchPlace(ctx);
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			WearAccessories(ctx);
 			NoteEvilEnemies(ctx);

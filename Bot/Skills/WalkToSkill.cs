@@ -110,6 +110,10 @@ public sealed class WalkToSkill : ISkill
 	public const int SettleInWaterTicks = 30;
 	private int airborneTicks;
 	private TilePos? swimTo;
+	private TilePos swimFrom;
+	private int swimStill;
+	/// <summary>Ticks afloat at the same node before what is over the head gets mined.</summary>
+	public const int SwimStillTicks = 120;
 	public const int SwimReplanTicks = 60, SwimSearchCells = 2000;
 
 	/// <summary>
@@ -359,6 +363,21 @@ public sealed class WalkToSkill : ISkill
 						ctx.Output.Horizontal = dest.X > node.X ? 1 : dest.X < node.X ? -1 : 0;
 						ctx.Output.Jump = dest.Y <= node.Y && (airborneTicks / 10) % 2 == 0; // strokes up; none to sink to a lower floor
 						State = $"swimming for footing at {dest}";
+						// Not getting anywhere: whatever is over the head is mined, by the tile really there (the grid read it open).
+						// Seen in game (measured run S2): swimming 4 rows up for footing, held at the same row for 490,000 ticks.
+						swimStill = node == swimFrom ? swimStill + 1 : 0;
+						swimFrom = node;
+						if (swimStill > SwimStillTicks && ctx.World != null) {
+							for (int dx = 0; dx <= 1; dx++)
+								for (int up = Body.HeightTiles; up <= Body.HeightTiles + 1; up++)
+									if (ctx.World.TileTypeAt(node.X + dx, node.Y - up) >= 0) {
+										ctx.Output.Tool = ToolRequest.Pickaxe;
+										ctx.Output.UseItem = true;
+										ctx.Output.Aim(node.X + dx, node.Y - up);
+										State = $"swimming, held at {node}: mining ({node.X + dx},{node.Y - up}) over the head";
+										return SkillStatus.Running;
+									}
+						}
 						return SkillStatus.Running;
 					}
 					if (++airborneTicks > (afloat ? MaxSwimTicks : MaxAirborneTicks))
