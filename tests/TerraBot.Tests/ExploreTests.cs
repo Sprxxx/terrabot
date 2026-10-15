@@ -185,4 +185,26 @@ public class WaterTests
 		output.WriteLine(explore.Describe());
 		Assert.Contains("(frontier)", string.Join(" ", ((TestLog)ctx.Log).Lines));
 	}
+
+	[Fact]
+	public void ACrystalInTheUndergroundDesert_IsGoneFor_InAFullSetOfArmour()
+	{
+		// Measured run S1: two crystals in the underground desert "in a biome the gear is too weak for" (its gate is defense
+		// 16, more than full iron gives) while the bot explored for others for three game days.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 100; y++)
+			rows.Add(y == 29 ? ".....S" + new string('.', 94) : y < 30 ? new string('.', 100) : new string('#', 100));
+		var g = new FakeGame(rows.ToArray());
+		for (int x = 0; x < 100; x++)
+			for (int y = 30; y < 100; y++)
+				g.TileTypes[new TilePos(x, y)] = FakeGame.TileSand;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 30;
+		var c = new TilePos(50, 60);
+		ctx.Combat.Defense = 4;
+		Assert.Equal("in a biome the gear is too weak for", MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
+		ctx.Combat.Defense = 9; // full iron
+		Assert.Null(MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
+		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, c)); // ore there still waits for better gear
+	}
 }
