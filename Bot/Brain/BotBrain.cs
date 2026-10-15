@@ -151,7 +151,7 @@ public sealed class BotBrain
 		if (Override != null)
 			Override.Stop(ctx);
 		else
-			Work?.Stop(ctx);
+			Work?.Pause(ctx);
 		Override = skill;
 		skill.Start(ctx);
 	}
@@ -175,7 +175,7 @@ public sealed class BotBrain
 		if (SameJob(next, Work)) {
 			if (paused) {
 				ctx.Log.Info($"Auto: back to {Work.Name} after {why}");
-				Work.Start(ctx);
+				Work.Resume(ctx);
 			}
 			return;
 		}
@@ -500,7 +500,7 @@ public sealed class BotBrain
 				if (Auto)
 					ChooseWork(ctx, paused: true, skill.Name.ToLowerInvariant());
 				else
-					Work.Start(ctx);
+					Work.Resume(ctx);
 			}
 			return;
 		}

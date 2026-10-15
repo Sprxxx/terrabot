@@ -46,6 +46,17 @@ public sealed class HuntSkill : ISkill
 		sub = null;
 	}
 
+	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
+	public void Pause(BotContext ctx)
+	{
+		sub?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		sub?.Resume(ctx);
+	}
+
 	public SkillStatus Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
@@ -259,6 +270,17 @@ public sealed class ShelterSkill : ISkill
 	{
 		dig?.Stop(ctx);
 		dig = null;
+	}
+
+	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
+	public void Pause(BotContext ctx)
+	{
+		dig?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		dig?.Resume(ctx);
 	}
 
 	public SkillStatus Tick(BotContext ctx)

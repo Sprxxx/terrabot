@@ -34,6 +34,17 @@ public sealed class ChopTreeSkill : ISkill
 		walk = null;
 	}
 
+	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
+	public void Pause(BotContext ctx)
+	{
+		walk?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		walk?.Resume(ctx);
+	}
+
 	public SkillStatus Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
@@ -122,6 +133,17 @@ public sealed class CollectDropsSkill : ISkill
 	{
 		walk?.Stop(ctx);
 		walk = null;
+	}
+
+	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
+	public void Pause(BotContext ctx)
+	{
+		walk?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		walk?.Resume(ctx);
 	}
 
 	public SkillStatus Tick(BotContext ctx)
@@ -221,6 +243,17 @@ public sealed class GatherWoodSkill : ISkill
 	{
 		sub?.Stop(ctx);
 		sub = null;
+	}
+
+	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
+	public void Pause(BotContext ctx)
+	{
+		sub?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		sub?.Resume(ctx);
 	}
 
 	public SkillStatus Tick(BotContext ctx)

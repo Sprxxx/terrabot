@@ -147,7 +147,8 @@ public sealed class PathExecutor
 			PathStep step = steps[StepIndex];
 			ticksInStep++;
 			if (ticksInStep > Budget(step))
-				return Finish(ExecStatus.Stuck, $"step {StepIndex} {step.Kind} {step.From}->{step.To} timed out after {ticksInStep} ticks at {Body.NodeOf(s, ctx.Physics)}");
+				return Finish(ExecStatus.Stuck, $"step {StepIndex} {step.Kind} {step.From}->{step.To} timed out after {ticksInStep} ticks at {Body.NodeOf(s, ctx.Physics)}"
+					+ $" [{Phase}; left {s.X - Body.CanonicalLeft(step.From.X, ctx.Physics):+0.0;-0.0} px off the start, vx {s.VX:0.00} vy {s.VY:0.00}{(s.Grounded ? ", grounded" : "")}{(step.Template != null ? ", " + step.Template.Variant : "")}]");
 
 			MoveInput input;
 			bool advanced;

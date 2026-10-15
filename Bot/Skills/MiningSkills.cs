@@ -95,6 +95,17 @@ public sealed class MineSkill : ISkill
 		sub = null;
 	}
 
+	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
+	public void Pause(BotContext ctx)
+	{
+		sub?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		sub?.Resume(ctx);
+	}
+
 	private string Label(BotContext ctx) => ctx.Knowledge?.ItemName(ItemType) ?? $"item {ItemType}";
 
 	public SkillStatus Tick(BotContext ctx)

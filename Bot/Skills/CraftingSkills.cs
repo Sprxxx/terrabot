@@ -134,6 +134,19 @@ public sealed class PlaceItemSkill : ISkill
 		wander = null;
 	}
 
+	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
+	public void Pause(BotContext ctx)
+	{
+		walk?.Pause(ctx);
+		wander?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		walk?.Resume(ctx);
+		wander?.Resume(ctx);
+	}
+
 	public SkillStatus Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;

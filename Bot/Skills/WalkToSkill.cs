@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using TerraBot.Core.Execution;
 using TerraBot.Core.Grid;
@@ -33,6 +34,8 @@ public sealed class WalkToSkill : ISkill
 	public PathResult LastPlan { get; private set; }
 	public PathExecutor Executor { get; private set; }
 	public int Replans { get; private set; }
+	/// <summary>Searches started by this walk (re-plans and resumed plans not included in the latter).</summary>
+	public int Plans => plans;
 	public int NoPathCount { get; private set; }
 	/// <summary>The last search started on a goal node next to the body (a zero-step Found).</summary>
 	public bool ArrivedNearGoal { get; private set; }
@@ -137,7 +140,131 @@ public sealed class WalkToSkill : ISkill
 	{
 		Executor = null;
 		search = null;
+		ahead = null;
+		pausedSteps = null;
 		ctx.Output = MoveInput.None;
+	}
+
+	/// <summary>
+	/// The rest of the plan, kept through a pause (a fight, a body issue): on the way again the walk carries on from
+	/// whichever kept step the bot stands at, and plans afresh only when it is off them. Seen in game (measured run N1):
+	/// 3,668 walk starts a run, every fight and resumption planning the whole way again (about 75 ticks standing each).
+	/// </summary>
+	private System.Collections.Generic.List<PathStep> pausedSteps;
+	/// <summary>Kept steps searched for the bot's node on the way again.</summary>
+	public const int ResumeLookahead = 40;
+
+	public void Pause(BotContext ctx)
+	{
+		KeepPlan();
+		ctx.Output = MoveInput.None;
+		State = "paused";
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		Info(ctx, $"WalkTo resumed: {(pausedSteps != null ? $"{pausedSteps.Count} step(s) of the plan kept" : "planning again")}, bot at {ctx.Node}");
+		State = "resumed";
+	}
+
+	/// <summary>
+	/// The next segment, searched while the bot walks the end of a partial one (Baritone plans the next segment while the
+	/// current one runs): from the plan's last node, on the world as the remaining steps will leave it, a few ms a tick.
+	/// When the segment ends it carries straight on. Seen in game: every segment's end stopped the bot for its search.
+	/// </summary>
+	private PathSearch ahead;
+	private TilePos aheadFrom;
+	private MoveContext aheadMoves, aheadBase;
+	private readonly OverlayGrid aheadGrid = new();
+	/// <summary>Steps left in a partial plan when the next segment's search starts, and its CPU budget per tick.</summary>
+	public const int PlanAheadSteps = 12;
+	public const double PlanAheadMsPerTick = 2.0;
+	/// <summary>Segments joined on without a stop (tests and logs).</summary>
+	public int Splices { get; private set; }
+
+	private void PlanAhead(BotContext ctx)
+	{
+		if (Executor == null || LastPlan == null || LastPlan.Status != PathStatus.Partial)
+			return;
+		if (ahead == null) {
+			if (Executor.Steps.Count - Executor.StepIndex > PlanAheadSteps || relaxed)
+				return;
+			IReadOnlyList<PathStep> steps = Executor.Steps;
+			aheadGrid.Reset(ctx.Moves.Grid);
+			for (int i = Executor.StepIndex; i < steps.Count; i++)
+				if (steps[i].Actions != null)
+					foreach (BlockAction a in steps[i].Actions)
+						aheadGrid.Set(a.Cell.X, a.Cell.Y, a.Kind == ActionKind.Break ? CellKind.Empty : CellKind.Solid);
+			if (!ReferenceEquals(aheadBase, ctx.Moves)) {
+				aheadBase = ctx.Moves;
+				aheadMoves = ctx.Moves.WithGrid(aheadGrid);
+			}
+			aheadFrom = steps[steps.Count - 1].To;
+			ahead = new PathSearch(aheadMoves, aheadFrom, Goal, Limits ?? SearchLimits.Default);
+		}
+		if (!ahead.Done)
+			ahead.Step(PlanAheadMsPerTick);
+	}
+
+	/// <summary>The segment ended: carry on with the one planned ahead, if it is ready, starts here and its first steps hold.</summary>
+	private bool TrySplice(BotContext ctx, TilePos node)
+	{
+		PathSearch next = ahead;
+		ahead = null;
+		if (next == null || node != aheadFrom)
+			return false;
+		if (!next.Done)
+			next.Step(PlanBudgetMsPerTick);
+		if (!next.Done) {
+			// Not ready yet: finish it standing here rather than starting over (FinishSearch then follows it on the live grid).
+			search = next;
+			searchMoves = ctx.Moves;
+			plans++;
+			State = "planning";
+			return true;
+		}
+		if (next.Result.Status is not (PathStatus.Found or PathStatus.Partial) || next.Result.Steps.Count == 0)
+			return false;
+		for (int i = 0; i < System.Math.Min(3, next.Result.Steps.Count); i++)
+			if (!ctx.Moves.IsStepValid(next.Result.Steps[i]))
+				return false;
+		LastPlan = next.Result;
+		plans++;
+		Splices++;
+		Executor = new PathExecutor(ctx.Moves, next.Result.Steps);
+		searchMoves = ctx.Moves;
+		Info(ctx, $"Plan #{plans} (planned ahead) {LastPlan.Start} -> {Goal}: {LastPlan}; carrying straight on");
+		State = "executing";
+		return true;
+	}
+
+	private void KeepPlan()
+	{
+		if (Executor != null && Executor.Status == ExecStatus.Running && Executor.StepIndex < Executor.Steps.Count)
+			pausedSteps = Executor.Steps.Skip(Executor.StepIndex).ToList();
+		Executor = null;
+		search = null;
+		ahead = null;
+	}
+
+	/// <summary>Back on the kept plan if the bot stands on one of its next steps; true when an executor is set up.</summary>
+	private bool TryResumePlan(BotContext ctx, TilePos node)
+	{
+		System.Collections.Generic.List<PathStep> kept = pausedSteps;
+		pausedSteps = null;
+		if (kept == null)
+			return false;
+		int n = System.Math.Min(kept.Count, ResumeLookahead);
+		for (int i = 0; i < n; i++) {
+			if (kept[i].From != node || !ctx.Moves.IsStepValid(kept[i]))
+				continue;
+			Executor = new PathExecutor(ctx.Moves, kept.GetRange(i, kept.Count - i));
+			searchMoves = ctx.Moves;
+			Info(ctx, $"WalkTo: back on the plan at {node}, step {i + 1} of the {kept.Count} kept");
+			State = "executing";
+			return true;
+		}
+		return false;
 	}
 
 	public SkillStatus Tick(BotContext ctx)
@@ -145,8 +272,7 @@ public sealed class WalkToSkill : ISkill
 		ctx.Output = MoveInput.None;
 		if (ctx.BodyIssue != null) {
 			State = "paused: " + ctx.BodyIssue;
-			Executor = null; // plan again from wherever we end up
-			search = null;
+			KeepPlan(); // back on it if the bot is still on it afterwards, else plan again
 			return SkillStatus.Running;
 		}
 
@@ -207,14 +333,15 @@ public sealed class WalkToSkill : ISkill
 				}
 				if (EmbeddedIn(ctx) == null)
 					unstickTicks = 0;
-				StartSearch(ctx, node);
+				if (!TryResumePlan(ctx, node))
+					StartSearch(ctx, node);
 			}
 			// Stand still while searching; long searches are spread over several ticks.
-			if (!search.Step(PlanBudgetMsPerTick)) {
+			if (Executor == null && !search.Step(PlanBudgetMsPerTick)) {
 				State = $"planning ({search.Expanded} nodes)";
 				return SkillStatus.Running;
 			}
-			if (!FinishSearch(ctx)) {
+			if (Executor == null && !FinishSearch(ctx)) {
 				if (ArrivedNearGoal) {
 					Info(ctx, $"WalkTo: {Goal} is next to {node} (search started on it); done");
 					State = "arrived";
@@ -234,11 +361,14 @@ public sealed class WalkToSkill : ISkill
 			case ExecStatus.Running:
 				ctx.Output = input;
 				State = Executor.Phase;
+				PlanAhead(ctx);
 				break;
 			case ExecStatus.Finished:
 				// Either the goal check above succeeds next tick, or this was a partial path: plan the next leg.
 				Info(ctx, $"Path finished at {node} ({LastPlan.Status})");
 				Executor = null;
+				if (!Goal.IsGoal(node) && TrySplice(ctx, node))
+					ctx.Output = MoveInput.None;
 				break;
 			default:
 				if (Executor.Status == ExecStatus.Blocked && TryRepair(ctx, node))

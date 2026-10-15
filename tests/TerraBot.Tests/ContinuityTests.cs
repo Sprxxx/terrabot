@@ -186,4 +186,51 @@ public class ContinuityTests
 		Assert.NotEqual(new WalkToSkill(new TilePos(5, 7)).Key, new WalkToSkill(new TilePos(5, 7)) { Travel = true }.Key);
 		Assert.Null(((ISkill)new FightSkill()).Key); // reflexes are never "the same job"
 	}
+
+	[Fact]
+	public void APausedWalk_GoesOnWithItsPlan_WithoutPlanningAgain()
+	{
+		// Measured run N1: 3,668 walk starts in a run, every fight planning the whole way again (about 75 ticks standing).
+		FakeGame game = EarlyGameTests.Field(60);
+		BotContext ctx = game.CreateContext(null);
+		var walk = new WalkToSkill(new TilePos(50, 24));
+		walk.Start(ctx);
+		for (int t = 0; t < 40; t++) {
+			game.Refresh(ctx);
+			Assert.Equal(SkillStatus.Running, walk.Tick(ctx));
+			game.Step(ctx);
+		}
+		walk.Pause(ctx);
+		for (int t = 0; t < 30; t++) { // a reflex runs; the bot stands
+			game.Refresh(ctx);
+			ctx.Output = Core.Physics.MoveInput.None;
+			game.Step(ctx);
+		}
+		walk.Resume(ctx);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(game, ctx, walk, 600));
+		Assert.Equal(1, walk.Plans);
+	}
+
+	[Fact]
+	public void ALongWalkInSegments_CarriesStraightOn_FromOneToTheNext()
+	{
+		// Every segment's end stopped the bot for the next segment's search (Baritone plans the next one while walking).
+		FakeGame game = EarlyGameTests.Field(160);
+		BotContext ctx = game.CreateContext(null);
+		var walk = new WalkToSkill(new TilePos(150, 24)) { Limits = new Core.Pathfinding.SearchLimits { SegmentAfter = 40, SegmentMinTiles = 12 } };
+		int still = 0, moving = 0;
+		walk.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		for (int t = 0; t < 2000 && st == SkillStatus.Running; t++) {
+			game.Refresh(ctx);
+			st = walk.Tick(ctx);
+			if (t > 5)
+				_ = ctx.Output.Horizontal == 0 ? still++ : moving++;
+			game.Step(ctx);
+		}
+		output.WriteLine($"{st}: plans {walk.Plans}, splices {walk.Splices}, ticks moving {moving}, standing {still}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.True(walk.Plans >= 3, "the walk should come in segments");
+		Assert.Equal(walk.Plans - 1, walk.Splices);
+	}
 }
