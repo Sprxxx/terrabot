@@ -622,6 +622,21 @@ public sealed class Scenario
 				Check = r => r.LogHas("timed out") ? "a step timed out" : null,
 			},
 			new() {
+				// Measured run S5: an Inner Tube from a chest, worn, floated the bot over a flooded hole at vy -3 for 278
+				// heartbeats (every walk "never landed"). Auto mode takes it off.
+				Name = "inner_tube_comes_off",
+				Rows = Grid(Repeat(new string('.', 40), 8), "..S.....................................", Repeat(new string('@', 40), 2)),
+				Mode = "auto",
+				Inventory = p => {
+					p.inventory[0] = new Terraria.Item(Terraria.ID.ItemID.CopperPickaxe);
+					p.armor[3] = new Terraria.Item(Terraria.ID.ItemID.FloatingTube);
+				},
+				FinishOnLog = "Gear: taking off",
+				ExpectSuccess = false,
+				TimeoutTicks = 60 * 30,
+				Check = r => r.LogHas("Gear: taking off") ? null : "the Inner Tube stayed on",
+			},
+			new() {
 				// Measured run S1: drops from a node with a half block in its feet row waited 330-650 ticks "at the edge" (71
 				// times): the body stood on the half block a row up and never fell. Now: plan again from where it stands.
 				Name = "dig_down_under_half_blocks",

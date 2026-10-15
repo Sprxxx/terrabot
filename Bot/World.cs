@@ -96,6 +96,9 @@ public interface ICrafter
 	/// </summary>
 	bool TryEquip(int itemType);
 
+	/// <summary>Take a worn accessory off into a free inventory slot, like shift-clicking it. False if it could not.</summary>
+	bool TryTakeOff(int itemType);
+
 	/// <summary>
 	/// Open the chest at <paramref name="topLeft"/> and take everything, like right-clicking it and pressing Loot All
 	/// (vanilla Player.OpenChest, ChestUI.LootAll), then close it. Only within the game's interaction range and only
@@ -165,6 +168,11 @@ public sealed class GameIds
 	public int HeartLantern { get; init; }
 	/// <summary>Recall Potion: drunk, it takes the player home to the spawn point.</summary>
 	public int RecallPotion { get; init; }
+	/// <summary>
+	/// Accessories that hold the body at the water's surface (the Inner Tube): with one on, nobody sinks to a flooded floor
+	/// unless holding Down, and the paths walk flooded floors.
+	/// </summary>
+	public int[] FloatingAccessories { get; init; } = System.Array.Empty<int>();
 
 	public static readonly GameIds None = new();
 }

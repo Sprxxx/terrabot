@@ -63,6 +63,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		DesertEnemies = new int[] { NPCID.Antlion, NPCID.WalkingAntlion, NPCID.FlyingAntlion, NPCID.GiantWalkingAntlion, NPCID.GiantFlyingAntlion,
 			NPCID.LarvaeAntlion, NPCID.TombCrawlerHead, NPCID.TombCrawlerBody, NPCID.TombCrawlerTail },
 		LifeCrystal = ItemID.LifeCrystal,
+		FloatingAccessories = new int[] { ItemID.FloatingTube }, // Player.ApplyEquipFunctional: canFloatInWater
 		IronTierBow = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBow : ItemID.IronBow,
 		WoodenArrow = ItemID.WoodenArrow,
 		Lens = ItemID.Lens,
@@ -510,5 +511,23 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 			return false; // never swap a worn accessory out; the same one twice is not allowed anyway
 		Terraria.UI.ItemSlot.SwapEquip(player.inventory, Terraria.UI.ItemSlot.Context.InventoryItem, slot);
 		return IsEquipped(itemType);
+	}
+
+	/// <summary>Shift-click a worn accessory back into the first free inventory slot (a plain slot swap).</summary>
+	public bool TryTakeOff(int itemType)
+	{
+		if (player.whoAmI != Main.myPlayer)
+			return false;
+		for (int a = AccessoryStart; a < AccessoryEnd; a++) {
+			if (player.armor[a].IsAir || player.armor[a].type != itemType)
+				continue;
+			for (int i = 0; i < 50; i++)
+				if (player.inventory[i].IsAir) {
+					(player.inventory[i], player.armor[a]) = (player.armor[a], player.inventory[i]);
+					return !IsEquipped(itemType);
+				}
+			return false; // nowhere to put it
+		}
+		return false;
 	}
 }

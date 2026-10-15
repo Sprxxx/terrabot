@@ -52,7 +52,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
-		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion,
+		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion, FloatingAccessories = new[] { InnerTube },
 		DesertTiles = new[] { TileSand }, // only cells a test marks with it (TileTypes) count
 	};
 
@@ -378,7 +378,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly HashSet<TilePos> LockedChests = new();
 	/// <summary>Item types that are accessories (5 slots).</summary>
 	public readonly HashSet<int> Accessories = new();
-	public const int HermesBoots = 54, LesserHealingPotion = 28;
+	public const int HermesBoots = 54, LesserHealingPotion = 28, InnerTube = 4404;
 
 	public IReadOnlyList<ChestInfo> SeenChests(TilePos around, int radius) => Chests.Keys
 		.Where(c => System.Math.Abs(c.X - around.X) <= radius && System.Math.Abs(c.Y - around.Y) <= radius && IsRevealed(c.X, c.Y))
@@ -407,6 +407,14 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			return false;
 		Items[itemType]--;
 		Equipped.Add(itemType);
+		return true;
+	}
+
+	public bool TryTakeOff(int itemType)
+	{
+		if (!Accessories.Contains(itemType) || !Equipped.Remove(itemType))
+			return false;
+		Items[itemType] = Count(itemType) + 1;
 		return true;
 	}
 

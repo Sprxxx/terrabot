@@ -330,11 +330,19 @@ public sealed class BotBrain
 		}
 	}
 
-	/// <summary>Put on carried accessories while a slot is free (Hermes Boots from a chest, a Band of Regeneration...).</summary>
+	/// <summary>
+	/// Put on carried accessories while a slot is free (Hermes Boots from a chest, a Band of Regeneration...), but none that
+	/// holds the body at the water's surface: the paths wade to flooded floors. Seen in game (measured run S5): an Inner Tube
+	/// from a chest, worn, held the bot afloat over a flooded hole at vy -3 (vanilla Player.TryFloatingInFluid) for 278
+	/// heartbeats, every walk failing "never landed" and every work bench with it.
+	/// </summary>
 	private static void WearAccessories(BotContext ctx)
 	{
+		foreach (int item in ctx.Ids.FloatingAccessories)
+			if (ctx.Inventory.IsEquipped(item) && ctx.Crafter.TryTakeOff(item))
+				ctx.Log.Info($"Gear: taking off {ctx.Knowledge.ItemName(item)} (it floats the body on water; the paths wade to the floor)");
 		foreach (int item in ctx.Inventory.UnwornAccessories())
-			if (ctx.Crafter.TryEquip(item))
+			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && ctx.Crafter.TryEquip(item))
 				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)}");
 	}
 	/// <summary>Torches in the dark, so a watcher can see (auto mode).</summary>

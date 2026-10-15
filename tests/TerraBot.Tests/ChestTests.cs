@@ -51,6 +51,25 @@ public class ChestTests
 		Assert.Empty(g.Chests[new TilePos(30, 23)]);
 	}
 
+	/// <summary>Measured run S5: a worn Inner Tube floated the bot over a flooded hole for 278 heartbeats.</summary>
+	[Fact]
+	public void InnerTube_IsNotWorn_AndTakenOffIfWorn()
+	{
+		FakeGame g = WithChest(30);
+		g.Accessories.Add(FakeGame.InnerTube);
+		g.Items[FakeGame.InnerTube] = 1;
+		var (_, _) = RunAuto(g, 60 * 30);
+		Assert.DoesNotContain(FakeGame.InnerTube, g.Equipped);
+		Assert.Contains(FakeGame.HermesBoots, g.Equipped);
+
+		FakeGame worn = EarlyGameTests.Field(80);
+		worn.Accessories.Add(FakeGame.InnerTube);
+		worn.Equipped.Add(FakeGame.InnerTube);
+		RunAuto(worn, 60 * 5);
+		Assert.DoesNotContain(FakeGame.InnerTube, worn.Equipped);
+		Assert.Equal(1, worn.Count(FakeGame.InnerTube));
+	}
+
 	[Fact]
 	public void LockedChest_IsLeftAlone()
 	{
