@@ -231,6 +231,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		return true;
 	}
 	public readonly List<int> Trashed = new();
+	/// <summary>Gear for inventory tests (tools, weapons, potions...).</summary>
+	public readonly HashSet<int> Gear = new() { WoodenSword, IronPickaxe, IronBroadsword, IronBow };
+	public bool IsGear(int itemType) => Gear.Contains(itemType);
 	public string TileName(int tileType) => $"tile{tileType}";
 
 	// ---------- IWorldInfo ----------

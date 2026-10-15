@@ -79,6 +79,10 @@ public class ChestTests
 		BotContext ctx = g.CreateContext(output);
 		const int cobweb = 150, mud = 176;
 		g.Items.Clear();
+		for (int i = 0; i < 10; i++)
+			g.Items[2000 + i] = 1; // the hotbar's tools
+		foreach (int i in Enumerable.Range(2000, 10))
+			g.Gear.Add(i);
 		g.Items[FakeGame.DirtBlock] = 2 * FakeGame.MaxStack; // two stacks: one is spare
 		g.Items[FakeGame.StoneBlock] = 500;
 		g.Items[cobweb] = 61;
@@ -87,7 +91,7 @@ public class ChestTests
 		g.Items[FakeGame.Gel] = 10;
 		foreach (int junk in new[] { FakeGame.DirtBlock, FakeGame.StoneBlock, cobweb, mud, FakeGame.Wood, FakeGame.Gel })
 			g.Values[junk] = 0;
-		for (int i = 0; i < 43; i++)
+		for (int i = 0; i < 33; i++)
 			g.Items[1000 + i] = 1; // worth something
 		g.SlotLimit = 50;
 		Assert.Equal(0, g.FreeSlots);
@@ -99,7 +103,45 @@ public class ChestTests
 		Assert.Equal(500, g.Count(FakeGame.StoneBlock));
 		Assert.Equal(40, g.Count(FakeGame.Wood));
 		Assert.Equal(10, g.Count(FakeGame.Gel));
-		Assert.All(Enumerable.Range(1000, 43), t => Assert.Equal(1, g.Count(t)));
+		Assert.All(Enumerable.Range(1000, 33), t => Assert.Equal(1, g.Count(t)));
+	}
+
+	/// <summary>Measured run S11: 50 kinds of item each worth a little, and no slot for the bow for 167 heartbeats.</summary>
+	[Fact]
+	public void AFullBag_WithNothingWorthless_TrashesTheCheapestUnneededStack()
+	{
+		FakeGame g = EarlyGameTests.Field(80);
+		BotContext ctx = g.CreateContext(output);
+		const int pumpkin = 1725, gem = 181, copperShortsword = 3507;
+		g.Items.Clear();
+		g.Items[copperShortsword] = 1; // a weapon: kept, cheap as it is
+		g.Gear.Add(copperShortsword);
+		for (int i = 0; i < 9; i++)
+			g.Items[2000 + i] = 1; // the rest
+		foreach (int i in Enumerable.Range(2000, 9))
+			g.Values[i] = 1000;
+		g.Items[FakeGame.IronBar] = 7; // for the bow: kept
+		g.Items[FakeGame.IronOre] = 2; // for bars: kept
+		g.Items[pumpkin] = 15;
+		g.Items[gem] = 6;
+		for (int i = 0; i < 36; i++)
+			g.Items[3000 + i] = 1;
+		g.Values[copperShortsword] = 10;
+		g.Values[FakeGame.IronBar] = 1;
+		g.Values[FakeGame.IronOre] = 1;
+		g.Values[pumpkin] = 2; // 30 in all
+		g.Values[gem] = 375;
+		foreach (int i in Enumerable.Range(3000, 36))
+			g.Values[i] = 100;
+		g.SlotLimit = 50;
+		Assert.Equal(0, g.FreeSlots);
+		BotBrain.KeepRoom(ctx);
+		output.WriteLine($"trashed: {string.Join(", ", g.Trashed)}; free {g.FreeSlots}");
+		Assert.True(g.FreeSlots >= BotBrain.MinFreeSlots);
+		Assert.Equal(pumpkin, g.Trashed[0]);
+		Assert.Equal(1, g.Count(copperShortsword));
+		Assert.Equal(7, g.Count(FakeGame.IronBar));
+		Assert.Equal(2, g.Count(FakeGame.IronOre));
 	}
 
 	[Fact]

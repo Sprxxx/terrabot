@@ -465,6 +465,15 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		}
 	}
 
+	public bool IsGear(int itemType)
+	{
+		if (itemType <= 0 || itemType >= Terraria.ModLoader.ItemLoader.ItemCount)
+			return false;
+		Item it = ContentSamples.ItemsByType[itemType];
+		return it.pick > 0 || it.axe > 0 || it.hammer > 0 || it.damage > 0 || it.defense > 0 || it.accessory || it.healLife > 0 || it.ammo > 0
+			|| it.headSlot >= 0 || it.bodySlot >= 0 || it.legSlot >= 0 || it.buffType > 0 || it.fishingPole > 0 || it.shoot > 0;
+	}
+
 	public IReadOnlyList<(int Type, int Stack)> Stacks()
 	{
 		var list = new List<(int, int)>();

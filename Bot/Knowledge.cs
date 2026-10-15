@@ -71,6 +71,7 @@ public interface IGameKnowledge
 
 public static class InventoryExtensions
 {
+
 	/// <summary>Total of all accepted item types.</summary>
 	public static int CountAny(this IInventory inv, IReadOnlyList<int> types)
 	{

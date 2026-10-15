@@ -548,7 +548,7 @@ public sealed class Scenario
 				Build = true,
 				Blocks = 50,
 				Inventory = p => {
-					int[] junk = { Terraria.ID.ItemID.Cobweb, Terraria.ID.ItemID.MudBlock, Terraria.ID.ItemID.SiltBlock, Terraria.ID.ItemID.ClayBlock, Terraria.ID.ItemID.DirtBlock };
+					int[] junk = { Terraria.ID.ItemID.Amethyst, Terraria.ID.ItemID.Topaz, Terraria.ID.ItemID.Sapphire, Terraria.ID.ItemID.Emerald, Terraria.ID.ItemID.Ruby }; // each worth something (measured run S11)
 					for (int i = 0, k = 0; i < 50; i++)
 						if (p.inventory[i].IsAir)
 							p.inventory[i] = new Terraria.Item(junk[k++ % junk.Length], 99);

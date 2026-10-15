@@ -356,7 +356,10 @@ public sealed class BotBrain
 
 	/// <summary>
 	/// The bag nearly full: trash stacks worth nothing (vanilla Item.value 0) that nothing the bot does needs, a spare stack
-	/// of a building block first (one of each is kept), as AltoClef throws away junk to make room for what it wants.
+	/// of a building block first (one of each is kept), as AltoClef throws away junk to make room for what it wants. With
+	/// nothing worthless left, the stack worth least in all that nothing needs: not gear (tools, weapons, armour, potions,
+	/// ammo), not one of the plan's items, not an ingredient of the gear still to make. Seen in game (measured run S11): 50 kinds
+	/// of item, each worth a little (gems, seeds, pumpkins, copper tools), and no slot for the bow for 167 heartbeats.
 	/// </summary>
 	public static void KeepRoom(BotContext ctx)
 	{
@@ -364,26 +367,63 @@ public sealed class BotBrain
 			return;
 		for (int guard = 0; guard < MinFreeSlots && ctx.Inventory.FreeSlots < MinFreeSlots; guard++) {
 			IReadOnlyList<(int Type, int Stack)> stacks = ctx.Inventory.Stacks();
-			GameIds ids = ctx.Ids;
-			int[] kept = { ids.Wood, ids.Gel, ids.Torch, ids.WorkBenchItem, ids.WoodWall, ids.Door, ids.Chair, ids.Table, ids.Acorn,
-				ids.WoodenArrow, ids.Lens, ids.LifeCrystal, ids.RecallPotion, ids.Campfire, ids.HeartLantern, ids.SuspiciousEye };
+			HashSet<int> kept = KeptItems(ctx, stacks);
 			int junk = -1, junkStacks = 0;
+			long cheapest = long.MaxValue;
+			int cheap = -1;
 			foreach (var g in stacks.GroupBy(s => s.Type)) {
 				int n = g.Count();
-				bool block = ids.BuildingBlocks.Contains(g.Key);
-				if (ctx.Knowledge.ItemValue(g.Key) != 0 || !block && kept.Contains(g.Key) || block && n < 2)
+				bool block = ctx.Ids.BuildingBlocks.Contains(g.Key);
+				int value = ctx.Knowledge.ItemValue(g.Key);
+				if (block ? n < 2 : kept.Contains(g.Key))
 					continue;
-				// Spare block stacks before the rest, then whatever has the most stacks.
-				int rank = (block ? 1000 : 0) + n;
-				if (rank > junkStacks) {
-					junkStacks = rank;
-					junk = g.Key;
+				if (value == 0) {
+					// Spare block stacks before the rest, then whatever has the most stacks.
+					int rank = (block ? 1000 : 0) + n;
+					if (rank > junkStacks) {
+						junkStacks = rank;
+						junk = g.Key;
+					}
+				}
+				else if (!block && (long)value * g.Min(s => s.Stack) < cheapest) {
+					cheapest = (long)value * g.Min(s => s.Stack);
+					cheap = g.Key;
 				}
 			}
-			if (junk < 0 || !ctx.Crafter.TryTrash(junk))
+			int trash = junk >= 0 ? junk : cheap;
+			if (trash < 0 || !ctx.Crafter.TryTrash(trash))
 				return;
-			ctx.Log.Info($"Inventory: {ctx.Inventory.FreeSlots} free slot(s) after trashing a stack of {ctx.Knowledge.ItemName(junk)} (worth nothing)");
+			ctx.Log.Info($"Inventory: {ctx.Inventory.FreeSlots} free slot(s) after trashing a stack of {ctx.Knowledge.ItemName(trash)}"
+				+ (junk >= 0 ? " (worth nothing)" : $" (worth {cheapest} copper, the least of anything not needed)"));
 		}
+	}
+
+	/// <summary>What the bag must keep: gear (tools, weapons, armour, potions, ammo), the plan's own items, and the ingredients (two recipes deep) of the gear to make.</summary>
+	private static HashSet<int> KeptItems(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks)
+	{
+		GameIds ids = ctx.Ids;
+		var kept = new HashSet<int> { ids.Wood, ids.Gel, ids.Torch, ids.WorkBenchItem, ids.WoodWall, ids.Door, ids.Chair, ids.Table, ids.Acorn,
+			ids.WoodenArrow, ids.Lens, ids.LifeCrystal, ids.RecallPotion, ids.Campfire, ids.HeartLantern, ids.SuspiciousEye };
+		foreach (var s in stacks)
+			if (ctx.Inventory.IsGear(s.Type))
+				kept.Add(s.Type);
+		int[] gear = { ids.IronTierPickaxe, ids.IronTierBroadsword, ids.IronTierHelmet, ids.IronTierChainmail, ids.IronTierGreaves, ids.IronTierBow,
+			ids.SilverTierPickaxe, ids.SilverTierBroadsword, ids.SilverTierHelmet, ids.SilverTierChainmail, ids.SilverTierGreaves, ids.SuspiciousEye,
+			ids.HeartLantern, ids.Campfire, ids.WoodenArrow };
+		var frontier = new List<int>(gear.Where(g => g > 0));
+		for (int depth = 0; depth < 2; depth++) {
+			var next = new List<int>();
+			foreach (int item in frontier)
+				foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item))
+					foreach (Ingredient ing in r.Ingredients)
+						foreach (int a in ing.Accepts)
+							if (kept.Add(a))
+								next.Add(a);
+			frontier = next;
+		}
+		foreach (int g in gear)
+			kept.Add(g);
+		return kept;
 	}
 
 	/// <summary>Torches in the dark, so a watcher can see (auto mode).</summary>

@@ -76,6 +76,9 @@ public interface IInventory
 
 	/// <summary>Every stack in the main inventory (hotbar included), slot by slot.</summary>
 	IReadOnlyList<(int Type, int Stack)> Stacks();
+
+	/// <summary>Gear a player keeps: a tool, weapon, armour, accessory, healing item or ammo (by the item's own stats).</summary>
+	bool IsGear(int itemType);
 }
 
 public enum CraftResult
