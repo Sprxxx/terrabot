@@ -28,8 +28,8 @@ public sealed class BuildMove : IMoveType
 		for (int dir = -1; dir <= 1; dir += 2)
 			if (TryBridge(ctx, from, dir, out PathStep s))
 				output.Add(s);
-		if (TryPillar(ctx, from, out PathStep p))
-			output.Add(p);
+		if (!Body.Bobbing(ctx.Grid, from) && TryPillar(ctx, from, out PathStep p))
+			output.Add(p); // a pillar is a jump: none while bobbing
 	}
 
 	public bool IsValid(MoveContext ctx, in PathStep step)

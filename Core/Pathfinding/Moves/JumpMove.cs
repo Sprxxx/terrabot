@@ -17,6 +17,8 @@ public sealed class JumpMove : IMoveType
 	public void Expand(MoveContext ctx, TilePos from, List<PathStep> output)
 	{
 		// Row masks of the grid, kept for the search (MoveContext.Mask): a template is tested a row at a time.
+		if (Body.Bobbing(ctx.Grid, from))
+			return; // no take-off while bobbing half over a flooded hole
 		GridMask mask = ctx.Mask;
 		if (!ctx.InSearch)
 			mask.Reset(ctx.Grid, from); // asked outside a search: read afresh

@@ -49,6 +49,10 @@ public sealed class PathExecutor
 	private bool lastJumpPressed;
 	private int lastHorizontal;
 	private bool prevGrounded;
+	/// <summary>Grounded, or resting in water over a floor (see <see cref="WetRestVY"/>): what the moves treat as standing.</summary>
+	private bool grounded;
+	/// <summary>Vertical speed (px/tick) under which a body in water over a floor counts as standing.</summary>
+	public const float WetRestVY = 0.25f;
 	/// <summary>Grounded this tick and last tick. A ceiling bonk zeroes velocity.Y for a single tick mid-air,
 	/// so landing decisions use this instead of <see cref="BodyState.Grounded"/>.</summary>
 	private bool settled;
@@ -139,8 +143,13 @@ public sealed class PathExecutor
 			return MoveInput.None;
 
 		totalTicks++;
-		settled = s.Grounded && prevGrounded;
-		prevGrounded = s.Grounded;
+		// Standing in water over something to stand on, the body bobs (vy about -0.2, never 0): that is standing too. Seen in
+		// game (measured run S3): 280 of 338 stalled steps began in water, every settle and arrival check waiting for a vy of 0.
+		TilePos at = Body.NodeOf(s, ctx.Physics);
+		bool standing = s.Grounded || Math.Abs(s.VY) <= WetRestVY && Body.InLiquid(ctx.Grid, at) && Body.HasSupport(ctx.Grid, at.X, at.Y);
+		settled = standing && prevGrounded;
+		prevGrounded = standing;
+		grounded = standing;
 		bool moved = totalTicks == 1 || Math.Abs(s.X - prevX) > 0.25f || Math.Abs(s.Y - prevY) > 0.25f;
 		prevX = s.X;
 		prevY = s.Y;
@@ -328,7 +337,7 @@ public sealed class PathExecutor
 		if (step.Kind is MoveKind.Drop or MoveKind.DropThrough && ticksInStep <= 2 && RidingAboveStart(node, step))
 			return RideOff(step, node);
 		// Walking passes through To while grounded every tick; a drop must actually have landed.
-		bool landed = step.Kind is MoveKind.Drop or MoveKind.DropThrough ? settled : s.Grounded;
+		bool landed = step.Kind is MoveKind.Drop or MoveKind.DropThrough ? settled : grounded;
 		if (landed && At(node, step.To)) {
 			advanced = true;
 			return true;

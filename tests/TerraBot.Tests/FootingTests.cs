@@ -571,4 +571,25 @@ public class FootingTests
 		new Core.Pathfinding.Moves.StepUpMove().Expand(ctx, new TilePos(2, 3), edges);
 		Assert.Contains(edges, e => e.To == new TilePos(3, 2));
 	}
+
+	[Fact]
+	public void HalfOverAFloodedHole_NoJumpIsPlanned_AWalkOffIs()
+	{
+		// Measured run S3: 220 jumps and pillars planned from spots half over a flooded hole, where the body bobs (vy -0.2)
+		// and vanilla starts no jump; they waited to take off until they timed out.
+		var g = ArrayTileGrid.Parse(
+			"..........",
+			"..........",
+			"..........",
+			"~~~~~~~~~~",
+			"###~######");
+		var bob = new TilePos(2, 3);
+		Assert.True(Body.Bobbing(g, bob));
+		var ctx = new MoveContext(g, PhysicsParams.Default);
+		var edges = new System.Collections.Generic.List<PathStep>();
+		foreach (IMoveType m in ctx.Moves)
+			m.Expand(ctx, bob, edges);
+		Assert.DoesNotContain(edges, e => e.Kind is MoveKind.Jump or MoveKind.Pillar);
+		Assert.Contains(edges, e => e.Kind == MoveKind.Walk);
+	}
 }

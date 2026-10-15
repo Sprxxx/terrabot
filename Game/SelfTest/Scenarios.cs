@@ -614,6 +614,14 @@ public sealed class Scenario
 				Check = r => r.LogHas("timed out") || r.LogHas("Re-plan") ? "a step timed out or re-planned" : null,
 			},
 			new() {
+				// Measured run S3: standing half over a 1-wide flooded hole the body bobs (vy -0.2) and vanilla starts no jump; 280
+				// of 338 stalled steps began in water. Step off the hole first, then jump.
+				Name = "jump_up_from_beside_a_flooded_hole",
+				Rows = Grid(Repeat("@.....................", 3), "@..........G..........", Repeat("@.........@@@@@@@@@@@@", 2),
+					"@~S~~~~~~~@@@@@@@@@@@@", "@@@~@@@@@@@@@@@@@@@@@@", "@@@~@@@@@@@@@@@@@@@@@@", "@@@@@@@@@@@@@@@@@@@@@@"),
+				Check = r => r.LogHas("timed out") ? "a step timed out" : null,
+			},
+			new() {
 				// Measured run S1: drops from a node with a half block in its feet row waited 330-650 ticks "at the edge" (71
 				// times): the body stood on the half block a row up and never fell. Now: plan again from where it stands.
 				Name = "dig_down_under_half_blocks",

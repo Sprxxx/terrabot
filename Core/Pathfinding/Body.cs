@@ -64,6 +64,14 @@ public static class Body
 
 	public static bool IsStandable(ITileGrid g, TilePos n) => IsStandable(g, n.X, n.Y);
 
+	/// <summary>
+	/// In liquid with a support column over liquid (half over a flooded hole): the body bobs there, never at rest, and vanilla
+	/// starts no jump (Player.JumpMovement wants velocity.Y == 0). Seen in game (measured run S3): 220 jumps and pillars planned
+	/// from such spots waited to take off until they timed out.
+	/// </summary>
+	public static bool Bobbing(ITileGrid g, TilePos n) =>
+		InLiquid(g, n) && (g.Get(n.X, n.Y + 1).IsLiquid() && !g.Get(n.X, n.Y + 1).CanStandOn() || g.Get(n.X + 1, n.Y + 1).IsLiquid() && !g.Get(n.X + 1, n.Y + 1).CanStandOn());
+
 	/// <summary>Does any body cell touch liquid (used for cost penalties).</summary>
 	public static bool InLiquid(ITileGrid g, TilePos n)
 	{
