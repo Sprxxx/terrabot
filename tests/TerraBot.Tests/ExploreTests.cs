@@ -187,6 +187,38 @@ public class WaterTests
 	}
 
 	[Fact]
+	public void AFrontierLookedAtAlready_IsNotGoneBackTo()
+	{
+		// Measured run S7: legs 10, 12 and 14 of one exploration went to the same frontier, (2024,476): the cells unseen
+		// near it stayed unseen however often the bot stood there, with "digging on" legs between, back and forth.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 40; y++)
+			rows.Add(new string('s', 90));
+		rows[20] = new string('s', 5) + new string('.', 45) + new string('s', 40);
+		rows[21] = new string('s', 5) + new string('.', 45) + new string('s', 40);
+		rows[22] = new string('s', 5) + new string('.', 43) + "S." + new string('s', 40);
+		rows.Add(new string('@', 90));
+		var g = new FakeGame(rows.ToArray());
+		for (int x = 6; x < 20; x++) // in the rock above the cave's far end: no looking reveals it
+			for (int y = 16; y < 20; y++)
+				g.NeverRevealed.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		var explore = new ExploreSkill("nothing", _ => false, ExploreBias.Down, heading: -1);
+		explore.Start(ctx);
+		for (int t = 0; t < 60 * 60 * 2 && explore.Legs < 8; t++) {
+			g.Refresh(ctx);
+			ctx.Tick = t;
+			if (explore.Tick(ctx) != SkillStatus.Running)
+				break;
+			g.Step(ctx);
+		}
+		var frontierLegs = ((TestLog)ctx.Log).Lines.Where(l => l.Contains("(frontier)")).ToList();
+		foreach (string l in frontierLegs)
+			output.WriteLine(l);
+		Assert.True(frontierLegs.Count <= 3, $"{frontierLegs.Count} legs to frontiers by the unseeable rock");
+	}
+
+	[Fact]
 	public void ACrystalInTheUndergroundDesert_IsGoneFor_InAFullSetOfArmour()
 	{
 		// Measured run S1: two crystals in the underground desert "in a biome the gear is too weak for" (its gate is defense

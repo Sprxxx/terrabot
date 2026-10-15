@@ -280,7 +280,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public float LightAt(int x, int y) => Light;
 	/// <summary>Cells not seen yet; everything else is revealed.</summary>
 	public readonly HashSet<TilePos> Unrevealed = new();
-	public bool IsRevealed(int x, int y) => !Unrevealed.Contains(new TilePos(x, y)); // off the grid counts as seen, like the game
+	public bool IsRevealed(int x, int y) => !Unrevealed.Contains(new TilePos(x, y)) && !NeverRevealed.Contains(new TilePos(x, y)); // off the grid counts as seen, like the game
+	/// <summary>Cells no looking reveals (unlit, or deep in rock).</summary>
+	public readonly HashSet<TilePos> NeverRevealed = new();
 	/// <summary>Cells within this many tiles of the bot get revealed as it moves (the map filling in).</summary>
 	public int RevealRadius = 10;
 

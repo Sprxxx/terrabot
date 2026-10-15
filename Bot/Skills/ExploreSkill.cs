@@ -34,6 +34,8 @@ public sealed class ExploreSkill : ISkill
 	public const int MinLegTiles = 6, MaxLegTiles = 60;
 	/// <summary>A frontier has an unseen cell within this many tiles.</summary>
 	public const int FrontierReach = 3;
+	/// <summary>About how far round the bot the map gets revealed underground (see <see cref="MinLegTiles"/>).</summary>
+	public const int SightTiles = 10;
 	public const int MaxLegs = 16;
 	public const int MaxTicks = 60 * 60 * 5;
 	public const int FallbackStep = 25, FallbackDepth = 20, FallbackSideways = 2;
@@ -236,6 +238,9 @@ public sealed class ExploreSkill : ISkill
 				heading = -heading;
 		}
 		lastFallbackFailed = legWasFallback && !legDown && (s == SkillStatus.Failed || wentNowhere);
+		ctx.LookedFrom.Add(ctx.Node);
+		if (ctx.LookedFrom.Count > MaxRemembered)
+			ctx.LookedFrom.RemoveAt(0);
 		walk.Stop(ctx);
 		walk = null;
 		return SkillStatus.Running;
@@ -265,7 +270,7 @@ public sealed class ExploreSkill : ISkill
 				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y))
 					continue;
 				var cand = new TilePos(x, y);
-				if (ctx.UnreachableTiles.Contains(cand))
+				if (ctx.UnreachableTiles.Contains(cand) || LookedAt(ctx, cand))
 					continue;
 				float score = d;
 				// Near an earlier leg's target: still worth it if unseen cells are there (NearUnseen), but less so.
@@ -296,6 +301,19 @@ public sealed class ExploreSkill : ISkill
 			for (int dy = -FrontierReach; dy <= FrontierReach; dy += FrontierReach)
 				if ((dx != 0 || dy != 0) && !w.IsRevealed(x + dx, y + dy))
 					return true;
+		return false;
+	}
+
+	/// <summary>
+	/// Its unseen cells were in sight from where a leg ended, and are unseen still: solid rock, or dark, not to be seen by
+	/// going there (Baritone keeps the chunks it has been in as explored). Seen in game (measured run S7): legs 10, 12 and
+	/// 14 of one exploration all went to the frontier at (2024,476), with "digging on" legs between, back and forth.
+	/// </summary>
+	private static bool LookedAt(BotContext ctx, TilePos c)
+	{
+		foreach (TilePos v in ctx.LookedFrom)
+			if (v.ChebyshevTo(c) + FrontierReach <= SightTiles)
+				return true;
 		return false;
 	}
 
