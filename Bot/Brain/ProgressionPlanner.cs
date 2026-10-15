@@ -96,7 +96,6 @@ public sealed class ProgressionPlanner
 	public const int NightOutDefense = 6;
 	/// <summary>Rows below the surface (or the spawn) where the night's mining starts.</summary>
 	public const int NightMineRows = 25;
-	public const int NightMineArrivedTiles = 8;
 	/// <summary>After the walk down for the night's mining fails, the house for this long (rest of the night) instead.</summary>
 	public const int NightMineRetryTicks = 9 * 3600;
 	private long nightMineFailedAt = long.MinValue / 2;
@@ -559,7 +558,10 @@ public sealed class ProgressionPlanner
 		// With a house: the night is spent in it, unless the work is safely underground (zombies and demon eyes are on
 		// the surface). Seen in game: a zombie killed the bot walking home across the surface at night.
 		if (ctx.IsNight && ctx.Combat.Defense < NightOutDefense && ctx.Tick - stayHomeFailedAt >= StayHomeRetryTicks && HomeInside(ctx) is TilePos inside
-			&& inside.ChebyshevTo(ctx.Node) <= NightHomeTiles && NightWorkOnTheSurface(skill, ctx)) {
+			&& inside.ChebyshevTo(ctx.Node) <= NightHomeTiles && NightWorkOnTheSurface(skill, ctx)
+			// A walk to the house's own stations is a walk home: seen in game (measured run S6), nightfall on the way to the
+			// furnace 4 tiles from the house, with the ore for 8 bars; home, and 9 game hours in it, the ore unsmelted.
+			&& !(skill is WalkToSkill { Target: var to } && to.ChebyshevTo(inside) <= HomeStationTiles)) {
 			// Armed, a mining job goes on underground, as a player spends the night in the mine (the caves are the same
 			// by night): straight down below the spawn first, then mining there. Seen in game (measured run E): 37% of the
 			// run was nights at home, most of them instead of mining near the surface.
@@ -567,11 +569,11 @@ public sealed class ProgressionPlanner
 			// (measured run R1): before the first ore sword, two whole nights at home, over a third of those two days.
 			if (skill is MineSkill && ctx.SpawnTile is TilePos spawn && ctx.SurfaceY > 0
 				&& ctx.Tick - nightMineFailedAt >= NightMineRetryTicks) {
-				var below = new TilePos(spawn.X, Math.Max(ctx.SurfaceY, spawn.Y) + NightMineRows);
-				if (ctx.Node.ChebyshevTo(below) > NightMineArrivedTiles) {
-					Status = $"night: down into the ground at {below} to mine there ({Status})";
-					return new WalkToSkill(new Core.Pathfinding.GoalNearTile(below, 3, ctx.Physics)) { Quiet = true, Underground = true };
-				}
+				// Down to a depth, by whatever way down there is (Baritone's GoalYLevel), not to one tile: seen in game (measured
+				// run S6), the tile under the spawn had "no path after 3 attempts", and so the night was spent in the house.
+				int row = Math.Max(ctx.SurfaceY, spawn.Y) + NightMineRows;
+				Status = $"night: down into the ground to row {row} to mine there ({Status})";
+				return new WalkToSkill(new Core.Pathfinding.GoalRow(row, spawn.X, ctx.Physics) { Below = true, Accept = t => !ctx.OffLimits(t) }) { Quiet = true, Underground = true };
 			}
 			Status = $"night: staying in the house instead of {skill.Name} ({Status})";
 			return new StayHomeSkill(inside);

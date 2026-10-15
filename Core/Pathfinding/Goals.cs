@@ -18,11 +18,13 @@ public interface IGoal
 /// surface" as a player goes up, by the cheapest way (a cave, or digging and pillaring), not to one tile picked on the
 /// surface. Seen in game (measured run R1): walks to a surface tile 150 rows up wandered the caves in partial segments,
 /// came to nothing, and a new tile was picked each time; the bot went back and forth along a cave floor for hours.
+/// With <see cref="Below"/>, feet on the row or below it: "down to mining depth", by whatever way down there is.
 /// </summary>
 public sealed class GoalRow : IGoal
 {
-	private readonly float riseTicksPerTile;
+	private readonly float riseTicksPerTile, fallTicksPerTile;
 	public int Row { get; }
+	public bool Below { get; init; }
 	public TilePos Anchor { get; }
 	public Func<TilePos, bool> Accept { get; init; }
 
@@ -31,11 +33,12 @@ public sealed class GoalRow : IGoal
 		Row = row;
 		Anchor = new TilePos(anchorX, row);
 		riseTicksPerTile = Body.TileSize / Math.Max(0.5f, p.JumpSpeed);
+		fallTicksPerTile = Body.TileSize / Math.Max(0.5f, p.MaxFallSpeed);
 	}
 
-	public bool IsGoal(TilePos n) => n.Y <= Row && (Accept == null || Accept(n));
-	public float Heuristic(TilePos n) => n.Y > Row ? (n.Y - Row) * riseTicksPerTile : 0f;
-	public override string ToString() => $"AtOrAboveRow{Row}";
+	public bool IsGoal(TilePos n) => (Below ? n.Y >= Row : n.Y <= Row) && (Accept == null || Accept(n));
+	public float Heuristic(TilePos n) => Below ? (n.Y < Row ? (Row - n.Y) * fallTicksPerTile : 0f) : n.Y > Row ? (n.Y - Row) * riseTicksPerTile : 0f;
+	public override string ToString() => Below ? $"AtOrBelowRow{Row}" : $"AtOrAboveRow{Row}";
 }
 
 /// <summary>Exactly this node (plan repair: rejoin the old plan where one of its steps starts).</summary>

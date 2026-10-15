@@ -528,6 +528,52 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AtNight_AWalkToTheHousesOwnFurnace_GoesOn()
+	{
+		// Measured run S6: nightfall on the way to the furnace 4 tiles from the house, with ore for 8 bars: home, and 9 game
+		// hours in it with the ore unsmelted.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronOre] = 30;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ISkill night = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {night?.Describe()}");
+		Assert.IsNotType<StayHomeSkill>(night);
+		Assert.DoesNotContain("staying in the house", p.Status);
+	}
+
+	[Fact]
+	public void AtNight_TheWayDownToMine_IsToADepth_NotToOneTile()
+	{
+		// Measured run S6: the night's walk to one tile under the spawn had "no path after 3 attempts": the night in the house.
+		FakeGame g = ProgressionTests.Mine(width: 120, sky: 45, oreRows: 0);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		ctx.SurfaceY = 40;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.IsNight = true;
+		g.Refresh(ctx);
+		var down = Assert.IsType<WalkToSkill>(p.Next(ctx));
+		down.Start(ctx);
+		var row = Assert.IsType<Core.Pathfinding.GoalRow>(down.Goal);
+		Assert.True(row.Below);
+		Assert.True(row.IsGoal(new TilePos(90, row.Row + 3)));
+		Assert.False(row.IsGoal(new TilePos(3, row.Row - 1)));
+	}
+
+	[Fact]
 	public void AtNightfall_WorkBegunByDay_IsPlannedAgain_AndTheBotGoesHome()
 	{
 		// world_eye run 68: a walk begun by day came up at night among zombies, and one killed the bot.
