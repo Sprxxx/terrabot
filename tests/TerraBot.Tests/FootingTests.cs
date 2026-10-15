@@ -521,4 +521,18 @@ public class FootingTests
 		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(game, ctx, walk, 60 * 20));
 		Assert.False(game.Grid.Get(4, 24).IsSolid());
 	}
+
+	[Fact]
+	public void KilledByTheSpawn_LeavesNoDangerZoneThere_ButDeepBelowItDoes()
+	{
+		// Measured run P1: two zombies killed the bot by the house at night; the spawn fell inside the death's zone, every job
+		// from the respawn failed "off limits" at once, and auto mode stopped.
+		FakeGame game = EarlyGameTests.Field(40);
+		BotContext ctx = game.CreateContext(null);
+		ctx.SpawnTile = new TilePos(100, 280);
+		ctx.NoteDeathByEnemy(new TilePos(94, 288));
+		Assert.False(ctx.OffLimits(new TilePos(100, 280)));
+		ctx.NoteDeathByEnemy(new TilePos(100, 380)); // deep in the caves below it: stay away from there for now
+		Assert.True(ctx.OffLimits(new TilePos(100, 380)));
+	}
 }

@@ -160,7 +160,20 @@ public sealed class BotContext
 	public System.Collections.Generic.List<(TilePos At, long Until, int Radius)> DangerZones { get; } = new();
 	public const int DangerZoneRadius = 30, DangerZoneTicks = 60 * 60 * 30;
 
-	public void NoteDeathByEnemy(TilePos at) => NoteDanger(at, DangerZoneTicks);
+	public void NoteDeathByEnemy(TilePos at)
+	{
+		// Not round the spawn on the surface: that is where the bot comes back to, and living there is answered by the house
+		// at night, not by staying away. Seen in game (measured run P1): two zombies killed it by the house at night, the
+		// spawn fell inside the zone, every job from the respawn failed "off limits" at once, and auto mode stopped.
+		if (SpawnTile is TilePos spawn && Math.Abs(at.X - spawn.X) <= HomeGroundTiles && at.Y - spawn.Y <= HomeGroundRows) {
+			Log.Info($"Killed at {at}, by the spawn: no danger zone there");
+			return;
+		}
+		NoteDanger(at, DangerZoneTicks);
+	}
+
+	/// <summary>Round the spawn (columns either side, rows below it) where a death marks no danger zone.</summary>
+	public const int HomeGroundTiles = 45, HomeGroundRows = 20;
 
 	/// <summary>A danger zone at <paramref name="at"/> for <paramref name="ticks"/>, <paramref name="radius"/> tiles round.</summary>
 	public void NoteDanger(TilePos at, long ticks, int radius = DangerZoneRadius)

@@ -68,7 +68,12 @@ public sealed class BotBrain
 			watched = null;
 			return false;
 		}
+		// The work's own state, not its sub-skills': a walk that restarts every tick ("planning", "done", "waiting to land")
+		// changed the text each tick and the watchdog never fired (measured run P2: 6 game days at one spot).
 		string state = Work.Describe();
+		int sub = state.IndexOf(" > ", System.StringComparison.Ordinal);
+		if (sub >= 0)
+			state = state.Substring(0, sub);
 		if (!ReferenceEquals(watched, Work) || ctx.Node.ChebyshevTo(watchedAt) >= ProgressTiles || state != watchedState) {
 			watched = Work;
 			watchedAt = ctx.Node;

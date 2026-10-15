@@ -61,6 +61,8 @@ public sealed class MineSkill : ISkill
 	private int lastHave;
 	private int unreachableInARow;
 	private TilePos? lastMined;
+	/// <summary>Vertical speed (px/tick) under which the body counts as held still for mining though not grounded.</summary>
+	public const float HeldStillVY = 0.5f;
 	private int veinExtra;
 	private bool veining;
 
@@ -202,7 +204,9 @@ public sealed class MineSkill : ISkill
 		}
 		var reach = new GoalReachTile(t, ctx.Physics, ctx.PickRangeBoost);
 		TilePos node = ctx.Node;
-		if (ctx.Body.Grounded && reach.IsGoal(node)) {
+		// Or held still off the ground (a ledge corner, a web): a player mines from there too. Seen in game (measured run P2):
+		// in reach but never grounded, the walk said "done" and mining waited for footing, round and round for 6 game days.
+		if ((ctx.Body.Grounded || System.Math.Abs(ctx.Body.VY) < HeldStillVY) && reach.IsGoal(node)) {
 			arrivedOutOfReach = 0;
 			sub?.Stop(ctx);
 			sub = null;
@@ -235,7 +239,7 @@ public sealed class MineSkill : ISkill
 			sub = null;
 			// "Arrived" but still out of reach: seen in the settle scenario, the walk's search started on a node beside the
 			// bot that reaches the tile, said "done" at once, and the two went round in a loop for 50,000 ticks.
-			if (ctx.Body.Grounded && ++arrivedOutOfReach >= MaxArrivedOutOfReach) {
+			if (++arrivedOutOfReach >= MaxArrivedOutOfReach) {
 				arrivedOutOfReach = 0;
 				return GiveUp(ctx, t, $"walked there {MaxArrivedOutOfReach} times and still out of reach from {ctx.Node}");
 			}
