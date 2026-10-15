@@ -207,4 +207,21 @@ public class WaterTests
 		Assert.Null(MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
 		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, c)); // ore there still waits for better gear
 	}
+
+	[Fact]
+	public void ACrystalJustBelowTheDepthLimit_IsGoneFor_InAFullSetOfArmour()
+	{
+		// Measured run S4: four crystals seen below row 701 left alone while the bot explored six game days and found one.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 320; y++)
+			rows.Add(y == 9 ? ".....S" + new string('.', 54) : y < 10 ? new string('.', 60) : new string('#', 60));
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.CavernY = 30;
+		ctx.Combat.Defense = 9; // full iron: DeepestRow = caverns + 150
+		var c = new TilePos(20, ctx.DeepestRow + 50);
+		Assert.Null(MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
+		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, c)); // ore that deep waits
+		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, new TilePos(20, ctx.DeepestRow + MineSkill.ValuableDepthMargin + 5), valuable: true));
+	}
 }

@@ -331,8 +331,11 @@ public sealed class MineSkill : ISkill
 			return "sand or silt on top would fall";
 		if (float.IsInfinity(moves.Blocks.BreakTicks(c.X, c.Y)) && !ctx.World.CanMineTarget(c.X, c.Y))
 			return "the pickaxe cannot break it";
-		if (c.Y > ctx.DeepestRow)
-			return $"below row {ctx.DeepestRow}, deeper than the gear allows";
+		// A crystal a little deeper than ore, in a full set of armour (measured run S4: four crystals seen below row 701, while
+		// the bot explored six game days for others and found one).
+		int deepest = valuable && ctx.Combat.Defense >= BotContext.CavernDefense && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin ? ctx.DeepestRow + ValuableDepthMargin : ctx.DeepestRow;
+		if (c.Y > deepest)
+			return $"below row {deepest}, deeper than the gear allows";
 		// A crystal in a biome: worth going in for in a full set of armour (defense 8+, CavernDefense), as a player does; the
 		// biome's own gate is defense 16, more than full iron or silver gives (measured run S1: two crystals in the underground
 		// desert left alone while the bot explored for others for three game days).
@@ -342,6 +345,9 @@ public sealed class MineSkill : ISkill
 	}
 
 	private bool Valuable(BotContext ctx) => ItemType == ctx.Ids.LifeCrystal;
+
+	/// <summary>Rows below the gear's depth limit a life crystal is still gone for, in a full set of armour.</summary>
+	public const int ValuableDepthMargin = 100;
 
 	/// <summary>Liquid on a side or corner: mining it means swimming (or flooding the tunnel). Players leave such ore without gear to breathe.</summary>
 	public static bool NextToLiquid(ITileGrid g, TilePos c)
