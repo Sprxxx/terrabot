@@ -230,6 +230,7 @@ public sealed class ProgressionPlanner
 		KnownStations.Clear();
 		notedAt.Clear();
 		homeStationAt.Clear();
+		stationHereAt.Clear();
 		stocked.Clear();
 		Status = "";
 		Complete = false;
@@ -279,12 +280,17 @@ public sealed class ProgressionPlanner
 		int heart = ctx.Knowledge?.SourceOf(ctx.Ids.LifeCrystal).TileType ?? -1;
 		if (heart <= 0)
 			return null;
-		foreach (TilePos c in ctx.World.FindTiles(heart, ctx.Node, CrystalRadius))
+		foreach (TilePos c in ctx.World.FindTiles(heart, ctx.Node, CrystalRadius)) {
 			// Not deeper than the gear allows (mining skips those too): seen in game, a crystal 7 rows below the limit
 			// interrupted mining every second, the crystal job failing at once each time.
 			// As mining itself would judge it (MineSkill.WouldMine), so the job it gets is one it takes on.
-			if (ctx.World.CanMineTarget(c.X, c.Y) && MineSkill.WouldMine(ctx, ctx.Moves, c))
+			string why = !ctx.World.CanMineTarget(c.X, c.Y) ? "the pickaxe cannot break it" : MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true);
+			if (why == null)
 				return c;
+			// Said once per crystal and reason: seen in game, the bot ran past crystals and nothing in the log said why.
+			if (ctx.CrystalNotes.Add((c.X >> 1, c.Y >> 1, why)))
+				ctx.Log.Info($"Life crystal at {c} seen, left alone: {why}");
+		}
 		return null;
 	}
 
@@ -318,6 +324,8 @@ public sealed class ProgressionPlanner
 				notedAt[tile] = ctx.Tick;
 				if (ctx.IsNight && (tile == ctx.Ids.WorkBenchTile || tile == ctx.Ids.FurnaceTile))
 					homeStationAt[tile] = ctx.Tick; // made at home tonight (StationAtHomeTonight): not again, wherever it ended up
+				if (tile == ctx.Ids.WorkBenchTile || tile == ctx.Ids.FurnaceTile)
+					stationHereAt[tile] = ctx.Tick;
 			}
 		}
 		if (skill is ShelterSkill)
@@ -347,9 +355,26 @@ public sealed class ProgressionPlanner
 				NoteFruitless(mine.ItemType);
 		}
 		if (skill is CraftSkill && status == SkillStatus.Failed && skill.FailureReason.StartsWith(nameof(CraftResult.NeedsStation))) {
-			stationMissed = true;
-			ctx.Log.Info("Auto: the game saw no station in range for that craft; walking right up to it first");
+			// Walked right up to it and still none in range: the station is not where it is remembered (placed elsewhere,
+			// or gone). Seen in game (measured run R1): "walking right up to it" and the craft failing, 20 times in a row.
+			if (walkedUpToStation && ++stationMissesInARow >= MaxStationMisses && stationWalkType >= 0) {
+				ctx.Log.Info($"Auto: no {ctx.Knowledge.TileName(stationWalkType)} in range at {KnownStations.GetValueOrDefault(stationWalkType)} after walking right up to it {stationMissesInARow} times; forgetting it");
+				KnownStations.Remove(stationWalkType);
+				stationMissesInARow = 0;
+				stationMissed = false;
+			}
+			else {
+				stationMissed = true;
+				ctx.Log.Info("Auto: the game saw no station in range for that craft; walking right up to it first");
+			}
+			walkedUpToStation = false;
 		}
+		if (skill is CraftSkill && status == SkillStatus.Succeeded) {
+			stationMissesInARow = 0;
+			walkedUpToStation = false;
+		}
+		if (ReferenceEquals(skill, stationWalk) && status == SkillStatus.Succeeded && stationMissed)
+			walkedUpToStation = true;
 		if (skill is CraftSkill && status == SkillStatus.Succeeded || ReferenceEquals(skill, stationWalk) && status == SkillStatus.Succeeded)
 			stationMissed = false;
 		if (ReferenceEquals(skill, stationWalk) && stationWalkType >= 0) {
@@ -530,7 +555,9 @@ public sealed class ProgressionPlanner
 			// Armed, a mining job goes on underground, as a player spends the night in the mine (the caves are the same
 			// by night): straight down below the spawn first, then mining there. Seen in game (measured run E): 37% of the
 			// run was nights at home, most of them instead of mining near the surface.
-			if (skill is MineSkill && ctx.Combat.WeaponDamage >= BotContext.GoodWeaponDamage && ctx.SpawnTile is TilePos spawn && ctx.SurfaceY > 0
+			// Armed or not: the caves are as by day, and the day's mining is done with whatever sword there is. Seen in game
+			// (measured run R1): before the first ore sword, two whole nights at home, over a third of those two days.
+			if (skill is MineSkill && ctx.SpawnTile is TilePos spawn && ctx.SurfaceY > 0
 				&& ctx.Tick - nightMineFailedAt >= NightMineRetryTicks) {
 				var below = new TilePos(spawn.X, Math.Max(ctx.SurfaceY, spawn.Y) + NightMineRows);
 				if (ctx.Node.ChebyshevTo(below) > NightMineArrivedTiles) {
@@ -672,6 +699,8 @@ public sealed class ProgressionPlanner
 			if (!NearStation(ctx, station)) {
 				if (StationAtHomeTonight(station, claims, depth, ctx) is ISkill home)
 					return home;
+				if (StationHereInstead(station, claims, depth, ctx) is ISkill here)
+					return here;
 				if (RecallHome(ctx, KnownStations[station]) is ISkill recall)
 					return recall;
 				stationWalk = WalkToStation(KnownStations[station], ctx);
@@ -680,6 +709,35 @@ public sealed class ProgressionPlanner
 			}
 		string have = string.Join(", ", recipe.Ingredients.Select(i => $"{k.ItemName(i.Item)} {ctx.Inventory.CountAny(i.Accepts)}/{i.Stack * crafts}"));
 		return Do($"crafting {more} {name} ({have})", new CraftSkill(item, target));
+	}
+
+	/// <summary>A work bench or furnace farther than this (tiles) is made anew where the bot is, if the bag holds what it takes.</summary>
+	public const int FarStationTiles = 100;
+	/// <summary>A station made where the bot is is not made there again for this long (wherever it ended up).</summary>
+	public const int StationHereAgainTicks = 3600;
+	private readonly Dictionary<int, long> stationHereAt = new();
+
+	/// <summary>
+	/// The work bench or furnace for a craft is far away, and the bag holds what one takes: make one here, as a player
+	/// carries the makings of them down the mine. Seen in game (measured run R1): ore found 550 tiles from home, and a walk
+	/// back through the caves to smelt it, nine game hours. Null when that is not the case.
+	/// </summary>
+	private ISkill StationHereInstead(int station, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		if (station != ctx.Ids.WorkBenchTile && station != ctx.Ids.FurnaceTile || !KnownStations.TryGetValue(station, out TilePos at)
+			|| at.ChebyshevTo(ctx.Node) <= FarStationTiles || stationHereAt.TryGetValue(station, out long made) && ctx.Tick - made < StationHereAgainTicks)
+			return null;
+		IGameKnowledge k = ctx.Knowledge;
+		IReadOnlyList<int> items = k.ItemsPlacing(station);
+		if (items.Count == 0)
+			return null;
+		int carried = items.FirstOrDefault(i => ctx.Inventory.Count(i) > 0, -1);
+		if (carried >= 0)
+			return Do($"placing a {k.ItemName(carried)} here (the one at {at} is {at.ChebyshevTo(ctx.Node)} tiles away)", new PlaceItemSkill(carried));
+		RecipeInfo r = BestRecipe(items[0], ctx);
+		if (r == null || !r.Ingredients.All(i => ctx.Inventory.CountAny(i.Accepts) >= i.Stack))
+			return null; // not without fetching things: the walk then
+		return Resolve(new HaveItem(items[0], 1, k.ItemName(items[0])), claims, depth + 1, ctx);
 	}
 
 	/// <summary>A work bench or furnace farther than this (tiles) from the house's inside spot is not at home.</summary>
@@ -1175,7 +1233,28 @@ public sealed class ProgressionPlanner
 	private TilePos? travelDest;
 	/// <summary>The way out to the surface (or the spawn) a trip set off on, held until reached.</summary>
 	private TilePos? exitTarget;
+	private bool exitIsRow;
 	private string exitWhy = "";
+
+	/// <summary>
+	/// The walk out: up to the exit's row (anywhere not off limits), or to the exit tile; from deep down, to a tile it is
+	/// up first (a walk to one far tile wandered the caves, segment by segment, and came to nothing: measured run R1).
+	/// </summary>
+	private WalkToSkill ExitWalk(BotContext ctx, TilePos exit)
+	{
+		if (exitIsRow)
+			return new WalkToSkill(new Core.Pathfinding.GoalRow(exit.Y, exit.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true };
+		return UpFirst(ctx, exit) ?? new WalkToSkill(new Core.Pathfinding.GoalNearTile(exit, 4, ctx.Physics)) { Quiet = true, ToSurface = true };
+	}
+
+	/// <summary>Deep below a far target: a walk up to near the surface's height first (null if not needed).</summary>
+	private static WalkToSkill UpFirst(BotContext ctx, TilePos target)
+	{
+		if (ctx.SurfaceY <= 0 || ctx.Node.Y <= ctx.SurfaceY + TravelFromSurfaceRows || target.Y > ctx.SurfaceY + TravelFromSurfaceRows
+			|| target.ChebyshevTo(ctx.Node) < 40)
+			return null;
+		return new WalkToSkill(new Core.Pathfinding.GoalRow(ctx.SurfaceY + TravelFromSurfaceRows - 3, ctx.Node.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true };
+	}
 	public const int TravelArrivedTiles = 8;
 	/// <summary>How far (tiles) along the surface to go to look for ore in new ground.</summary>
 	public const int TravelTiles = 120;
@@ -1223,11 +1302,10 @@ public sealed class ProgressionPlanner
 		// out again from wherever a fight left the bot, it came out different, and each time a new 3-second plan began
 		// (user report, 2026-10-14: "changes its mind and jumps out of the hole to do something else").
 		if (exitTarget is TilePos exit) {
-			if (exit.ChebyshevTo(ctx.Node) <= TravelArrivedTiles)
+			if (exitIsRow ? ctx.Node.Y <= exit.Y : exit.ChebyshevTo(ctx.Node) <= TravelArrivedTiles)
 				exitTarget = null;
 			else
-				return Do($"no more {name} found around here; {exitWhy} at {exit}",
-					new WalkToSkill(new Core.Pathfinding.GoalNearTile(exit, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
+				return Do($"no more {name} found around here; {exitWhy} at {(exitIsRow ? $"row {exit.Y}" : exit.ToString())}", ExitWalk(ctx, exit));
 		}
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
@@ -1237,14 +1315,16 @@ public sealed class ProgressionPlanner
 			// fight and started again from wherever the bot was, drifted 100 tiles into the desert, where a charger killed it.
 			if ((ctx.OffLimits(ctx.Node) || ctx.BiomeGround(up) || ctx.OffLimitsBelow(up)) && ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > 8) {
 				exitTarget = spawn;
+				exitIsRow = false;
 				exitWhy = "out of here and back to the spawn before travelling";
 			}
 			else {
-				exitTarget = up;
+				// Up, by the cheapest way, to near the surface's height (GoalRow), not to one tile on it.
+				exitTarget = new TilePos(ctx.Node.X, ctx.SurfaceY + TravelFromSurfaceRows - 3);
+				exitIsRow = true;
 				exitWhy = "up to the surface before travelling";
 			}
-			return Do($"no more {name} found around here; {exitWhy} at {exitTarget}",
-				new WalkToSkill(new Core.Pathfinding.GoalNearTile(exitTarget.Value, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
+			return Do($"no more {name} found around here; {exitWhy} at {(exitIsRow ? $"row {exitTarget.Value.Y}" : exitTarget.ToString())}", ExitWalk(ctx, exitTarget.Value));
 		}
 		return Do($"no more {name} found around here; {(fresh ? "travelling" : "on")} to new ground at {dest}",
 			new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, 4, ctx.Physics)) { Quiet = true, Travel = true });
@@ -1272,7 +1352,7 @@ public sealed class ProgressionPlanner
 				return Do($"no more {name} found around here and nowhere to travel; drinking a recall potion to look again from the spawn",
 					new UseItemSkill(ctx.Ids.RecallPotion));
 			return Do($"no more {name} found around here and nowhere to travel; back to the spawn at {spawn} to look from there",
-				new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
+				UpFirst(ctx, spawn) ?? new WalkToSkill(new Core.Pathfinding.GoalNearTile(spawn, 4, ctx.Physics)) { Quiet = true, ToSurface = true });
 		}
 		return null;
 	}
@@ -1328,6 +1408,9 @@ public sealed class ProgressionPlanner
 	}
 
 	private bool stationMissed;
+	private bool walkedUpToStation;
+	private int stationMissesInARow;
+	public const int MaxStationMisses = 2;
 	private WalkToSkill stationWalk;
 	private int stationWalkType = -1;
 	/// <summary>A station at home farther than this (tiles) is reached by a recall potion if one is carried.</summary>

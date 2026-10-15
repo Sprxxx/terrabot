@@ -350,13 +350,10 @@ public sealed class BotBrain
 		// 3/4 breath with air 22 rows up, and drowned on the way.
 		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax && SurfaceSkill.HeadUnder(ctx)
 			&& (ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 || ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks)) {
-			ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}, and avoiding this water from now on");
-			// Remember the spot: no ore around here, no exploring legs here (seen in game: back to the same flooded cave until it drowned).
-			TilePos here = ctx.Node;
-			for (int dx = -DrownAvoidRadius; dx <= DrownAvoidRadius; dx++)
-				for (int dy = -DrownAvoidRadius; dy <= DrownAvoidRadius; dy++)
-					ctx.UnreachableTiles.Add(new TilePos(here.X + dx, here.Y + dy));
-			ctx.Explored.Add(here);
+			ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}");
+			// No more marking the water's surroundings unreachable (13x13 tiles each time): surfacing works (no drownings in
+			// runs N1, N2), and ore and crystals by water are worth a breath, as for a player (user, 2026-10-14).
+			ctx.Explored.Add(ctx.Node);
 			BeginOverride(new SurfaceSkill(), ctx);
 		}
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
@@ -394,7 +391,8 @@ public sealed class BotBrain
 			bool onAWalk = Override == null && Work is WalkToSkill;
 			if ((Current is MineSkill or ExploreSkill or HuntSkill || onAWalk) && ProgressionPlanner.NextChest(ctx) is ChestInfo seen)
 				RequestReplan($"a chest at {seen.TopLeft} came into sight");
-			else if (Current is ExploreSkill or HuntSkill || onAWalk || Current is MineSkill m && m.ItemType != ctx.Ids.LifeCrystal) {
+			// A life crystal: whatever the work (building, gathering, crafting, going home...), only not during a reflex.
+			else if (Override == null && Work != null && !(Work is MineSkill m && m.ItemType == ctx.Ids.LifeCrystal)) {
 				if (ProgressionPlanner.LifeCrystalUseful(ctx) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart)
 					RequestReplan($"a life crystal at {heart} came into sight");
 			}

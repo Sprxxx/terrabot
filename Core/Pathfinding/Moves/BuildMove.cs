@@ -79,11 +79,16 @@ public sealed class BuildMove : IMoveType
 			return false; // blocked, or a plain walk
 		TilePos cell = BridgeCell(from, dir);
 		CellKind k = g.Get(cell.X, cell.Y);
-		if (k.CanStandOn() || k.HasLava() || !ctx.CanPlaceAt(cell.X, cell.Y))
+		if (k.CanStandOn() || k.HasLava())
 			return false;
-		float cost = ctx.WalkTileCost + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks;
-		step = new PathStep(MoveKind.Walk, from, to, ctx.Adjust(cost, to),
-			Actions: new[] { new BlockAction(ActionKind.Place, cell) }, Source: this);
+		float clear = ClearForBlock(ctx, cell);
+		if (float.IsPositiveInfinity(clear))
+			return false;
+		float cost = ctx.WalkTileCost + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks + clear;
+		BlockAction[] actions = clear > 0f
+			? new[] { new BlockAction(ActionKind.Break, cell), new BlockAction(ActionKind.Place, cell) }
+			: new[] { new BlockAction(ActionKind.Place, cell) };
+		step = new PathStep(MoveKind.Walk, from, to, ctx.Adjust(cost, to), Actions: actions, Source: this);
 		return true;
 	}
 
@@ -107,7 +112,10 @@ public sealed class BuildMove : IMoveType
 		// The block goes into the feet cell, inside the body: solid on the (unedited) grid only if an earlier step of the
 		// plan mined it (digging up a shaft), so then it is open by the time this step runs (as DigMove's InBody).
 		bool dugEarlier = k.IsSolid();
-		if (!dugEarlier && (k.CanStandOn() || k.HasLava() || !ctx.CanPlaceAt(cell.X, cell.Y)))
+		if (!dugEarlier && (k.CanStandOn() || k.HasLava()))
+			return false;
+		float clearCell = dugEarlier ? 0f : ClearForBlock(ctx, cell);
+		if (float.IsPositiveInfinity(clearCell))
 			return false;
 		var to = new TilePos(from.X, from.Y - 1);
 		float cost = ctx.PillarAirTicks + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks + ctx.PillarRiskTicks;
@@ -117,12 +125,31 @@ public sealed class BuildMove : IMoveType
 				return false;
 			cost += bc;
 		}
-		var actions = new List<BlockAction>(3);
+		cost += clearCell;
+		var actions = new List<BlockAction>(4);
 		foreach (TilePos b in breaks)
 			actions.Add(new BlockAction(ActionKind.Break, b));
+		// A minecart track (or such) in the feet cell: mined first, standing on the start, then the block goes in.
+		if (clearCell > 0f)
+			actions.Add(new BlockAction(ActionKind.Break, cell));
 		actions.Add(new BlockAction(ActionKind.Place, cell));
 		step = new PathStep(MoveKind.Pillar, from, to, ctx.Adjust(cost, to), Actions: actions.ToArray(), Source: this);
 		return true;
+	}
+
+	/// <summary>
+	/// Can a block go into the cell: 0 if it can now, the mining cost if a non-solid tile in it must come out first (a
+	/// minecart track: passable, but nothing goes into its cell), +inf if neither. Seen in game (measured run R1): on a track
+	/// along a cave floor, no pillar or bridge from it was possible, and "up to the surface" found no way, for hours.
+	/// </summary>
+	private static float ClearForBlock(MoveContext ctx, TilePos cell)
+	{
+		if (ctx.CanPlaceAt(cell.X, cell.Y))
+			return 0f;
+		if (!ctx.CanBreak || ctx.Grid.Get(cell.X, cell.Y).IsSolid())
+			return float.PositiveInfinity;
+		float t = ctx.BreakTicks(cell.X, cell.Y);
+		return t > 0f && !float.IsInfinity(t) ? t * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks : float.PositiveInfinity;
 	}
 
 	/// <summary>The row above the head must be free (the body ends one row higher).</summary>

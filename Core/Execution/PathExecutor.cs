@@ -58,6 +58,18 @@ public sealed class PathExecutor
 	private string notice;
 	private int actionIndex;
 	private bool actionsStarted;
+	private int actionTicks;
+	/// <summary>Ticks of trying one placement (a swing is 15) or one break (the hardest blocks the planner allows) before the step is stuck.</summary>
+	public const int MaxPlaceTicks = 45, MaxBreakTicks = 240;
+
+	/// <summary>A non-solid tile a break action clears before a block goes in its cell (a minecart track): still there?</summary>
+	private bool BreakablePlaceBlocker(TilePos c)
+	{
+		if (ctx.Blocks == null || ctx.Grid.Get(c.X, c.Y).IsSolid() || ctx.Blocks.CanPlaceAt(c.X, c.Y))
+			return false;
+		float t = ctx.Blocks.BreakTicks(c.X, c.Y);
+		return t > 0f && !float.IsInfinity(t);
+	}
 
 	public IReadOnlyList<PathStep> Steps => steps;
 	public int StepIndex { get; private set; }
@@ -224,6 +236,7 @@ public sealed class PathExecutor
 		StepIndex++;
 		ticksInStep = 0;
 		actionIndex = 0;
+		actionTicks = 0;
 		actionsStarted = false;
 		jumpPhase = JumpPhase.Align;
 		jumpTick = 0;
@@ -415,10 +428,17 @@ public sealed class PathExecutor
 		while (actionIndex < step.Actions.Count) {
 			BlockAction a = step.Actions[actionIndex];
 			CellKind k = ctx.Grid.Get(a.Cell.X, a.Cell.Y);
-			bool done = a.Kind == ActionKind.Break ? !k.IsBlockTile() : k.IsSolid();
+			bool done = a.Kind == ActionKind.Break ? !k.IsBlockTile() && !BreakablePlaceBlocker(a.Cell) : k.IsSolid();
 			if (done) {
 				actionIndex++;
+				actionTicks = 0;
 				continue;
+			}
+			// A block that will not go in (or come out) is said at once, not after the whole step's budget: seen in game
+			// (measured run R1), 64 placements tried for 134-734 ticks each before the step gave up.
+			if (++actionTicks > (a.Kind == ActionKind.Place ? MaxPlaceTicks : MaxBreakTicks)) {
+				Finish(ExecStatus.Stuck, $"step {StepIndex} {step}: {(a.Kind == ActionKind.Place ? "placing a block at" : "breaking")} {a.Cell} has not happened in {actionTicks} ticks");
+				return -1;
 			}
 			CurrentAction = a;
 			input.Tool = a.Kind == ActionKind.Break ? ToolRequest.Pickaxe : ToolRequest.Block;
@@ -454,7 +474,7 @@ public sealed class PathExecutor
 		// Digging up: the ceiling above the head first, mined standing on the start node, then the jump.
 		if (jumpPhase == JumpPhase.Align && step.HasActions) {
 			foreach (BlockAction a in step.Actions) {
-				if (a.Kind != ActionKind.Break || !g.Get(a.Cell.X, a.Cell.Y).IsBlockTile())
+				if (a.Kind != ActionKind.Break || !g.Get(a.Cell.X, a.Cell.Y).IsBlockTile() && !BreakablePlaceBlocker(a.Cell))
 					continue;
 				if (settled && node.ChebyshevTo(step.From) > 1) {
 					Finish(ExecStatus.OffPath, $"step {StepIndex} pillar: expected to start at {step.From}, standing at {node}");

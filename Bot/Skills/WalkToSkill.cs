@@ -384,10 +384,10 @@ public sealed class WalkToSkill : ISkill
 				// Kept on the context, across walks: seen in game, three different jumps on the way home each failed once
 				// per walk, every walk, and never reached the count.
 				if (Executor.Current is PathStep cur)
-					sameStuck = ctx.StepFailures[(cur.From, cur.To)] = (ctx.StepFailures.TryGetValue((cur.From, cur.To), out int f) ? f : 0) + 1;
+					sameStuck = ctx.NoteStepFailure(cur.From, cur.To);
 				if (sameStuck >= MaxSameStuck) {
 					if (Executor.Current is PathStep bad && ctx.BadEdges.Add((bad.From, bad.To)))
-						ctx.Log.Info($"WalkTo: never planning {bad.Kind} {bad.From}->{bad.To} again; around it (F from, T to, / slope or half block):\n{Around(ctx, bad.From, bad.To)}\n    tile types of the body at T (rows {bad.To.Y - 2}..{bad.To.Y}, both columns): {BodyTileTypes(ctx, bad.To)}");
+						ctx.Log.Info($"WalkTo: not planning {bad.Kind} {bad.From}->{bad.To} for {BotContext.VetoTicks / 3600} game hours; around it (F from, T to, / slope or half block):\n{Around(ctx, bad.From, bad.To)}\n    tile types of the body at T (rows {bad.To.Y - 2}..{bad.To.Y}, both columns): {BodyTileTypes(ctx, bad.To)}");
 					Executor = null;
 					return Fail(ctx, $"the same step failed {sameStuck} times: {stuckStep}");
 				}
@@ -543,19 +543,23 @@ public sealed class WalkToSkill : ISkill
 	{
 		MoveContext moves = ctx.Moves;
 		TilePos start = node;
-		foreach (TilePos d in StartCandidates) {
-			if (Body.IsStartable(moves.Grid, node + d)) {
-				start = node + d;
-				break;
+		// Standing (grounded, clear of blocks): the plan starts where the body is, whatever the grid makes of its footing,
+		// so the executor's "at the start" check can hold. Otherwise the nearest node the grid can start from.
+		bool standing = ctx.Body.Grounded && Body.IsClear(moves.Grid, node) && !Body.IsStartable(moves.Grid, node);
+		if (!standing)
+			foreach (TilePos d in StartCandidates) {
+				if (Body.IsStartable(moves.Grid, node + d)) {
+					start = node + d;
+					break;
+				}
 			}
-		}
 		ArrivedNearGoal = false;
 		plans++;
 		searchMoves = moves;
 		SearchLimits limits = Limits ?? SearchLimits.Default;
 		if (relaxed)
 			limits = new SearchLimits { MaxExpansions = limits.MaxExpansions, MaxRadius = limits.MaxRadius, CheckBrokenSupport = false };
-		search = new PathSearch(moves, start, Goal, limits);
+		search = new PathSearch(moves, start, Goal, limits, trustStart: standing);
 		State = "planning";
 	}
 

@@ -212,4 +212,35 @@ public class DumpReplayTests
 			output.WriteLine($"{Path.GetFileName(file)}: {search.Result}");
 		}
 	}
+
+	[Fact]
+	public void DeepCaveOnATrack_HasAWayUp()
+	{
+		// Measured run R1: "up to the surface" from row 451 found no node closer than the start, every time, and the bot
+		// went back and forth along the cave floor for game hours (user report, 2026-10-15).
+		string file = Path.Combine(AppContext.BaseDirectory, "Dumps", "nopath_2053_451_to_2053_303.txt");
+		var (g, b, start, goal) = Load(file);
+		b.BlockCount = 1317;
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b };
+		var edges = new System.Collections.Generic.List<PathStep>();
+		foreach (IMoveType m in ctx.Moves)
+			m.Expand(ctx, start, edges);
+		output.WriteLine($"start {start} standable {Body.IsStandable(g, start)}; moves: {string.Join(" | ", edges)}");
+		output.WriteLine(WalkAround(g, start));
+		var search = new PathSearch(ctx, start, new GoalNearTile(goal, 4, PhysicsParams.Default), new SearchLimits { SegmentAfter = 0, MaxExpansions = 20000 });
+		search.Step(1e9);
+		output.WriteLine($"{search.Result} best {search.Result.Best}");
+		Assert.True(search.Result.Best.Y < start.Y - 5, $"no way up: {search.Result}");
+	}
+
+	private static string WalkAround(ArrayTileGrid g, TilePos c)
+	{
+		var sb = new System.Text.StringBuilder();
+		for (int y = c.Y - 6; y <= c.Y + 3; y++) {
+			for (int x = c.X - 6; x <= c.X + 7; x++)
+				sb.Append(x == c.X && y == c.Y ? 'F' : g.Get(x, y).ToChar());
+			sb.Append('|');
+		}
+		return sb.ToString();
+	}
 }

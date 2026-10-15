@@ -226,6 +226,9 @@ public sealed class TerrariaBlockActions : IBlockActions
 		if (!t.HasTile)
 			return 0f;
 		int type = t.TileType;
+		// A minecart track: passable, but nothing goes into its cell; a pickaxe takes it up in a hit (it drops as an item).
+		if (type == TileID.MinecartTrack)
+			return 1f;
 		// Furniture, doors, chests, trees, altars: never part of a path.
 		if (Main.tileFrameImportant[type] || Main.tileContainer[type] || Main.tileAxe[type] || Main.tileHammer[type])
 			return float.PositiveInfinity;

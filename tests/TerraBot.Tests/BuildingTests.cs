@@ -477,10 +477,10 @@ public class BuildingTests
 	}
 
 	[Fact]
-	public void AtNight_Armed_AMiningJobGoesDownIntoTheGround_InsteadOfHome()
+	public void AtNight_AMiningJobGoesDownIntoTheGround_InsteadOfHome_ArmedOrNot()
 	{
-		// Measured run E: 37% of the run was nights at home, most instead of mining near the surface. A player with a sword
-		// spends the night in the mine.
+		// Measured run E: 37% of the run was nights at home, most instead of mining near the surface. A player spends the
+		// night in the mine. Measured run R1: unarmed, two whole nights at home before the first ore sword.
 		FakeGame g = ProgressionTests.Mine(width: 120, sky: 45, oreRows: 0);
 		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
 		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
@@ -496,7 +496,7 @@ public class BuildingTests
 		ctx.Combat.WeaponDamage = 5;
 		ISkill weak = p.Next(ctx);
 		output.WriteLine($"weak: {p.Status} -> {weak?.Describe()}");
-		Assert.IsType<StayHomeSkill>(weak);
+		Assert.True(weak is WalkToSkill { Underground: true });
 		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage;
 		ISkill armed = p.Next(ctx);
 		output.WriteLine($"armed: {p.Status} -> {armed?.Describe()}");

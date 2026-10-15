@@ -212,6 +212,12 @@ public sealed class BotContext
 	public const int OffLimitsMemoTicks = 120;
 	private readonly System.Collections.Generic.Dictionary<long, (long At, int Zones, bool Off)> offLimitsMemo = new();
 
+	/// <summary>The gear gates of <see cref="OffLimits"/> alone (the underground desert, the evil biome), without the danger zones.</summary>
+	public bool BiomeOffLimits(TilePos t) => Combat.Defense < DeepDefense && InUndergroundDesert(t) || Combat.Defense < CavernDefense && InEvilBiome(t);
+
+	/// <summary>Life crystals and reasons already logged (each skip of a crystal is said once).</summary>
+	public System.Collections.Generic.HashSet<(int, int, string)> CrystalNotes { get; } = new();
+
 	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t)
 		|| Combat.Defense < CavernDefense && InEvilBiome(t);
 
@@ -374,9 +380,11 @@ public sealed class BotContext
 	public bool AllowPlace { get; set; } = true;
 	/// <summary>
 	/// Tiles a skill found it cannot get to (behind unbreakable blocks, out of the world...), shared across skill
-	/// restarts so a fresh skill does not spend its time on them again. Cleared when auto mode starts.
+	/// restarts so a fresh skill does not spend its time on them again. For <see cref="UnreachableTicks"/> only, not for
+	/// ever: the world changes, the bot gets better tools, and a crystal in such a set was passed by with no reason given.
 	/// </summary>
-	public System.Collections.Generic.HashSet<TilePos> UnreachableTiles { get; } = new();
+	public ExpiringSet<TilePos> UnreachableTiles { get; } = new(UnreachableTicks);
+	public const long UnreachableTicks = 3600; // a game hour
 	/// <summary>Per ore item: explorations in a row that found none (MineSkill), across restarts of the skill.</summary>
 	public System.Collections.Generic.Dictionary<int, int> ExploresWithoutOre { get; } = new();
 
@@ -433,14 +441,37 @@ public sealed class BotContext
 	public System.Collections.Generic.IReadOnlySet<TilePos> Protected { get; set; }
 	private ReservedBlocks protectedBlocks;
 	private VetoedBlocks vetoedBlocks;
-	/// <summary>Cells where placing a block failed twice in the world: path moves do not plan to place there again.</summary>
-	public System.Collections.Generic.HashSet<TilePos> NoPlace { get; } = new();
-	/// <summary>Path edges that failed <see cref="Skills.WalkToSkill.MaxSameStuck"/> times in a row: the planner skips them.</summary>
-	public System.Collections.Generic.HashSet<(TilePos From, TilePos To)> BadEdges { get; } = new();
-	/// <summary>Times each step got stuck, over all walks; at <see cref="Skills.WalkToSkill.MaxSameStuck"/> it joins <see cref="BadEdges"/>.</summary>
-	public System.Collections.Generic.Dictionary<(TilePos From, TilePos To), int> StepFailures { get; } = new();
-	/// <summary>Cells where breaking failed twice in the world: path moves do not plan to break them again.</summary>
-	public System.Collections.Generic.HashSet<TilePos> NoBreak { get; } = new();
+	/// <summary>Cells where placing a block failed twice in the world: path moves do not plan to place there, for <see cref="VetoTicks"/>.</summary>
+	public ExpiringSet<TilePos> NoPlace { get; } = new(VetoTicks);
+	/// <summary>Path edges that failed <see cref="Skills.WalkToSkill.MaxSameStuck"/> times: the planner skips them for <see cref="VetoTicks"/>.</summary>
+	public ExpiringSet<(TilePos From, TilePos To)> BadEdges { get; } = new(VetoTicks);
+	/// <summary>Times each step got stuck lately (within <see cref="StepFailureMemoryTicks"/>), over all walks: each costs the planner more.</summary>
+	public System.Collections.Generic.Dictionary<(TilePos From, TilePos To), (int Count, long At)> StepFailures { get; } = new();
+	/// <summary>Cells where breaking failed twice in the world: path moves do not plan to break them, for <see cref="VetoTicks"/>.</summary>
+	public ExpiringSet<TilePos> NoBreak { get; } = new(VetoTicks);
+	/// <summary>How long a vetoed step or cell stays vetoed: two game hours, then it is tried again.</summary>
+	public const long VetoTicks = 2 * 3600;
+	/// <summary>A step's failures are forgotten this long after the last one; each recent one adds <see cref="StepFailureTicks"/> to its cost.</summary>
+	public const long StepFailureMemoryTicks = 2 * 3600;
+	public const float StepFailureTicks = 150f;
+
+	/// <summary>One more failure of the step; returns how many there have been lately.</summary>
+	public int NoteStepFailure(TilePos from, TilePos to)
+	{
+		int n = StepFailures.TryGetValue((from, to), out var f) && Tick - f.At < StepFailureMemoryTicks ? f.Count + 1 : 1;
+		StepFailures[(from, to)] = (n, Tick);
+		return n;
+	}
+
+	/// <summary>Extra planner cost of a step that failed lately (a decaying cost, not a ban: Baritone keeps none).</summary>
+	public float StepPenalty(TilePos from, TilePos to) =>
+		StepFailures.Count > 0 && StepFailures.TryGetValue((from, to), out var f) && Tick - f.At < StepFailureMemoryTicks ? f.Count * StepFailureTicks : 0f;
+
+	public BotContext()
+	{
+		UnreachableTiles.Clock = NoPlace.Clock = NoBreak.Clock = () => Tick;
+		BadEdges.Clock = () => Tick;
+	}
 	/// <summary>Failures so far per (cell, place?) before a veto.</summary>
 	public System.Collections.Generic.Dictionary<(TilePos, bool), int> ActionFailures { get; } = new();
 
@@ -476,7 +507,7 @@ public sealed class BotContext
 			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
 				|| !ReferenceEquals(moves.Blocks, PathBlocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace
 				|| moves.AvoidBelowRow != DeepestRow || moves.DigAnyway != DigAnyway)
-				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, AvoidBelowRow = DeepestRow, Avoid = OffLimitsForPaths, DigAnyway = DigAnyway };
+				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, EdgePenalty = StepPenalty, AvoidBelowRow = DeepestRow, Avoid = OffLimitsForPaths, DigAnyway = DigAnyway };
 			return moves;
 		}
 	}

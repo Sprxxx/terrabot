@@ -99,7 +99,10 @@ public sealed class PathSearch
 	public int Expanded => expanded;
 	public bool Done => Result != null;
 
-	public PathSearch(MoveContext ctx, TilePos start, IGoal goal, SearchLimits limits = null)
+	/// <param name="trustStart">The body is known to stand at <paramref name="start"/> (grounded there): plan from it even if
+	/// the grid does not explain what holds it up. Seen in game (measured run R1): such a node was "not startable", the plan
+	/// began a row below the bot, and 84 jumps waited to be aligned at a start the bot could never reach.</param>
+	public PathSearch(MoveContext ctx, TilePos start, IGoal goal, SearchLimits limits = null, bool trustStart = false)
 	{
 		this.ctx = ctx;
 		this.goal = goal;
@@ -110,7 +113,7 @@ public sealed class PathSearch
 		bestTainted = start;
 		bestTaintedH = bestH;
 
-		if (!Body.IsStartable(ctx.Grid, start)) {
+		if (!trustStart && !Body.IsStartable(ctx.Grid, start)) {
 			Result = new PathResult { Status = PathStatus.InvalidStart, Start = start, Best = start };
 			return;
 		}
@@ -227,7 +230,7 @@ public sealed class PathSearch
 			float brokenPenalty = undermined ? BrokenSupportPenalty : 0f;
 			if (float.IsPositiveInfinity(e.Cost))
 				continue; // lava
-			float g = g0 + e.Cost + brokenPenalty;
+			float g = g0 + e.Cost + brokenPenalty + (ctx.EdgePenalty?.Invoke(e.From, e.To) ?? 0f);
 			long k = e.To.Key;
 			if (nodes.TryGetValue(k, out NodeRec existing) && (existing.Closed || existing.G <= g))
 				continue;

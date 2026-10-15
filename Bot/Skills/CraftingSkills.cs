@@ -153,8 +153,16 @@ public sealed class PlaceItemSkill : ISkill
 		if (startCount < 0)
 			startCount = ctx.Inventory.Count(ItemType);
 		if (ctx.Inventory.Count(ItemType) < startCount) {
-			PlacedAt = spot;
-			ctx.Log.Info($"Placed item {ItemType} at {spot}");
+			// Gone from the bag: placed, if its tile is at the spot (or near, the cursor a cell off); otherwise it went
+			// somewhere else. Seen in game (measured run R1): "placed" in the tick the walk to the spot began, the station
+			// never there, and the craft at it failed 20 times.
+			int tile = ctx.Knowledge?.TilePlacedBy(ItemType) ?? -1;
+			TilePos? at = spot is TilePos sp && tile >= 0 && ctx.World.TileTypeAt(sp.X, sp.Y) == tile ? sp
+				: tile >= 0 ? ctx.World.FindTiles(tile, spot ?? ctx.Node, 3).Cast<TilePos?>().FirstOrDefault() : spot;
+			if (at == null)
+				return Fail(ctx, $"the item left the bag but its tile is not at {spot?.ToString() ?? "the spot"}");
+			PlacedAt = at;
+			ctx.Log.Info($"Placed item {ItemType} at {at}");
 			return SkillStatus.Succeeded;
 		}
 		if (startCount == 0)

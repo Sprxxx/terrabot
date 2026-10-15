@@ -211,6 +211,8 @@ public sealed class GatherWoodSkill : ISkill
 {
 	public const int TreeSearchTiles = 60;
 	public const int ExploreStepTiles = 40;
+	/// <summary>Deeper than this below the surface's height, no tree can be in sight: the search starts on the surface.</summary>
+	public const int UndergroundRows = 12;
 	public const int MaxExplores = 6;
 	public const int CollectRadius = 20;
 
@@ -296,9 +298,18 @@ public sealed class GatherWoodSkill : ISkill
 			State = "chopping";
 		}
 		else {
+			TilePos here = ctx.Node;
+			// Trees grow on the surface: from underground, up first (seen in game, measured run R1: "exploring" for trees at
+			// row 460 for most of a game day, back and forth along the caves).
+			if (ctx.SurfaceY > 0 && here.Y > ctx.SurfaceY + UndergroundRows) {
+				ctx.Log.Info($"GatherWood: no trees down here (row {here.Y}); up to the surface first");
+				sub = new WalkToSkill(new Core.Pathfinding.GoalRow(ctx.SurfaceY + 2, here.X, ctx.Physics)) { Quiet = true, ToSurface = true };
+				State = "going up";
+				sub.Start(ctx);
+				return SkillStatus.Running;
+			}
 			if (++explores > MaxExplores)
 				return Fail(ctx, $"no reachable trees found after {MaxExplores} explorations");
-			TilePos here = ctx.Node;
 			var goal = new TilePos(here.X + exploreDir * ExploreStepTiles, here.Y - 10);
 			ctx.Log.Info($"GatherWood: no trees in sight, exploring towards {goal}");
 			sub = new WalkToSkill(goal) { Quiet = true, Tolerance = 4 };

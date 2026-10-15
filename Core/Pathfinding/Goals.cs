@@ -13,6 +13,31 @@ public interface IGoal
 	TilePos Anchor { get; }
 }
 
+/// <summary>
+/// Feet on <see cref="Row"/> or above it, anywhere (Baritone's GoalYLevel), where <see cref="Accept"/> allows: "up to the
+/// surface" as a player goes up, by the cheapest way (a cave, or digging and pillaring), not to one tile picked on the
+/// surface. Seen in game (measured run R1): walks to a surface tile 150 rows up wandered the caves in partial segments,
+/// came to nothing, and a new tile was picked each time; the bot went back and forth along a cave floor for hours.
+/// </summary>
+public sealed class GoalRow : IGoal
+{
+	private readonly float riseTicksPerTile;
+	public int Row { get; }
+	public TilePos Anchor { get; }
+	public Func<TilePos, bool> Accept { get; init; }
+
+	public GoalRow(int row, int anchorX, PhysicsParams p)
+	{
+		Row = row;
+		Anchor = new TilePos(anchorX, row);
+		riseTicksPerTile = Body.TileSize / Math.Max(0.5f, p.JumpSpeed);
+	}
+
+	public bool IsGoal(TilePos n) => n.Y <= Row && (Accept == null || Accept(n));
+	public float Heuristic(TilePos n) => n.Y > Row ? (n.Y - Row) * riseTicksPerTile : 0f;
+	public override string ToString() => $"AtOrAboveRow{Row}";
+}
+
 /// <summary>Exactly this node (plan repair: rejoin the old plan where one of its steps starts).</summary>
 public sealed class GoalNode : IGoal
 {

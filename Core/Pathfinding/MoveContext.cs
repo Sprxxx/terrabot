@@ -32,6 +32,8 @@ public sealed class MoveContext
 	/// one Walk step failed over and over, walk after walk, each new walk planning through it again).
 	/// </summary>
 	public IReadOnlySet<(TilePos From, TilePos To)> BadEdges { get; init; }
+	/// <summary>Extra cost of an edge (steps that failed lately), or null for none.</summary>
+	public Func<TilePos, TilePos, float> EdgePenalty { get; init; }
 	public bool CanPlace => Blocks != null && AllowPlace && Blocks.BlockCount > 0;
 
 	/// <summary>Ticks to walk one tile at full speed.</summary>
@@ -157,7 +159,7 @@ public sealed class MoveContext
 
 	/// <summary>The same context (moves, settings, costs) over another grid: planning ahead on the world as a plan will leave it.</summary>
 	public MoveContext WithGrid(ITileGrid grid) => new(grid, Physics, Moves) {
-		Blocks = Blocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, DigAnyway = DigAnyway, BadEdges = BadEdges,
+		Blocks = Blocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, DigAnyway = DigAnyway, BadEdges = BadEdges, EdgePenalty = EdgePenalty,
 		LiquidCostMultiplier = LiquidCostMultiplier, HeadUnderCostMultiplier = HeadUnderCostMultiplier,
 		BreakCostMultiplier = BreakCostMultiplier, BreakOverheadTicks = BreakOverheadTicks, PillarRiskTicks = PillarRiskTicks,
 		PrecariousTicks = PrecariousTicks, AvoidBelowRow = AvoidBelowRow, BelowRowTicks = BelowRowTicks, Avoid = Avoid, AvoidTicks = AvoidTicks,

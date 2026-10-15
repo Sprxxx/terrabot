@@ -277,7 +277,7 @@ public sealed class MineSkill : ISkill
 	private TilePos? Nearest(BotContext ctx, TilePos around, int radius)
 	{
 		foreach (TilePos c in ctx.World.FindTiles(TileType, around, radius))
-			if (!bad.Contains(c) && WouldMine(ctx, ctx.Moves, c))
+			if (!bad.Contains(c) && WouldMine(ctx, ctx.Moves, c, Valuable(ctx)))
 				return c;
 		return null;
 	}
@@ -289,7 +289,7 @@ public sealed class MineSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		foreach (TilePos c in ctx.World.FindTiles(TileType, node, SearchRadius)) {
-			if (bad.Contains(c) || !WouldMine(ctx, moves, c))
+			if (bad.Contains(c) || !WouldMine(ctx, moves, c, Valuable(ctx)))
 				continue;
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
 			// The row the bot stands on, under its feet and a step either side, last: seen in the settle scenario, it mined
@@ -311,8 +311,34 @@ public sealed class MineSkill : ISkill
 	/// skipped, so the bot explored away from it and was sent back, round and round, running past it (user report,
 	/// 2026-10-14).
 	/// </summary>
-	public static bool WouldMine(BotContext ctx, MoveContext moves, TilePos c) =>
-		!ctx.UnreachableTiles.Contains(c) && SafeToBreak(ctx, moves, c) && c.Y <= ctx.DeepestRow && !ctx.OffLimits(c);
+	public static bool WouldMine(BotContext ctx, MoveContext moves, TilePos c, bool valuable = false) => WhyNotMine(ctx, moves, c, valuable) == null;
+
+	/// <summary>
+	/// Why mining would leave this tile alone, or null if it would go for it. <paramref name="valuable"/> (a life crystal):
+	/// worth what a player risks for one, so a danger zone round an old death and sand on top do not stop it; lava beside
+	/// it, the gear's depth and the biomes the gear is too weak for still do. Seen in game: a crystal passed by with no
+	/// reason given (user report, 2026-10-15); every skip now has one.
+	/// </summary>
+	public static string WhyNotMine(BotContext ctx, MoveContext moves, TilePos c, bool valuable = false)
+	{
+		if (ctx.UnreachableTiles.Contains(c))
+			return "could not get to it lately";
+		if (moves.Blocks == null)
+			return "no pickaxe";
+		if (BlockRules.NextToLava(moves.Grid, c))
+			return "lava beside or above it";
+		if (!valuable && BlockRules.Unsafe(moves.Grid, c, Array.Empty<TilePos>()))
+			return "sand or silt on top would fall";
+		if (float.IsInfinity(moves.Blocks.BreakTicks(c.X, c.Y)) && !ctx.World.CanMineTarget(c.X, c.Y))
+			return "the pickaxe cannot break it";
+		if (c.Y > ctx.DeepestRow)
+			return $"below row {ctx.DeepestRow}, deeper than the gear allows";
+		if (valuable ? ctx.BiomeOffLimits(c) : ctx.OffLimits(c))
+			return valuable || !ctx.InDangerZone(c) ? "in a biome the gear is too weak for" : "in a danger zone";
+		return null;
+	}
+
+	private bool Valuable(BotContext ctx) => ItemType == ctx.Ids.LifeCrystal;
 
 	/// <summary>Liquid on a side or corner: mining it means swimming (or flooding the tunnel). Players leave such ore without gear to breathe.</summary>
 	public static bool NextToLiquid(ITileGrid g, TilePos c)
