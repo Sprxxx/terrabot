@@ -111,6 +111,23 @@ public sealed class WalkToSkill : ISkill
 	private int airborneTicks;
 	private TilePos? swimTo;
 	private TilePos swimFrom;
+	private TilePos heldFrom;
+	private int heldStill;
+	public const int HeldStillTicks = 60;
+
+	/// <summary>A real tile (any kind) the hitbox overlaps, else one in the row over the head; null if none.</summary>
+	private static TilePos? TileInOrOverBody(BotContext ctx)
+	{
+		const float T = Body.TileSize, Margin = 0.5f;
+		float left = ctx.Body.X, top = ctx.Body.Y, right = left + ctx.Physics.Width, bottom = top + ctx.Physics.Height;
+		int x0 = (int)System.Math.Floor((left + Margin) / T), x1 = (int)System.Math.Floor((right - Margin) / T);
+		int y0 = (int)System.Math.Floor((top + Margin) / T) - 1, y1 = (int)System.Math.Floor((bottom - Margin) / T);
+		for (int y = y0; y <= y1; y++)
+			for (int x = x0; x <= x1; x++)
+				if (ctx.World.TileTypeAt(x, y) >= 0 && !ctx.World.IsTreeTrunk(x, y) && ctx.Moves.Blocks is IBlockActions b && !float.IsInfinity(b.BreakTicks(x, y)))
+					return new TilePos(x, y);
+		return null;
+	}
 	private int swimStill;
 	/// <summary>Ticks afloat at the same node before what is over the head gets mined.</summary>
 	public const int SwimStillTicks = 120;
@@ -379,6 +396,20 @@ public sealed class WalkToSkill : ISkill
 									}
 						}
 						return SkillStatus.Running;
+					}
+					// Held off the ground and not moving: mine whatever really is in or over the body (the grid may read it open: a
+					// half block wedged in, a slope) and lean towards the target. Seen in game (measured run S3): "never landed ...
+					// vy -2.01" at (2500,339) walk after walk, and the watchdog's climb-out failed the same way.
+					heldStill = node == heldFrom ? heldStill + 1 : 0;
+					heldFrom = node;
+					if (!afloat && heldStill > HeldStillTicks && ctx.World != null && TileInOrOverBody(ctx) is TilePos wedge) {
+						ctx.Output.Tool = ToolRequest.Pickaxe;
+						ctx.Output.UseItem = true;
+						ctx.Output.Aim(wedge.X, wedge.Y);
+						ctx.Output.Horizontal = Target.X > node.X ? 1 : Target.X < node.X ? -1 : 0;
+						State = $"held at {node}: mining {wedge}";
+						if (heldStill == HeldStillTicks + 1)
+							Info(ctx, $"WalkTo: held off the ground at {node} (vy {ctx.Body.VY:0.##}); mining {wedge} (tile {ctx.World.TileTypeAt(wedge.X, wedge.Y)})");
 					}
 					if (++airborneTicks > (afloat ? MaxSwimTicks : MaxAirborneTicks))
 						return Fail(ctx, $"never landed in {airborneTicks} ticks at {node} (vy {ctx.Body.VY:0.###}, feet {ctx.Grid.Get(node.X, node.Y)}/{ctx.Grid.Get(node.X + 1, node.Y)}, under {ctx.Grid.Get(node.X, node.Y + 1)}/{ctx.Grid.Get(node.X + 1, node.Y + 1)})");
