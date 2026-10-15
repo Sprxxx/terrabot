@@ -157,4 +157,32 @@ public class WaterTests
 		float under = moves.Adjust(10f, new TilePos(1, 3)); // body rows 1..3, all water
 		Assert.True(under >= wading * 4f, $"under {under}, wading {wading}");
 	}
+
+	[Fact]
+	public void ACaveBehind_IsExplored_BeforeDiggingBlindAhead()
+	{
+		// Measured run S1: 287 blind digging legs against 141 into caves, ore found in 12 of 70 explorations: a frontier only
+		// counted ahead, and behind only after a blind leg had failed.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 40; y++)
+			rows.Add(new string('s', 90));
+		rows[20] = new string('s', 5) + new string('.', 45) + new string('s', 40);
+		rows[21] = new string('s', 5) + new string('.', 45) + new string('s', 40);
+		rows[22] = new string('s', 5) + new string('.', 43) + "S." + new string('s', 40);
+		rows.Add(new string('@', 90));
+		var g = new FakeGame(rows.ToArray());
+		for (int x = 0; x < 30; x++) // the cave's far end not seen yet
+			for (int y = 0; y < 41; y++)
+				g.Unrevealed.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		var explore = new ExploreSkill("nothing", _ => false, ExploreBias.Down, heading: 1);
+		explore.Start(ctx);
+		for (int t = 0; t < 5; t++) {
+			g.Refresh(ctx);
+			explore.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine(explore.Describe());
+		Assert.Contains("(frontier)", string.Join(" ", ((TestLog)ctx.Log).Lines));
+	}
 }

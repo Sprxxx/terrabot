@@ -49,8 +49,9 @@ public sealed class ExploreSkill : ISkill
 	/// <summary>A leg failing within this many ticks did not really start; wait <see cref="RetryPauseTicks"/> and try again.</summary>
 	public const int InstantFailTicks = 10, RetryPauseTicks = 30;
 	private bool downBlocked;
-	/// <summary>Leg targets closer than this to an earlier one are not picked again.</summary>
+	/// <summary>Leg targets closer than this to an earlier one score <see cref="VisitedPenalty"/> worse (they were left out altogether).</summary>
 	public const int VisitedRadius = 10;
+	public const float VisitedPenalty = 30f;
 	/// <summary>The found check is a tile search: every this many ticks.</summary>
 	public const int FoundCheckEvery = 15;
 	/// <summary>Leg targets remembered in <see cref="BotContext.Explored"/>.</summary>
@@ -124,7 +125,9 @@ public sealed class ExploreSkill : ISkill
 		if (walk == null) {
 			// Only from solid footing, and not straight after a leg failed at once: in game, knocked about in a fight, every
 			// leg failed instantly ("invalid start") and all 16 were gone in a third of a second.
-			if (!ctx.Body.Grounded || ticks < pauseUntil) {
+			// Afloat, the leg's walk swims for footing (it waited for footing that never came: measured run S2, 490,000 ticks).
+			bool afloat = Body.InLiquid(ctx.Grid, ctx.Node);
+			if (!ctx.Body.Grounded && !afloat || ticks < pauseUntil) {
 				State = "waiting for footing";
 				return SkillStatus.Running;
 			}
@@ -132,9 +135,9 @@ public sealed class ExploreSkill : ISkill
 				return Fail(ctx, $"no {What} after {legs} legs of exploring");
 			TilePos node = ctx.Node;
 			// Keep the heading: a frontier that way, else dig on that way, and only then a frontier anywhere (turn round).
-			TilePos? frontier = PickFrontier(ctx, node, aheadOnly: true);
-			if (frontier == null && lastFallbackFailed)
-				frontier = PickFrontier(ctx, node, aheadOnly: false);
+			// Then a frontier anywhere in view (turning round costs it more): unexplored cave first, digging blind last, as a
+			// player. Seen in game (measured run S1): 287 blind digging legs against 141 into caves, ore found in 12 of 70.
+			TilePos? frontier = PickFrontier(ctx, node, aheadOnly: true) ?? PickFrontier(ctx, node, aheadOnly: false);
 			legWasFallback = frontier == null;
 			// Digging on: straight down for ores and caves (2 blocks a tile; a diagonal through stone was 60-70 blocks a
 			// leg in game), a level tunnel along the surface.
@@ -259,9 +262,15 @@ public sealed class ExploreSkill : ISkill
 					continue;
 				if (y > ctx.DeepestRow || ctx.OffLimits(new TilePos(x, y)))
 					continue;
-				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y) || NearVisited(ctx, x, y))
+				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y))
+					continue;
+				var cand = new TilePos(x, y);
+				if (ctx.UnreachableTiles.Contains(cand))
 					continue;
 				float score = d;
+				// Near an earlier leg's target: still worth it if unseen cells are there (NearUnseen), but less so.
+				if (NearVisited(ctx, x, y))
+					score += VisitedPenalty;
 				if (Math.Sign(x - n.X) != heading)
 					score += 40f; // keep on the way we were going
 				if (Bias == ExploreBias.Down)
