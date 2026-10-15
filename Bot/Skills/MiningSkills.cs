@@ -339,7 +339,7 @@ public sealed class MineSkill : ISkill
 		// A crystal in a biome: worth going in for in a full set of armour (defense 8+, CavernDefense), as a player does; the
 		// biome's own gate is defense 16, more than full iron or silver gives (measured run S1: two crystals in the underground
 		// desert left alone while the bot explored for others for three game days).
-		if (valuable ? ctx.Combat.Defense < BotContext.CavernDefense && ctx.BiomeOffLimits(c) : ctx.OffLimits(c))
+		if (valuable ? (ctx.Combat.Defense < BotContext.CavernDefense || ctx.EvilStoneTooHard && ctx.InEvilBiome(c)) && ctx.BiomeOffLimits(c) : ctx.OffLimits(c))
 			return valuable || !ctx.InDangerZone(c) ? "in a biome the gear is too weak for" : "in a danger zone";
 		return null;
 	}

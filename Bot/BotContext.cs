@@ -213,13 +213,21 @@ public sealed class BotContext
 	private readonly System.Collections.Generic.Dictionary<long, (long At, int Zones, bool Off)> offLimitsMemo = new();
 
 	/// <summary>The gear gates of <see cref="OffLimits"/> alone (the underground desert, the evil biome), without the danger zones.</summary>
-	public bool BiomeOffLimits(TilePos t) => Combat.Defense < DeepDefense && InUndergroundDesert(t) || Combat.Defense < CavernDefense && InEvilBiome(t);
+	public bool BiomeOffLimits(TilePos t) => Combat.Defense < DeepDefense && InUndergroundDesert(t) || (Combat.Defense < CavernDefense || EvilStoneTooHard) && InEvilBiome(t);
+
+	/// <summary>
+	/// The evil biome's stone (ebonstone, crimstone) wants pick power 65 (vanilla Player.PickTile): with less, the bot cannot
+	/// dig its way back out of a pocket it drops into. Seen in game (measured run S4): in full armour the gate opened, and
+	/// 1,706 explore legs failed from crimstone pockets ringed by stone the iron pickaxe could not break.
+	/// </summary>
+	public bool EvilStoneTooHard => PickPower < EvilStonePickPower;
+	public const int EvilStonePickPower = 65;
 
 	/// <summary>Life crystals and reasons already logged (each skip of a crystal is said once).</summary>
 	public System.Collections.Generic.HashSet<(int, int, string)> CrystalNotes { get; } = new();
 
 	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t)
-		|| Combat.Defense < CavernDefense && InEvilBiome(t);
+		|| (Combat.Defense < CavernDefense || EvilStoneTooHard) && InEvilBiome(t);
 
 	/// <summary>
 	/// Is the tile where the seen solid tiles around it (48x48) are largely Corruption or Crimson? Seen in game (world_eye

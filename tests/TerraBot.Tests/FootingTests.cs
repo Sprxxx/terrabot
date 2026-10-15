@@ -455,6 +455,9 @@ public class FootingTests
 		Assert.False(ctx.InEvilBiome(new TilePos(10, 26)));
 		Assert.True(ctx.OffLimits(new TilePos(70, 26)));
 		ctx.Combat.Defense = BotContext.CavernDefense; // iron armour
+		ctx.PickPower = 40; // iron pickaxe: ebonstone wants 65 (measured run S4: trapped in crimstone pockets)
+		Assert.True(ctx.OffLimits(new TilePos(70, 26)));
+		ctx.PickPower = BotContext.EvilStonePickPower;
 		Assert.False(ctx.OffLimits(new TilePos(70, 26)));
 	}
 
