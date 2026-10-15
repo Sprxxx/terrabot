@@ -317,6 +317,14 @@ public sealed class ProgressionPlanner
 	/// <summary>Tell the planner about a finished skill (so a just-placed station counts before the next scan).</summary>
 	public void OnSkillFinished(ISkill skill, SkillStatus status, BotContext ctx)
 	{
+		// A bench or furnace that would not go down here is not tried here again for a while: the walk to the one far away
+		// instead. Seen in game (measured run S5): "placing a Work Bench here" failing ("no free floor") and started again,
+		// 278 heartbeats (58% of the run).
+		if (status == SkillStatus.Failed && skill is PlaceItemSkill failedPlace && ctx.Knowledge?.TilePlacedBy(failedPlace.ItemType) is int ft
+			&& (ft == ctx.Ids.WorkBenchTile || ft == ctx.Ids.FurnaceTile)) {
+			stationHereAt[ft] = ctx.Tick;
+			homeStationAt[ft] = ctx.Tick;
+		}
 		if (status == SkillStatus.Succeeded && skill is PlaceItemSkill place && place.PlacedAt is TilePos at) {
 			int tile = ctx.Knowledge.TilePlacedBy(place.ItemType);
 			if (tile >= 0) {
