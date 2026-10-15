@@ -460,4 +460,17 @@ public class FightSkillTests
 		skill.Start(ctx);
 		Assert.Equal(SkillStatus.Failed, skill.Tick(ctx));
 	}
+
+	/// <summary>Measured run S6: hit for 20 a time, the heal came at 22/100; all 14 deaths came within seconds of a heal.</summary>
+	[Fact]
+	public void HealsWhileAFewOfTheHardestRecentHitsCanStillBeTaken()
+	{
+		BotContext ctx = ProgressionTests.Mine().CreateContext(null);
+		ctx.Combat.LifeMax = 100;
+		Assert.Equal(FightSkill.HealBelow, FightSkill.HealAt(ctx));
+		ctx.NoteHit(20);
+		Assert.Equal(0.5f, FightSkill.HealAt(ctx), 3);
+		ctx.Tick += BotContext.HitMemoryTicks + 1;
+		Assert.Equal(FightSkill.HealBelow, FightSkill.HealAt(ctx));
+	}
 }

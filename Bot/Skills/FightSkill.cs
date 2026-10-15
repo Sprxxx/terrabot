@@ -34,6 +34,16 @@ public sealed class FightSkill : ISkill
 	public const float DefendLeashTiles = 24f;
 	public const int CalmTicks = 90;
 	public const float HealBelow = 0.4f;
+	/// <summary>Hits of the hardest recent kind that life should still take after a heal is due (see <see cref="HealAt"/>).</summary>
+	public const float HealHitsInHand = 2.5f;
+
+	/// <summary>
+	/// The life fraction to heal below: <see cref="HealBelow"/>, or higher while <see cref="HealHitsInHand"/> of the hardest
+	/// recent hits would take what is left. Seen in game (measured run S6): hit for 20 a time, the bot healed at 22/100 (a
+	/// mushroom, +15), then could not heal again; all 14 deaths came within seconds of a heal, healing items in the bag.
+	/// </summary>
+	public static float HealAt(BotContext ctx) =>
+		ctx.Combat.LifeMax > 0 ? System.Math.Max(HealBelow, HealHitsInHand * ctx.BiggestRecentHit / (float)ctx.Combat.LifeMax) : HealBelow;
 	/// <summary>Shoot at targets up to this far (px); arrows lose height beyond.</summary>
 	public const float RangedRange = 40 * 16f;
 	/// <summary>Ground targets this close are fought in melee when a melee weapon is at hand.</summary>
@@ -435,7 +445,7 @@ public sealed class FightSkill : ISkill
 
 	private void Heal(BotContext ctx)
 	{
-		bool want = ctx.Combat.LifeFraction < HealBelow && ctx.Combat.CanQuickHeal && !healPressedLastTick;
+		bool want = ctx.Combat.LifeFraction < HealAt(ctx) && ctx.Combat.CanQuickHeal && !healPressedLastTick;
 		ctx.Output.QuickHeal = want;
 		healPressedLastTick = want;
 		if (want)

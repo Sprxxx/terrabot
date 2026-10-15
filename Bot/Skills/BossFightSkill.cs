@@ -421,7 +421,7 @@ public sealed class BossFightSkill : ISkill
 
 	private void Heal(BotContext ctx)
 	{
-		bool want = ctx.Combat.LifeFraction < HealBelow && ctx.Combat.CanQuickHeal && !healPressedLastTick;
+		bool want = ctx.Combat.LifeFraction < System.Math.Max(HealBelow, FightSkill.HealAt(ctx)) && ctx.Combat.CanQuickHeal && !healPressedLastTick;
 		ctx.Output.QuickHeal = want;
 		healPressedLastTick = want;
 	}
