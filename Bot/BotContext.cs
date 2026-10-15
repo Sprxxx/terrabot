@@ -193,6 +193,25 @@ public sealed class BotContext
 	/// is weak. Seen in game (world_eye run 40): antlion chargers, swarmers and rolling cacti killed the bot 6 times in
 	/// one run in the underground desert east of the spawn, a place players leave until they have better gear.
 	/// </summary>
+	/// <summary>
+	/// <see cref="OffLimits"/> for path costs, remembered per 8x8 block for <see cref="OffLimitsMemoTicks"/>: every edge
+	/// of every search asked it, about 50 chunk lookups each (the biome shares), tens of thousands of times a search.
+	/// </summary>
+	public bool OffLimitsForPaths(TilePos t)
+	{
+		long k = ((long)(t.X >> 3) << 32) | (uint)(t.Y >> 3);
+		if (offLimitsMemo.TryGetValue(k, out var v) && Tick - v.At < OffLimitsMemoTicks && v.Zones == DangerZones.Count)
+			return v.Off;
+		bool off = OffLimits(t);
+		offLimitsMemo[k] = (Tick, DangerZones.Count, off);
+		if (offLimitsMemo.Count > 20_000)
+			offLimitsMemo.Clear();
+		return off;
+	}
+
+	public const int OffLimitsMemoTicks = 120;
+	private readonly System.Collections.Generic.Dictionary<long, (long At, int Zones, bool Off)> offLimitsMemo = new();
+
 	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t)
 		|| Combat.Defense < CavernDefense && InEvilBiome(t);
 
@@ -457,7 +476,7 @@ public sealed class BotContext
 			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
 				|| !ReferenceEquals(moves.Blocks, PathBlocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace
 				|| moves.AvoidBelowRow != DeepestRow || moves.DigAnyway != DigAnyway)
-				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, AvoidBelowRow = DeepestRow, Avoid = OffLimits, DigAnyway = DigAnyway };
+				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, AvoidBelowRow = DeepestRow, Avoid = OffLimitsForPaths, DigAnyway = DigAnyway };
 			return moves;
 		}
 	}

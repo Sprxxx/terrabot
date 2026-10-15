@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Diagnostics;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Pathfinding;
@@ -70,6 +71,56 @@ public class PerformanceTests
 		output.WriteLine(r.ToString());
 		Assert.True(r.Status is PathStatus.Found or PathStatus.Partial, r.ToString());
 		Assert.True(r.ElapsedMs < 5000, $"took {r.ElapsedMs} ms");
+	}
+
+	/// <summary>Time per expansion on a real cave (measured run J2's dump), and the share each move type takes.</summary>
+	[Fact]
+	public void Benchmark_CaveSegment()
+	{
+		string file = System.IO.Path.Combine(AppContext.BaseDirectory, "Dumps", "nopath_2053_451_to_2095_282.txt");
+		var (g, b, start, _) = DumpReplayTests.Load(file);
+		b.BlockCount = 860;
+		var goal = new GoalNearTile(new TilePos(2095 - 2041, 282 - 270), 4, PhysicsParams.Default);
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b };
+		new PathSearch(ctx, start, goal, new SearchLimits { SegmentAfter = 0, MaxExpansions = 3000 }).Step(); // JIT
+		double total = double.MaxValue;
+		PathSearch s = null;
+		for (int i = 0; i < 8; i++) {
+			var sw = Stopwatch.StartNew();
+			s = new PathSearch(ctx, start, goal, new SearchLimits { SegmentAfter = 0, MaxExpansions = 3000 });
+			s.Step();
+			total = Math.Min(total, sw.Elapsed.TotalMilliseconds);
+		}
+		output.WriteLine($"{s.Result}: {total * 1000 / Math.Max(1, s.Result.Expanded):0.0} us per expansion");
+		var timed = MoveContext.DefaultMoves.Select(m => new TimedMove(m)).ToArray();
+		var tctx = new MoveContext(g, PhysicsParams.Default, timed) { Blocks = b };
+		for (int i = 0; i < 3; i++)
+			new PathSearch(tctx, start, goal, new SearchLimits { SegmentAfter = 0, MaxExpansions = 3000 }).Step();
+		foreach (TimedMove m in timed) { m.Ticks = 0; m.Edges = 0; }
+		var ts = new PathSearch(tctx, start, goal, new SearchLimits { SegmentAfter = 0, MaxExpansions = 3000 });
+		var all = Stopwatch.StartNew();
+		ts.Step();
+		output.WriteLine($"timed run {all.Elapsed.TotalMilliseconds:0} ms");
+		foreach (TimedMove m in timed)
+			output.WriteLine($"  {m.Inner.GetType().Name}: {m.Ticks * 1000.0 / Stopwatch.Frequency:0.0} ms, {m.Edges} edges");
+	}
+
+	private sealed class TimedMove : IMoveType
+	{
+		public readonly IMoveType Inner;
+		public long Ticks;
+		public int Edges;
+		public TimedMove(IMoveType inner) => Inner = inner;
+		public MoveKind Kind => Inner.Kind;
+		public void Expand(MoveContext ctx, TilePos from, System.Collections.Generic.List<PathStep> output)
+		{
+			long t0 = Stopwatch.GetTimestamp();
+			int n = output.Count;
+			Inner.Expand(ctx, from, output);
+			Ticks += Stopwatch.GetTimestamp() - t0;
+			Edges += output.Count - n;
+		}
+		public bool IsValid(MoveContext ctx, in PathStep step) => Inner.IsValid(ctx, step);
 	}
 
 	private static TilePos FindStand(ArrayTileGrid g, int x)

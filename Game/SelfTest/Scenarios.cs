@@ -190,6 +190,19 @@ public sealed class Scenario
 			TimeoutTicks = 10 * 86400,
 			Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
 		},
+		new() {
+			// Times path searches on the real world from the spawn (PathBench). Run it by name.
+			Name = "world_pathbench",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "pathbench",
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			ExpectSuccess = false,
+			TimeoutTicks = 60 * 60,
+			FinishOnLog = "PATHBENCH done",
+		},
 			new() {
 				Name = "fight_green_slime",
 				Rows = Grid(Repeat("..............................", 6), "..S..............E............", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),

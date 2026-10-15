@@ -71,6 +71,47 @@ public sealed class MoveContext
 	/// A MoveContext is therefore not thread-safe; use one per search thread.</summary>
 	public GridWindow Scratch { get; } = new();
 
+	/// <summary>Bit rows of <see cref="Grid"/> for the current search (reset by each <see cref="PathSearch"/>): jump templates test them.</summary>
+	public GridMask Mask { get; } = new();
+
+	/// <summary>
+	/// Set by <see cref="PathSearch.Step"/> while it runs: break times and placeability are then remembered per cell for
+	/// the search (the game's answers walk the tile tables and WorldGen.CanKillTile; one search asks about the same cells
+	/// from every neighbouring node). Outside a search, as when a running step is checked, they are asked afresh.
+	/// </summary>
+	internal bool InSearch;
+	private readonly Dictionary<long, float> breakMemo = new(4096);
+	private readonly Dictionary<long, bool> placeMemo = new(1024);
+
+	internal void BeginSearch(TilePos start)
+	{
+		Mask.Reset(Grid, start);
+		breakMemo.Clear();
+		placeMemo.Clear();
+	}
+
+	/// <summary>Ticks to mine the cell (<see cref="IBlockActions.BreakTicks"/>), remembered during a search.</summary>
+	public float BreakTicks(int x, int y)
+	{
+		if (!InSearch)
+			return Blocks.BreakTicks(x, y);
+		long k = ((long)x << 32) | (uint)y;
+		if (!breakMemo.TryGetValue(k, out float t))
+			breakMemo[k] = t = Blocks.BreakTicks(x, y);
+		return t;
+	}
+
+	/// <summary>Can a block go into the cell (<see cref="IBlockActions.CanPlaceAt"/>), remembered during a search.</summary>
+	public bool CanPlaceAt(int x, int y)
+	{
+		if (!InSearch)
+			return Blocks.CanPlaceAt(x, y);
+		long k = ((long)x << 32) | (uint)y;
+		if (!placeMemo.TryGetValue(k, out bool v))
+			placeMemo[k] = v = Blocks.CanPlaceAt(x, y);
+		return v;
+	}
+
 	private readonly int[] fallTicks;
 
 	public MoveContext(ITileGrid grid, PhysicsParams physics, IReadOnlyList<IMoveType> moves = null)

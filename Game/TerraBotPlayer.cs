@@ -55,7 +55,7 @@ public sealed class TerraBotPlayer : ModPlayer
 	public override void Initialize()
 	{
 		Context = new BotContext {
-			Grid = TerrariaTileGrid.Instance,
+			Grid = CachedTileGrid.Instance,
 			Blocks = Blocks,
 			World = GameInfo,
 			Inventory = GameInfo,
@@ -71,6 +71,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		Enabled = false;
 		Brain.Clear(Context);
 		Context.Ids = TerrariaGameInfo.CreateIds(); // the iron tier differs per world
+		CachedTileGrid.Instance.Clear();
 		LastOutput = MoveInput.None;
 		Mod.Logger.Info($"Entered world '{Main.worldName}' ({Main.maxTilesX}x{Main.maxTilesY}) as '{Player.name}'. Physics: {LivePhysics}");
 	}
@@ -285,6 +286,7 @@ public sealed class TerraBotPlayer : ModPlayer
 			Player.RemoveAllGrapplingHooks();
 		}
 		Context.Tick = Main.GameUpdateCount;
+		CachedTileGrid.Instance.Now = Main.GameUpdateCount;
 		Context.Physics = LivePhysics;
 		Context.Body = new BodyState {
 			X = Player.position.X,

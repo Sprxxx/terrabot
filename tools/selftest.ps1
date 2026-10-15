@@ -45,7 +45,7 @@ if ($running) { throw "tModLoader is already running (pid $($running.ProcessId -
 if (-not $NoBuild) {
 	Write-Host "Building mod..."
 	Push-Location $repo
-	try { dotnet build --nologo -v q | Out-Host; if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" } }
+	try { dotnet build -c Release --nologo -v q | Out-Host; if ($LASTEXITCODE -ne 0) { throw "dotnet build failed" } }
 	finally { Pop-Location }
 }
 

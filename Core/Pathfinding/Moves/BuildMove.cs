@@ -40,12 +40,12 @@ public sealed class BuildMove : IMoveType
 			bool placed = g.Get(step.From.X, step.From.Y).IsSolid() || g.Get(step.From.X + 1, step.From.Y).IsSolid();
 			TilePos pillarCell = PillarCell(g, step.From);
 			bool headroom = PillarHeadroomClear(g, step.From) || ctx.CanBreak && step.CountActions(ActionKind.Break) > 0;
-			return headroom && (placed || (ctx.CanPlace && ctx.Blocks.CanPlaceAt(pillarCell.X, pillarCell.Y)));
+			return headroom && (placed || (ctx.CanPlace && ctx.CanPlaceAt(pillarCell.X, pillarCell.Y)));
 		}
 		// Bridge: fine if the block is already there (placed by us) or can still be placed.
 		TilePos cell = BridgeCell(step.From, step.Dir);
 		return Body.IsClear(ctx.Grid, step.To)
-			&& (ctx.Grid.Get(cell.X, cell.Y).CanStandOn() || (ctx.CanPlace && ctx.Blocks.CanPlaceAt(cell.X, cell.Y)));
+			&& (ctx.Grid.Get(cell.X, cell.Y).CanStandOn() || (ctx.CanPlace && ctx.CanPlaceAt(cell.X, cell.Y)));
 	}
 
 	/// <summary>The cell under the leading body column when bridging in direction <paramref name="dir"/>.</summary>
@@ -79,7 +79,7 @@ public sealed class BuildMove : IMoveType
 			return false; // blocked, or a plain walk
 		TilePos cell = BridgeCell(from, dir);
 		CellKind k = g.Get(cell.X, cell.Y);
-		if (k.CanStandOn() || k.HasLava() || !ctx.Blocks.CanPlaceAt(cell.X, cell.Y))
+		if (k.CanStandOn() || k.HasLava() || !ctx.CanPlaceAt(cell.X, cell.Y))
 			return false;
 		float cost = ctx.WalkTileCost + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks;
 		step = new PathStep(MoveKind.Walk, from, to, ctx.Adjust(cost, to),
@@ -107,7 +107,7 @@ public sealed class BuildMove : IMoveType
 		// The block goes into the feet cell, inside the body: solid on the (unedited) grid only if an earlier step of the
 		// plan mined it (digging up a shaft), so then it is open by the time this step runs (as DigMove's InBody).
 		bool dugEarlier = k.IsSolid();
-		if (!dugEarlier && (k.CanStandOn() || k.HasLava() || !ctx.Blocks.CanPlaceAt(cell.X, cell.Y)))
+		if (!dugEarlier && (k.CanStandOn() || k.HasLava() || !ctx.CanPlaceAt(cell.X, cell.Y)))
 			return false;
 		var to = new TilePos(from.X, from.Y - 1);
 		float cost = ctx.PillarAirTicks + ctx.Blocks.PlaceTicks + ctx.PlacePenaltyTicks + ctx.PillarRiskTicks;

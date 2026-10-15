@@ -114,6 +114,7 @@ public sealed class PathSearch
 			Result = new PathResult { Status = PathStatus.InvalidStart, Start = start, Best = start };
 			return;
 		}
+		ctx.BeginSearch(start);
 		nodes[start.Key] = new NodeRec { G = 0f };
 		open.Enqueue(start.Key, bestH);
 	}
@@ -124,6 +125,7 @@ public sealed class PathSearch
 		if (Done)
 			return true;
 		var sw = Stopwatch.StartNew();
+		ctx.InSearch = true;
 		try {
 			while (open.TryDequeue(out long key, out _)) {
 				NodeRec rec = nodes[key];
@@ -195,6 +197,7 @@ public sealed class PathSearch
 			return true;
 		}
 		finally {
+			ctx.InSearch = false;
 			elapsedMs += sw.Elapsed.TotalMilliseconds;
 		}
 	}

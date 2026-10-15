@@ -52,7 +52,7 @@ public static class BlockRules
 		if (unsafeCell && (!ctx.DigAnyway || NextToLava(ctx.Grid, cell)))
 			return float.PositiveInfinity;
 
-		float ticks = ctx.Blocks.BreakTicks(cell.X, cell.Y);
+		float ticks = ctx.BreakTicks(cell.X, cell.Y);
 		if (float.IsInfinity(ticks) || float.IsNaN(ticks))
 			return float.PositiveInfinity;
 		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks + (unsafeCell ? DigAnywayTicks : 0f)
