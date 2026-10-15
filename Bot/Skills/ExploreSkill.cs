@@ -151,10 +151,16 @@ public sealed class ExploreSkill : ISkill
 				: down
 				? new TilePos(node.X + heading * FallbackSideways, node.Y + FallbackDepth)
 				: new TilePos(node.X + heading * FallbackStep, node.Y));
+			// No cave in view, looking down: dig on in the bot's own mine (BranchMine), kept from one exploration to the next.
+			mineLeg = false;
+			if (frontier == null && Bias == ExploreBias.Down && !tooDeep && MineLeg(ctx, node) is TilePos mt) {
+				t = mt;
+				mineLeg = true;
+			}
 			// Digging on into somewhere off limits (a death spot, the underground desert in weak gear), or where a leg already
 			// found no path: the other way, then level either way. Seen in game (world_eye run 42): a fight every few
 			// seconds restarted mining, and with it the same unreachable first leg, for 12 game hours.
-			if (frontier == null && Barred(ctx, t)) {
+			if (frontier == null && !mineLeg && Barred(ctx, t)) {
 				int step = down || tooDeep ? FallbackSideways : FallbackStep;
 				var options = new[] {
 					new TilePos(node.X - heading * step, t.Y),
@@ -180,8 +186,10 @@ public sealed class ExploreSkill : ISkill
 				ctx.Explored.RemoveAt(0);
 			if (t.X != node.X)
 				heading = Math.Sign(t.X - node.X);
-			ctx.Log.Info($"Explore: leg {legs} to {t} ({(frontier != null ? "frontier" : "digging on")}) from {node}");
-			walk = new WalkToSkill(t) { Quiet = true, Tolerance = 3, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
+			ctx.Log.Info($"Explore: leg {legs} to {t} ({(frontier != null ? "frontier" : mineLeg ? mineWhat : "digging on")}) from {node}");
+			walk = mineLeg
+				? new WalkToSkill(new Core.Pathfinding.GoalStandAt(t, ctx.Physics)) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits }
+				: new WalkToSkill(t) { Quiet = true, Tolerance = 3, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			walk.Start(ctx);
 			legStart = ticks;
 			legFrom = node;
@@ -221,6 +229,12 @@ public sealed class ExploreSkill : ISkill
 			ctx.Log.Info($"Explore: leg {legs} to {legTarget} went nowhere; turning round");
 			heading = -heading;
 		}
+		if (mineLeg && ctx.Mine != null && legTarget is TilePos ml) {
+			if (s == SkillStatus.Succeeded)
+				ctx.Mine.Reached(ctx.Node, ml);
+			else
+				ctx.Mine.Failed(ml);
+		}
 		if (s == SkillStatus.Failed && walk.FailureReason.StartsWith("no path") && legTarget is TilePos lt0)
 			ctx.UnreachableTiles.Add(lt0); // not again until the brain's rest forgets the unreachable
 		if (s == SkillStatus.Failed) {
@@ -236,6 +250,25 @@ public sealed class ExploreSkill : ISkill
 		walk.Stop(ctx);
 		walk = null;
 		return SkillStatus.Running;
+	}
+
+	private bool mineLeg;
+	private string mineWhat = "";
+
+	/// <summary>The next spot in the bot's mine (a new mine where the bot is if there is none near), or null if it has no more.</summary>
+	private TilePos? MineLeg(BotContext ctx, TilePos node)
+	{
+		BranchMine mine = ctx.Mine;
+		if (mine == null || mine.StairEnd.ChebyshevTo(node) > BranchMine.AbandonTiles && mine.Entrance.ChebyshevTo(node) > BranchMine.AbandonTiles) {
+			mine = ctx.Mine = new BranchMine(node, heading);
+			ctx.Log.Info($"Explore: no cave in view; starting a mine here, {mine}");
+		}
+		TilePos? next = mine.NextTarget(ctx.DeepestRow, out mineWhat);
+		if (next is TilePos n && ctx.OffLimits(n)) {
+			mine.Failed(n); // off limits that way: the next part of the mine
+			next = mine.NextTarget(ctx.DeepestRow, out mineWhat);
+		}
+		return next is TilePos m && !ctx.OffLimits(m) ? m : null;
 	}
 
 	private static bool Barred(BotContext ctx, TilePos t) => ctx.OffLimits(t) || ctx.UnreachableTiles.Contains(t);
