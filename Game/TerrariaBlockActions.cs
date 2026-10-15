@@ -237,8 +237,12 @@ public sealed class TerrariaBlockActions : IBlockActions
 			return float.PositiveInfinity;
 		// Never undermine furniture: a work bench, furnace, anvil, chair or door standing on this tile would break
 		// and drop as an item (seen in game: the bot mined out the floor under its own bench and anvil).
+		// Not a plant (grass, flowers, mushrooms: cut by anything) or rubble (piles, stalactites: vanilla breaks them when
+		// placing over them): seen in game (measured run S10), grass under a pile or a flower counted as unbreakable, and
+		// ruled out 113 of 161 arena sites round the spawn.
 		Tile above = Main.tile[x, y - 1];
-		if (above.HasTile && Main.tileFrameImportant[above.TileType] && !TileID.Sets.IsATreeTrunk[above.TileType])
+		if (above.HasTile && Main.tileFrameImportant[above.TileType] && !TileID.Sets.IsATreeTrunk[above.TileType] && !Main.tileCut[above.TileType]
+			&& !TileID.Sets.BreakableWhenPlacing[above.TileType])
 			return float.PositiveInfinity;
 		if (!WorldGen.CanKillTile(x, y))
 			return float.PositiveInfinity;
