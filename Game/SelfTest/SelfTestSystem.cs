@@ -289,7 +289,7 @@ public sealed class SelfTestSystem : ModSystem
 				else if (s.Mode == "auto") {
 					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
 				}
-				else if (s.Mode == "pathbench") {
+				else if (s.Mode == "pathbench" || s.Mode == "arenasite") {
 					// Run once things have settled (Running phase, tick 120): PathBench.
 				}
 				else if (s.Mode == "surface") {
@@ -311,6 +311,11 @@ public sealed class SelfTestSystem : ModSystem
 				s.During?.Invoke(arena, phaseTicks);
 				if (s.Mode == "pathbench" && phaseTicks == 120)
 					PathBench.Run(bot.Context, Mod);
+				if (s.Mode == "arenasite" && phaseTicks == 120) {
+					var bp = Bot.Building.Blueprint.Arena(bot.Context.Ids);
+					Mod.Logger.Info($"ARENASITE round {bot.Context.Node}: {Bot.Building.SiteFinder.Explain(bot.Context, bp, bot.Context.Node)}; "
+						+ $"found {Bot.Building.SiteFinder.Find(bot.Context, bp, bot.Context.Node)?.ToString() ?? "none"} done");
+				}
 				if (s.Mode == "surface" && phaseTicks == SurfaceAfterTicks)
 					bot.Brain.StartSkill(new Bot.Skills.SurfaceSkill(), bot.Context);
 				if (s.EnemyType != 0 && s.SpawnAtTick > 0 && phaseTicks == s.SpawnAtTick)
@@ -349,7 +354,7 @@ public sealed class SelfTestSystem : ModSystem
 						+ "inventory " + string.Join(", ", Enumerable.Range(0, 50).Where(i => !p.inventory[i].IsAir).Select(i => $"{p.inventory[i].Name} x{p.inventory[i].stack}")));
 				bool finished = s.Mode == "auto"
 					? phaseTicks > 2 && (!bot.Brain.Auto || (bot.Brain.Planner.Complete && bot.Brain.Current == null))
-					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > (s.Mode == "surface" ? SurfaceAfterTicks + 2 : s.Mode == "pathbench" ? int.MaxValue : 2);
+					: bot.Brain.Current == null && bot.Brain.Target == null && phaseTicks > (s.Mode == "surface" ? SurfaceAfterTicks + 2 : s.Mode is "pathbench" or "arenasite" ? int.MaxValue : 2);
 				if (!finished && s.FinishOnLog != null && phaseTicks % 30 == 0)
 					finished = tee.Lines.Any(l => l.Contains(s.FinishOnLog));
 				// Switched off by an exception: over now (world_eye run 71 went on for a game day of deaths at the spawn after it).

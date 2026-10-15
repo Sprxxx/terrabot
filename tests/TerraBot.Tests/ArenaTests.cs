@@ -70,6 +70,25 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_Arena_SlopesOfTheGround_AreBlocks_NotPlatforms()
+	{
+		// Measured run S10: slopes and half blocks of the ground read as platforms ruled out 122 of 161 arena sites round
+		// the house ("a platform in the room"), and the boss plan stopped at max life 200 with the bow made.
+		FakeGame g = EarlyGameTests.Field(140, 50, 75);
+		for (int x = 2; x < 130; x += 9) {
+			g.Grid.Set(x, 24, CellKind.Platform | CellKind.Shaped); // a slope on the ground, in the room
+			g.Grid.Set(x + 4, 25, CellKind.Platform | CellKind.Shaped); // a slope in the floor row
+		}
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		TilePos? site = SiteFinder.Find(ctx, bp, new TilePos(70, 24));
+		output.WriteLine($"site {site}; {SiteFinder.Explain(ctx, bp, new TilePos(70, 24))}");
+		Assert.NotNull(site);
+		Assert.Equal(25, site.Value.Y + bp.Height - 1);
+		Assert.True(SiteFinder.Edits(ctx, bp, site.Value) > 0); // the slopes in the room get mined
+	}
+
+	[Fact]
 	public void BuildSkill_Arena_FellsTrees_LevelsTheGround_AndPlacesTheCampfire()
 	{
 		FakeGame g = RoughField();

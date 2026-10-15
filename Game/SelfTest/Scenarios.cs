@@ -203,6 +203,19 @@ public sealed class Scenario
 			TimeoutTicks = 60 * 60,
 			FinishOnLog = "PATHBENCH done",
 		},
+		new() {
+			// Why no arena site is found round the spawn of the real world (SiteFinder.Explain). Run it by name.
+			Name = "world_arenasite",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "arenasite",
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			ExpectSuccess = false,
+			TimeoutTicks = 60 * 60,
+			FinishOnLog = "ARENASITE",
+		},
 			new() {
 				Name = "fight_green_slime",
 				Rows = Grid(Repeat("..............................", 6), "..S..............E............", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),

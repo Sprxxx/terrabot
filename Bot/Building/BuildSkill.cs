@@ -56,14 +56,52 @@ public static class SiteFinder
 	private static int? GroundAt(ITileGrid g, int x, int y)
 	{
 		for (int gy = y - GroundScan; gy <= y + GroundScan; gy++)
-			if (g.Get(x, gy).IsSolid() && !g.Get(x, gy - 1).IsSolid())
+			if (g.Get(x, gy).IsBlock() && !g.Get(x, gy - 1).IsBlock())
 				return gy;
 		return null;
 	}
 
-	/// <summary>Number of edits to build here, or -1 if it cannot be built here.</summary>
-	public static int Edits(BotContext ctx, Blueprint bp, TilePos origin)
+	/// <summary>
+	/// Why no site was found: for each origin tried, the first reason it was skipped, counted ("liquid 40, too many edits
+	/// 30, ..."), for the log.
+	/// </summary>
+	public static string Explain(BotContext ctx, Blueprint bp, TilePos around, IReadOnlyList<(TilePos Min, TilePos Max)> keepOut = null)
 	{
+		var why = new Dictionary<string, int>();
+		void Count(string r) => why[r] = why.TryGetValue(r, out int n) ? n + 1 : 1;
+		int fewest = int.MaxValue;
+		for (int x0 = around.X - bp.SearchRadius; x0 <= around.X + bp.SearchRadius; x0++) {
+			int? ground = GroundAt(ctx.Grid, x0 + bp.Width / 2, around.Y);
+			if (ground == null) {
+				Count("no ground under the middle");
+				continue;
+			}
+			var origin = new TilePos(x0, ground.Value - (bp.Height - 1));
+			if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X
+				&& origin.Y <= r.Max.Y && origin.Y + bp.Height - 1 >= r.Min.Y)) {
+				Count("over the house");
+				continue;
+			}
+			int edits = Edits(ctx, bp, origin, out string reason);
+			if (edits < 0)
+				Count(reason);
+			else if (edits > bp.MaxEdits) {
+				Count("too many edits");
+				fewest = Math.Min(fewest, edits);
+			}
+			else
+				Count("fine");
+		}
+		return string.Join(", ", why.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}"))
+			+ (fewest < int.MaxValue ? $"; fewest edits {fewest}" : "");
+	}
+
+	/// <summary>Number of edits to build here, or -1 if it cannot be built here.</summary>
+	public static int Edits(BotContext ctx, Blueprint bp, TilePos origin) => Edits(ctx, bp, origin, out _);
+
+	public static int Edits(BotContext ctx, Blueprint bp, TilePos origin, out string reason)
+	{
+		reason = null;
 		ITileGrid g = ctx.Grid;
 		int edits = 0;
 		for (int y = 0; y < bp.Height; y++) {
@@ -73,28 +111,39 @@ public static class SiteFinder
 					continue;
 				int wx = origin.X + x, wy = origin.Y + y;
 				CellKind k = g.Get(wx, wy);
-				if (k.IsLiquid())
+				if (k.IsLiquid()) {
+					reason = "liquid";
 					return -1;
+				}
 				if (ctx.World.IsTreeTrunk(wx, wy)) {
-					if (!bp.ChopTrees || c == PlanCell.Block)
+					if (!bp.ChopTrees || c == PlanCell.Block) {
+						reason = "a tree in the floor";
 						return -1;
+					}
 					edits++; // felled with the axe
 					continue;
 				}
 				if (c == PlanCell.Block) {
-					if (k.IsPlatform())
+					if (k.IsPlatform() && !k.IsShaped()) {
+						reason = "a platform in the floor";
 						return -1;
-					if (!k.IsSolid())
+					}
+					if (!k.IsBlock())
 						edits++;
 				}
-				else if (k.IsSolid()) {
+				else if (k.IsBlock()) {
+					// A slope or half block of the ground is a block to mine, like any other: seen in game (measured run S10),
+					// read as platforms they ruled out 122 of 161 arena sites round the house, and the boss plan stopped.
 					// A block under a tree cannot be mined while the tree stands; once it is felled, it can.
 					bool underTree = bp.ChopTrees && ctx.World.IsTreeTrunk(wx, wy - 1);
-					if (!underTree && float.IsInfinity(ctx.Blocks?.BreakTicks(wx, wy) ?? float.PositiveInfinity))
+					if (!underTree && float.IsInfinity(ctx.Blocks?.BreakTicks(wx, wy) ?? float.PositiveInfinity)) {
+						reason = $"unbreakable tile {ctx.World.TileTypeAt(wx, wy)} under {ctx.World.TileTypeAt(wx, wy - 1)}";
 						return -1;
+					}
 					edits += 2;
 				}
 				else if (k.IsPlatform() || ctx.World.TileTypeAt(wx, wy) is int t && t >= 0 && ctx.Seen.Stations.ContainsKey(t)) {
+					reason = k.IsPlatform() ? "a platform in the room" : "a station in the room";
 					return -1; // furniture or a station in the way
 				}
 			}
@@ -342,7 +391,7 @@ public sealed class BuildSkill : ISkill
 			for (int x = 0; x < bp.Width; x++) {
 				PlanCell c = bp.At(x, y);
 				int wx = Origin.X + x, wy = Origin.Y + y;
-				if (c is PlanCell.Wall or PlanCell.Clear && g.Get(wx, wy).IsSolid() && !CoveredByPlaced(wx, wy)) {
+				if (c is PlanCell.Wall or PlanCell.Clear && g.Get(wx, wy).IsBlock() && !CoveredByPlaced(wx, wy)) {
 					int d = Math.Abs(wx - node.X);
 					if (d < bestDist) {
 						bestDist = d;
@@ -356,7 +405,7 @@ public sealed class BuildSkill : ISkill
 			return best;
 
 		// 2. Frame blocks, bottom-up, each one next to something already there.
-		List<TilePos> missingBlocks = Cells(PlanCell.Block).Where(c => !g.Get(c.X, c.Y).IsSolid()).ToList();
+		List<TilePos> missingBlocks = Cells(PlanCell.Block).Where(c => !g.Get(c.X, c.Y).IsBlock()).ToList();
 		if (missingBlocks.Count > 0) {
 			if (ctx.Blocks == null || ctx.Blocks.BlockCount <= 0) {
 				// The hotbar stack ran out; if more blocks are in the backpack, hotbar stocking brings them up shortly.
@@ -406,8 +455,8 @@ public sealed class BuildSkill : ISkill
 
 	private bool StillNeeded(BotContext ctx, Action a, Func<int, int, bool> coveredByPlaced) => a.Kind switch {
 		Kind.Chop => ctx.World.IsTreeTrunk(a.Cell.X, a.Cell.Y),
-		Kind.Mine => ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsSolid() && !coveredByPlaced(a.Cell.X, a.Cell.Y),
-		Kind.Block => !ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsSolid() && ctx.Blocks != null && ctx.Blocks.BlockCount > 0,
+		Kind.Mine => ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsBlock() && !coveredByPlaced(a.Cell.X, a.Cell.Y),
+		Kind.Block => !ctx.Grid.Get(a.Cell.X, a.Cell.Y).IsBlock() && ctx.Blocks != null && ctx.Blocks.BlockCount > 0,
 		Kind.Wall => !ctx.World.HasWall(a.Cell.X, a.Cell.Y) && ctx.Inventory.Count(a.Item) > 0,
 		Kind.Wait => false, // re-check every tick
 		_ => ctx.World.TileTypeAt(a.Aim.X, a.Aim.Y) != ctx.Knowledge.TilePlacedBy(a.Item) && ctx.Inventory.Count(a.Item) > 0,
@@ -457,7 +506,7 @@ public sealed class BuildSkill : ISkill
 	private const int TreeBaseScan = 30;
 
 	private static bool HasSolidNeighbour(ITileGrid g, TilePos c) =>
-		g.Get(c.X - 1, c.Y).IsSolid() || g.Get(c.X + 1, c.Y).IsSolid() || g.Get(c.X, c.Y - 1).IsSolid() || g.Get(c.X, c.Y + 1).IsSolid();
+		g.Get(c.X - 1, c.Y).IsBlock() || g.Get(c.X + 1, c.Y).IsBlock() || g.Get(c.X, c.Y - 1).IsBlock() || g.Get(c.X, c.Y + 1).IsBlock();
 
 	private SkillStatus Fail(BotContext ctx, string reason)
 	{

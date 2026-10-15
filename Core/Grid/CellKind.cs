@@ -41,6 +41,11 @@ public static class CellKindExtensions
 	public static bool IsFalling(this CellKind k) => (k & CellKind.Falling) != 0;
 	public static bool IsShaped(this CellKind k) => (k & CellKind.Shaped) != 0;
 	public static bool IsHalfBlock(this CellKind k) => (k & CellKind.HalfBlock) != 0;
+	/// <summary>
+	/// A block of the world, whole or shaped (a slope, a half block: read as a platform so feet can ride it): what building
+	/// counts as a block to keep in a floor or to mine out of a room.
+	/// </summary>
+	public static bool IsBlock(this CellKind k) => k.IsSolid() || k.IsShaped();
 	/// <summary>Room for the body above the feet: passable and not a slope or half block (those only open at the feet).</summary>
 	public static bool IsHeadroom(this CellKind k) => k.IsPassable() && !k.IsShaped();
 

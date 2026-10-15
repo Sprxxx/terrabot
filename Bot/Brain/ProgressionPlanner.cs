@@ -853,6 +853,7 @@ public sealed class ProgressionPlanner
 			ArenaSite = SiteFinder.Find(ctx, bp, anchor, badArenaSites, keepOut);
 			if (ArenaSite == null) {
 				stuck = $"no arena site ({bp.Width} wide, at most {bp.MaxEdits} edits) within {bp.SearchRadius} tiles of {anchor}";
+				ctx.Log.Info($"Auto: arena sites round {anchor}: {SiteFinder.Explain(ctx, bp, anchor, keepOut)}");
 				return null;
 			}
 			ctx.Log.Info($"Auto: arena site {ArenaSite.Value} ({SiteFinder.Edits(ctx, bp, ArenaSite.Value)} edits)");
@@ -861,7 +862,7 @@ public sealed class ProgressionPlanner
 		int blocks = 0;
 		for (int x = 0; x < bp.Width; x++)
 			for (int y = 0; y < bp.Height; y++)
-				if (bp.At(x, y) == PlanCell.Block && !ctx.Grid.Get(site.X + x, site.Y + y).IsSolid())
+				if (bp.At(x, y) == PlanCell.Block && !ctx.Grid.Get(site.X + x, site.Y + y).IsBlock())
 					blocks++;
 		var needs = new List<Need>();
 		if (blocks > 0)
@@ -912,9 +913,9 @@ public sealed class ProgressionPlanner
 			for (int y = 0; y < bp.Height; y++) {
 				int wx = site.X + x, wy = site.Y + y;
 				PlanCell c = bp.At(x, y);
-				if (c == PlanCell.Block && !ctx.Grid.Get(wx, wy).IsSolid())
+				if (c == PlanCell.Block && !ctx.Grid.Get(wx, wy).IsBlock())
 					return false;
-				if (c == PlanCell.Clear && !bp.Items.Any(it => it.Covers(x, y)) && (ctx.Grid.Get(wx, wy).IsSolid() || ctx.World.IsTreeTrunk(wx, wy)))
+				if (c == PlanCell.Clear && !bp.Items.Any(it => it.Covers(x, y)) && (ctx.Grid.Get(wx, wy).IsBlock() || ctx.World.IsTreeTrunk(wx, wy)))
 					return false;
 			}
 		return bp.Items.All(it => BuildSkill.IsPlaced(ctx, bp, site, it));
