@@ -535,4 +535,21 @@ public class FootingTests
 		ctx.NoteDeathByEnemy(new TilePos(100, 380)); // deep in the caves below it: stay away from there for now
 		Assert.True(ctx.OffLimits(new TilePos(100, 380)));
 	}
+
+	[Fact]
+	public void OnAHalfBlockInTheFeetRow_TheBodyIsAtThatNode_ARowUp()
+	{
+		// Measured run R1: walks and drops onto a half block in the feet row reached the column a row "too high" (the body
+		// rides on top of it, 8 px up) and timed out there, 54 times.
+		var g = ArrayTileGrid.Parse(
+			"........",
+			"........",
+			"........",
+			"....../.",
+			"########");
+		var planned = new TilePos(5, 3); // feet row 3 holds the slope at column 6
+		Assert.True(Core.Execution.PathExecutor.SameNode(g, new TilePos(5, 2), planned));
+		Assert.True(Core.Execution.PathExecutor.SameNode(g, planned, planned));
+		Assert.False(Core.Execution.PathExecutor.SameNode(g, new TilePos(2, 2), new TilePos(2, 3))); // flat: a row up is not there
+	}
 }

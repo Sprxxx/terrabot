@@ -512,8 +512,14 @@ public sealed class BotBrain
 			}
 			if (failures >= MaxConsecutiveFailures) {
 				if (++backoffs > MaxBackoffs && !TryDigAnyway(ctx)) {
-					ctx.Log.Warn($"Auto: {failures} failures in a row after {MaxBackoffs} rests, stopping auto mode ({LastResult})");
-					Auto = false;
+					// Not the end of the game: seen in game (measured run S0), auto mode stopped at day 6 of 10 with the bot afloat in
+					// a pool, four game days lost. Home by a recall potion if there is one, and rest on.
+					backoffs = MaxBackoffs;
+					bool recall = ctx.SpawnTile is TilePos home && home.ChebyshevTo(ctx.Node) > ProgressionPlanner.RecallDistance && Planner.RequestRecall(ctx);
+					ctx.Log.Warn($"Auto: {failures} failures in a row after {MaxBackoffs} rests ({LastResult}); {(recall ? "drinking a recall potion and " : "")}resting on, not stopping");
+					failures = 0;
+					backoffUntil = ctx.Tick + BackoffTicks * 2;
+					ctx.UnreachableTiles.Clear();
 				}
 				else {
 					ctx.Log.Warn($"Auto: {failures} failures in a row ({LastResult}); resting {BackoffTicks} ticks, forgetting what was unreachable (not the steps that failed 3 times: those are facts), then trying again ({backoffs}/{MaxBackoffs})");

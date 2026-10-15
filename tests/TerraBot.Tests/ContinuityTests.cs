@@ -233,4 +233,29 @@ public class ContinuityTests
 		Assert.True(walk.Plans >= 3, "the walk should come in segments");
 		Assert.Equal(walk.Plans - 1, walk.Splices);
 	}
+
+	[Fact]
+	public void AfloatAgainstAWallOnTheTargetsSide_SwimsForTheShoreBehind()
+	{
+		// Measured run S0: afloat with a wall on the target's side, every walk swam into the wall for 1,200 ticks and failed
+		// until auto mode stopped (four game days lost). A player swims for the shore.
+		var g = new FakeGame(new[] {
+			"..............######",
+			"..............######",
+			"..~~~~~~~~~~~~######",
+			"..~~~~~~S~~~~~######",
+			"##~~~~~~~~~~~~######",
+			"##~~~~~~~~~~~~######",
+			"####################" });
+		BotContext ctx = g.CreateContext(output);
+		var walk = new WalkToSkill(new TilePos(18, 0)); // beyond the wall
+		walk.Start(ctx);
+		var body = ctx.Body;
+		body.VY = -0.2f;
+		ctx.Body = body;
+		walk.Tick(ctx);
+		output.WriteLine(walk.Describe());
+		Assert.Contains("swimming", walk.Describe());
+		Assert.Equal(-1, ctx.Output.Horizontal); // to the dry shore on the left, not into the wall
+	}
 }

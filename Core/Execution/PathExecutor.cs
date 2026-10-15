@@ -160,7 +160,8 @@ public sealed class PathExecutor
 			ticksInStep++;
 			if (ticksInStep > Budget(step))
 				return Finish(ExecStatus.Stuck, $"step {StepIndex} {step.Kind} {step.From}->{step.To} timed out after {ticksInStep} ticks at {Body.NodeOf(s, ctx.Physics)}"
-					+ $" [{Phase}; left {s.X - Body.CanonicalLeft(step.From.X, ctx.Physics):+0.0;-0.0} px off the start, vx {s.VX:0.00} vy {s.VY:0.00}{(s.Grounded ? ", grounded" : "")}{(step.Template != null ? ", " + step.Template.Variant : "")}]");
+					+ $" [{Phase}; left {s.X - Body.CanonicalLeft(step.From.X, ctx.Physics):+0.0;-0.0} px off the start, vx {s.VX:0.00} vy {s.VY:0.00}{(s.Grounded ? ", grounded" : "")}{(step.Template != null ? ", " + step.Template.Variant : "")}"
+					+ $"; to feet {ctx.Grid.Get(step.To.X, step.To.Y)}/{ctx.Grid.Get(step.To.X + 1, step.To.Y)} under {ctx.Grid.Get(step.To.X, step.To.Y + 1)}/{ctx.Grid.Get(step.To.X + 1, step.To.Y + 1)}]");
 
 			MoveInput input;
 			bool advanced;
@@ -212,7 +213,7 @@ public sealed class PathExecutor
 	{
 		int end = Math.Min(steps.Count, StepIndex + ResyncLookahead);
 		for (int i = StepIndex + 1; i < end; i++) {
-			int target = steps[i].From == node ? i : steps[i].To == node ? i + 1 : -1;
+			int target = At(node, steps[i].From) ? i : At(node, steps[i].To) ? i + 1 : -1;
 			if (target < 0)
 				continue;
 			Resyncs++;
@@ -222,6 +223,17 @@ public sealed class PathExecutor
 		}
 		return false;
 	}
+
+	/// <summary>
+	/// Is the body at <paramref name="planned"/>? Exactly, or one row above it when a slope or half block is in that node's
+	/// feet row: the grid lets feet stand in such a cell, but the body rides on top of it, 8 px up, and reads a row higher.
+	/// Seen in game (measured run R1): 54 walks and drops reached the right column a row "too high" and timed out there.
+	/// </summary>
+	public static bool SameNode(ITileGrid g, TilePos node, TilePos planned) =>
+		node == planned || node.X == planned.X && node.Y == planned.Y - 1
+			&& (g.Get(planned.X, planned.Y).IsShaped() || g.Get(planned.X + 1, planned.Y).IsShaped());
+
+	private bool At(TilePos node, TilePos planned) => SameNode(ctx.Grid, node, planned);
 
 	/// <summary>Returns and clears the latest informational message (e.g. a resync) for the caller to log.</summary>
 	public string PopNotice()
@@ -294,7 +306,7 @@ public sealed class PathExecutor
 
 		// Walking passes through To while grounded every tick; a drop must actually have landed.
 		bool landed = step.Kind is MoveKind.Drop or MoveKind.DropThrough ? settled : s.Grounded;
-		if (landed && node == step.To) {
+		if (landed && At(node, step.To)) {
 			advanced = true;
 			return true;
 		}
@@ -338,7 +350,7 @@ public sealed class PathExecutor
 			// Already there before the jump (a hop of a row onto a slope: aligning walked the bot up it). Seen in game
 			// (world_eye runs 68 and 73): "Jump (2077,362)->(2077,361) timed out ... at (2077,361)", the jump waiting to be
 			// back on the start, three times, then the step banned.
-			if (settled && node == step.To && node != step.From) {
+			if (settled && At(node, step.To) && !At(node, step.From)) {
 				advanced = true;
 				return true;
 			}
@@ -350,7 +362,7 @@ public sealed class PathExecutor
 				Finish(ExecStatus.OffPath, $"step {StepIndex} jump: expected to start at {step.From}, standing at {node}");
 				return false;
 			}
-			bool aligned = settled && node == step.From && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
+			bool aligned = settled && At(node, step.From) && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
 				&& Math.Abs(s.VX) <= 0.05f && !lastJumpPressed && s.ReleaseJump; // templates assume take-off from rest
 			if (!aligned) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);
@@ -381,7 +393,7 @@ public sealed class PathExecutor
 				return true;
 			}
 			if (sinceTakeoff > 1 && settled) {
-				if (node == step.To || TryResync(node)) {
+				if (At(node, step.To) || TryResync(node)) {
 					advanced = true;
 					return true;
 				}
@@ -417,7 +429,7 @@ public sealed class PathExecutor
 				Finish(ExecStatus.OffPath, $"step {StepIndex} {step}: expected to start at {step.From}, standing at {node}");
 				return -1;
 			}
-			if (!settled || node != step.From) {
+			if (!settled || !At(node, step.From)) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 2f);
 				Phase = "Actions: positioning";
 				return 0;
@@ -466,7 +478,7 @@ public sealed class PathExecutor
 		ITileGrid g = ctx.Grid;
 		bool placed = g.Get(step.From.X, step.From.Y).IsSolid() || g.Get(step.From.X + 1, step.From.Y).IsSolid();
 
-		if (settled && node == step.To && placed) {
+		if (settled && At(node, step.To) && placed) {
 			advanced = true;
 			return true;
 		}
@@ -500,7 +512,7 @@ public sealed class PathExecutor
 				Finish(ExecStatus.OffPath, $"step {StepIndex} pillar: expected to start at {step.From}, standing at {node}");
 				return false;
 			}
-			bool aligned = settled && node == step.From && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
+			bool aligned = settled && At(node, step.From) && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
 				&& Math.Abs(s.VX) <= 0.1f && !lastJumpPressed && s.ReleaseJump;
 			if (!aligned) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);
@@ -511,18 +523,18 @@ public sealed class PathExecutor
 			jumpTick = 0;
 		}
 
-		if (jumpTick == 1 && s.Grounded && node == step.From && jumpRetries < 3) {
+		if (jumpTick == 1 && s.Grounded && At(node, step.From) && jumpRetries < 3) {
 			jumpRetries++;
 			jumpPhase = JumpPhase.Align;
 			Phase = "Pillar retry";
 			return true;
 		}
 		if (jumpTick > 1 && settled) {
-			if (node == step.To && placed) {
+			if (At(node, step.To) && placed) {
 				advanced = true;
 				return true;
 			}
-			if (node == step.From && jumpRetries < 3) {
+			if (At(node, step.From) && jumpRetries < 3) {
 				jumpRetries++; // came down without the block (placement refused: NPC in the way, out of blocks...)
 				jumpPhase = JumpPhase.Align;
 				Phase = "Pillar retry";

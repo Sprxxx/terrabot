@@ -607,6 +607,23 @@ public sealed class Scenario
 				TimeoutTicks = 60 * 20,
 			},
 			new() {
+				// Measured run R1: walks and drops onto a half block in the feet row reached the right column a row "too high"
+				// (the body rides on top of it) and timed out there, 54 times.
+				Name = "walk_over_half_blocks",
+				Rows = Grid(Repeat("..........................", 3), "..S...h..h.h.....hh....G..", "##########################"),
+				Check = r => r.LogHas("timed out") || r.LogHas("Re-plan") ? "a step timed out or re-planned" : null,
+			},
+			new() {
+				// Measured run R1: on a minecart track along a cave floor nothing could be placed (the track fills the cell)
+				// or broken (tracks counted as furniture): no pillar, no way up, hours back and forth.
+				Name = "pillar_up_from_a_track",
+				Rows = Grid(Repeat("......................", 3), "...........G..........", Repeat("..........@@@@@@@@@@@@", 8),
+					"rrrrrrrrSr@@@@@@@@@@@@", "@@@@@@@@.@@@@@@@@@@@@@", "@@@@@@@@@@@@@@@@@@@@@@"),
+				Dig = true,
+				Build = true,
+				Blocks = 30,
+			},
+			new() {
 				Name = "tunnel_through_wall",
 				Rows = Corridor,
 				Dig = true,

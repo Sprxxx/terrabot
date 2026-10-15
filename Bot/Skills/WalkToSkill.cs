@@ -109,6 +109,46 @@ public sealed class WalkToSkill : ISkill
 	/// <summary>Ticks bobbing in water over something to stand on before that counts as landed.</summary>
 	public const int SettleInWaterTicks = 30;
 	private int airborneTicks;
+	private TilePos? swimTo;
+	public const int SwimReplanTicks = 60, SwimSearchCells = 2000;
+
+	/// <summary>
+	/// Somewhere to stand, breadth-first through passable cells (water and air) from <paramref name="from"/>: a dry spot
+	/// (body out of the liquid) on the target's side if there is one in reach (cells swum plus half the way left to the
+	/// target), else the nearest spot at all (a pool's floor).
+	/// </summary>
+	private TilePos? NearestFooting(BotContext ctx, TilePos from)
+	{
+		ITileGrid g = ctx.Grid;
+		var dist = new System.Collections.Generic.Dictionary<TilePos, int> { [from] = 0 };
+		var queue = new System.Collections.Generic.Queue<TilePos>();
+		queue.Enqueue(from);
+		TilePos? wet = null, dry = null;
+		float bestDry = float.MaxValue;
+		while (queue.Count > 0 && dist.Count < SwimSearchCells) {
+			TilePos c = queue.Dequeue();
+			int dc = dist[c];
+			if (c != from && Body.IsStandable(g, c)) {
+				if (!Body.InLiquid(g, c)) {
+					float score = dc + 0.5f * c.ChebyshevTo(Target);
+					if (score < bestDry) {
+						bestDry = score;
+						dry = c;
+					}
+				}
+				else
+					wet ??= c;
+			}
+			foreach (TilePos d in new[] { new TilePos(0, -1), new TilePos(-1, 0), new TilePos(1, 0), new TilePos(0, 1) }) {
+				var n = new TilePos(c.X + d.X, c.Y + d.Y);
+				if (!dist.ContainsKey(n) && Body.IsClear(g, n)) {
+					dist[n] = dc + 1;
+					queue.Enqueue(n);
+				}
+			}
+		}
+		return dry ?? wet;
+	}
 
 	private void Info(BotContext ctx, string message)
 	{
@@ -163,6 +203,8 @@ public sealed class WalkToSkill : ISkill
 
 	public void Resume(BotContext ctx)
 	{
+		airborneTicks = 0; // a swim interrupted by a fight starts afresh (the count ran on through it and the walk failed at once)
+		swimTo = null;
 		Info(ctx, $"WalkTo resumed: {(pausedSteps != null ? $"{pausedSteps.Count} step(s) of the plan kept" : "planning again")}, bot at {ctx.Node}");
 		State = "resumed";
 	}
@@ -256,7 +298,7 @@ public sealed class WalkToSkill : ISkill
 			return false;
 		int n = System.Math.Min(kept.Count, ResumeLookahead);
 		for (int i = 0; i < n; i++) {
-			if (kept[i].From != node || !ctx.Moves.IsStepValid(kept[i]))
+			if (!PathExecutor.SameNode(ctx.Grid, node, kept[i].From) || !ctx.Moves.IsStepValid(kept[i]))
 				continue;
 			Executor = new PathExecutor(ctx.Moves, kept.GetRange(i, kept.Count - i));
 			searchMoves = ctx.Moves;
@@ -308,9 +350,15 @@ public sealed class WalkToSkill : ISkill
 						&& !ctx.Grid.Get(node.X, node.Y + 1).CanStandOn() && !ctx.Grid.Get(node.X + 1, node.Y + 1).CanStandOn();
 					if (afloat && airborneTicks < MaxSwimTicks) {
 						airborneTicks++;
-						ctx.Output.Horizontal = Target.X > node.X ? 1 : Target.X < node.X ? -1 : 0;
-						ctx.Output.Jump = (airborneTicks / 10) % 2 == 0; // strokes: press, release
-						State = "swimming for footing";
+						// For the nearest place to stand (through the water and the air above it), as a player swims for the
+						// nearest shore, not towards the target: seen in game (measured run S0), afloat against a wall on the
+						// target's side, every walk swam into it for 1,200 ticks and failed, until auto mode stopped.
+						if (swimTo == null || airborneTicks % SwimReplanTicks == 1)
+							swimTo = NearestFooting(ctx, node);
+						TilePos dest = swimTo ?? Target;
+						ctx.Output.Horizontal = dest.X > node.X ? 1 : dest.X < node.X ? -1 : 0;
+						ctx.Output.Jump = dest.Y <= node.Y && (airborneTicks / 10) % 2 == 0; // strokes up; none to sink to a lower floor
+						State = $"swimming for footing at {dest}";
 						return SkillStatus.Running;
 					}
 					if (++airborneTicks > (afloat ? MaxSwimTicks : MaxAirborneTicks))
