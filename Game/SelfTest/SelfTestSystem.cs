@@ -25,6 +25,8 @@ public sealed class SelfTestSystem : ModSystem
 {
 	public const string LaunchFlag = "-terrabotselftest";
 	public const string FastFlag = "-terrabotfast";
+	/// <summary>Debug experiment: finding things ignores the map (TerrariaGameInfo.XRay). Self-test runs only.</summary>
+	public const string XRayFlag = "-terrabotxray";
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
@@ -139,6 +141,9 @@ public sealed class SelfTestSystem : ModSystem
 		queue = Scenario.All.Where(s => names == null ? !s.RealWorld : names.Contains(s.Name)).ToList();
 		Main.superFast = Program.LaunchParameters.TryGetValue(FastFlag, out string fast);
 		drawEvery = int.TryParse(fast, out int n) && n > 1 ? n : 1;
+		TerrariaGameInfo.XRay = Program.LaunchParameters.ContainsKey(XRayFlag);
+		if (TerrariaGameInfo.XRay)
+			Mod.Logger.Warn("SELFTEST X-RAY ON: ore, crystals, stations and chests are found without the map (debug experiment)");
 		Mod.Logger.Info($"SELFTEST armed: {queue.Count} scenario(s): {string.Join(", ", queue.Select(s => s.Name))}; "
 			+ $"fast {Main.superFast}, drawing every {drawEvery} frame(s) (frame skip {Main.FrameSkipMode})");
 	}

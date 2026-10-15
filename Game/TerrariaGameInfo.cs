@@ -228,13 +228,19 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return t.TileType == TileID.OpenDoor ? TileID.ClosedDoor : t.TileType;
 	}
 
+	/// <summary>
+	/// Debug experiment only (self-test launch flag -terrabotxray): ore, crystals, stations and chests are found whether or
+	/// not the map has revealed them, to measure how much time finding things costs. Never on in normal play.
+	/// </summary>
+	public static bool XRay { get; set; }
+
 	public IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius)
 	{
 		var found = new List<TilePos>();
 		for (int x = around.X - radius; x <= around.X + radius; x++)
 			for (int y = around.Y - radius; y <= around.Y + radius; y++)
 				// Only what the player has seen: no x-ray. Exploring (and torchlight) reveals the map.
-				if (WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == tileType && Main.Map.IsRevealed(x, y))
+				if (WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == tileType && (XRay || Main.Map.IsRevealed(x, y)))
 					found.Add(new TilePos(x, y));
 		found.Sort((a, b) => a.ChebyshevTo(around).CompareTo(b.ChebyshevTo(around)));
 		return found;
@@ -462,7 +468,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		var list = new List<ChestInfo>();
 		for (int i = 0; i < Main.maxChests; i++) {
 			Chest c = Main.chest[i];
-			if (c == null || Math.Abs(c.x - around.X) > radius || Math.Abs(c.y - around.Y) > radius || !Main.Map.IsRevealed(c.x, c.y))
+			if (c == null || Math.Abs(c.x - around.X) > radius || Math.Abs(c.y - around.Y) > radius || !XRay && !Main.Map.IsRevealed(c.x, c.y))
 				continue;
 			if (!Main.tile[c.x, c.y].HasTile || !TileID.Sets.BasicChest[Main.tile[c.x, c.y].TileType])
 				continue; // dressers and other containers are left alone

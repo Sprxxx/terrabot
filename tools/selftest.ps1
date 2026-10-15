@@ -28,7 +28,9 @@ param(
 	# Run the game as fast as the PC allows instead of 60 ticks a second (needs Frame Skip Off or Subtle).
 	[switch]$Fast,
 	# With -Fast: draw only every N-th frame (the game logic still runs every tick).
-	[int]$DrawEvery = 1
+	[int]$DrawEvery = 1,
+	# Debug experiment: finding ore, crystals, stations and chests ignores the map (no exploring needed).
+	[switch]$XRay
 )
 $ErrorActionPreference = "Stop"
 
@@ -70,6 +72,7 @@ if (-not (Test-Path (Join-Path $testDir "Worlds\$WorldFile.wld"))) { throw "Worl
 $tmlArgs = @("tModLoader.dll", "-tmlsavedirectory", "`"$testDir`"", "-skipselect", "`"${Player}:${World}`"",
 	"-terrabotselftest", $Scenarios, "-steamworkshopfolder", "none")
 if ($Fast) { $tmlArgs += @("-terrabotfast", "$DrawEvery") }
+if ($XRay) { $tmlArgs += @("-terrabotxray", "1") }
 Write-Host "Launching tModLoader:  $($tmlArgs -join ' ')"
 $started = Get-Date
 $proc = Start-Process -FilePath (Join-Path $TmlDir "dotnet\dotnet.exe") -ArgumentList $tmlArgs -WorkingDirectory $TmlDir -PassThru
