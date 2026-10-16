@@ -441,6 +441,31 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void ACollect_KeepsToTheDropItSetOffFor_WhenTheBodyMovesNearerAnother()
+	{
+		// Measured run M10d (world_eow, t73800-81000): fetching coins at (1831,305), a jump took the body to row 300, where
+		// other coins were nearer; the collect turned to them, then back, "got 0" for 2 game hours.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		MoveTo(g, ctx, 30, 24);
+		g.Drops.Add(new DropInfo(910, 71, "Copper Coin", 5, 36 * 16f + 4, 24 * 16f + 4, 8, 8)); // 6 tiles right: the nearer
+		g.Drops.Add(new DropInfo(911, 72, "Silver Coin", 1, 23 * 16f + 4, 24 * 16f + 4, 8, 8)); // 7 tiles left
+		g.Refresh(ctx);
+		var collect = new CollectDropsSkill(_ => true);
+		collect.Start(ctx);
+		collect.Tick(ctx);
+		Assert.Contains("Copper Coin", collect.Describe());
+		MoveTo(g, ctx, 28, 24); // knocked back, or a jump that went elsewhere: the silver is the nearer now (5 tiles to 8)
+		collect.Tick(ctx);
+		output.WriteLine(collect.Describe());
+		Assert.Contains("Copper Coin", collect.Describe());
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, collect, 60 * 30);
+		output.WriteLine($"{st}: {collect.Describe()}, drops left {g.Drops.Count}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.Empty(g.Drops);
+	}
+
+	[Fact]
 	public void LootAtAChasmsFloor_DeeperThanASafeFall_IsLeft_TheLootOnTheSurfaceIsNot()
 	{
 		// Measured run M10c: a fight's coins had fallen to a corruption chasm's floor, "Collect [fetching Copper Coin x11]" at

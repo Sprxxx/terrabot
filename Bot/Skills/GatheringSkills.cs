@@ -170,7 +170,13 @@ public sealed class CollectDropsSkill : ISkill
 			State = "done";
 			return SkillStatus.Succeeded;
 		}
-		DropInfo target = candidates[0];
+		// Committed to the drop it set off for while that drop lasts (picked up, given up on, or out of range ends it), not the
+		// nearest of each tick. Seen in game (measured run M10d, world_eow, t73800-81000): fetching coins at (1831,305), the
+		// walk's first jump took the body up to row 300, where coins at (1826,290) were nearer; the walk there began, a step
+		// down made (1831,305) the nearer again, and so on: "Collect [fetching Copper Coin x87] got 0" for 2 game hours, and
+		// 10 such stretches of 3 heartbeats or more in the run (47 Collect heartbeats of 240).
+		int kept = candidates.FindIndex(d => d.Id == walkTarget);
+		DropInfo target = candidates[kept >= 0 ? kept : 0];
 		if (walkTarget != target.Id || walk == null) {
 			// The give-up count belongs to the drop, not the walk: reset per walk, it never reached 30 (seen in game:
 			// a drop on a ledge out of grab range, the walk "arriving" every tick).
