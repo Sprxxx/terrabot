@@ -35,7 +35,7 @@ public sealed class SelfTestSystem : ModSystem
 	/// Milestones a checkpoint is saved at: the late stages can then be measured from there in a few minutes instead of a
 	/// whole 10-day run from day 1 (user, 2026-10-16: "do we REALLY have to start from the beginning every time?").
 	/// </summary>
-	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site" };
+	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated" };
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
