@@ -89,6 +89,24 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_Arena_LooksLeftOfTheHouse_AsFarAsRight()
+	{
+		// Measured run S12: searched by its left edge within 80 tiles, a 96-wide arena could never go left of the house:
+		// "over the house" for 92 of 161 sites, and with the right side no good, no site at all.
+		FakeGame g = EarlyGameTests.Field(320, 50, 75);
+		for (int x = 175; x < 320; x++) // a lake right of the house
+			g.Grid.Set(x, 24, CellKind.Water);
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		var house = (new TilePos(155, 15), new TilePos(172, 30));
+		var anchor = new TilePos(160, 24);
+		TilePos? site = SiteFinder.Find(ctx, bp, anchor, keepOut: new[] { house });
+		output.WriteLine($"site {site}; {SiteFinder.Explain(ctx, bp, anchor, new[] { house })}");
+		Assert.NotNull(site);
+		Assert.True(site.Value.X + bp.Width - 1 < 155, "left of the house");
+	}
+
+	[Fact]
 	public void BuildSkill_Arena_FellsTrees_LevelsTheGround_AndPlacesTheCampfire()
 	{
 		FakeGame g = RoughField();

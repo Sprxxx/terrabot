@@ -29,7 +29,9 @@ public static class SiteFinder
 	{
 		TilePos? best = null;
 		int bestScore = int.MaxValue;
-		for (int x0 = around.X - bp.SearchRadius; x0 <= around.X + bp.SearchRadius; x0++) {
+		// An arena's middle within the radius, either side alike: by its left edge, a 96-wide arena could never go left of the
+		// house within 80 tiles (seen in game, measured run S12: "over the house" for 92 of 161 sites, none on the left tried).
+		for (int x0 = around.X - bp.SearchRadius - Shift(bp); x0 <= around.X + bp.SearchRadius - Shift(bp); x0++) {
 			int mid = x0 + bp.Width / 2;
 			int? ground = GroundAt(ctx.Grid, mid, around.Y);
 			if (ground == null)
@@ -43,7 +45,7 @@ public static class SiteFinder
 			int edits = Edits(ctx, bp, origin);
 			if (edits < 0 || edits > bp.MaxEdits)
 				continue;
-			int score = edits * 10 + Math.Abs(x0 - around.X);
+			int score = edits * 10 + Math.Abs(x0 + Shift(bp) - around.X);
 			if (score < bestScore) {
 				bestScore = score;
 				best = origin;
@@ -51,6 +53,9 @@ public static class SiteFinder
 		}
 		return best;
 	}
+
+	/// <summary>Arenas are searched by their middle (see <see cref="Find"/>); houses, small, by their left edge as before.</summary>
+	private static int Shift(Blueprint bp) => bp.IsHouse ? 0 : bp.Width / 2;
 
 	/// <summary>First standable floor row in the column, scanning down from <see cref="GroundScan"/> above <paramref name="y"/>.</summary>
 	private static int? GroundAt(ITileGrid g, int x, int y)
@@ -70,7 +75,7 @@ public static class SiteFinder
 		var why = new Dictionary<string, int>();
 		void Count(string r) => why[r] = why.TryGetValue(r, out int n) ? n + 1 : 1;
 		int fewest = int.MaxValue;
-		for (int x0 = around.X - bp.SearchRadius; x0 <= around.X + bp.SearchRadius; x0++) {
+		for (int x0 = around.X - bp.SearchRadius - Shift(bp); x0 <= around.X + bp.SearchRadius - Shift(bp); x0++) {
 			int? ground = GroundAt(ctx.Grid, x0 + bp.Width / 2, around.Y);
 			if (ground == null) {
 				Count("no ground under the middle");
