@@ -167,7 +167,16 @@ public sealed class SurfaceSkill : ISkill
 		// wants velocity.Y == 0). Seen in game: holding jump in a flooded shaft moved the bot 6 tiles in 15 s and it
 		// drowned. So pillar up like a player: jump off whatever is underfoot, a block under the feet on the way up.
 		bool footing = Math.Abs(ctx.Body.VY) < 0.05f;
-		if (footing) {
+		// Over the column's two cells first: the hitbox (20 px) reaches into a third column when more than 6 px off centre,
+		// and a jump from there hits whatever is above that column (Collision.up ends it: jump = 0), which the search and
+		// the mining above never look at. Seen in game (measured runs U6, U8): the node on the column, the hitbox 0.3-1.5 px
+		// into the next one under a block, jumping in place until it drowned; 12 of 26 drownings in U1-U8 had the hitbox across
+		// three columns.
+		if (footing && column == n.X && OffColumns(ctx.Body.X, n.X, ctx.Physics)) {
+			ctx.Output.Jump = false;
+			jumpedLastTick = false;
+		}
+		else if (footing) {
 			ctx.Output.Jump = !jumpedLastTick; // a fresh press each time (releaseJump)
 			jumpedLastTick = ctx.Output.Jump;
 		}
@@ -182,11 +191,28 @@ public sealed class SurfaceSkill : ISkill
 				ctx.Output.Aim(below.X, below.Y);
 			}
 		}
-		if (column is int cx && cx != n.X)
-			ctx.Output.Horizontal = Math.Sign(cx - n.X);
+		// Steer onto the column's centre, not just until the node is on it: pressing on until the node changed, then letting
+		// go, coasted the hitbox past the centre into the next column (the third-column jumps above).
+		if (column is int cx) {
+			PhysicsParams p = ctx.Physics;
+			ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Core.Pathfinding.Body.CanonicalLeft(cx, p), p, CentreTolerance(p));
+		}
 		State = column != null ? $"pillaring up towards column {column}" : "pillaring up";
 		return SkillStatus.Running;
 	}
+
+	/// <summary>
+	/// Does a hitbox with its left edge at <paramref name="left"/> reach outside columns <paramref name="x"/>..x+1? Vanilla's
+	/// Collision.TileCollision collides with any tile the box overlaps by more than nothing (strict compares).
+	/// </summary>
+	public static bool OffColumns(float left, int x, PhysicsParams p) =>
+		left < x * Core.Pathfinding.Body.TileSize || left + p.Width > (x + Core.Pathfinding.Body.WidthTiles) * Core.Pathfinding.Body.TileSize;
+
+	/// <summary>
+	/// How far off the column's centre the steering lets the hitbox rest: half the slack either side (3 px of 6 for a 20 px
+	/// body), so the coast after letting go stays inside the two columns.
+	/// </summary>
+	public static float CentreTolerance(PhysicsParams p) => Core.Pathfinding.Body.CenterOffset(p) / 2f;
 
 	/// <summary>Estimated ticks per row risen under water (jump, a block underfoot), per tile swum sideways, per block mined.</summary>
 	public const int RiseTicksPerRow = 25, SidewaysTicksPerTile = 60, MineTicksPerBlock = 25;
@@ -211,10 +237,10 @@ public sealed class SurfaceSkill : ISkill
 				int blockRows = 0, blocks = 0;
 				for (int y = n.Y - 2; y >= n.Y - 2 - SearchUp; y--) {
 					CellKind a = ctx.Grid.Get(x, y), b = ctx.Grid.Get(x + 1, y);
-					if (a.IsSolid() || b.IsSolid()) {
-						if (a.IsSolid() && !Breakable(ctx, new TilePos(x, y)) || b.IsSolid() && !Breakable(ctx, new TilePos(x + 1, y)) || ++blockRows > MaxCeilingBlocks)
+					if (a.IsBlockTile() || b.IsBlockTile()) {
+						if (a.IsBlockTile() && !Breakable(ctx, new TilePos(x, y)) || b.IsBlockTile() && !Breakable(ctx, new TilePos(x + 1, y)) || ++blockRows > MaxCeilingBlocks)
 							break; // too thick, or nothing the pickaxe breaks: no air this way
-						blocks += (a.IsSolid() ? 1 : 0) + (b.IsSolid() ? 1 : 0);
+						blocks += (a.IsBlockTile() ? 1 : 0) + (b.IsBlockTile() ? 1 : 0);
 						continue;
 					}
 					if (!a.IsLiquid() && !b.IsLiquid()) {
@@ -230,6 +256,12 @@ public sealed class SurfaceSkill : ISkill
 		return (best, bestTicks);
 	}
 
+	/// <summary>
+	/// A block the pickaxe takes out of the way up: solid, or a slope or half block. Those read as platforms (feet ride them)
+	/// but a head rising into one collides with it (Collision.TileCollision: a half brick's lower half, a slope's whole
+	/// cell), and the jump ends there. Seen in game (measured run U6): a slope over the head and a half block over the
+	/// next column read as open water, never mined; the bot jumped under them until it drowned.
+	/// </summary>
 	private static bool Breakable(BotContext ctx, TilePos c) =>
-		ctx.Grid.Get(c.X, c.Y).IsSolid() && ctx.Moves.Blocks is Core.Pathfinding.IBlockActions b && !float.IsInfinity(b.BreakTicks(c.X, c.Y));
+		ctx.Grid.Get(c.X, c.Y).IsBlockTile() && ctx.Moves.Blocks is Core.Pathfinding.IBlockActions b && !float.IsInfinity(b.BreakTicks(c.X, c.Y));
 }
