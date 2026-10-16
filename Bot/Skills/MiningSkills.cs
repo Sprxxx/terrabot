@@ -217,7 +217,8 @@ public sealed class MineSkill : ISkill
 		// stopped at ore that mining then skipped, and mining explored again, round and round.
 		// The first exploration of a job goes the safer way (BotContext.SaferSide), later ones alternate.
 		exploreDir = exploreDir == 0 ? ctx.SaferSide(ctx.Node) : -exploreDir;
-		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, ExploreBias.Down, exploreDir), "exploring");
+		bool deeper = Valuable(ctx) && ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin;
+		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, ExploreBias.Down, exploreDir) { DeepestRow = deeper ? ctx.DeepestRow + ValuableDepthMargin : null }, "exploring");
 		return SkillStatus.Running;
 	}
 

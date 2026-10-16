@@ -67,6 +67,13 @@ public sealed class ExploreSkill : ISkill
 	private int heading;
 
 	public string What { get; }
+	/// <summary>
+	/// The deepest row to explore down to, if not the gear's own (BotContext.DeepestRow): for a life crystal in a full set of
+	/// armour, as deep as the crystal may be mined (MineSkill.ValuableDepthMargin). Seen in game (measured run U7): crystals
+	/// were taken down to row 701 but explored for only down to 601; five days from full armour to max life 200.
+	/// </summary>
+	public int? DeepestRow { get; init; }
+	private int Deepest(BotContext ctx) => DeepestRow ?? ctx.DeepestRow;
 	public ExploreBias Bias { get; }
 	public int Legs => legs;
 	public string State { get; private set; } = "new";
@@ -144,13 +151,13 @@ public sealed class ExploreSkill : ISkill
 			// Digging on: straight down for ores and caves (2 blocks a tile; a diagonal through stone was 60-70 blocks a
 			// leg in game), a level tunnel along the surface.
 			// Not deeper than the gear allows (BotContext.DeepestRow): sideways once at the floor.
-			bool down = Bias == ExploreBias.Down && !downBlocked && node.Y + FallbackDepth <= ctx.DeepestRow;
+			bool down = Bias == ExploreBias.Down && !downBlocked && node.Y + FallbackDepth <= Deepest(ctx);
 			legDown = frontier == null && down;
 			// Below the depth the gear allows (fell in, chased, knocked down): dig back up first. Seen in game: at row 480
 			// with a floor of 441 every leg was a level tunnel at that depth, and skeletons killed the bot there. A full leg
 			// up, not just to the floor: 4 rows below it, "up to the floor" was within the walk's tolerance, and 14 legs in
 			// a row ended at once without a step (world_eye run 36).
-			bool tooDeep = node.Y > ctx.DeepestRow;
+			bool tooDeep = node.Y > Deepest(ctx);
 			TilePos t = frontier ?? (tooDeep
 				? new TilePos(node.X + heading * FallbackSideways, node.Y - FallbackDepth)
 				: down
@@ -256,8 +263,8 @@ public sealed class ExploreSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		int up = Bias == ExploreBias.Down ? 10 : 20, down = Bias == ExploreBias.Down ? MaxLegTiles : 20;
-		if (n.Y > ctx.DeepestRow)
-			up = Math.Min(MaxLegTiles, n.Y - ctx.DeepestRow + 10); // too deep: look up to back above the floor
+		if (n.Y > Deepest(ctx))
+			up = Math.Min(MaxLegTiles, n.Y - Deepest(ctx) + 10); // too deep: look up to back above the floor
 		for (int x = n.X - MaxLegTiles; x <= n.X + MaxLegTiles; x += 2) {
 			for (int y = n.Y - up; y <= n.Y + down; y++) {
 				int d = Math.Max(Math.Abs(x - n.X), Math.Abs(y - n.Y));
@@ -265,7 +272,7 @@ public sealed class ExploreSkill : ISkill
 					continue;
 				if (aheadOnly && Math.Sign(x - n.X) != heading)
 					continue;
-				if (y > ctx.DeepestRow || ctx.OffLimits(new TilePos(x, y)))
+				if (y > Deepest(ctx) || ctx.OffLimits(new TilePos(x, y)))
 					continue;
 				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y))
 					continue;

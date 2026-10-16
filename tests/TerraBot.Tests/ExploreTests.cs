@@ -302,4 +302,34 @@ public class WaterTests
 		ctx.Combat.ArmourPieces = 2; // not a full set: the gear's own limit
 		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
 	}
+
+	[Fact]
+	public void ExploringForACrystalInAFullSet_GoesAsDeepAsTheCrystalMayBe()
+	{
+		// Measured run U7: crystals were taken down to row 701 but explored for only down to 601; five days from full armour
+		// to max life 200.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 320; y++)
+			rows.Add(y == 9 ? ".....S" + new string('.', 54) : y < 10 ? new string('.', 60) : new string('#', 60));
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.CavernY = 20;
+		ctx.Combat.Defense = 9;
+		int limit = ctx.DeepestRow;
+		TilePos FirstLeg(int? deepest)
+		{
+			var explore = new ExploreSkill("crystal", _ => false, ExploreBias.Down, heading: 1) { DeepestRow = deepest };
+			var lines = (TestLog)ctx.Log;
+			int before = lines.Lines.Count;
+			g.Sim.State.Y = (limit - 2 - 2) * 16f; // standing just above the gear's limit
+			explore.Start(ctx);
+			g.Refresh(ctx);
+			explore.Tick(ctx);
+			string leg = lines.Lines.Skip(before).First(l => l.Contains("Explore: leg 1 to"));
+			var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\)");
+			return new TilePos(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
+		}
+		Assert.True(FirstLeg(null).Y <= limit, "the gear's own limit");
+		Assert.True(FirstLeg(limit + MineSkill.ValuableDepthMargin).Y > limit, "down to the crystal depth");
+	}
 }
