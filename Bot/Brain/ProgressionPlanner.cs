@@ -249,6 +249,9 @@ public sealed class ProgressionPlanner
 		stuck = null;
 		lastShelterEnd = long.MinValue / 2;
 		stayHomeFailedAt = long.MinValue / 2;
+		homePlaceFailedAt = long.MinValue / 2;
+		homePlaceWalk = null;
+		homePlace = null;
 		lastRestEnd = long.MinValue / 2;
 		HouseSite = null;
 		ArenaSite = null;
@@ -390,6 +393,11 @@ public sealed class ProgressionPlanner
 			stationExplores++;
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		// No way home to place a station (not a death on the way), or no room for it there: where the bot is, for a while.
+		if (status == SkillStatus.Failed && (ReferenceEquals(skill, homePlaceWalk) && !string.IsNullOrEmpty(skill.FailureReason) || ReferenceEquals(skill, homePlace))) {
+			homePlaceFailedAt = ctx.Tick;
+			ctx.Log.Info($"Auto: no placing the station in the house ({skill.FailureReason}); where I am, for now");
+		}
 		// Not a death on the way (no failure reason): the house is still reachable, and after the respawn at the spawn it
 		// is a few steps off (run 52: killed just below the house, then sheltered outside all night).
 		if (skill is StayHomeSkill && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason)) {
@@ -413,8 +421,17 @@ public sealed class ProgressionPlanner
 		if (skill is MineSkill mine) {
 			if (status == SkillStatus.Succeeded) {
 				exitTarget = null; // ore found after all: no trip
-				fruitlessMines.Remove(mine.ItemType);
-				travelledFor.Remove(mine.ItemType);
+				// The ore found is the one mined: the other tier's when the job took that (MineSkill.Also), not the one it was
+				// for. Seen in game (measured run U10): iron stayed "fruitless" from t41400 while 145+ iron ore was mined by
+				// silver jobs, so the plan kept choosing "Silver Ore x40 (have 3)" for the pickaxe, 25.6 game hours.
+				if (mine.OtherOreTaken is int other) {
+					fruitlessMines.Remove(other);
+					travelledFor.Remove(other);
+				}
+				if (mine.OtherOreTaken == null || mine.MinedOwn > 0) {
+					fruitlessMines.Remove(mine.ItemType);
+					travelledFor.Remove(mine.ItemType);
+				}
 			}
 			else if (status == SkillStatus.Failed && mine.FailureReason.Contains("explorations"))
 				NoteFruitless(mine.ItemType);
@@ -733,6 +750,8 @@ public sealed class ProgressionPlanner
 		if (carried >= 0) {
 			string name = k.ItemName(carried);
 			int bench = ctx.Ids.WorkBenchTile;
+			if (s.TileType != bench && StationHomeFirst(name, carried, ctx) is ISkill home)
+				return home;
 			if (s.TileType != bench && KnownStations.TryGetValue(bench, out TilePos b) && b.ChebyshevTo(ctx.Node) > StationReach)
 				return Do($"walking to the work bench to place a {name}", WalkToStation(b, ctx));
 			return Do($"placing a {name}", new PlaceItemSkill(carried));
@@ -855,6 +874,8 @@ public sealed class ProgressionPlanner
 					return here;
 				if (RecallHome(ctx, KnownStations[station]) is ISkill recall)
 					return recall;
+				if (NightMiningInstead(station, item, ctx) is ISkill night)
+					return night;
 				stationWalk = WalkToStation(KnownStations[station], ctx);
 				stationWalkType = station;
 				return Do($"walking to the {k.TileName(station)} to craft {name}", stationWalk);
@@ -925,6 +946,51 @@ public sealed class ProgressionPlanner
 			return Do($"night: placing a {k.ItemName(carried)} in the house (the one at {at} is outside it)", new PlaceItemSkill(carried));
 		return Resolve(new HaveItem(items[0], 1, k.ItemName(items[0])), claims, depth + 1, ctx);
 	}
+
+	/// <summary>
+	/// At night in weak gear, with the house near and the station for a craft outside it, out of sight: the night's mining
+	/// (AtNight takes it down into the ground), of the ore the item is made of, as much again as one takes; the craft
+	/// waits for the day, the ore keeps. Not a night in the house: seen in game (measured run U10), all three nights began
+	/// "staying in the house instead of WalkTo (walking to the Anvils...)", 29.5 game hours, the anvil 155 tiles from the
+	/// house. Null when that is not the case, or the item is not made of ore (the house then, as before).
+	/// </summary>
+	private ISkill NightMiningInstead(int station, int item, BotContext ctx)
+	{
+		if (!ctx.IsNight || ctx.Combat.Defense >= NightOutDefense || ctx.Tick - stayHomeFailedAt < StayHomeRetryTicks
+			|| HomeInside(ctx) is not TilePos inside || inside.ChebyshevTo(ctx.Node) > NightHomeTiles
+			|| !KnownStations.TryGetValue(station, out TilePos at) || at.ChebyshevTo(inside) <= HomeStationTiles || at.ChebyshevTo(ctx.Node) <= StationSightTiles
+			|| RawOre(item, ctx, 0) is not (int ore, int tile))
+			return null;
+		IGameKnowledge k = ctx.Knowledge;
+		int target = ctx.Inventory.Count(ore) + Math.Max(1, OreIn(item, ore, ctx, 0));
+		return Do($"night: mining {k.ItemName(ore)} to {target}; {k.ItemName(item)} at the {k.TileName(station)} at {at} ({at.ChebyshevTo(ctx.Node)} tiles away) by day",
+			new MineSkill(ore, tile, target) { Also = AltOres(ore, ctx) });
+	}
+
+	/// <summary>
+	/// A station other than the work bench (the anvil), carried, with a house: placed in the house, home first (by a recall
+	/// potion if one is carried), as the bench and furnace are made there at night (<see cref="StationAtHomeTonight"/>). Not
+	/// beside the work bench wherever that was last made (<see cref="StationHereInstead"/>). Seen in game: the anvil went 155
+	/// tiles from the house in measured run U10 (2233,333), and 156 tiles west and 83 rows down in U9 (1922,365); every
+	/// craft at it was a walk there, and in U10 all three nights began "staying in the house instead of WalkTo (walking to
+	/// the Anvils...)", 29.5 game hours. Null when that is not the case, or a walk home to place one failed lately (then it
+	/// goes down where the bot is, as before).
+	/// </summary>
+	private ISkill StationHomeFirst(string name, int carried, BotContext ctx)
+	{
+		if (HomeInside(ctx) is not TilePos inside || ctx.Tick - homePlaceFailedAt < StayHomeRetryTicks)
+			return null;
+		if (inside.ChebyshevTo(ctx.Node) <= HomeArrivedTiles)
+			return Do($"placing a {name} in the house", homePlace = new PlaceItemSkill(carried));
+		if (RecallHome(ctx, inside) is ISkill recall)
+			return recall;
+		homePlaceWalk = new WalkToSkill(new Core.Pathfinding.GoalNearTile(inside, 1, ctx.Physics)) { Quiet = true, Home = true };
+		return Do($"home first, to place a {name} in the house ({inside.ChebyshevTo(ctx.Node)} tiles away)", homePlaceWalk);
+	}
+
+	private WalkToSkill homePlaceWalk;
+	private PlaceItemSkill homePlace;
+	private long homePlaceFailedAt = long.MinValue / 2;
 
 	/// <summary>
 	/// A valid house, or: pick a site (near the work bench), get the materials it still needs (blocks for the
@@ -1189,12 +1255,29 @@ public sealed class ProgressionPlanner
 		return list;
 	}
 
+	/// <summary>Recipe steps followed down from an item to the ore it is made of (gear, bar, ore).</summary>
+	public const int RawOreDepth = 3;
+
+	/// <summary>How many of <paramref name="ore"/> one <paramref name="item"/> takes, down its cheapest recipes (0 if none).</summary>
+	private int OreIn(int item, int ore, BotContext ctx, int depth)
+	{
+		if (item == ore)
+			return 1;
+		if (depth >= RawOreDepth || BestRecipe(item, ctx) is not RecipeInfo r)
+			return 0;
+		int n = 0;
+		foreach (Ingredient ing in r.Ingredients)
+			n += ing.Stack * OreIn(ing.Item, ore, ctx, depth + 1);
+		int stack = Math.Max(1, r.ResultStack);
+		return (n + stack - 1) / stack;
+	}
+
 	private (int Item, int Tile)? RawOre(int item, BotContext ctx, int depth)
 	{
 		ItemSource src = ctx.Knowledge.SourceOf(item);
 		if (src.Kind == SourceKind.Mine)
 			return ctx.Ids.BuildingBlocks.Contains(item) ? null : (item, src.TileType);
-		if (depth >= 3 || BestRecipe(item, ctx) is not RecipeInfo r)
+		if (depth >= RawOreDepth || BestRecipe(item, ctx) is not RecipeInfo r)
 			return null;
 		foreach (Ingredient ing in r.Ingredients)
 			if (RawOre(ing.Item, ctx, depth + 1) is (int, int) found)

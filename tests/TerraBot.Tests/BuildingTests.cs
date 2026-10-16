@@ -168,6 +168,39 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void TheAnvil_GoesInTheHouse_NotBesideTheBenchMadeFarAway()
+	{
+		// Measured runs U9/U10: bench and furnace made where the ore was (StationHereInstead), and the anvil placed beside
+		// them, 155 tiles from the house in U10 (2233,333) and 156 west and 83 rows down in U9 (1922,365). Every craft at it
+		// was a walk there, and in U10 all three nights began "staying in the house instead of WalkTo (walking to the Anvils...)".
+		FakeGame g = ProgressionTests.Mine(110);
+		g.Stations[FakeGame.TileBench] = new TilePos(80, 24); // made where the ore was
+		g.Stations[FakeGame.TileFurnace] = new TilePos(83, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.Items[FakeGame.IronAnvil] = 1;
+		// Away from the house: home first.
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new WalkToSkill(new TilePos(60, 24)), 60 * 60));
+		ISkill away = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {away?.Describe()}");
+		Assert.True(away is WalkToSkill { Home: true }, p.Status);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, away, 60 * 60));
+		p.OnSkillFinished(away, SkillStatus.Succeeded, ctx);
+		// Home: placed there, not at the bench 80 tiles off.
+		ISkill home = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {home?.Describe()}");
+		Assert.Equal(FakeGame.IronAnvil, Assert.IsType<PlaceItemSkill>(home).ItemType);
+		Assert.Contains("in the house", p.Status);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, home, 60 * 60));
+		TilePos anvil = g.Stations[FakeGame.TileAnvil];
+		output.WriteLine($"anvil at {anvil}, house at {p.HouseSite}");
+		Assert.True(anvil.ChebyshevTo(p.HouseSite.Value) < anvil.ChebyshevTo(g.Stations[FakeGame.TileBench]), $"anvil at {anvil}");
+	}
+
+	[Fact]
 	public void Night_WithTheFurnaceOutsideTheHouse_MakesANewOneAtHome()
 	{
 		// Measured run M2: nightfall with 21 iron ore and the furnace 15 rows below the house (on a site given up); the walk to
@@ -288,6 +321,35 @@ public class BuildingTests
 		next = p.Next(ctx);
 		output.WriteLine($"{p.Status} -> {next?.Describe()}");
 		Assert.Equal(FakeGame.SilverHelmet, Assert.IsType<EquipSkill>(next).ItemType);
+	}
+
+	[Fact]
+	public void ASilverJobThatTookIron_ClearsIronsFruitlessCount()
+	{
+		// Measured run U10: iron stayed "fruitless" from t41400 while 145+ iron ore was mined by silver jobs ("took Iron Ore
+		// instead of Silver Ore", 13 times): the success cleared silver's count, not iron's, and the plan kept choosing
+		// "Silver Ore x40 (have 3)" for the pickaxe, 25.6 game hours.
+		FakeGame g = ProgressionTests.Mine(); // an iron vein, no silver
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		var silver = Assert.IsType<MineSkill>(p.Next(ctx));
+		Assert.Equal(FakeGame.SilverOre, silver.ItemType);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, silver, 60 * 120));
+		Assert.Equal(FakeGame.IronOre, silver.OtherOreTaken);
+		p.OnSkillFinished(silver, SkillStatus.Succeeded, ctx);
+		g.Items[FakeGame.IronOre] = 0; // smelted and made into other gear: the tier is chosen afresh, not from the bag
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Contains($"item{FakeGame.IronOre}", p.Status); // iron again: it is being found
 	}
 
 	[Fact]
@@ -733,6 +795,41 @@ public class BuildingTests
 		ISkill night = p.Next(ctx);
 		output.WriteLine($"{p.Status} -> {night?.Describe()}");
 		Assert.True(night is StayHomeSkill || night is WalkToSkill { Home: true }, p.Status);
+	}
+
+	[Fact]
+	public void AtNight_AWalkToAFarAnvil_IsTheNightsMining_NotANightInTheHouse()
+	{
+		// Measured run U10: all three nights began "staying in the house instead of WalkTo (walking to the Anvils to craft
+		// Iron Broadsword)", 29.5 game hours, the anvil 155 tiles from the house. A player mines the night through and
+		// crafts in the morning: the ore keeps.
+		FakeGame g = ProgressionTests.Mine(110);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(80, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronBar] = 8; // the broadsword's
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 24);
+		ctx.SurfaceY = 15; // row 30 and down is underground
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		ISkill day = p.Next(ctx);
+		output.WriteLine($"day: {p.Status} -> {day?.Describe()}");
+		Assert.True(day is WalkToSkill { Home: false, Underground: false }, p.Status); // to the anvil, by day
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ISkill night = p.Next(ctx);
+		output.WriteLine($"night: {p.Status} -> {night?.Describe()}");
+		Assert.True(night is WalkToSkill { Underground: true }, p.Status); // down into the ground to mine
+		Assert.Contains($"mining item{FakeGame.IronOre}", p.Status);
+		Assert.DoesNotContain("staying in the house", p.Status);
+		// Down in the ground: the mining itself, not the walk to the anvil.
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new WalkToSkill(new TilePos(40, 35)), 60 * 120));
+		ISkill below = p.Next(ctx);
+		output.WriteLine($"below: {p.Status} -> {below?.Describe()}");
+		Assert.Equal(FakeGame.IronOre, Assert.IsType<MineSkill>(below).ItemType);
 	}
 
 	[Fact]

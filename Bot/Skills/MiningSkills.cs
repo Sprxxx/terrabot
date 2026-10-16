@@ -76,6 +76,12 @@ public sealed class MineSkill : ISkill
 	/// <summary>The ore being mined when it is one of <see cref="Also"/>; null for this job's own.</summary>
 	private (int Item, int Tile)? alt;
 	private bool tookAlt;
+	/// <summary>
+	/// The <see cref="Also"/> ore this job mined instead of its own (null if none), and the tiles of its own it mined: the
+	/// planner clears the fruitless count of the ore actually found (ProgressionPlanner.OnSkillFinished).
+	/// </summary>
+	public int? OtherOreTaken { get; private set; }
+	public int MinedOwn { get; private set; }
 	public int Mined { get; private set; }
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
@@ -317,8 +323,12 @@ public sealed class MineSkill : ISkill
 			target = null;
 			sub?.Stop(ctx);
 			sub = null;
-			if (alt != null)
+			if (alt is (int altItem, _)) {
 				tookAlt = true;
+				OtherOreTaken = altItem;
+			}
+			else
+				MinedOwn++;
 			int altDrop = alt?.Item ?? -1;
 			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType || d.Type == altDrop, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;
@@ -347,13 +357,21 @@ public sealed class MineSkill : ISkill
 		SkillStatus s = sub.Tick(ctx);
 		if (s == SkillStatus.Failed) {
 			string why = ((WalkToSkill)sub).FailureReason;
-			if (++unreachableInARow >= MaxUnreachableInARow)
-				return Fail(ctx, $"{unreachableInARow} {Label(ctx)} tiles in a row unreachable" + (ctx.AllowBreak ? "" : " (digging is off)") + $"; last: {why}");
-			// Tiles of the same kind right around it are almost surely behind the same obstacle.
-			foreach (TilePos c in ctx.World.FindTiles(TileType, t, UnreachableClusterRadius))
+			// Tiles of the same kind right around it are almost surely behind the same obstacle: the kind being mined, the
+			// other tier's ore when that was taken (Also). And the last of the run too, before the job fails: the next job
+			// shares the set. Seen in game (measured run U10): with this job's own ore marked instead, one iron vein at
+			// (2029-2033,355-361) was tried tile by tile, 142 "skipping ... unreachable" lines and 44 jobs failed ("4 Silver Ore
+			// tiles in a row unreachable"), each next job starting on the tile the last one failed at, about 11 game hours.
+			(int Item, int Tile)? taking = alt;
+			foreach (TilePos c in ctx.World.FindTiles(taking?.Tile ?? TileType, t, UnreachableClusterRadius))
 				ctx.UnreachableTiles.Add(c);
 			ctx.UnreachableTiles.Add(t);
-			return GiveUp(ctx, t, "unreachable: " + why);
+			GiveUp(ctx, t, "unreachable: " + why);
+			if (++unreachableInARow >= MaxUnreachableInARow) {
+				string ore = taking is (int altItem, _) ? ctx.Knowledge?.ItemName(altItem) ?? $"item {altItem}" : Label(ctx);
+				return Fail(ctx, $"{unreachableInARow} {ore} tiles in a row unreachable" + (ctx.AllowBreak ? "" : " (digging is off)") + $"; last: {why}");
+			}
+			return SkillStatus.Running;
 		}
 		if (s == SkillStatus.Succeeded) {
 			sub.Stop(ctx);
