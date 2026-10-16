@@ -481,6 +481,18 @@ public class ArenaFightTests
 	}
 
 	[Fact]
+	public void SlidAFewPixelsPastTheEnd_IsStillOnTheArena_NoWalkBack()
+	{
+		// Checkpoint run U16cp: "off the arena at (2030,266)" with the floor from 2031, four walks back without dodging,
+		// and the Eye of Cthulhu killed the bot during one.
+		var (ctx, fight) = Setup(50 * 16f - 12f, 0f); // 12 px past the west end: the node reads column 49
+		Assert.Equal(49, ctx.Node.X);
+		fight.Tick(ctx);
+		output.WriteLine(fight.State);
+		Assert.DoesNotContain("walking back", fight.State);
+	}
+
+	[Fact]
 	public void OffTheArena_WalksBack()
 	{
 		var (ctx, fight) = Setup(160 * 16f, 0f);

@@ -39,6 +39,8 @@ public sealed class BossFightSkill : ISkill
 	private WalkToSkill backToArena;
 	/// <summary>After a walk back that found no way, this long (5 s) fighting from where the bot is before the next.</summary>
 	public const int BackRetryTicks = 300;
+	/// <summary>Columns past an arena end that still count as on it (see BackToArena).</summary>
+	public const int EndSlack = 1;
 	private long backFailedAt = long.MinValue / 2;
 	/// <summary>Boss speed (px/tick) that counts as a dash (the Eye: 6 / 6.8 Classic, 7+ Expert; hovers at up to 5–6).</summary>
 	public const float DashSpeed = 5.5f;
@@ -207,7 +209,11 @@ public sealed class BossFightSkill : ISkill
 			return false;
 		}
 		TilePos n = ctx.Node;
-		bool off = n.X < x0 || n.X > x1 || n.Y > standY + 1;
+		// A column of slack at the ends: braking slides the body a few pixels past an end, and the node (rounded to the
+		// nearest column, Body.NodeOf) then reads one column out; off the floor's end the body falls and the row test
+		// catches it. Seen in game (checkpoint run U16cp): "off the arena at (2030,266), walking back" four times, the
+		// floor from 2031, and the walks back (no dodging) let the Eye of Cthulhu kill the bot at (2028,272).
+		bool off = n.X < x0 - EndSlack || n.X > x1 + EndSlack || n.Y > standY + 1;
 		if (!off && ctx.Body.Grounded) {
 			if (backToArena != null) {
 				backToArena.Stop(ctx);
