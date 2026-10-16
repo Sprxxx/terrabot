@@ -874,6 +874,8 @@ public sealed class ProgressionPlanner
 					return here;
 				if (RecallHome(ctx, KnownStations[station]) is ISkill recall)
 					return recall;
+				if (NightMiningInstead(station, item, ctx) is ISkill night)
+					return night;
 				stationWalk = WalkToStation(KnownStations[station], ctx);
 				stationWalkType = station;
 				return Do($"walking to the {k.TileName(station)} to craft {name}", stationWalk);
@@ -943,6 +945,26 @@ public sealed class ProgressionPlanner
 		if (carried >= 0)
 			return Do($"night: placing a {k.ItemName(carried)} in the house (the one at {at} is outside it)", new PlaceItemSkill(carried));
 		return Resolve(new HaveItem(items[0], 1, k.ItemName(items[0])), claims, depth + 1, ctx);
+	}
+
+	/// <summary>
+	/// At night in weak gear, with the house near and the station for a craft outside it, out of sight: the night's mining
+	/// (AtNight takes it down into the ground), of the ore the item is made of, as much again as one takes; the craft
+	/// waits for the day, the ore keeps. Not a night in the house: seen in game (measured run U10), all three nights began
+	/// "staying in the house instead of WalkTo (walking to the Anvils...)", 29.5 game hours, the anvil 155 tiles from the
+	/// house. Null when that is not the case, or the item is not made of ore (the house then, as before).
+	/// </summary>
+	private ISkill NightMiningInstead(int station, int item, BotContext ctx)
+	{
+		if (!ctx.IsNight || ctx.Combat.Defense >= NightOutDefense || ctx.Tick - stayHomeFailedAt < StayHomeRetryTicks
+			|| HomeInside(ctx) is not TilePos inside || inside.ChebyshevTo(ctx.Node) > NightHomeTiles
+			|| !KnownStations.TryGetValue(station, out TilePos at) || at.ChebyshevTo(inside) <= HomeStationTiles || at.ChebyshevTo(ctx.Node) <= StationSightTiles
+			|| RawOre(item, ctx, 0) is not (int ore, int tile))
+			return null;
+		IGameKnowledge k = ctx.Knowledge;
+		int target = ctx.Inventory.Count(ore) + Math.Max(1, OreIn(item, ore, ctx, 0));
+		return Do($"night: mining {k.ItemName(ore)} to {target}; {k.ItemName(item)} at the {k.TileName(station)} at {at} ({at.ChebyshevTo(ctx.Node)} tiles away) by day",
+			new MineSkill(ore, tile, target) { Also = AltOres(ore, ctx) });
 	}
 
 	/// <summary>
@@ -1233,12 +1255,29 @@ public sealed class ProgressionPlanner
 		return list;
 	}
 
+	/// <summary>Recipe steps followed down from an item to the ore it is made of (gear, bar, ore).</summary>
+	public const int RawOreDepth = 3;
+
+	/// <summary>How many of <paramref name="ore"/> one <paramref name="item"/> takes, down its cheapest recipes (0 if none).</summary>
+	private int OreIn(int item, int ore, BotContext ctx, int depth)
+	{
+		if (item == ore)
+			return 1;
+		if (depth >= RawOreDepth || BestRecipe(item, ctx) is not RecipeInfo r)
+			return 0;
+		int n = 0;
+		foreach (Ingredient ing in r.Ingredients)
+			n += ing.Stack * OreIn(ing.Item, ore, ctx, depth + 1);
+		int stack = Math.Max(1, r.ResultStack);
+		return (n + stack - 1) / stack;
+	}
+
 	private (int Item, int Tile)? RawOre(int item, BotContext ctx, int depth)
 	{
 		ItemSource src = ctx.Knowledge.SourceOf(item);
 		if (src.Kind == SourceKind.Mine)
 			return ctx.Ids.BuildingBlocks.Contains(item) ? null : (item, src.TileType);
-		if (depth >= 3 || BestRecipe(item, ctx) is not RecipeInfo r)
+		if (depth >= RawOreDepth || BestRecipe(item, ctx) is not RecipeInfo r)
 			return null;
 		foreach (Ingredient ing in r.Ingredients)
 			if (RawOre(ing.Item, ctx, depth + 1) is (int, int) found)

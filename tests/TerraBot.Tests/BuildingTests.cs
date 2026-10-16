@@ -798,6 +798,41 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AtNight_AWalkToAFarAnvil_IsTheNightsMining_NotANightInTheHouse()
+	{
+		// Measured run U10: all three nights began "staying in the house instead of WalkTo (walking to the Anvils to craft
+		// Iron Broadsword)", 29.5 game hours, the anvil 155 tiles from the house. A player mines the night through and
+		// crafts in the morning: the ore keeps.
+		FakeGame g = ProgressionTests.Mine(110);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(80, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronBar] = 8; // the broadsword's
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 24);
+		ctx.SurfaceY = 15; // row 30 and down is underground
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		ISkill day = p.Next(ctx);
+		output.WriteLine($"day: {p.Status} -> {day?.Describe()}");
+		Assert.True(day is WalkToSkill { Home: false, Underground: false }, p.Status); // to the anvil, by day
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ISkill night = p.Next(ctx);
+		output.WriteLine($"night: {p.Status} -> {night?.Describe()}");
+		Assert.True(night is WalkToSkill { Underground: true }, p.Status); // down into the ground to mine
+		Assert.Contains($"mining item{FakeGame.IronOre}", p.Status);
+		Assert.DoesNotContain("staying in the house", p.Status);
+		// Down in the ground: the mining itself, not the walk to the anvil.
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new WalkToSkill(new TilePos(40, 35)), 60 * 120));
+		ISkill below = p.Next(ctx);
+		output.WriteLine($"below: {p.Status} -> {below?.Describe()}");
+		Assert.Equal(FakeGame.IronOre, Assert.IsType<MineSkill>(below).ItemType);
+	}
+
+	[Fact]
 	public void AtNight_AWalkToTheHousesOwnFurnace_GoesOn()
 	{
 		// Measured run S6: nightfall on the way to the furnace 4 tiles from the house, with ore for 8 bars: home, and 9 game
