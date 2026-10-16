@@ -296,7 +296,9 @@ public sealed class WalkToSkill : ISkill
 		Splices++;
 		Executor = new PathExecutor(ctx.Moves, next.Result.Steps);
 		searchMoves = ctx.Moves;
-		Info(ctx, $"Plan #{plans} (planned ahead) {LastPlan.Start} -> {Goal}: {LastPlan}; carrying straight on");
+		// With its steps, as FinishSearch logs a plan: measured run U22 died on the last step of a planned-ahead segment
+		// whose steps the log never showed.
+		Info(ctx, $"Plan #{plans} (planned ahead) {LastPlan.Start} -> {Goal}: {LastPlan}; carrying straight on :: {StepList(LastPlan.Steps)}");
 		State = "executing";
 		return true;
 	}
@@ -672,11 +674,26 @@ public sealed class WalkToSkill : ISkill
 		State = "planning";
 	}
 
+	/// <summary>
+	/// Steps of a plan written to the log: the first <see cref="LoggedSteps"/> and the last <see cref="LoggedTailSteps"/>, the
+	/// middle left out to keep the line readable. The end matters too: measured run U22 died on step 61 of 61.
+	/// </summary>
+	public const int LoggedSteps = 40, LoggedTailSteps = 8;
+
+	internal static string StepList(IReadOnlyList<PathStep> steps)
+	{
+		if (steps.Count <= LoggedSteps + LoggedTailSteps)
+			return string.Join(" | ", steps.Select(s => s.ToString()));
+		return string.Join(" | ", steps.Take(LoggedSteps).Select(s => s.ToString()))
+			+ $" | ... {steps.Count - LoggedSteps - LoggedTailSteps} more ... | "
+			+ string.Join(" | ", steps.Skip(steps.Count - LoggedTailSteps).Select(s => s.ToString()));
+	}
+
 	private bool FinishSearch(BotContext ctx)
 	{
 		LastPlan = search.Result;
 		search = null;
-		string steps = string.Join(" | ", LastPlan.Steps.Take(40).Select(s => s.ToString()));
+		string steps = StepList(LastPlan.Steps);
 		int breaks = LastPlan.Steps.Sum(s => s.CountActions(ActionKind.Break));
 		int places = LastPlan.Steps.Sum(s => s.CountActions(ActionKind.Place));
 		string world = breaks + places > 0 ? $", breaks {breaks}, places {places}" : "";

@@ -13,6 +13,8 @@ namespace TerraBot.Tests;
 /// With an editable grid and <see cref="TestBlockActions"/> it also mines (one hit counter per cell, broken after
 /// BreakTicks ticks of use) and places blocks with vanilla's rules: free cell, a solid 4-neighbour, and no
 /// overlap with the player's integer hitbox. Like the game, item use happens after movement in the same tick.
+/// A cobweb (<see cref="CellKind.Web"/>) does not collide: the planner reads it solid (a block to cut), but the body falls
+/// through it (vanilla slows the body in one and breaks it; the fall below is what kills, measured run U22).
 /// </summary>
 public sealed class SimWorld
 {
@@ -85,7 +87,7 @@ public sealed class SimWorld
 			hits[cell] = ++n;
 			if (n >= blocks.BreakTicks(cell.X, cell.Y)) {
 				Mined?.Invoke(cell);
-				editable.Set(cell.X, cell.Y, k & ~(CellKind.Solid | CellKind.Falling));
+				editable.Set(cell.X, cell.Y, k & ~(CellKind.Solid | CellKind.Falling | CellKind.Web));
 				hits.Remove(cell);
 				Broken++;
 				if (grid.Get(cell.X, cell.Y - 1).IsFalling())
@@ -116,7 +118,10 @@ public sealed class SimWorld
 		State.X / T - 5f <= cell.X && (State.X + p.Width) / T + 5f - 1f >= cell.X
 		&& State.Y / T - 4f <= cell.Y && (State.Y + p.Height) / T + 4f - 2f >= cell.Y;
 
-	private bool SolidAt(int x, int y) => grid.Get(x, y).IsSolid();
+	private bool SolidAt(int x, int y) => Collides(grid.Get(x, y));
+
+	/// <summary>A cell the hitbox cannot enter: solid, but not a cobweb.</summary>
+	private static bool Collides(CellKind k) => k.IsSolid() && !k.IsWeb();
 
 	private void MoveX()
 	{
@@ -156,7 +161,7 @@ public sealed class SimWorld
 			for (int r = rFirst; r <= rLast; r++) {
 				for (int c = c0; c <= c1; c++) {
 					CellKind k = grid.Get(c, r);
-					if (k.IsSolid() || (k.IsPlatform() && !down && oldBottom <= r * T + 0.001f)) {
+					if (Collides(k) || (k.IsPlatform() && !down && oldBottom <= r * T + 0.001f)) {
 						State.Y = r * T - p.Height;
 						State.VY = 0f;
 						return;

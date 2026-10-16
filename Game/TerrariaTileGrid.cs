@@ -44,9 +44,10 @@ public sealed class TerrariaTileGrid : ITileGrid
 				k |= CellKind.Hazard;
 			// A cobweb is not solid (a cut tile, as grass), but it holds the player nearly still: a block to cut through,
 			// as a player swings at it. Seen in game (measured run I1): read as open air, every walk sank through webs at
-			// 1.79 px a tick, "never landed", and the rests ran out until auto mode stopped.
+			// 1.79 px a tick, "never landed", and the rests ran out until auto mode stopped. But not a floor either (CellKind.Web):
+			// measured run U22, a drop planned onto webs over a shaft broke through them and fell 70 rows (455 damage).
 			if (type == TileID.Cobweb)
-				k = CellKind.Solid;
+				k = CellKind.Solid | CellKind.Web;
 		}
 
 		if (t.LiquidAmount > 0) {

@@ -353,6 +353,17 @@ public sealed class PathExecutor
 			advanced = true;
 			return true;
 		}
+		// Still standing on the ledge: the landing must still be there before the body steps off, checked every tick.
+		// Revalidate re-checks a step only before it starts (and every RevalidateInterval ticks), so a landing cut, mined or
+		// fallen away while the body walked to the edge went unseen until the body was in the air over whatever lay below.
+		// Seen in game (measured run U22): the last drop of a 61-step plan went down a shaft at x 2050 onto webs that did not
+		// hold it, 455 damage.
+		if (step.Kind is MoveKind.Drop or MoveKind.DropThrough && grounded && node.ChebyshevTo(step.From) <= 1
+			&& !Body.HasSupport(ctx.Grid, step.To.X, step.To.Y)) {
+			InvalidStepIndex = StepIndex;
+			Finish(ExecStatus.Blocked, $"step {StepIndex} {step.Kind} {step.From}->{step.To}: nothing to land on under {step.To} any more; not stepping off at {node}");
+			return false;
+		}
 		if (settled && ticksInStep > 3 && node.ChebyshevTo(step.From) > 1 && node.ChebyshevTo(step.To) > 1) {
 			if (TryResync(node)) {
 				advanced = true;
