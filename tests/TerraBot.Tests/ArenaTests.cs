@@ -89,6 +89,24 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_Arena_FurnitureInItsOpenAir_DoesNotRuleItOut()
+	{
+		// A run from U7's arena checkpoint: the bot's own benches and tables (solid-topped, read as platforms) ruled out 94
+		// of 161 arena sites.
+		FakeGame g = EarlyGameTests.Field(160, 50, 75);
+		for (int x = 10; x < 150; x += 20) {
+			g.Grid.Set(x, 24, CellKind.Platform); // a work bench on the ground
+			g.Furniture[new TilePos(x, 24)] = FakeGame.TileBench;
+		}
+		BotContext ctx = g.CreateContext(output);
+		Blueprint arena = Blueprint.Arena(FakeGame.Ids);
+		TilePos? site = SiteFinder.Find(ctx, arena, new TilePos(80, 24));
+		output.WriteLine($"site {site}; {SiteFinder.Explain(ctx, arena, new TilePos(80, 24))}");
+		Assert.NotNull(site);
+		Assert.Equal(-1, SiteFinder.Edits(ctx, Blueprint.SmallHouse(FakeGame.Ids), new TilePos(5, 24 - 4))); // a house's room must be clear
+	}
+
+	[Fact]
 	public void SiteFinder_Arena_LooksLeftOfTheHouse_AsFarAsRight()
 	{
 		// Measured run S12: searched by its left edge within 80 tiles, a 96-wide arena could never go left of the house:

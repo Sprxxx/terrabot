@@ -147,8 +147,11 @@ public static class SiteFinder
 					}
 					edits += 2;
 				}
-				else if (k.IsPlatform() || ctx.World.TileTypeAt(wx, wy) is int t && t >= 0 && ctx.Seen.Stations.ContainsKey(t)) {
-					reason = k.IsPlatform() ? "a platform in the room" : "a station in the room";
+				// Furniture in an arena's open air (a work bench, a table: solid-topped, read as platforms) stays and does no harm:
+				// seen in game (a run from U7's arena checkpoint), the bot's own benches and tables ruled out 94 of 161 sites, and
+				// the one left was then over the house. A house's room must be clear.
+				else if (bp.IsHouse && (k.IsPlatform() || ctx.World.TileTypeAt(wx, wy) is int t && t >= 0 && ctx.Seen.Stations.ContainsKey(t))) {
+					reason = k.IsPlatform() ? $"a platform (tile {ctx.World.TileTypeAt(wx, wy)}) in the room" : "a station in the room";
 					return -1; // furniture or a station in the way
 				}
 			}
