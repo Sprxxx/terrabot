@@ -313,6 +313,15 @@ public sealed class TerraBotPlayer : ModPlayer
 	public const float PerceptionRadiusPx = 50 * 16f;
 	/// <summary>Bosses roam far between attacks (the Eye of Cthulhu hovers and circles well off screen): keep them in view.</summary>
 	public const float BossPerceptionRadiusPx = 200 * 16f;
+
+	/// <summary>
+	/// A boss, or a segment of one: the Eater of Worlds' head, bodies and tail are separate NPCs, none with NPC.boss set
+	/// (SetDefaults, NPC.cs:4007-4065; only the last one alive gets it as it dies, DropEoWLoot, NPC.cs:84405), so they are
+	/// named here. Each segment keeps its width (38 px) behind the one ahead (NPC.cs:55293-55327), so the 67 trail some
+	/// 160 tiles behind the head as it dives: kept in view like a boss.
+	/// </summary>
+	private static bool IsBossPart(NPC n) => n.boss || n.type is NPCID.EaterofWorldsHead or NPCID.EaterofWorldsBody or NPCID.EaterofWorldsTail;
+
 	// Arrow flight (Projectile.AI_001 for wooden arrows): PENDING verification against the decompile.
 	public const int ArrowGravityDelay = 15;
 	public const float ArrowGravity = 0.1f;
@@ -342,7 +351,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		var hostiles = new List<EntityInfo>();
 		for (int i = 0; i < Main.maxNPCs; i++) {
 			NPC n = Main.npc[i];
-			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > (n.boss ? BossPerceptionRadiusPx : PerceptionRadiusPx))
+			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > (IsBossPart(n) ? BossPerceptionRadiusPx : PerceptionRadiusPx))
 				continue;
 			hostiles.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
 				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle, n.ai[0], n.ai[1], n.ai[2], n.ai[3]));

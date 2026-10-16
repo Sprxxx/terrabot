@@ -21,6 +21,19 @@ namespace TerraBot.Bot.Skills;
 /// </list>
 /// Succeeds once the game records the boss as defeated; fails if the bot dies, the boss leaves, or after
 /// <see cref="MaxFightTicks"/>.
+/// <para>
+/// A worm boss (the Eater of Worlds, <see cref="WormPattern"/>) is fought differently, chosen by <see cref="BossType"/>:
+/// <list type="bullet">
+/// <item>the boss is every segment of it (head, bodies, tail; a split makes more heads): alive while any is in view,
+/// won once none is and the game records it defeated, gone after <see cref="WormPattern.GoneTicks"/> with none;</item>
+/// <item>shoot the nearest segment the arrow can reach (any segment's damage counts);</item>
+/// <item>move: run away from the nearest head, from where it will cross our height (a head out of the ground falls),
+/// and past it when an end of the arena leaves no room; the dodge planner jumps over or runs from under a head with a
+/// falling-head model, no Eye of Cthulhu dash model or dash timing;</item>
+/// <item>stay inside the arena, or within <see cref="HardHalfWidth"/> of where the fight started, so as not to leave the
+/// Corruption (the worm despawns then).</item>
+/// </list>
+/// </para>
 /// </summary>
 public sealed class BossFightSkill : ISkill
 {
@@ -51,6 +64,23 @@ public sealed class BossFightSkill : ISkill
 	/// <summary>Kite clearance (px) under which the dodge planner takes over, and over which it hands back.</summary>
 	public const float DodgeStartGap = 16f, DodgeStopGap = 32f;
 	public const int MaxFightTicks = 60 * 60 * 8;
+	/// <summary>
+	/// A worm's fight lasts longer: 10,050 life in Classic, about 7 minutes with an iron bow and wooden arrows when every
+	/// arrow lands and 10-14 at a realistic 50-70 % (M10_SPEC section 4); unholy arrows halve that.
+	/// </summary>
+	public const int WormMaxFightTicks = 60 * 60 * 15;
+	/// <summary>
+	/// Run from a worm's head this near (px, across): as far as one at top speed goes in the dodge planner's horizon,
+	/// so a head that could reach us before the planner sees it coming is already being run from.
+	/// </summary>
+	public const float WormAwayPx = WormPattern.HeadTopSpeed * Dodge.Horizon;
+	/// <summary>
+	/// Of the segments in a clear line, nearest first, solve the shot (lead and arc) for at most this many a tick: the
+	/// segments of one arc lie close together, so when none of the nearest few can be hit a farther one seldom can.
+	/// </summary>
+	public const int WormShotTries = 8;
+	/// <summary>A line on the worm's state this often (10 s): its fight lasts minutes.</summary>
+	public const int WormLogTicks = 600;
 	/// <summary>Ticks with no boss around after it appeared before concluding it left (or died).</summary>
 	public const int GoneTicks = 90;
 
@@ -74,6 +104,13 @@ public sealed class BossFightSkill : ISkill
 	private TilePos? centre;
 	private int bossLifeSeen = int.MaxValue;
 	private int lifeLogged = int.MaxValue;
+	private readonly int[] segmentTypes;
+	private System.Collections.Generic.List<EntityInfo> segments = new();
+	/// <summary>Worm: running past the nearest head this way (an arena end left no room to run from it), else 0.</summary>
+	private int pastHeadDir;
+	private int maxSegmentsSeen;
+	private long lastWormLog = long.MinValue / 2;
+	private readonly System.Collections.Generic.Dictionary<int, (float X, float Y, long Tick)> lastPositions = new();
 
 	/// <summary>
 	/// The arena's columns and the feet row of standing on its floor: kite inside it (turning points from its ends),
@@ -83,6 +120,12 @@ public sealed class BossFightSkill : ISkill
 	public int SummonItem { get; }
 	public int BossType { get; }
 	public int[] MinionTypes { get; }
+	/// <summary>A worm boss (<see cref="WormPattern"/>): fought with the worm tactics, not the Eye's.</summary>
+	public bool IsWorm { get; }
+	/// <summary>Worm: its segments in view this tick.</summary>
+	public int SegmentsInView => segments.Count;
+	/// <summary>The NPC (whoAmI) aimed at this tick, or null.</summary>
+	public int? TargetId { get; private set; }
 	/// <summary>Times the dodge planner overrode kiting.</summary>
 	public int Dodges { get; private set; }
 	public string State { get; private set; } = "new";
@@ -95,9 +138,12 @@ public sealed class BossFightSkill : ISkill
 		SummonItem = summonItem;
 		BossType = bossType;
 		MinionTypes = minionTypes;
+		IsWorm = WormPattern.IsWormBoss(bossType);
+		segmentTypes = WormPattern.SegmentTypes(bossType);
 	}
 
-	public string Describe() => $"Boss {BossType} [{State}]" + (bossLifeSeen < int.MaxValue ? $" boss life {bossLifeSeen}" : "");
+	public string Describe() => $"Boss {BossType} [{State}]" + (IsWorm ? $" {segments.Count} segments in view"
+		: bossLifeSeen < int.MaxValue ? $" boss life {bossLifeSeen}" : "");
 
 	public void Start(BotContext ctx) => ctx.Log.Info($"Boss fight start: boss {BossType}, summon item {SummonItem}, {ctx.Combat.RangedName} with {ctx.Combat.AmmoCount} arrows, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}");
 
@@ -111,8 +157,16 @@ public sealed class BossFightSkill : ISkill
 	public SkillStatus Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
-		if (ctx.World.BossDefeated(BossType)) {
-			ctx.Log.Info($"Boss fight: boss {BossType} defeated after {fightTicks} ticks, {Dodges} dodges, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}");
+		TargetId = null;
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		if (IsWorm)
+			segments = ctx.Hostiles.Where(h => segmentTypes.Contains(h.Type)).Select(h => Measured(ctx, h)).OrderBy(h => h.DistanceTo(cx, cy)).ToList();
+		RememberPositions(ctx);
+		// A worm is defeated with its last segment (the flag is set as it dies); one still in view is another worm.
+		if (ctx.World.BossDefeated(BossType) && segments.Count == 0) {
+			ctx.Log.Info($"Boss fight: boss {BossType} defeated after {fightTicks} ticks, {Dodges} dodges, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}"
+				+ (IsWorm ? $", up to {maxSegmentsSeen} segments seen at once" : ""));
 			State = "won";
 			return SkillStatus.Succeeded;
 		}
@@ -123,9 +177,9 @@ public sealed class BossFightSkill : ISkill
 			return SkillStatus.Running;
 		centre ??= Arena is (int ax0, int ax1, int ay) ? new TilePos((ax0 + ax1) / 2, ay) : ctx.Node;
 
-		PhysicsParams p = ctx.Physics;
-		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
-		EntityInfo? boss = ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault();
+		// A worm: its nearest segment stands for it.
+		EntityInfo? boss = IsWorm ? segments.Cast<EntityInfo?>().FirstOrDefault()
+			: ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault();
 
 		if (boss == null && !seenBoss) {
 			if (summoned) {
@@ -156,19 +210,26 @@ public sealed class BossFightSkill : ISkill
 				ctx.Log.Info($"Boss fight: {b.Name} is here, life {b.Life}/{b.LifeMax}");
 			seenBoss = true;
 			goneTicks = 0;
-			if (b.Life <= lifeLogged - b.LifeMax / 10 || b.Life <= b.LifeMax / 2 && lifeLogged > b.LifeMax / 2) {
-				lifeLogged = b.Life;
-				ctx.Log.Info($"Boss fight: {b.Name} at {b.Life}/{b.LifeMax}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax}, {ctx.Combat.AmmoCount} arrows, {Dodges} dodges");
+			if (IsWorm)
+				LogWorm(ctx);
+			else {
+				if (b.Life <= lifeLogged - b.LifeMax / 10 || b.Life <= b.LifeMax / 2 && lifeLogged > b.LifeMax / 2) {
+					lifeLogged = b.Life;
+					ctx.Log.Info($"Boss fight: {b.Name} at {b.Life}/{b.LifeMax}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax}, {ctx.Combat.AmmoCount} arrows, {Dodges} dodges");
+				}
+				bossLifeSeen = Math.Min(bossLifeSeen, b.Life);
 			}
-			bossLifeSeen = Math.Min(bossLifeSeen, b.Life);
 		}
 		else if (++goneTicks == 1)
-			ctx.Log.Info($"Boss fight: lost sight of the boss (last seen at {bossLifeSeen} life), us at {ctx.Node}");
-		else if (goneTicks > GoneTicks) {
-			return ctx.World.BossDefeated(BossType) ? SkillStatus.Running : Fail(ctx, "the boss left");
+			ctx.Log.Info(IsWorm ? $"Boss fight: no segment of the worm in view, us at {ctx.Node}"
+				: $"Boss fight: lost sight of the boss (last seen at {bossLifeSeen} life), us at {ctx.Node}");
+		else if (goneTicks > (IsWorm ? WormPattern.GoneTicks : GoneTicks)) {
+			return ctx.World.BossDefeated(BossType) ? SkillStatus.Running
+				: Fail(ctx, IsWorm ? $"the worm left: no segment in view for {WormPattern.GoneTicks} ticks, not defeated" : "the boss left");
 		}
-		if (++fightTicks > MaxFightTicks)
-			return Fail(ctx, $"still fighting after {MaxFightTicks} ticks");
+		int maxTicks = IsWorm ? WormMaxFightTicks : MaxFightTicks;
+		if (++fightTicks > maxTicks)
+			return Fail(ctx, $"still fighting after {maxTicks} ticks");
 		if (!ctx.Combat.HasRanged)
 			return Fail(ctx, "out of arrows");
 
@@ -178,16 +239,25 @@ public sealed class BossFightSkill : ISkill
 		// Target: a servant about to bite, else the boss.
 		EntityInfo? servant = ctx.Hostiles.Where(h => MinionTypes.Contains(h.Type) && h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
 			.OrderBy(h => h.DistanceTo(cx, cy)).Cast<EntityInfo?>().FirstOrDefault();
-		EntityInfo? target = servant ?? boss;
+		// A worm: its nearest segment in reach (WormShot).
+		EntityInfo? target = servant ?? (IsWorm ? null : boss);
 		// While walking back the path may need the pickaxe or blocks: no shooting then.
 		bool canShoot = !walkingBack || ctx.Output.Tool == ToolRequest.None;
+		AimSolution? aim = null;
+		bool clear = false;
 		if (canShoot && target is EntityInfo t && FightSkill.ClearShot(ctx, cx, cy, t.CenterX, t.CenterY)) {
 			AimSolution s = Ballistics.Lead(cx, cy, t.CenterX, t.CenterY, t.VX, t.VY, ctx.Combat.Projectile);
+			aim = s;
+			clear = s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile);
+			TargetId = t.Id;
+		}
+		else if (canShoot && target == null && IsWorm)
+			(aim, clear) = WormShot(ctx, cx, cy);
+		if (aim is AimSolution a) {
 			ctx.Output.Tool = ToolRequest.Ranged;
-			ctx.Output.AimMouse(s.AimX, s.AimY);
-			bool clear = s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile);
+			ctx.Output.AimMouse(a.AimX, a.AimY);
 			ctx.Output.UseItem = clear;
-			State = !clear ? "no clear arc" : servant != null ? "shooting a servant" : "shooting the boss";
+			State = !clear ? "no clear arc" : servant != null ? "shooting a servant" : IsWorm ? "shooting a segment" : "shooting the boss";
 		}
 		else
 			State = "kiting";
@@ -195,6 +265,66 @@ public sealed class BossFightSkill : ISkill
 			State = "walking back to the arena, " + State;
 		Heal(ctx);
 		return SkillStatus.Running;
+	}
+
+	/// <summary>
+	/// The nearest segment an arrow reaches: in a clear line, with a lead that hits and an arc clear of tiles. If none of
+	/// the nearest <see cref="WormShotTries"/> in a clear line can be hit, aim at the nearest of them without shooting.
+	/// </summary>
+	private (AimSolution? Aim, bool Clear) WormShot(BotContext ctx, float cx, float cy)
+	{
+		AimSolution? first = null;
+		int firstId = 0, tries = 0;
+		foreach (EntityInfo seg in segments) {
+			if (!FightSkill.ClearShot(ctx, cx, cy, seg.CenterX, seg.CenterY))
+				continue;
+			AimSolution s = Ballistics.Lead(cx, cy, seg.CenterX, seg.CenterY, seg.VX, seg.VY, ctx.Combat.Projectile);
+			if (s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile)) {
+				TargetId = seg.Id;
+				return (s, true);
+			}
+			if (first == null) {
+				first = s;
+				firstId = seg.Id;
+			}
+			if (++tries >= WormShotTries)
+				break;
+		}
+		if (first != null)
+			TargetId = firstId;
+		return (first, false);
+	}
+
+	/// <summary>
+	/// A worm's bodies and tail report no velocity: the AI moves each one by its position to keep its distance behind
+	/// the segment ahead and zeroes its velocity (NPC.cs:55280-55327). Take their motion since the last tick instead, for
+	/// the lead of a shot and the dodge planner. A jump faster than a head goes (twice its top speed) is a new NPC in
+	/// the slot, not motion.
+	/// </summary>
+	private EntityInfo Measured(BotContext ctx, EntityInfo s)
+	{
+		if (s.VX != 0f || s.VY != 0f || !lastPositions.TryGetValue(s.Id, out (float X, float Y, long Tick) last) || last.Tick != ctx.Tick - 1)
+			return s;
+		float vx = s.X - last.X, vy = s.Y - last.Y, limit = 2f * WormPattern.TopSpeed(ctx.Expert);
+		return vx * vx + vy * vy > limit * limit ? s : s with { VX = vx, VY = vy };
+	}
+
+	private void RememberPositions(BotContext ctx)
+	{
+		lastPositions.Clear();
+		foreach (EntityInfo s in segments)
+			lastPositions[s.Id] = (s.X, s.Y, ctx.Tick);
+	}
+
+	private void LogWorm(BotContext ctx)
+	{
+		maxSegmentsSeen = Math.Max(maxSegmentsSeen, segments.Count);
+		if (ctx.Tick - lastWormLog < WormLogTicks)
+			return;
+		lastWormLog = ctx.Tick;
+		int heads = segments.Count(s => s.Type == BossType), life = segments.Sum(s => s.Life);
+		ctx.Log.Info($"Boss fight: {segments[0].Name}: {segments.Count} segments in view ({heads} heads, {life} life), "
+			+ $"us {ctx.Combat.Life}/{ctx.Combat.LifeMax}, {ctx.Combat.AmmoCount} arrows, {Dodges} dodges");
 	}
 
 	/// <summary>
@@ -251,7 +381,7 @@ public sealed class BossFightSkill : ISkill
 	private void Move(BotContext ctx, EntityInfo? boss)
 	{
 		MoveFreely(ctx, boss, out float minX, out float maxX);
-		if (Arena == null)
+		if (Arena == null && !IsWorm) // a worm's fight keeps to its leash (MoveFreely) as to an arena
 			return;
 		// Brake before an end: never press towards it within the stopping distance (v² / 2a, braking is
 		// slowdown + acceleration) plus a few pixels. Pressing towards an end only once at it still slid a tile past.
@@ -276,12 +406,29 @@ public sealed class BossFightSkill : ISkill
 			minX = Math.Max(minX, ax0 * 16f);
 			maxX = Math.Min(maxX, (ax1 + 1) * 16f - p.Width);
 		}
-		TrackDash(ctx, boss, cx, cy);
-		Kite(ctx, boss, floorY, minX, maxX);
+		else if (IsWorm) {
+			// No arena: a leash round where the fight started, its ends walls to the planner like an arena's. The worm
+			// despawns once we leave the Corruption; ZoneCorrupt counts evil tiles over about 169 tiles across round the
+			// player (Main.buffScanAreaWidth, Main.cs:882), so 40 tiles from a spot in it keeps most of that ground.
+			minX = Math.Max(minX, (centre.Value.X - HardHalfWidth) * 16f);
+			maxX = Math.Min(maxX, (centre.Value.X + HardHalfWidth + 1) * 16f - p.Width);
+		}
+		if (IsWorm)
+			KiteWorm(ctx, minX, maxX);
+		else {
+			TrackDash(ctx, boss, cx, cy);
+			Kite(ctx, boss, floorY, minX, maxX);
+		}
 		threats.Clear();
-		foreach (EntityInfo h in ctx.Hostiles)
-			if (h.Damage > 0 && h.DistanceTo(cx, cy) <= ThreatRadiusTiles * 16f)
+		// A worm's segments with their measured motion (Measured), then anything else.
+		foreach (EntityInfo h in IsWorm ? segments.Concat(ctx.Hostiles.Where(o => !segmentTypes.Contains(o.Type))) : ctx.Hostiles) {
+			if (h.Damage <= 0 || h.DistanceTo(cx, cy) > ThreatRadiusTiles * 16f)
+				continue;
+			if (IsWorm && segmentTypes.Contains(h.Type))
+				threats.Add(WormPattern.Predict(h, h.Type == BossType && WormPattern.Airborne(h, ctx.Grid, ctx.Body.X, ctx.Body.Y), ctx.Expert));
+			else
 				threats.Add(h.AiStyle == EyePattern.EyeAiStyle ? EyePattern.Predict(h, ctx.Expert) : new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
+		}
 		if (threats.Count == 0)
 			return;
 		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, runDir, 0);
@@ -427,6 +574,57 @@ public sealed class BossFightSkill : ISkill
 		}
 		else
 			blocked = 0;
+		ctx.Output.Horizontal = runDir;
+	}
+
+	/// <summary>
+	/// Worm kiting. The danger is contact as the worm arcs up through us and falls back; a head (the fastest part, the
+	/// bodies follow it) is outrun only sideways. So: run away from the nearest head within <see cref="WormAwayPx"/>
+	/// across, from where it will cross our height (<see cref="WormPattern.CrossingX"/>: a head in the air falls). When the
+	/// way from it is out of room (past <see cref="HalfWidths"/>' hard end, or a tile short of a wall or the leash), run
+	/// the other way, past it, until it is behind us; the dodge planner times that (a jump over, or a wait). With no head
+	/// near, run to and fro between the soft ends as the Eye's kiting does.
+	/// </summary>
+	private void KiteWorm(BotContext ctx, float minX, float maxX)
+	{
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		TilePos node = ctx.Node;
+		int offset = node.X - centre.Value.X;
+		var (soft, hard) = HalfWidths();
+		bool Room(int dir) => dir > 0 ? offset < hard && maxX - ctx.Body.X >= 16f : offset > -hard && ctx.Body.X - minX >= 16f;
+		float? headX = null;
+		foreach (EntityInfo s in segments) {
+			if (s.Type != BossType)
+				continue;
+			float x = WormPattern.CrossingX(s, WormPattern.Airborne(s, ctx.Grid, ctx.Body.X, ctx.Body.Y), cy, ctx.Expert);
+			if (Math.Abs(x - cx) <= WormAwayPx && (headX == null || Math.Abs(x - cx) < Math.Abs(headX.Value - cx)))
+				headX = x;
+		}
+		if (headX is float hx) {
+			int ahead = Math.Sign(hx - cx); // where the head is, seen from us
+			int away = ahead != 0 ? -ahead : runDir;
+			if (pastHeadDir != 0 && ahead == pastHeadDir && Room(pastHeadDir))
+				runDir = pastHeadDir;
+			else if (Room(away)) {
+				runDir = away;
+				pastHeadDir = 0;
+			}
+			else {
+				runDir = -away;
+				pastHeadDir = runDir;
+				if (ctx.Tick - lastForcedTurnLog > 60) {
+					lastForcedTurnLog = ctx.Tick;
+					ctx.Log.Info($"Boss fight: no room to run from the worm's head at {node}: running past it");
+				}
+			}
+		}
+		else {
+			pastHeadDir = 0;
+			bool outward = runDir > 0 ? offset >= soft : offset <= -soft;
+			if (outward || !Room(runDir))
+				runDir = -runDir;
+		}
 		ctx.Output.Horizontal = runDir;
 	}
 

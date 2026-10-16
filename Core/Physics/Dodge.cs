@@ -13,7 +13,9 @@ namespace TerraBot.Core.Physics;
 /// <item>dash: at tick <see cref="DashAt"/> take <see cref="DashSpeed"/> straight at the player's centre (where
 /// the simulated player is then), and after <see cref="BrakeAfter"/> ticks of a dash multiply the velocity by
 /// <see cref="Brake"/> each tick. <see cref="DashedFor"/> ≥ 0 means a dash is under way already;</item>
-/// <item><see cref="SeekFrom"/>: the tick a dash under way ends and seeking resumes.</item>
+/// <item><see cref="SeekFrom"/>: the tick a dash under way ends and seeking resumes;</item>
+/// <item>fall: add <see cref="Gravity"/> to the vertical velocity each tick, up to <see cref="MaxFallSpeed"/> (a worm's
+/// head out of the ground).</item>
 /// </list>
 /// </summary>
 public sealed record Threat(float X, float Y, int Width, int Height, float VX, float VY)
@@ -27,6 +29,8 @@ public sealed record Threat(float X, float Y, int Width, int Height, float VX, f
 	public int BrakeAfter { get; init; } = 40;
 	public float Brake { get; init; } = 1f;
 	public int SeekFrom { get; init; } = int.MaxValue;
+	public float Gravity { get; init; }
+	public float MaxFallSpeed { get; init; } = float.PositiveInfinity;
 	public bool Seeks => SeekAccel > 0f && SeekSpeed > 0f;
 }
 
@@ -140,6 +144,8 @@ public static class Dodge
 				vy = SeekAxis(vy, wy, a);
 			}
 		}
+		if (th.Gravity != 0f)
+			vy = MathF.Min(vy + th.Gravity, th.MaxFallSpeed);
 		x += vx;
 		y += vy;
 	}
