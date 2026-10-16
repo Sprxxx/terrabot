@@ -50,6 +50,17 @@ public sealed class BotContext
 	public void Ignore(int npcId, int ticks) => IgnoredEnemies[npcId] = Tick + ticks;
 
 	/// <summary>
+	/// Fliers waited for in the open that did not come (FightSkill.MaxFarWaitTicks), until the tick given: not waited for
+	/// again while out of sight beyond the distance a fight starts at (FightSkill.ThreatTiles); shot when in sight, and
+	/// fought when they come that close, as ever.
+	/// </summary>
+	public System.Collections.Generic.Dictionary<int, long> WaitedOutEnemies { get; } = new();
+
+	public bool WaitedOut(int npcId) => WaitedOutEnemies.TryGetValue(npcId, out long until) && Tick < until;
+
+	public void WaitOut(int npcId, int ticks) => WaitedOutEnemies[npcId] = Tick + ticks;
+
+	/// <summary>
 	/// Enemies that swinging at in reach did not hurt (behind a slope or a block the line check missed), until the tick
 	/// given: unlike <see cref="IgnoredEnemies"/>, not fought or counted as danger even right next to the bot. Seen in
 	/// game: a red slime 3 tiles away was swung at for a whole game day.

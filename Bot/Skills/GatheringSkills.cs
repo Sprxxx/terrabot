@@ -100,7 +100,8 @@ public sealed class ChopTreeSkill : ISkill
 
 /// <summary>
 /// Walk over dropped items matching a filter until none are left in range (vanilla picks items up within
-/// Player.defaultItemGrabRange = 42 px, so standing a tile away is enough). Unreachable drops are skipped.
+/// Player.defaultItemGrabRange = 42 px, so standing a tile away is enough). Unreachable drops are skipped, and so are
+/// drops lying deeper under the feet than a fall the body takes unhurt (<see cref="TooDeep"/>).
 /// </summary>
 public sealed class CollectDropsSkill : ISkill
 {
@@ -158,6 +159,11 @@ public sealed class CollectDropsSkill : ISkill
 			walk = null;
 			walkTarget = -1;
 		}
+		foreach (DropInfo d in ctx.Drops)
+			if (!skip.Contains(d.Id) && want(d) && Dist(d, cx, cy) <= radiusPx && TooDeep(ctx, d)) {
+				skip.Add(d.Id);
+				ctx.Log.Info($"Collect: leaving {d.Name} x{d.Stack} at {d.Tile}, {d.Tile.Y - ctx.Node.Y} rows down (deeper than a safe fall, {p.SafeFallTiles})");
+			}
 		var candidates = ctx.Drops.Where(d => want(d) && !skip.Contains(d.Id)
 			&& Dist(d, cx, cy) <= radiusPx).OrderBy(d => Dist(d, cx, cy)).ToList();
 		if (candidates.Count == 0 || ++ticks > MaxTicks) {
@@ -197,8 +203,18 @@ public sealed class CollectDropsSkill : ISkill
 	{
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
-		return ctx.Drops.Any(d => want(d) && Dist(d, cx, cy) <= radiusTiles * 16f);
+		return ctx.Drops.Any(d => want(d) && Dist(d, cx, cy) <= radiusTiles * 16f && !TooDeep(ctx, d));
 	}
+
+	/// <summary>
+	/// A drop more rows under the feet than a fall the body takes unhurt (<see cref="PhysicsParams.SafeFallTiles"/>): at a
+	/// chasm's floor, or down a shaft. Left where it lies: the paths drop no farther than a safe fall, so the way there is a
+	/// long dig down into what the chasm holds, for a few coins. Seen in game (measured run M10c, world_eow): the fight's loot
+	/// had fallen to a corruption chasm's floor, "Collect [fetching Copper Coin x11]" at (1700,361), some 90 rows under the
+	/// surface the fight was on (rows 269-273); that time the bot was already falling there, knocked off the lip ("Died (665
+	/// damage" on landing), but nothing kept a collect from going down for it, and the boss's loot is looked for 40 tiles round.
+	/// </summary>
+	public static bool TooDeep(BotContext ctx, DropInfo d) => d.Tile.Y - ctx.Node.Y > ctx.Physics.SafeFallTiles;
 
 	private static float Dist(DropInfo d, float x, float y) => MathF.Sqrt((d.CenterX - x) * (d.CenterX - x) + (d.CenterY - y) * (d.CenterY - y));
 }

@@ -1,6 +1,7 @@
 using System.Linq;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
+using TerraBot.Bot.Building;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
 using Xunit;
@@ -366,6 +367,122 @@ public class EvilBossTests
 		Assert.True(m.Success, d);
 		int goalX = int.Parse(m.Groups[1].Value), goalY = int.Parse(m.Groups[2].Value);
 		Assert.True(goalY <= Feet && (goalX < chasmFrom || goalX > chasmTo), $"wandering to ({goalX},{goalY})"); // up on the surface
+	}
+
+	/// <summary>The chasm world's chasm: its columns and its floor's feet row, far deeper than a safe fall (25) under the lips.</summary>
+	private const int ChasmFrom = 388, ChasmTo = 393, ChasmFloor = Feet + 60;
+
+	/// <summary>
+	/// <see cref="CorruptWorld"/>'s corruption over deep stone, with a chasm at x 388-393 down to row <see cref="ChasmFloor"/>,
+	/// as the M10 world's at x 1700-1704 and 1777 (floors at rows 362-401, the surface at 269-294).
+	/// </summary>
+	private static FakeGame ChasmWorld(int floor = ChasmFloor, bool corrupt = true)
+	{
+		const int width = 500;
+		var rows = Enumerable.Repeat(new string('.', width), Feet + 1).ToList();
+		rows[Feet] = "...S" + new string('.', width - 4);
+		while (rows.Count < floor + 5)
+			rows.Add(new string('s', width));
+		rows.Add(new string('@', width));
+		var g = new FakeGame(rows.ToArray());
+		for (int x = CorruptFrom; x <= CorruptTo && corrupt; x++)
+			for (int y = Feet + 1; y < Feet + 13; y++)
+				g.TileTypes[new TilePos(x, y)] = y == Feet + 1 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		for (int x = ChasmFrom; x <= ChasmTo; x++)
+			for (int y = Feet + 1; y < floor; y++) {
+				g.Grid.Set(x, y, CellKind.Empty);
+				g.TileTypes.Remove(new TilePos(x, y));
+			}
+		return g;
+	}
+
+	[Fact]
+	public void TheCorruptionsChasms_AreBridged_BeforeTheHunt_AndTheHuntComesAfter()
+	{
+		// Measured run M10c (world_eow): three deaths by falls into the corruption's chasms, "Hurt 715 (fall damage) at tile
+		// (1702,364)", 665 at (1701,362) and 765 at (1778,396), the surface at rows 269-294: knocked off a lip by eaters of
+		// souls and a zombie, and run off one. Players bridge them with a row of dirt; so does the plan, once, first.
+		FakeGame g = ChasmWorld();
+		BotContext ctx = Armoured(g);
+		g.Items[FakeGame.DirtBlock] = 1000;
+		MoveTo(g, ctx, 350, Feet);
+		var p = new ProgressionPlanner();
+		var chunks = new HaveItem(FakeGame.RottenChunk, ProgressionPlanner.WormFoodChunks, "rotten chunks");
+		ISkill s = p.ResolveForTest(chunks, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		var build = Assert.IsType<BuildSkill>(s);
+		Assert.True(build.Blueprint.IsBridge);
+		Assert.Equal(new TilePos(ChasmFrom, Feet + 1), build.Origin);
+		Assert.Equal(ChasmTo - ChasmFrom + 1, build.Blueprint.Width);
+		Assert.Contains($"bridging the chasm at x {ChasmFrom}-{ChasmTo}", p.Status);
+
+		build.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		int lowest = ctx.Node.Y;
+		for (int t = 0; t < 60 * 60 * 2 && st == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			st = build.Tick(ctx);
+			g.Step(ctx);
+			lowest = System.Math.Max(lowest, ctx.Node.Y);
+		}
+		output.WriteLine($"{st}: {build.Describe()}, at {ctx.Node}, feet down to row {lowest}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		for (int x = ChasmFrom; x <= ChasmTo; x++)
+			Assert.True(g.Grid.Get(x, Feet + 1).IsBlock(), $"no block at ({x},{Feet + 1})");
+		Assert.True(lowest <= Feet + 1, $"down to row {lowest} building it");
+		p.OnSkillFinished(build, st, ctx);
+
+		// Bridged: the hunt, and the bridge is kept from the paths' picks.
+		s = p.ResolveForTest(chunks, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		Assert.IsType<HuntSkill>(s);
+		p.Next(ctx);
+		Assert.Contains(new TilePos(ChasmFrom + 2, Feet + 1), ctx.Protected);
+	}
+
+	[Fact]
+	public void LootAtAChasmsFloor_DeeperThanASafeFall_IsLeft_TheLootOnTheSurfaceIsNot()
+	{
+		// Measured run M10c: a fight's coins had fallen to a corruption chasm's floor, "Collect [fetching Copper Coin x11]" at
+		// (1700,361), some 90 rows under the surface the fight was on. Here the floor is 34 rows down (a safe fall is 25), in
+		// the boss loot's reach (BotBrain.BossLootRadiusTiles, 40), and a coin lies on the surface too.
+		FakeGame g = ChasmWorld(floor: Feet + 35, corrupt: false);
+		BotContext ctx = g.CreateContext(output);
+		MoveTo(g, ctx, ChasmFrom - 4, Feet);
+		g.Drops.Add(new DropInfo(900, 71, "Copper Coin", 11, ChasmFrom * 16f + 20, (Feet + 34) * 16f + 4, 8, 8)); // on the chasm's floor
+		g.Drops.Add(new DropInfo(901, 71, "Copper Coin", 3, (ChasmFrom - 12) * 16f + 4, Feet * 16f + 4, 8, 8)); // on the surface
+		g.Refresh(ctx);
+		Assert.True(CollectDropsSkill.AnyInRange(ctx, _ => true, BotBrain.BossLootRadiusTiles));
+		var collect = new CollectDropsSkill(_ => true, BotBrain.BossLootRadiusTiles);
+		collect.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		int lowest = ctx.Node.Y;
+		for (int t = 0; t < 60 * 60 && st == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			st = collect.Tick(ctx);
+			g.Step(ctx);
+			lowest = System.Math.Max(lowest, ctx.Node.Y);
+		}
+		output.WriteLine($"{st}: {collect.Describe()}, at {ctx.Node}, feet down to row {lowest}, drops left {string.Join(", ", g.Drops.Select(d => d.Tile))}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.True(lowest <= Feet + 1, $"went down to row {lowest} for the coins in the chasm");
+		Assert.DoesNotContain(g.Drops, d => d.Id == 901);
+		Assert.False(CollectDropsSkill.AnyInRange(ctx, _ => true, BotBrain.BossLootRadiusTiles)); // the brain starts no collect for it
+	}
+
+	[Fact]
+	public void ChasmOpenings_AreTheDropsDeeperThanASafeFall_NotTheDipsNorACliffsFoot()
+	{
+		FakeGame g = ChasmWorld();
+		for (int x = 420; x <= 423; x++)
+			for (int y = Feet + 1; y < Feet + 10; y++)
+				g.Grid.Set(x, y, CellKind.Empty); // a dip 9 rows deep: walked down into and out of, no bridge
+		for (int x = 435; x < 435 + Chasms.MaxBridgeTiles + 5; x++)
+			for (int y = Feet + 1; y < Feet + 31; y++)
+				g.Grid.Set(x, y, CellKind.Empty); // a valley 30 rows down, wider than any chasm: its foot is walked to, no bridge
+		var found = Chasms.Openings(g.Grid, CorruptFrom, CorruptTo, Core.Physics.PhysicsParams.Default.SafeFallTiles);
+		output.WriteLine(string.Join(", ", found));
+		Assert.Equal(new[] { new ChasmOpening(ChasmFrom, ChasmTo, Feet + 1) }, found);
 	}
 
 	[Fact]

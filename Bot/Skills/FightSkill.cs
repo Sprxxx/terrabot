@@ -80,6 +80,24 @@ public sealed class FightSkill : ISkill
 	private const int RetargetDistance = 6;
 	private const int RetargetAnywayTicks = 180;
 
+	/// <summary>
+	/// The distance (tiles) a hostile in sight starts a fight at (ProgressionPlanner.InDanger): a flier out of sight farther
+	/// off than this is only waited for so long (<see cref="MaxFarWaitTicks"/>).
+	/// </summary>
+	public const int ThreatTiles = Brain.ProgressionPlanner.DangerRadiusTiles;
+	/// <summary>
+	/// How long a fight waits in the open, all told, for fliers out of sight beyond <see cref="ThreatTiles"/> that come no
+	/// closer: an eater of souls flies at 4 px a tick at most and turns at 0.02 a tick (vanilla NPC.AI_005_EaterOfSouls,
+	/// type 6), 200 ticks to stop flying away and 200 to come back up to speed; one that has not come closer in that long is
+	/// not coming. Then the fight is over, the work goes on, and those fliers are fought when they come within
+	/// <see cref="ThreatTiles"/> (or into sight). Seen in game (measured run M10c, world_eow): 66 of 240 heartbeats were
+	/// "waiting for it in the open", 49 of them for an eater of souls 18-39 tiles off; 101 times "no closer to Eater of
+	/// Souls in 600 ticks (26-36 tiles); leaving it", and with new ones spawning the fights went on; 233 "Danger: pausing",
+	/// 27 heartbeats patrolling, and the mushrooms at 3/6 for 12 game hours and 5/6 at the end.
+	/// </summary>
+	public const int MaxFarWaitTicks = 400;
+	private int farWaitTicks;
+
 	private WalkToSkill approach;
 	private TilePos approachTarget;
 	private int approachAge;
@@ -165,6 +183,7 @@ public sealed class FightSkill : ISkill
 				return SkillStatus.Succeeded;
 			}
 			State = "watching";
+			MindTheEdge(ctx);
 			Heal(ctx);
 			return SkillStatus.Running;
 		}
@@ -202,6 +221,7 @@ public sealed class FightSkill : ISkill
 			Shoot(ctx, t, cx, cy);
 			if (flier)
 				KeepOffEdge(ctx);
+			MindTheEdge(ctx);
 			Heal(ctx);
 			return SkillStatus.Running;
 		}
@@ -235,6 +255,8 @@ public sealed class FightSkill : ISkill
 				}
 			}
 		}
+		else if (flier && FarWaitOver(ctx, t, cx, cy))
+			return SkillStatus.Succeeded;
 		else if (flier) {
 			// A flier is never chased on foot: it comes at the player on its own (AI 2, 5 and 14 all fly at their target), and
 			// the ground beneath it is wherever it happens to be over. In sight with a sword: hold ground and meet it (chasing
@@ -259,6 +281,7 @@ public sealed class FightSkill : ISkill
 				ctx.Output.AimMouse(t.CenterX, t.CenterY);
 			}
 		}
+		MindTheEdge(ctx);
 		Heal(ctx);
 		return SkillStatus.Running;
 	}
@@ -353,6 +376,7 @@ public sealed class FightSkill : ISkill
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
 			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
 				&& NotTooDeep(ctx, e, d)
+				&& (!ctx.WaitedOut(e.Id) || d <= ThreatTiles * 16f || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) // not waited for again
 				&& (!InWater(ctx, e) || e.Id == ctx.RecentAttacker); // nor into water after jellyfish and piranhas
 			if (e.Id == targetId && candidate)
 				current = e;
@@ -385,6 +409,31 @@ public sealed class FightSkill : ISkill
 			ctx.Log.Info($"Fight: target {e2.Name} #{e2.Id} at {e2.FeetTile}, {e2.DistanceTo(cx, cy) / 16f:0.0} tiles, life {e2.Life}/{e2.LifeMax}");
 		}
 		return pick;
+	}
+
+	/// <summary>
+	/// A flier not in reach nor shot at, so waited for (<see cref="HoldAndMeet"/>, <see cref="WaitInTheOpen"/>): beyond
+	/// <see cref="ThreatTiles"/> and no closer than it has been (by a tile), the wait counts towards
+	/// <see cref="MaxFarWaitTicks"/>; over that, every flier out of sight beyond <see cref="ThreatTiles"/> is waited out
+	/// (<see cref="BotContext.WaitOut"/>, for <see cref="IgnoreTicks"/>) and the fight is over.
+	/// </summary>
+	private bool FarWaitOver(BotContext ctx, EntityInfo t, float cx, float cy)
+	{
+		if (targetDistance <= ThreatTiles * 16f || !progress.TryGetValue(t.Id, out var pr) || pr.Since == 0)
+			return false;
+		if (++farWaitTicks <= MaxFarWaitTicks)
+			return false;
+		int n = 0;
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (FlyingAiStyles.Contains(e.AiStyle) && e.DistanceTo(cx, cy) > ThreatTiles * 16f && !ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) {
+				ctx.WaitOut(e.Id, IgnoreTicks);
+				n++;
+			}
+		ctx.Log.Info($"Fight: {MaxFarWaitTicks} ticks waiting for fliers out of sight beyond {ThreatTiles} tiles that come no closer ({t.Name} at "
+			+ $"{targetDistance / 16f:0.0}); leaving {n} until they come within {ThreatTiles}");
+		targetId = -1;
+		State = "done";
+		return true;
 	}
 
 	/// <summary>Stand, face the flier and swing as it comes within <see cref="MeetMargin"/> of reach.</summary>
@@ -453,6 +502,95 @@ public sealed class FightSkill : ISkill
 		State += ", off the edge";
 	}
 
+	/// <summary>
+	/// Columns short of a sheer drop (<see cref="EdgeWithin"/>) inside which the fight presses no key towards it: a body at
+	/// run speed (3 px a tick) stops in 3 * 3 / (2 * 0.2) = 22.5 px with the keys let go (vanilla HorizontalMovement's
+	/// runSlowdown), and stands on the lip until 26 px past its canonical spot (6 px gap plus the 20 px hitbox), so the drop's
+	/// column next but one is the last that is safe to run at.
+	/// </summary>
+	public const int EdgeMarginTiles = 2;
+	/// <summary>
+	/// Ticks a hit's knockback carries the body: 4.5 px a tick (vanilla Player.Hurt) lost at 0.1 a tick in the air (half the
+	/// runSlowdown, HorizontalMovement): 45. Meanwhile the edge is minded even while a path walk has the keys.
+	/// </summary>
+	public const int KnockbackTicks = 45;
+
+	/// <summary>
+	/// Whatever the fight does, not over a sheer drop (deeper than a safe fall, <see cref="EdgeWithin"/>):
+	/// <list type="bullet">
+	/// <item>no key pressed towards one within <see cref="EdgeMarginTiles"/> (running at an enemy, stepping to a drop),
+	/// a one-tick turn to face an enemy aside;</item>
+	/// <item>carried towards one (a hit's knockback, the rest of a jump) so far it would go over before stopping: the key
+	/// against the motion, which takes off runSlowdown + runAcceleration = 0.28 px a tick instead of 0.1 in the air
+	/// (vanilla HorizontalMovement), 36 px to stop from a hit's 4.5 instead of about 80;</item>
+	/// <item>in the air over one: the key towards the nearer side with ground.</item>
+	/// </list>
+	/// Not while the path walk drives (it jumps and bridges gaps on purpose), unless a hit just threw the body
+	/// (<see cref="KnockbackTicks"/>) or it moves faster than the keys make it. Seen in game (measured run M10c, world_eow):
+	/// hit by eaters of souls and a zombie in the air at (1708-1709,267-270), "knockback 4.5 dir -1", the bot was carried 5
+	/// columns west into a corruption chasm while the fight shot at fliers with no key pressed, and fell to (1702,364) and
+	/// (1701,362), 715 and 665 damage; KeepOffEdge acts only on the ground and against fliers.
+	/// </summary>
+	private void MindTheEdge(BotContext ctx)
+	{
+		PhysicsParams p = ctx.Physics;
+		BodyState b = ctx.Body;
+		bool thrown = Math.Abs(b.VX) > p.MaxHorizontalSpeed || ctx.LastAttackedTick >= 0 && ctx.Tick - ctx.LastAttackedTick <= KnockbackTicks;
+		if (approach != null && !thrown)
+			return;
+		TilePos n = ctx.Node;
+		int press = ctx.Output.Horizontal;
+		if (press != 0 && ctx.Combat.Facing == press && EdgeWithin(ctx, n, press) is int k && k > 0 && k <= EdgeMarginTiles) {
+			ctx.Output.Horizontal = 0;
+			State += ", stopped at the edge";
+		}
+		if (!b.Grounded && SheerUnder(ctx, n)) {
+			int left = GroundWithin(ctx, n, -1), right = GroundWithin(ctx, n, 1);
+			if (left > 0 || right > 0) {
+				ctx.Output.Horizontal = right > 0 && (left == 0 || right <= left) ? 1 : -1;
+				State += ", back to the lip";
+				return;
+			}
+		}
+		int moving = Math.Sign(b.VX);
+		if (moving == 0 || ctx.Output.Horizontal == -moving || EdgeWithin(ctx, n, moving) is not (int e and > 0))
+			return;
+		float decel = b.Grounded ? p.RunSlowdown : p.RunSlowdown * 0.5f;
+		float coast = b.VX * b.VX / (2f * decel);
+		float toEdge = (e - 1) * Core.Pathfinding.Body.TileSize + EdgeSupportPx;
+		if (coast >= toEdge) {
+			ctx.Output.Horizontal = -moving;
+			State += ", braking at the edge";
+		}
+	}
+
+	/// <summary>How far (px) past its canonical spot the body still stands on the lip: the 6 px gap to the next column plus its 20 px width.</summary>
+	private const float EdgeSupportPx = 26f;
+
+	/// <summary>Nothing to stand on under either of the body's columns within a safe fall.</summary>
+	private static bool SheerUnder(BotContext ctx, TilePos feet) => Sheer(ctx, feet.X, feet.Y) && Sheer(ctx, feet.X + 1, feet.Y);
+
+	private static bool Sheer(BotContext ctx, int x, int feetY)
+	{
+		for (int d = 1; d <= ctx.Physics.SafeFallTiles + 1; d++)
+			if (ctx.Grid.Get(x, feetY + d).CanStandOn())
+				return false;
+		return true;
+	}
+
+	/// <summary>Columns (1..<see cref="KnockbackTiles"/>) to the first one that way with ground within a safe fall; 0 if none.</summary>
+	private static int GroundWithin(BotContext ctx, TilePos feet, int dir)
+	{
+		for (int k = 1; k <= KnockbackTiles; k++) {
+			int x = dir > 0 ? feet.X + 1 + k : feet.X - k;
+			if (ctx.Grid.Get(x, feet.Y).IsSolid())
+				return 0;
+			if (!Sheer(ctx, x, feet.Y))
+				return k;
+		}
+		return 0;
+	}
+
 	/// <summary>Open air over the head this many rows: as far as a fight engages (<see cref="EngageRadius"/>), where fliers come from.</summary>
 	public const int OpenSkyRows = (int)(EngageRadius / 16f);
 
@@ -495,8 +633,12 @@ public sealed class FightSkill : ISkill
 	private void Approach(BotContext ctx, EntityInfo t, float dx, float dy)
 	{
 		PhysicsParams p = ctx.Physics;
-		// Close and roughly level: just run at it (the path would be stale before it is finished).
-		if (Math.Abs(dx) <= 4 * 16f && Math.Abs(dy) <= 1.5f * 16f) {
+		// Close and roughly level: just run at it (the path would be stale before it is finished), unless a sheer drop lies
+		// between: then the path's way, which jumps or bridges it. Seen in game (measured run M10c): closing in on a zombie on a
+		// corruption chasm's far side, the bot ran off the lip at (1778,294) and fell to (1778,396), 765 damage.
+		int towards = Math.Sign(dx);
+		bool dropBetween = EdgeWithin(ctx, ctx.Node, towards) is int edge && edge > 0 && edge * 16f < Math.Abs(dx);
+		if (Math.Abs(dx) <= 4 * 16f && Math.Abs(dy) <= 1.5f * 16f && !dropBetween) {
 			approach = null;
 			ctx.Output.Horizontal = Math.Sign(dx);
 			State = "closing in";
