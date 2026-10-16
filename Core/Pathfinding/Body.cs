@@ -72,17 +72,21 @@ public static class Body
 	public static bool Bobbing(ITileGrid g, TilePos n) =>
 		InLiquid(g, n) && (g.Get(n.X, n.Y + 1).IsLiquid() && !g.Get(n.X, n.Y + 1).CanStandOn() || g.Get(n.X + 1, n.Y + 1).IsLiquid() && !g.Get(n.X + 1, n.Y + 1).CanStandOn());
 
-	/// <summary>Does any body cell touch liquid (used for cost penalties).</summary>
+	/// <summary>
+	/// Does any body cell touch liquid (used for cost penalties)? Open liquid only (<see cref="CellKindExtensions.IsOpenLiquid"/>):
+	/// a block a dig move mines out of the body lets out no more than its own cell's water, priced as a wet break
+	/// (<see cref="BlockRules.WetBreakTicks"/>).
+	/// </summary>
 	public static bool InLiquid(ITileGrid g, TilePos n)
 	{
 		for (int dy = -HeightTiles + 1; dy <= 0; dy++)
 			for (int dx = 0; dx < WidthTiles; dx++)
-				if (g.Get(n.X + dx, n.Y + dy).IsLiquid())
+				if (g.Get(n.X + dx, n.Y + dy).IsOpenLiquid())
 					return true;
 		return false;
 	}
 
-	/// <summary>Does any body cell hold lava?</summary>
+	/// <summary>Does any body cell hold lava (a block to be mined out of the body too: it would let the lava out)?</summary>
 	public static bool TouchesLava(ITileGrid g, TilePos n)
 	{
 		for (int dy = -HeightTiles + 1; dy <= 0; dy++)
@@ -92,11 +96,15 @@ public static class Body
 		return false;
 	}
 
-	/// <summary>Is the top row of the body (the head) in liquid?</summary>
+	/// <summary>
+	/// Is the top row of the body (the head) in open liquid? Seen in game (measured run U10): a block placed into a flooded
+	/// row, in the head row of the way down to ore, read as the head under water; that one step cost 200x (19,000 ticks
+	/// for 95), and every 4,000-node search for the ore beside it ended "no path".
+	/// </summary>
 	public static bool HeadInLiquid(ITileGrid g, TilePos n)
 	{
 		int head = n.Y - HeightTiles + 1;
-		return g.Get(n.X, head).IsLiquid() || g.Get(n.X + 1, head).IsLiquid();
+		return g.Get(n.X, head).IsOpenLiquid() || g.Get(n.X + 1, head).IsOpenLiquid();
 	}
 
 	/// <summary>Horizontal offset that centres the hitbox on its two columns (6 px for a 20 px wide body).</summary>

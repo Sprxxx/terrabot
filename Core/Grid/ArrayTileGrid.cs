@@ -41,7 +41,7 @@ public sealed class ArrayTileGrid : ITileGrid
 	}
 
 	/// <summary>
-	/// Parses rows top to bottom. Legend: '#' solid, '=' platform, '.' or ' ' empty, '~' water, '!' lava, 'h' honey.
+	/// Parses rows top to bottom. Legend: '#' solid, '&' a solid block holding water, '=' platform, '.' or ' ' empty, '~' water, '!' lava, 'h' honey.
 	/// Any letter other than 'h' is an Empty cell recorded in <see cref="Markers"/>.
 	/// </summary>
 	public static ArrayTileGrid Parse(params string[] rows)

@@ -61,11 +61,19 @@ public static class CellKindExtensions
 
 	public static bool IsLiquid(this CellKind k) => (k & (CellKind.Water | CellKind.Lava | CellKind.Honey)) != 0;
 
+	/// <summary>
+	/// Liquid round the body: in an open cell (or a slope's or half block's), not held in a solid block. A block keeps the
+	/// liquid of its cell (vanilla Liquid.Update leaves a solid tile's liquid alone, and placing a block into water keeps
+	/// it there) until it is mined. Seen in game (measured run U10): blocks placed into a flooded row read as water, mining
+	/// one of them counted as the head under (200x), and ore 4-8 tiles off was "no path" for three stretches of 1.5 game hours.
+	/// </summary>
+	public static bool IsOpenLiquid(this CellKind k) => k.IsLiquid() && !k.IsSolid();
+
 	/// <summary>One-character legend used by ASCII grids, dumps and tests.</summary>
 	public static char ToChar(this CellKind k)
 	{
 		if ((k & CellKind.Hazard) != 0) return '^';
-		if (k.IsSolid()) return k.IsFalling() ? '%' : '#';
+		if (k.IsSolid()) return k.IsFalling() ? '%' : (k & CellKind.Water) != 0 ? '&' : '#';
 		if (k.IsHalfBlock()) return '-';
 		if (k.IsShaped()) return '/';
 		if (k.IsPlatform()) return '=';
@@ -75,10 +83,15 @@ public static class CellKindExtensions
 		return '.';
 	}
 
-	/// <summary>Inverse of <see cref="ToChar"/>. '@' is also Solid (tests use it for unbreakable blocks).</summary>
+	/// <summary>
+	/// Inverse of <see cref="ToChar"/>. '@' is also Solid (tests use it for unbreakable blocks). '&' is a block holding
+	/// water (<see cref="IsOpenLiquid"/>; not a letter, which a parse takes for a marker): drawn as '#', the dumps of measured
+	/// run U10 hid the cells that mattered.
+	/// </summary>
 	public static CellKind FromChar(char c) => c switch {
 		'#' or '@' => CellKind.Solid,
 		'%' => CellKind.Solid | CellKind.Falling,
+		'&' => CellKind.Solid | CellKind.Water,
 		'=' => CellKind.Platform,
 		'/' => CellKind.Platform | CellKind.Shaped, // a slope, as TerrariaTileGrid reads them
 		'-' => CellKind.Platform | CellKind.Shaped | CellKind.HalfBlock,
