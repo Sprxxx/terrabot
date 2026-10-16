@@ -69,6 +69,14 @@ public sealed class MineSkill : ISkill
 	public int ItemType { get; }
 	public int TileType { get; }
 	public int Amount { get; }
+	/// <summary>
+	/// Other ores that would do as well (another tier's gear): with none of this ore in sight but one of these, its vein is
+	/// mined and the job ends, so the planner picks again with it in the bag (see ProgressionPlanner.AltOres).
+	/// </summary>
+	public IReadOnlyList<(int Item, int Tile)> Also { get; init; } = Array.Empty<(int, int)>();
+	/// <summary>The ore being mined when it is one of <see cref="Also"/>; null for this job's own.</summary>
+	private (int Item, int Tile)? alt;
+	private bool tookAlt;
 	public int Mined { get; private set; }
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
@@ -158,6 +166,20 @@ public sealed class MineSkill : ISkill
 			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;
 		}
+		// An other tier's vein mined (Also): finish it, then hand back to the planner, which picks the tier again.
+		if (tookAlt && target == null && alt is (int altItem, int altTile)) {
+			if (veinExtra < MaxVeinExtra && lastMined is TilePos lm && NearestOf(ctx, altTile, lm, VeinRadius) is TilePos moreAlt) {
+				veinExtra++;
+				target = moreAlt;
+				mineTicks = 0;
+				arrivedOutOfReach = 0;
+				State = "finishing the vein";
+				return SkillStatus.Running;
+			}
+			ctx.Log.Info($"Mine done: took {ctx.Knowledge?.ItemName(altItem)} instead of {Label(ctx)} (mined {Mined} tile(s)); the plan picks the tier again");
+			State = "done (other ore)";
+			return SkillStatus.Succeeded;
+		}
 		if (PickTarget(ctx) is TilePos next) {
 			target = next;
 			mineTicks = 0;
@@ -201,7 +223,7 @@ public sealed class MineSkill : ISkill
 
 	private SkillStatus TickTarget(BotContext ctx, TilePos t)
 	{
-		if (ctx.World.TileTypeAt(t.X, t.Y) != TileType) {
+		if (ctx.World.TileTypeAt(t.X, t.Y) != (alt?.Tile ?? TileType)) {
 			// Mined (or changed under us): the drop falls nearby; pick it up before the next tile.
 			Mined++;
 			lastMined = t;
@@ -210,7 +232,10 @@ public sealed class MineSkill : ISkill
 			target = null;
 			sub?.Stop(ctx);
 			sub = null;
-			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, CollectRadius, ignoredDrops), "collecting");
+			if (alt != null)
+				tookAlt = true;
+			int altDrop = alt?.Item ?? -1;
+			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType || d.Type == altDrop, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;
 		}
 		var reach = new GoalReachTile(t, ctx.Physics, ctx.PickRangeBoost);
@@ -282,13 +307,40 @@ public sealed class MineSkill : ISkill
 		return null;
 	}
 
+	/// <summary>The tile of this ore to go for, else (none in sight) one of an <see cref="Also"/> ore; sets <see cref="alt"/>.</summary>
 	private TilePos? PickTarget(BotContext ctx)
+	{
+		if (tookAlt && alt is (int, int tile))
+			return BestOf(ctx, tile); // finishing the other tier's vein: that ore only
+		if (BestOf(ctx, TileType) is TilePos own) {
+			alt = null;
+			return own;
+		}
+		foreach (var a in Also)
+			if (BestOf(ctx, a.Tile) is TilePos other) {
+				if (alt?.Tile != a.Tile)
+					ctx.Log.Info($"Mine: no {Label(ctx)} in sight, but {ctx.Knowledge?.ItemName(a.Item)} at {other}, which does as well; taking that");
+				alt = a;
+				return other;
+			}
+		return null;
+	}
+
+	private TilePos? NearestOf(BotContext ctx, int tile, TilePos around, int radius)
+	{
+		foreach (TilePos c in ctx.World.FindTiles(tile, around, radius))
+			if (!bad.Contains(c) && WouldMine(ctx, ctx.Moves, c, Valuable(ctx)))
+				return c;
+		return null;
+	}
+
+	private TilePos? BestOf(BotContext ctx, int tileType)
 	{
 		TilePos node = ctx.Node;
 		MoveContext moves = ctx.Moves;
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
-		foreach (TilePos c in ctx.World.FindTiles(TileType, node, SearchRadius)) {
+		foreach (TilePos c in ctx.World.FindTiles(tileType, node, SearchRadius)) {
 			if (bad.Contains(c) || !WouldMine(ctx, moves, c, Valuable(ctx)))
 				continue;
 			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
@@ -333,13 +385,13 @@ public sealed class MineSkill : ISkill
 			return "the pickaxe cannot break it";
 		// A crystal a little deeper than ore, in a full set of armour (measured run S4: four crystals seen below row 701, while
 		// the bot explored six game days for others and found one).
-		int deepest = valuable && ctx.Combat.Defense >= BotContext.CavernDefense && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin ? ctx.DeepestRow + ValuableDepthMargin : ctx.DeepestRow;
+		int deepest = valuable && ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin ? ctx.DeepestRow + ValuableDepthMargin : ctx.DeepestRow;
 		if (c.Y > deepest)
 			return $"below row {deepest}, deeper than the gear allows";
 		// A crystal in a biome: worth going in for in a full set of armour (defense 8+, CavernDefense), as a player does; the
 		// biome's own gate is defense 16, more than full iron or silver gives (measured run S1: two crystals in the underground
 		// desert left alone while the bot explored for others for three game days).
-		if (valuable ? (ctx.Combat.Defense < BotContext.CavernDefense || ctx.EvilStoneTooHard && ctx.InEvilBiome(c)) && ctx.BiomeOffLimits(c) : ctx.OffLimits(c))
+		if (valuable ? (!ctx.Combat.FullArmour || ctx.EvilStoneTooHard && ctx.InEvilBiome(c)) && ctx.BiomeOffLimits(c) : ctx.OffLimits(c))
 			return valuable || !ctx.InDangerZone(c) ? "in a biome the gear is too weak for" : "in a danger zone";
 		return null;
 	}

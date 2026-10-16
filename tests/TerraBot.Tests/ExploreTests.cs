@@ -186,6 +186,33 @@ public class WaterTests
 		Assert.Contains("(frontier)", string.Join(" ", ((TestLog)ctx.Log).Lines));
 	}
 
+	/// <summary>
+	/// Measured runs T0a/T0b: every mining job looked for one ore only (164-199 "Mine" heartbeats a run, ore in 13 of 42 and 16
+	/// of 60 explorations) while ore of the other tier was in sight. A player takes whatever ore turns up.
+	/// </summary>
+	[Fact]
+	public void MiningForIronGear_TakesSilverOreInSight_AndThePlanPicksAgain()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		foreach (TilePos c in g.TileTypes.Where(kv => kv.Value == FakeGame.TileIron).Select(kv => kv.Key).ToList())
+			g.TileTypes[c] = FakeGame.TileSilver; // only silver-tier ore in this ground
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 24);
+		BotContext ctx = g.CreateContext(output);
+		var p = new Bot.Brain.ProgressionPlanner();
+		ISkill job = p.ResolveForTest(new Bot.Brain.Wearing(new[] { FakeGame.IronHelmet, FakeGame.SilverHelmet }, "helmet"), ctx);
+		output.WriteLine($"{p.Status} -> {job?.Describe()}");
+		var mine = Assert.IsType<MineSkill>(job);
+		Assert.Equal(FakeGame.IronOre, mine.ItemType);
+		Assert.Contains(mine.Also, a => a.Item == FakeGame.SilverOre);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, mine, 60 * 60 * 2));
+		Assert.True(g.Count(FakeGame.SilverOre) > 0, "no silver ore taken");
+		ISkill then = p.ResolveForTest(new Bot.Brain.Wearing(new[] { FakeGame.IronHelmet, FakeGame.SilverHelmet }, "helmet"), ctx);
+		output.WriteLine($"{p.Status} -> {then?.Describe()}");
+		Assert.False(then is MineSkill { ItemType: FakeGame.IronOre }, "back to looking for iron with the silver in the bag");
+	}
+
 	[Fact]
 	public void AFrontierLookedAtAlready_IsNotGoneBackTo()
 	{
@@ -255,5 +282,24 @@ public class WaterTests
 		Assert.Null(MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
 		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, c)); // ore that deep waits
 		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, new TilePos(20, ctx.DeepestRow + MineSkill.ValuableDepthMargin + 5), valuable: true));
+	}
+
+	[Fact]
+	public void ACrystalJustBelowTheDepthLimit_IsGoneFor_InAMixedFullSet()
+	{
+		// Measured run U2: a silver helmet with iron chainmail and greaves is 7 defense (no set bonus); four crystals at rows
+		// 525-534 were left "below row 511", and the heart lantern's crystal was looked for to the end of the run.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 320; y++)
+			rows.Add(y == 9 ? ".....S" + new string('.', 54) : y < 10 ? new string('.', 60) : new string('#', 60));
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.CavernY = 30;
+		ctx.Combat.Defense = 7;
+		ctx.Combat.ArmourPieces = 3;
+		var c = new TilePos(20, ctx.DeepestRow + 50);
+		Assert.Null(MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
+		ctx.Combat.ArmourPieces = 2; // not a full set: the gear's own limit
+		Assert.NotNull(MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true));
 	}
 }

@@ -483,7 +483,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	{
 		int tile = TileTypeAt(cell.X, cell.Y);
 		TileTypes.Remove(cell);
-		int item = tile switch { TileStone => StoneBlock, TileIron => IronOre, _ => DirtBlock };
+		int item = tile switch { TileStone => StoneBlock, TileIron => IronOre, TileSilver => SilverOre, _ => DirtBlock };
 		int y = FallRow(cell.X, cell.Y);
 		Drops.Add(new DropInfo(nextDropId++, item, ItemName(item), 1, cell.X * 16f + 4, y * 16f + 4, 8, 8));
 	}

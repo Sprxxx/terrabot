@@ -46,6 +46,16 @@ public sealed class CombatInfo
 	public int BreathMax { get; set; } = 200;
 	/// <summary>Player.statDefense: armour and accessories.</summary>
 	public int Defense { get; set; }
+	/// <summary>Armour pieces worn (head, body, legs: 0-3).</summary>
+	public int ArmourPieces { get; set; }
+
+	/// <summary>
+	/// A full set of armour (all three pieces), whatever its tiers: a mixed silver and iron set is 7 defense (no set bonus),
+	/// under the defense 8 that "full armour" was read from before. Seen in game (measured run U2): in a silver helmet and
+	/// iron chainmail and greaves, four life crystals at rows 525-534 were left "below row 511, deeper than the gear
+	/// allows", and the heart lantern's crystal was looked for from d5 +10h to the end of the run.
+	/// </summary>
+	public bool FullArmour => ArmourPieces >= 3 || Defense >= BotContext.CavernDefense;
 	/// <summary>How far (px) in front of the body's edge the best melee weapon reaches; 0 = no weapon.</summary>
 	public float WeaponReach { get; set; }
 	public string WeaponName { get; set; } = "";

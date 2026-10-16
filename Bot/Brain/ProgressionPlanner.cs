@@ -637,6 +637,8 @@ public sealed class ProgressionPlanner
 			stuck = $"dependency chain deeper than {MaxDepth} at {need.Label}";
 			return null;
 		}
+		if (depth == 0)
+			tierAlternatives = Array.Empty<int>(); // a stage's own tiers only: not a life crystal's mining taking silver ore
 		return need switch {
 			StationPlaced s => ResolveStation(s, claims, depth, ctx),
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Items, 1, p.Label), claims, depth + 1, ctx),
@@ -722,6 +724,9 @@ public sealed class ProgressionPlanner
 		stocked.Remove(h.Label);
 		int more = h.Count - Math.Max(0, available);
 		int item = h.Accepts.Count > 1 ? CheapestToFinish(h.Accepts, more, ctx) : Cheapest(h.Accepts, ctx);
+		// The other tiers of a tiered need (iron or silver gear): their ores do as well, if this one is not to be found.
+		if (h.Accepts.Count > 1 && item >= 0)
+			tierAlternatives = h.Accepts.Where(a => a != item).ToArray();
 		if (item < 0) {
 			stuck = $"no way to get {h.Label}" + MissingStationHint(h.Accepts, ctx);
 			return null;
@@ -739,7 +744,7 @@ public sealed class ProgressionPlanner
 					target += BlockMargin;
 				if (TravelForOre(ctx, item, name) is ISkill travel)
 					return travel;
-				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target));
+				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target) { Also = AltOres(item, ctx) });
 			case SourceKind.Hunt:
 				if (NocturnalAiStyles.Contains(src.NpcAiStyle) && !ctx.IsNight)
 					return Do($"waiting for night to hunt for {name}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
@@ -1035,6 +1040,39 @@ public sealed class ProgressionPlanner
 
 	private const float TreeCost = 30f, MineCost = 60f, HuntCost = 300f;
 	private const float CraftStepCost = 5f;
+
+	/// <summary>The other tiers of the tiered need being resolved (set in ResolveItem), for <see cref="AltOres"/>.</summary>
+	private int[] tierAlternatives = Array.Empty<int>();
+
+	/// <summary>
+	/// Ores of the other tiers of the need being resolved (silver-tier gear while mining for iron-tier, and back): what each
+	/// is made of, followed down its recipes to something mined. A player takes whatever ore turns up. Seen in game
+	/// (measured runs T0a/T0b): every mining job looked for one ore only, 164-199 "Mine" heartbeats a run, ore found in
+	/// 13 of 42 and 16 of 60 explorations, while silver-tier ore was seen and left.
+	/// </summary>
+	private IReadOnlyList<(int Item, int Tile)> AltOres(int ore, BotContext ctx)
+	{
+		if (ctx.Ids.BuildingBlocks.Contains(ore) || tierAlternatives.Length == 0)
+			return Array.Empty<(int, int)>();
+		var list = new List<(int, int)>();
+		foreach (int alt in tierAlternatives)
+			if (RawOre(alt, ctx, 0) is (int item, int tile) && item != ore && !list.Any(l => l.Item1 == item))
+				list.Add((item, tile));
+		return list;
+	}
+
+	private (int Item, int Tile)? RawOre(int item, BotContext ctx, int depth)
+	{
+		ItemSource src = ctx.Knowledge.SourceOf(item);
+		if (src.Kind == SourceKind.Mine)
+			return ctx.Ids.BuildingBlocks.Contains(item) ? null : (item, src.TileType);
+		if (depth >= 3 || BestRecipe(item, ctx) is not RecipeInfo r)
+			return null;
+		foreach (Ingredient ing in r.Ingredients)
+			if (RawOre(ing.Item, ctx, depth + 1) is (int, int) found)
+				return found;
+		return null;
+	}
 
 	/// <summary>Cheapest obtainable item of the list (ties: the first, i.e. the recipe's own item). -1 if none.</summary>
 	private int Cheapest(IReadOnlyList<int> items, BotContext ctx)

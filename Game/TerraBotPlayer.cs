@@ -369,6 +369,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.Breath = Player.breath;
 		k.BreathMax = Player.breathMax;
 		k.Defense = Player.statDefense;
+		k.ArmourPieces = (Player.armor[0].IsAir ? 0 : 1) + (Player.armor[1].IsAir ? 0 : 1) + (Player.armor[2].IsAir ? 0 : 1);
 		k.WeaponReach = Blocks.WeaponSlot >= 0 ? Blocks.WeaponReach : 0f;
 		k.WeaponName = Blocks.WeaponName;
 		k.WeaponDamage = Blocks.WeaponSlot >= 0 ? Blocks.WeaponDamage : 0;
