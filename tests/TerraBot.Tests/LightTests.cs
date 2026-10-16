@@ -165,4 +165,37 @@ public class BreathTests
 		output.WriteLine($"{surface.Describe()} at x {ctx.Body.X}");
 		Assert.True(jumped, "never jumped");
 	}
+
+	[Fact]
+	public void AWayUpBehindAWallAtTheBody_IsNotSteeredInto_TheBotRisesWhereItIs()
+	{
+		// Measured runs U20 and U21: the column search chose the column one to the left (open water over the head row), but
+		// that column was solid beside the body's lower two rows, which the search never looked at; the bot pressed left
+		// against it, and since the mining only runs over the bot's own column, nothing took the ceiling over its head out:
+		// every jump ended at once (vy -5.81, the water jump) and it drowned in place, 5 rows under air.
+		// Column 4 open from row 10 up, but solid in rows 11-12 beside the body; a 3-block ceiling over column 6.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 3; y++)
+			rows.Add(new string('.', 14));
+		for (int y = 3; y <= 12; y++)
+			rows.Add("@@@@" + (y >= 11 ? '#' : '~') + "~" + (y is >= 7 and <= 9 ? '#' : '~') + new string('@', 7));
+		rows[12] = "@@@@#S~" + new string('@', 7);
+		rows.Add(new string('@', 14));
+		FakeGame g = new FakeGame(rows.ToArray());
+		g.Items[FakeGame.DirtBlock] = 20;
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.Breath = 60; // under the walk's give-up breath: straight to pillaring, as the walk gave way in U20/U21
+		var surface = new Bot.Skills.SurfaceSkill();
+		surface.Start(ctx);
+		int t = 0;
+		for (; t < 900; t++) { // a breath of 124 (where U21's walk gave way) lasts 868 ticks
+			g.Refresh(ctx);
+			if (!Bot.Skills.SurfaceSkill.HeadUnder(ctx))
+				break;
+			surface.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"{surface.Describe()} at {ctx.Node} after {t} ticks");
+		Assert.False(Bot.Skills.SurfaceSkill.HeadUnder(ctx), $"still under water at {ctx.Node} after {t} ticks: {surface.Describe()}");
+	}
 }
