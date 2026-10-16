@@ -418,6 +418,102 @@ public class EvilBossTests
 		Assert.Equal(FakeGame.TileCorruptPlants, g.TileTypeAt(354, Feet)); // the plain plant is left
 	}
 
+	/// <summary>The wide world's corruption columns: x 400-580 of 900, the ground either side of it not seen yet.</summary>
+	private const int WideFrom = 400, WideTo = 580;
+
+	/// <summary>
+	/// 900 wide, the corruption at x 400-580 (corrupt grass over ebonstone), the ground either side not seen yet: new ground
+	/// for an exploration to go into, as the M10 world's beyond its corruption (x 1765-1960).
+	/// </summary>
+	private static FakeGame WideCorruptWorld()
+	{
+		FakeGame g = ProgressionTests.Mine(width: 900, sky: Feet + 1);
+		for (int x = WideFrom; x <= WideTo; x++)
+			for (int y = Feet + 1; y < Feet + 13; y++)
+				g.TileTypes[new TilePos(x, y)] = y == Feet + 1 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		for (int x = 0; x < g.Grid.Width; x++)
+			if (x < WideFrom || x > WideTo)
+				for (int y = 0; y < g.Grid.Height; y++)
+					g.Unrevealed.Add(new TilePos(x, y));
+		return g;
+	}
+
+	/// <summary>The planner's mushroom job, the bot standing in the wide world's corruption at <paramref name="x"/>.</summary>
+	private (FakeGame, BotContext, ISkill) MushroomJobIn(int x)
+	{
+		FakeGame g = WideCorruptWorld();
+		BotContext ctx = Armoured(g);
+		MoveTo(g, ctx, x, Feet);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(new HaveItem(FakeGame.VileMushroom, 6, "vile mushrooms"), ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		Assert.IsType<MineSkill>(s);
+		s.Start(ctx);
+		return (g, ctx, s);
+	}
+
+	private static void Step(FakeGame g, BotContext ctx, ISkill s)
+	{
+		g.Refresh(ctx);
+		s.Tick(ctx);
+		g.Step(ctx);
+	}
+
+	[Fact]
+	public void NoMushroomInSight_TheJobWalksTheKnownCorruptionEndToEnd_NotOffIntoNewGround()
+	{
+		// Measured run M10b: with none in sight, "Explore for Vile Mushroom (Sideways)" legs out to (1625,268), 140 tiles past
+		// the corruption's west end, while the mushrooms it got grew back in the corruption it had seen.
+		var (g, ctx, job) = MushroomJobIn(450);
+		int minX = ctx.Node.X, maxX = ctx.Node.X;
+		string explored = null;
+		for (int t = 0; t < 60 * 60; t++) {
+			Step(g, ctx, job);
+			minX = System.Math.Min(minX, ctx.Node.X);
+			maxX = System.Math.Max(maxX, ctx.Node.X);
+			if (explored == null && job.Describe().Contains("Explore"))
+				explored = job.Describe();
+		}
+		output.WriteLine($"{job.Describe()}; walked x {minX}-{maxX}");
+		Assert.Null(explored);
+		const int tolerance = 10; // the pass's end (PatrolSkill.ArriveTiles) and the last chunk's columns (16-tile chunks)
+		Assert.True(minX <= WideFrom + tolerance && maxX >= WideTo - tolerance, $"walked x {minX}-{maxX}, not end to end of {WideFrom}-{WideTo}");
+		Assert.True(minX >= WideFrom - tolerance && maxX <= WideTo + tolerance, $"walked x {minX}-{maxX}, off the corruption {WideFrom}-{WideTo}");
+	}
+
+	[Fact]
+	public void AMushroomGrownBack_OnTheStretchWalked_IsPicked()
+	{
+		// A plant grows back on corrupt grass by the game's random tile updates (WorldGen.cs:68894), a mushroom 1 in 24 or so
+		// (WorldGen.cs:54373): here one appears behind the bot, out of sight, on ground it walked a while ago.
+		var (g, ctx, job) = MushroomJobIn(450);
+		for (int t = 0; t < 900; t++)
+			Step(g, ctx, job);
+		int x = ctx.Node.X > (WideFrom + WideTo) / 2 ? WideFrom + 12 : WideTo - 12;
+		output.WriteLine($"at tick 900 at {ctx.Node}: a mushroom grows at ({x},{Feet}) [{job.Describe()}]");
+		g.AddPlant(x, Feet, mushroom: true);
+		int ticks = 0;
+		for (; ticks < 60 * 60 && g.Count(FakeGame.VileMushroom) == 0; ticks++)
+			Step(g, ctx, job);
+		output.WriteLine($"{ticks} ticks later: {g.Count(FakeGame.VileMushroom)} mushroom(s), at {ctx.Node} [{job.Describe()}]");
+		Assert.Equal(1, g.Count(FakeGame.VileMushroom));
+	}
+
+	[Fact]
+	public void ThePlainCorruptPlants_OnTheStretchWalked_AreCut_SoNewOnesGrow()
+	{
+		// World generation put a plant on every corrupt grass top (WorldGen.cs:15544-15548), and a cell with one grows
+		// nothing: only cut cells grow back, a mushroom at 0.0016 a cell each game hour (PatrolSkill's remarks).
+		var (g, ctx, job) = MushroomJobIn(450);
+		int[] plants = { 420, 470, 520, 560 };
+		foreach (int x in plants)
+			g.AddPlant(x, Feet, mushroom: false);
+		for (int t = 0; t < 60 * 60; t++)
+			Step(g, ctx, job);
+		output.WriteLine(job.Describe());
+		Assert.All(plants, x => Assert.NotEqual(FakeGame.TileCorruptPlants, g.TileTypeAt(x, Feet)));
+	}
+
 	[Fact]
 	public void TheDemonBow_IsMadeOnlyFromTheDemoniteInTheBag()
 	{
