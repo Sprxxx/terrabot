@@ -167,6 +167,31 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AHunt_WithNothingInSight_SweepsFurtherOutEachTime_BothWays()
+	{
+		// Measured runs U2/U3: the wanders went 30 tiles one way from where the bot stood, then 30 back, between the same two
+		// places: no new ground, and none of its spawns, was ever reached.
+		FakeGame g = EarlyGameTests.FieldFrom(500, 250);
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
+		hunt.Start(ctx);
+		int startX = ctx.Node.X, east = 0, west = 0;
+		int far = 3 * HuntSkill.WanderTiles - 4; // three wanders out on each side, within the walk's tolerance of 4
+		for (int t = 0; t < 60 * 60 * 3 && (east < far || west < far); t++) {
+			g.Refresh(ctx);
+			ctx.Tick = t;
+			if (hunt.Tick(ctx) != SkillStatus.Running)
+				break;
+			g.Step(ctx);
+			east = System.Math.Max(east, ctx.Node.X - startX);
+			west = System.Math.Max(west, startX - ctx.Node.X);
+		}
+		output.WriteLine($"{hunt.Describe()}; reached {east} east and {west} west of {startX}");
+		Assert.True(east >= far && west >= far, $"reached {east} east and {west} west");
+	}
+
+	[Fact]
 	public void TheBowComesBeforeTheCrystals_SoTheNightHuntsCanShootDemonEyes()
 	{
 		// Measured run U5: the bow came at d9, after max life 200; the night hunts took 46 hits from demon eyes, most of them

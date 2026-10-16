@@ -22,6 +22,12 @@ public sealed class HuntSkill : ISkill
 	private int wanders;
 	private readonly System.Collections.Generic.HashSet<int> ignoredDrops = new();
 	private int wanderDir = 1;
+	/// <summary>Where the wanders out of town start from (set once out of town): they sweep outward from here.</summary>
+	private TilePos? wanderFrom;
+	/// <summary>Wanders made so far to the west [0] and east [1] of <see cref="wanderFrom"/>: the next one goes one further.</summary>
+	private readonly int[] wandersOut = new int[2];
+	/// <summary>The side of <see cref="wanderFrom"/> the town is on (-1 west, 1 east, 0 none known): no wander goes there.</summary>
+	private int townSide;
 	private int waitTicks;
 	private int lastHave;
 
@@ -101,24 +107,40 @@ public sealed class HuntSkill : ISkill
 		// player goes out of town to farm. Seen in game (measured runs U2, U3): night hunts by the house, the Guide's,
 		// failed "no NPC with AI style 2 found after 12 wanders", wandering 30 tiles out and back; 70 heartbeats of hunting
 		// and 34 waiting for the next night, and still 2 lenses short at day 10.
-		if (ctx.Combat.InTown && townWalks < MaxTownWalks) {
+		TilePos goal;
+		if (ctx.Combat.InTown && townWalks < MaxTownWalks && wanderFrom == null) {
 			if (townWalks++ == 0) {
 				wanderDir = ctx.SaferSide(node);
 				ctx.Log.Info($"Hunt: in town (nothing spawns here); walking out of it {(wanderDir > 0 ? "east" : "west")}");
 			}
+			goal = new TilePos(node.X + wanderDir * WanderTiles, node.Y - 10);
 		}
 		else {
 			if (++wanders > MaxWanders)
 				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {MaxWanders} wanders");
+			// Outward from where the wanders began, the two sides in turn and further each time (+30, -30, +60, -60...), as
+			// GatherWood explores. Seen in game (measured runs U2, U3): 30 tiles from where the bot stood, alternately, went to
+			// and fro between the same two places, and no new ground (nor its spawns) was reached.
+			if (wanderFrom is not TilePos from) {
+				from = node;
+				wanderFrom = from;
+				// Walked out of town: the town is behind, and the sweep goes on away from it.
+				if (townWalks > 0)
+					townSide = -wanderDir;
+			}
+			else if (ctx.Combat.InTown && townSide == 0 && node.X != from.X)
+				townSide = System.Math.Sign(node.X - from.X); // a wander back into town: nothing spawns that side
+			int dir = townSide != 0 ? -townSide
+				: wandersOut[Side(wanderDir)] <= wandersOut[Side(-wanderDir)] ? wanderDir : -wanderDir;
+			goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], from.Y - 10);
 		}
-		var goal = new TilePos(node.X + wanderDir * WanderTiles, node.Y - 10);
-		if (!ctx.Combat.InTown)
-			wanderDir = -wanderDir;
 		waitTicks = WaitTicks;
 		ctx.Log.Info($"Hunt: nothing to hunt in sight, wandering towards {goal}");
 		Begin(ctx, new WalkToSkill(goal) { Quiet = true, Tolerance = 4 }, "wandering");
 		return SkillStatus.Running;
 	}
+
+	private static int Side(int dir) => dir > 0 ? 1 : 0;
 
 	private bool PreyInSight(BotContext ctx)
 	{

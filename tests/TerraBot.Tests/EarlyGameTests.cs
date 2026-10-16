@@ -60,7 +60,7 @@ public class EarlyGameTests
 	}
 
 	/// <summary>A flat field like <see cref="Field"/> but starting at column <paramref name="start"/>.</summary>
-	private static FakeGame FieldFrom(int width, int start, params int[] treeColumns)
+	public static FakeGame FieldFrom(int width, int start, params int[] treeColumns)
 	{
 		var rows = Enumerable.Repeat(new string('.', width), 25).ToArray();
 		char[] feet = rows[24].ToCharArray();
