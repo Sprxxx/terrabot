@@ -166,6 +166,28 @@ public class FightSkillTests
 		Assert.IsType<FightSkill>(brain.Current);
 	}
 
+	[Theory]
+	[InlineData(1800, false)] // potion sick: just healed
+	[InlineData(0, true)] // really no potion
+	public void JustHealed_AtHalfLifeOrMore_FightsOn_InsteadOfRetreating(int potionSickTicks, bool retreats)
+	{
+		// Measured runs U14 and U19: five retreats began just after a quick-heal ("no potion" only for the sickness) at 52-66%
+		// life, the threshold raised to 70% by a hard hit; all five died in the shelter.
+		FakeGame g = EarlyGameTests.FieldFrom(100, 40);
+		g.Life = 55;
+		g.AddSlime(7, 42, 24);
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.PotionSickTicks = potionSickTicks;
+		ctx.NoteHit(28); // 2.5 hits of 28 is 70% of 100: the retreat threshold (BotBrain.HitsInHand)
+		var brain = new Bot.Brain.BotBrain();
+		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
+		g.Refresh(ctx);
+		brain.Tick(ctx);
+		output.WriteLine(brain.Describe());
+		Assert.Equal(retreats, brain.Current is ShelterSkill);
+		Assert.Equal(!retreats, brain.Current is FightSkill);
+	}
+
 	[Fact]
 	public void Retreat_DigsBesideBlocksItCannotMine()
 	{

@@ -376,6 +376,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.Facing = Player.direction;
 		k.ItemAnimation = Player.itemAnimation;
 		k.CanQuickHeal = Player.potionDelay == 0 && Player.QuickHeal_GetItemToUse() != null;
+		k.PotionSickTicks = Player.potionDelay;
 		k.Breath = Player.breath;
 		k.BreathMax = Player.breathMax;
 		k.Defense = Player.statDefense;

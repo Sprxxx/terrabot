@@ -253,6 +253,20 @@ public sealed class BotBrain
 		float byHits = ctx.Combat.LifeMax > 0 ? HitsInHand * ctx.BiggestRecentHit / (float)ctx.Combat.LifeMax : 0f;
 		return System.Math.Min(MobRetreatBelow, System.Math.Max(byCount, byHits));
 	}
+	/// <summary>
+	/// Potion sick (it has just healed) with at least this fraction of life, and more life than the hardest recent hit: not
+	/// "no potion", the fight goes on. Seen in game (measured runs U14 and U19): five retreats began right after a quick-heal,
+	/// with "no potion" true only for the sickness, at 53%, 52%, 59%, 49% and 66% life (U19: 132/200 from a fight with
+	/// one spore skeleton), and all five died in the shelter. Half life keeps the four at 52% and over fighting, and is the
+	/// crowd's retreat threshold (<see cref="CrowdRetreatBelow"/>); the fifth (78/160, held in a web) is the fight-back's.
+	/// </summary>
+	public const float PotionSickFightOnAbove = 0.5f;
+
+	/// <summary>No potion to drink now, other than for the sickness of one just drunk while life is still good (<see cref="PotionSickFightOnAbove"/>).</summary>
+	public static bool NoPotion(BotContext ctx) =>
+		!ctx.Combat.CanQuickHeal
+		&& !(ctx.Combat.PotionSickTicks > 0 && ctx.Combat.LifeFraction >= PotionSickFightOnAbove && ctx.Combat.Life > ctx.BiggestRecentHit);
+
 	/// <summary>Tiles round a spot where the bot ran out of breath that it no longer mines.</summary>
 	public const int DrownAvoidRadius = 6;
 	/// <summary>How often (ticks) the brain checks for accessories to put on and chests in sight.</summary>
@@ -508,9 +522,9 @@ public sealed class BotBrain
 		bool wormNear = false;
 		TilePos? retreatHome = null;
 		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill
-			&& !RetreatHeldOff(ctx) && ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)
+			&& !RetreatHeldOff(ctx) && ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && NoPotion(ctx) && ProgressionPlanner.InDanger(ctx)
 			&& ((retreatHome = Planner.HomeToRetreatTo(ctx, anyDistance: wormNear = WormNear(ctx))) != null || !wormNear)) {
-			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
+			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and {(ctx.Combat.PotionSickTicks > 0 ? "potion sick" : "no potion")}; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			// Home if it is near (enemies cannot get through the door), else dig in where it is.
 			if (retreatHome is TilePos home)
 				BeginOverride(new StayHomeSkill(home) { RecoverTo = RetreatUntil }, ctx);
