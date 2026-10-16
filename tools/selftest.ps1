@@ -77,6 +77,10 @@ if ($FromCheckpoint -ne "") {
 	if (-not (Test-Path $FromCheckpoint)) { throw "Checkpoint folder $FromCheckpoint not found" }
 	Get-ChildItem $FromCheckpoint -Include *.plr, *.tplr -File -Recurse | ForEach-Object { Copy-Item $_.FullName (Join-Path $testDir "Players") -Force }
 	Get-ChildItem $FromCheckpoint -Include *.wld, *.twld -File -Recurse | ForEach-Object { Copy-Item $_.FullName (Join-Path $testDir "Worlds") -Force }
+	# The player's map of this world (Players\<player>\<world id>.map): the bot sees only what the map has revealed.
+	$mapDir = Join-Path $testDir "Players\$Player"
+	New-Item -ItemType Directory -Force $mapDir | Out-Null
+	Get-ChildItem $FromCheckpoint -Include *.map -File -Recurse | ForEach-Object { Copy-Item $_.FullName $mapDir -Force }
 	Write-Host "Starting from checkpoint $FromCheckpoint"
 }
 if ($Checkpoints) { Remove-Item (Join-Path $testDir "Checkpoints") -Recurse -Force -ErrorAction SilentlyContinue }

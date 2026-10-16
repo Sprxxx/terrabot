@@ -433,12 +433,22 @@ public sealed class SelfTestSystem : ModSystem
 		try {
 			Terraria.IO.WorldFile.SaveWorld();
 			Player.SavePlayer(Main.ActivePlayerFileData);
+			// The map too (MapHelper.SaveMap: Players/<player>/<world id>.map): the bot sees only what the map has revealed, and
+			// without it a run from a checkpoint knew nothing it had explored. Seen (checkpoint run U15cp): "exploring for a
+			// DemonAltar (none seen yet)" from U14's arena site, though U14 had made the summon item at the altar.
+			Terraria.Map.MapHelper.SaveMap();
 			string dir = System.IO.Path.Combine(Main.SavePath, "Checkpoints", milestone.Replace(' ', '_'));
 			System.IO.Directory.CreateDirectory(dir);
 			foreach (string file in new[] { Main.worldPathName, System.IO.Path.ChangeExtension(Main.worldPathName, ".twld"),
 				Main.ActivePlayerFileData.Path, System.IO.Path.ChangeExtension(Main.ActivePlayerFileData.Path, ".tplr") })
 				if (System.IO.File.Exists(file))
 					System.IO.File.Copy(file, System.IO.Path.Combine(dir, System.IO.Path.GetFileName(file)), true);
+			string mapDir = System.IO.Path.ChangeExtension(Main.ActivePlayerFileData.Path, null);
+			if (System.IO.Directory.Exists(mapDir)) {
+				string mapOut = System.IO.Directory.CreateDirectory(System.IO.Path.Combine(dir, "map")).FullName;
+				foreach (string map in System.IO.Directory.GetFiles(mapDir, "*.map"))
+					System.IO.File.Copy(map, System.IO.Path.Combine(mapOut, System.IO.Path.GetFileName(map)), true);
+			}
 			Mod.Logger.Info($"SELFTEST checkpoint {milestone} saved to {dir}");
 		}
 		catch (Exception e) {
