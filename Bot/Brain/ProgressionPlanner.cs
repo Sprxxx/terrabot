@@ -249,6 +249,9 @@ public sealed class ProgressionPlanner
 		stuck = null;
 		lastShelterEnd = long.MinValue / 2;
 		stayHomeFailedAt = long.MinValue / 2;
+		homePlaceFailedAt = long.MinValue / 2;
+		homePlaceWalk = null;
+		homePlace = null;
 		lastRestEnd = long.MinValue / 2;
 		HouseSite = null;
 		ArenaSite = null;
@@ -390,6 +393,11 @@ public sealed class ProgressionPlanner
 			stationExplores++;
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
+		// No way home to place a station (not a death on the way), or no room for it there: where the bot is, for a while.
+		if (status == SkillStatus.Failed && (ReferenceEquals(skill, homePlaceWalk) && !string.IsNullOrEmpty(skill.FailureReason) || ReferenceEquals(skill, homePlace))) {
+			homePlaceFailedAt = ctx.Tick;
+			ctx.Log.Info($"Auto: no placing the station in the house ({skill.FailureReason}); where I am, for now");
+		}
 		// Not a death on the way (no failure reason): the house is still reachable, and after the respawn at the spawn it
 		// is a few steps off (run 52: killed just below the house, then sheltered outside all night).
 		if (skill is StayHomeSkill && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason)) {
@@ -742,6 +750,8 @@ public sealed class ProgressionPlanner
 		if (carried >= 0) {
 			string name = k.ItemName(carried);
 			int bench = ctx.Ids.WorkBenchTile;
+			if (s.TileType != bench && StationHomeFirst(name, carried, ctx) is ISkill home)
+				return home;
 			if (s.TileType != bench && KnownStations.TryGetValue(bench, out TilePos b) && b.ChebyshevTo(ctx.Node) > StationReach)
 				return Do($"walking to the work bench to place a {name}", WalkToStation(b, ctx));
 			return Do($"placing a {name}", new PlaceItemSkill(carried));
@@ -934,6 +944,31 @@ public sealed class ProgressionPlanner
 			return Do($"night: placing a {k.ItemName(carried)} in the house (the one at {at} is outside it)", new PlaceItemSkill(carried));
 		return Resolve(new HaveItem(items[0], 1, k.ItemName(items[0])), claims, depth + 1, ctx);
 	}
+
+	/// <summary>
+	/// A station other than the work bench (the anvil), carried, with a house: placed in the house, home first (by a recall
+	/// potion if one is carried), as the bench and furnace are made there at night (<see cref="StationAtHomeTonight"/>). Not
+	/// beside the work bench wherever that was last made (<see cref="StationHereInstead"/>). Seen in game: the anvil went 155
+	/// tiles from the house in measured run U10 (2233,333), and 156 tiles west and 83 rows down in U9 (1922,365); every
+	/// craft at it was a walk there, and in U10 all three nights began "staying in the house instead of WalkTo (walking to
+	/// the Anvils...)", 29.5 game hours. Null when that is not the case, or a walk home to place one failed lately (then it
+	/// goes down where the bot is, as before).
+	/// </summary>
+	private ISkill StationHomeFirst(string name, int carried, BotContext ctx)
+	{
+		if (HomeInside(ctx) is not TilePos inside || ctx.Tick - homePlaceFailedAt < StayHomeRetryTicks)
+			return null;
+		if (inside.ChebyshevTo(ctx.Node) <= HomeArrivedTiles)
+			return Do($"placing a {name} in the house", homePlace = new PlaceItemSkill(carried));
+		if (RecallHome(ctx, inside) is ISkill recall)
+			return recall;
+		homePlaceWalk = new WalkToSkill(new Core.Pathfinding.GoalNearTile(inside, 1, ctx.Physics)) { Quiet = true, Home = true };
+		return Do($"home first, to place a {name} in the house ({inside.ChebyshevTo(ctx.Node)} tiles away)", homePlaceWalk);
+	}
+
+	private WalkToSkill homePlaceWalk;
+	private PlaceItemSkill homePlace;
+	private long homePlaceFailedAt = long.MinValue / 2;
 
 	/// <summary>
 	/// A valid house, or: pick a site (near the work bench), get the materials it still needs (blocks for the

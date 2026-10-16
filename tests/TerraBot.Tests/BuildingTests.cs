@@ -168,6 +168,39 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void TheAnvil_GoesInTheHouse_NotBesideTheBenchMadeFarAway()
+	{
+		// Measured runs U9/U10: bench and furnace made where the ore was (StationHereInstead), and the anvil placed beside
+		// them, 155 tiles from the house in U10 (2233,333) and 156 west and 83 rows down in U9 (1922,365). Every craft at it
+		// was a walk there, and in U10 all three nights began "staying in the house instead of WalkTo (walking to the Anvils...)".
+		FakeGame g = ProgressionTests.Mine(110);
+		g.Stations[FakeGame.TileBench] = new TilePos(80, 24); // made where the ore was
+		g.Stations[FakeGame.TileFurnace] = new TilePos(83, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		g.Items[FakeGame.IronAnvil] = 1;
+		// Away from the house: home first.
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new WalkToSkill(new TilePos(60, 24)), 60 * 60));
+		ISkill away = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {away?.Describe()}");
+		Assert.True(away is WalkToSkill { Home: true }, p.Status);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, away, 60 * 60));
+		p.OnSkillFinished(away, SkillStatus.Succeeded, ctx);
+		// Home: placed there, not at the bench 80 tiles off.
+		ISkill home = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {home?.Describe()}");
+		Assert.Equal(FakeGame.IronAnvil, Assert.IsType<PlaceItemSkill>(home).ItemType);
+		Assert.Contains("in the house", p.Status);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, home, 60 * 60));
+		TilePos anvil = g.Stations[FakeGame.TileAnvil];
+		output.WriteLine($"anvil at {anvil}, house at {p.HouseSite}");
+		Assert.True(anvil.ChebyshevTo(p.HouseSite.Value) < anvil.ChebyshevTo(g.Stations[FakeGame.TileBench]), $"anvil at {anvil}");
+	}
+
+	[Fact]
 	public void Night_WithTheFurnaceOutsideTheHouse_MakesANewOneAtHome()
 	{
 		// Measured run M2: nightfall with 21 iron ore and the furnace 15 rows below the house (on a site given up); the walk to
