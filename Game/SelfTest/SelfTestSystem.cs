@@ -156,8 +156,14 @@ public sealed class SelfTestSystem : ModSystem
 		if (p == null || !p.active)
 			return;
 		var bot = p.GetModPlayer<TerraBotPlayer>();
-		if (Main.superFast && drawEvery > 1 && Main.GameUpdateCount % drawEvery != 0)
+		if (Main.superFast && drawEvery > 1 && Main.GameUpdateCount % drawEvery != 0) {
 			Main.instance.SuppressDraw();
+			// The lighting pass that a drawn frame would run (vanilla Main.DoLightTiles), so the map is revealed and light
+			// is measured as often per game tick as in real play: vanilla does both only while drawing, and drawing every
+			// 16th frame left the bot seeing 1/16 as much as a player would (Main.Map.IsRevealed, Lighting.Brightness).
+			Main.GetAreaToLight(out int x0, out int x1, out int y0, out int y1);
+			Lighting.LightTiles(x0, x1, y0, y1);
+		}
 		phaseTicks++;
 		try {
 			Step(p, bot);
