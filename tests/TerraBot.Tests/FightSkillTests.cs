@@ -166,6 +166,29 @@ public class FightSkillTests
 		Assert.IsType<FightSkill>(brain.Current);
 	}
 
+	[Fact]
+	public void JustHealed_U21Sequence_SwordOnly_FightsOn()
+	{
+		// Measured run U21 (t338400): "quick-heal at 51/120" (to 101, sickness 3600), hit for 14 and 25, "Danger: life 62/120 and
+		// no potion; retreating from Fight", hit 5 times fleeing and digging, dead. No bow yet (Iron Bow made at 01:11:36), so
+		// the bow-and-fast-flier exception (4dbf8cb, HasRanged) did not apply; 2.5 x 25 / 120 put the threshold at 52%.
+		FakeGame g = EarlyGameTests.FieldFrom(100, 40);
+		g.LifeMax = 120;
+		g.Life = 62;
+		g.AddSlime(7, 42, 24);
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.PotionSickTicks = 3600;
+		ctx.NoteHit(25);
+		Assert.False(ctx.Combat.HasRanged);
+		var brain = new Bot.Brain.BotBrain();
+		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
+		g.Refresh(ctx);
+		Assert.True(ctx.Combat.LifeFraction < Bot.Brain.BotBrain.RetreatThreshold(ctx), "the threshold should be above 62/120 here");
+		brain.Tick(ctx);
+		output.WriteLine(brain.Describe());
+		Assert.IsType<FightSkill>(brain.Current);
+	}
+
 	[Theory]
 	[InlineData(1800, false)] // potion sick: just healed
 	[InlineData(0, true)] // really no potion
