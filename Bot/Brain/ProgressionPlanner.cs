@@ -1491,10 +1491,15 @@ public sealed class ProgressionPlanner
 		int dir = fails % 2 == 1 ? 1 : -1;
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
 		int reach = Math.Min(TravelTiles * ((fails + 1) / 2), MaxTravelTiles); // not across the world (1,900 tiles in run 47)
-		for (int r = reach; r <= MaxTravelTiles; r += TravelTiles)
+		// Farther each time, then round again from the nearest: seen in game (measured run U2), after ten fruitless crystal
+		// jobs only the trips 600 tiles out were tried, both off limits, and "nowhere to travel" came 12 times though the
+		// ground 240 and 480 tiles west had served before (it has been a day: it is new to look at again).
+		for (int i = 0; i < MaxTravelTiles / TravelTiles; i++) {
+			int r = (reach - TravelTiles + i * TravelTiles) % MaxTravelTiles + TravelTiles;
 			foreach (int d in new[] { dir, -dir })
 				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
 					return c;
+		}
 		return null;
 	}
 

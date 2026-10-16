@@ -449,6 +449,33 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AfterManyFruitlessJobs_TripsComeRoundToTheNearerGroundAgain()
+	{
+		// Measured run U2: after ten fruitless crystal jobs only the trips 600 tiles out were tried, both off limits, and
+		// "nowhere to travel" came 12 times though nearer ground had served before.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		for (int i = 0; i < 9; i++)
+		{
+			p.NoteFruitless(FakeGame.IronOre); // the farthest ring (600 tiles) is off the 400-wide map
+			p.NoteFruitless(FakeGame.SilverOre);
+		}
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.True(next is WalkToSkill { Travel: true }, p.Status);
+	}
+
+	[Fact]
 	public void ATripsWayOut_HoldsWhenAFightMovesTheBot()
 	{
 		// User report (2026-10-14): "changes its mind and jumps out of the hole to do something else". The way up to the
