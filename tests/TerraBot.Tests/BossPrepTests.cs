@@ -150,6 +150,28 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void NoAltarFoundAround_TravelsToNewGround_NotStuck()
+	{
+		// Measured run S17: all else ready at d5 +21h, then "no DemonAltar found after 10 explorations" and auto mode
+		// stopped. As for ore that ran out: new ground, farther each time.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Items[FakeGame.Lens] = 6;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = ctx.Node;
+		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage;
+		var p = new ProgressionPlanner();
+		for (int i = 0; i < ProgressionPlanner.MaxStationExplores; i++)
+			Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx));
+		ISkill next = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()} (stuck: {p.ResolveForTestStuck})");
+		Assert.Null(p.ResolveForTestStuck);
+		Assert.True(next is WalkToSkill, p.Status);
+		Assert.Contains("new ground", p.Status);
+	}
+
+	[Fact]
 	public void NoAltarSeen_Explores_ThenIsStuck_WithAClearReason()
 	{
 		// Only what is revealed counts: none seen means go and look, a few times, before giving up.

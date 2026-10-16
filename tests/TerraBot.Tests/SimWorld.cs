@@ -98,6 +98,8 @@ public sealed class SimWorld
 		// Place: vanilla needs an empty cell, a solid neighbour, and Collision.EmptyTile (no hitbox overlap).
 		if (k.CanStandOn() || blocks.BlockCount <= 0)
 			return;
+		if (blocks is TestBlockActions tb && tb.NoPlace.Contains(cell))
+			return; // as the planner was told: nothing goes in there
 		bool neighbour = SolidAt(cell.X - 1, cell.Y) || SolidAt(cell.X + 1, cell.Y)
 			|| SolidAt(cell.X, cell.Y - 1) || grid.Get(cell.X, cell.Y + 1).CanStandOn();
 		int left = (int)State.X, top = (int)State.Y;

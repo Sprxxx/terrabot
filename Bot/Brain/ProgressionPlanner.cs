@@ -154,6 +154,7 @@ public sealed class ProgressionPlanner
 	/// <summary>Top-left tile of the boss arena being built or already built.</summary>
 	public TilePos? ArenaSite { get; private set; }
 	private readonly List<TilePos> badArenaSites = new();
+	private readonly List<TilePos> badArenaCells = new();
 	private int arenaFailures;
 	/// <summary>Keep the arena this many tiles clear of the house (bosses kill town NPCs; the guides keep them apart).</summary>
 	public const int ArenaHouseGap = 4;
@@ -242,6 +243,7 @@ public sealed class ProgressionPlanner
 		searchedFor.Clear();
 		badSites.Clear();
 		badArenaSites.Clear();
+		badArenaCells.Clear();
 		stationExplores = 0;
 		siteFailures = 0;
 		arenaFailures = 0;
@@ -413,8 +415,12 @@ public sealed class ProgressionPlanner
 			if (status == SkillStatus.Succeeded)
 				arenaFailures = 0;
 			else if (status == SkillStatus.Failed && ++arenaFailures >= MaxBuildFailuresPerSite) {
-				ctx.Log.Info($"Auto: giving up on the arena site {arena.Origin}");
+				ctx.Log.Info($"Auto: giving up on the arena site {arena.Origin}{(arena.FailedCell is TilePos fc ? $" (nothing would go at {fc}: no site over it either)" : "")}");
 				badArenaSites.Add(arena.Origin);
+				// The cell that failed, not just the origin: seen in game (measured run S16), the next site was one column
+				// over, with the same cell in its floor, eleven times over (12 game hours).
+				if (arena.FailedCell is TilePos cell)
+					badArenaCells.Add(cell);
 				ArenaSite = null;
 				arenaFailures = 0;
 			}
@@ -441,6 +447,7 @@ public sealed class ProgressionPlanner
 		stuck = null;
 		badSites.Clear();
 		badArenaSites.Clear();
+		badArenaCells.Clear();
 		siteFailures = 0;
 		arenaFailures = 0;
 		stationExplores = 0;
@@ -666,8 +673,20 @@ public sealed class ProgressionPlanner
 			// Nothing places it (a demon altar): find one in the world.
 			TilePos? found = ctx.World.FindTiles(s.TileType, ctx.Node, StationSearchRadius).Cast<TilePos?>().FirstOrDefault();
 			if (found == null) {
-				// None seen yet (only what is revealed on the map counts): go and look, a new direction each time.
+				// None seen yet (only what is revealed on the map counts): go and look, a new direction each time; that found
+				// nothing, new ground, as for ore that ran out (TravelForOre: along the surface, farther each time). Seen in
+				// game (measured run S17): all else ready at d5 +21h, then "no DemonAltar found after 10 explorations" and
+				// auto mode stopped at d7 +17h.
+				int tripKey = -s.TileType;
+				if (TravelForOre(ctx, tripKey, k.TileName(s.TileType)) is ISkill trip)
+					return trip;
 				if (stationExplores >= MaxStationExplores) {
+					if (fruitlessMines.GetValueOrDefault(tripKey) < MaxStationTrips) {
+						NoteFruitless(tripKey);
+						stationExplores = 0;
+						if (TravelForOre(ctx, tripKey, k.TileName(s.TileType)) is ISkill first)
+							return first;
+					}
 					stuck = $"no {k.TileName(s.TileType)} found after {stationExplores} explorations, and nothing can place one";
 					return null;
 				}
@@ -888,6 +907,8 @@ public sealed class ProgressionPlanner
 				keepOut.Add((new TilePos(h.X - ArenaHouseGap, h.Y - ArenaHouseGap),
 					new TilePos(h.X + house.Width - 1 + ArenaHouseGap, h.Y + house.Height - 1 + ArenaHouseGap)));
 			}
+			foreach (TilePos c in badArenaCells)
+				keepOut.Add((c, c));
 			ArenaSite = SiteFinder.Find(ctx, bp, anchor, badArenaSites, keepOut);
 			if (ArenaSite == null) {
 				stuck = $"no arena site ({bp.Width} wide, at most {bp.MaxEdits} edits) within {bp.SearchRadius} tiles of {anchor}";
@@ -1219,6 +1240,8 @@ public sealed class ProgressionPlanner
 	private const float UnseenStationCost = 3000f;
 	private int stationExplores;
 	public const int MaxStationExplores = 10; // fights interrupt explores and each restart counts
+	/// <summary>Trips to new ground for a station nothing can place (a demon altar), before the plan is stuck.</summary>
+	public const int MaxStationTrips = 6;
 	private readonly HashSet<int> searchedFor = new();
 
 	/// <summary>Look for a station nothing can place (once per planner reset); remember it when found.</summary>

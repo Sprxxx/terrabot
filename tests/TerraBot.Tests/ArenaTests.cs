@@ -107,6 +107,34 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void AnArenaSiteGivenUpOverACell_TheNextSiteIsNotOverItEither()
+	{
+		// Measured run S16: a floor block that would not go in failed the build; the next site was one column over, with
+		// the same cell in its floor, eleven times over (12 game hours).
+		FakeGame g = EarlyGameTests.Field(300, 50, 75);
+		for (int x = 5; x < 300; x += 30)
+			g.Grid.Set(x, 25, CellKind.Empty); // a hole in the floor every 30 tiles: every site has some
+		GiveArenaKit(g);
+		g.Items[FakeGame.DirtBlock] = 200;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Arena);
+		var build = Assert.IsType<BuildSkill>(p.ResolveForTest(new ArenaBuilt("arena"), ctx));
+		TilePos first = build.Origin;
+		int hole = Enumerable.Range(first.X, Blueprint.ArenaWidth).First(x => (x - 5) % 30 == 0);
+		var bad = new TilePos(hole, 25);
+		g.Blocks.NoPlace.Add(bad); // nothing goes in that one
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, build, 60 * 60 * 3));
+		output.WriteLine(build.FailureReason);
+		for (int i = 0; i < ProgressionPlanner.MaxBuildFailuresPerSite; i++)
+			p.OnSkillFinished(build, SkillStatus.Failed, ctx);
+		ISkill next = p.ResolveForTest(new ArenaBuilt("arena"), ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}; site {p.ArenaSite}");
+		Assert.NotNull(p.ArenaSite);
+		Assert.False(bad.X >= p.ArenaSite.Value.X && bad.X <= p.ArenaSite.Value.X + Blueprint.ArenaWidth - 1, "the new site is over the cell again");
+	}
+
+	[Fact]
 	public void BuildSkill_Arena_FellsTrees_LevelsTheGround_AndPlacesTheCampfire()
 	{
 		FakeGame g = RoughField();

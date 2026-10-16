@@ -341,6 +341,9 @@ public sealed class BuildSkill : ISkill
 		return a.Outside && bx1 >= Origin.X && bx0 < Origin.X + bp.Width && by0 < Origin.Y + bp.Height && by1 >= Origin.Y;
 	}
 
+	/// <summary>The cell whose action failed <see cref="MaxFailuresPerCell"/> times and failed the build, if that is why.</summary>
+	public TilePos? FailedCell { get; private set; }
+
 	private SkillStatus Failed(BotContext ctx, TilePos cell, string why)
 	{
 		int n = failures.GetValueOrDefault(cell) + 1;
@@ -349,7 +352,10 @@ public sealed class BuildSkill : ISkill
 		current = null;
 		walk?.Stop(ctx);
 		walk = null;
-		return n >= MaxFailuresPerCell ? Fail(ctx, $"{why} at {cell}") : SkillStatus.Running;
+		if (n < MaxFailuresPerCell)
+			return SkillStatus.Running;
+		FailedCell = cell;
+		return Fail(ctx, $"{why} at {cell}");
 	}
 
 	/// <summary>The next thing to do, in phase order; null when the plan is complete. Sets <paramref name="problem"/> if stuck.</summary>
