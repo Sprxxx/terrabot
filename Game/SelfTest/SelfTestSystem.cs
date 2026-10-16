@@ -27,6 +27,15 @@ public sealed class SelfTestSystem : ModSystem
 	public const string FastFlag = "-terrabotfast";
 	/// <summary>Debug experiment: finding things ignores the map (TerrariaGameInfo.XRay). Self-test runs only.</summary>
 	public const string XRayFlag = "-terrabotxray";
+	/// <summary>Real-world runs: save the world and player at these milestones (CheckpointMilestones), to start later runs from.</summary>
+	public const string CheckpointFlag = "-terrabotcheckpoints";
+	/// <summary>Real-world runs: a game-time budget in days instead of the scenario's own (a run from a checkpoint).</summary>
+	public const string DaysFlag = "-terrabotdays";
+	/// <summary>
+	/// Milestones a checkpoint is saved at: the late stages can then be measured from there in a few minutes instead of a
+	/// whole 10-day run from day 1 (user, 2026-10-16: "do we REALLY have to start from the beginning every time?").
+	/// </summary>
+	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site" };
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
@@ -368,7 +377,7 @@ public sealed class SelfTestSystem : ModSystem
 					Mod.Logger.Warn($"SELFTEST {s.Name}: the bot was switched off (exception); ending the scenario");
 					finished = true;
 				}
-				if (!finished && phaseTicks < s.TimeoutTicks)
+				if (!finished && phaseTicks < Timeout(s))
 					return;
 				Mod.Logger.Info($"SELFTEST speed {s.Name}: {phaseTicks} ticks in {runClock.Elapsed.TotalSeconds:0} s = {Speed(phaseTicks, runClock)} normal");
 				Evaluate(bot, s, finished);
@@ -410,6 +419,33 @@ public sealed class SelfTestSystem : ModSystem
 	/// so that commits can be compared by how far a fixed game-time budget gets (not by watching, nor by wall-clock time,
 	/// which the fast mode stretches between 4x and 35x).
 	/// </summary>
+	/// <summary>The scenario's budget, or for a real-world run the days given with <see cref="DaysFlag"/>.</summary>
+	private static int Timeout(Scenario s) =>
+		s.RealWorld && Program.LaunchParameters.TryGetValue(DaysFlag, out string d) && double.TryParse(d, System.Globalization.NumberStyles.Float,
+			System.Globalization.CultureInfo.InvariantCulture, out double days) && days > 0 ? (int)(days * 86400) : s.TimeoutTicks;
+
+	/// <summary>
+	/// Save the world and the player as the game does (WorldFile.SaveWorld, Player.SavePlayer), then copy the files into
+	/// Checkpoints/&lt;milestone&gt; in the test save folder, named as the originals, for selftest.ps1 -FromCheckpoint.
+	/// </summary>
+	private void SaveCheckpoint(string milestone)
+	{
+		try {
+			Terraria.IO.WorldFile.SaveWorld();
+			Player.SavePlayer(Main.ActivePlayerFileData);
+			string dir = System.IO.Path.Combine(Main.SavePath, "Checkpoints", milestone.Replace(' ', '_'));
+			System.IO.Directory.CreateDirectory(dir);
+			foreach (string file in new[] { Main.worldPathName, System.IO.Path.ChangeExtension(Main.worldPathName, ".twld"),
+				Main.ActivePlayerFileData.Path, System.IO.Path.ChangeExtension(Main.ActivePlayerFileData.Path, ".tplr") })
+				if (System.IO.File.Exists(file))
+					System.IO.File.Copy(file, System.IO.Path.Combine(dir, System.IO.Path.GetFileName(file)), true);
+			Mod.Logger.Info($"SELFTEST checkpoint {milestone} saved to {dir}");
+		}
+		catch (Exception e) {
+			Mod.Logger.Warn($"SELFTEST checkpoint {milestone} could not be saved: {e.Message}");
+		}
+	}
+
 	private void TrackMilestones(Player p, TerraBotPlayer bot)
 	{
 		var plan = bot.Brain.Planner;
@@ -420,6 +456,8 @@ public sealed class SelfTestSystem : ModSystem
 				return;
 			milestones.Add($"{name} t{phaseTicks}");
 			Mod.Logger.Info($"SELFTEST milestone {name} at t{phaseTicks} ({GameClock(phaseTicks)}), deaths {bot.Context.Deaths - deathsAtStart}");
+			if (Program.LaunchParameters.ContainsKey(CheckpointFlag) && Array.IndexOf(CheckpointMilestones, name) >= 0)
+				SaveCheckpoint(name);
 		}
 		Note("work bench", plan.KnownStations.ContainsKey(TileID.WorkBenches));
 		Note("furnace", plan.KnownStations.ContainsKey(TileID.Furnaces));

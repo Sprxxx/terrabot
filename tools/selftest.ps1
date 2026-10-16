@@ -30,7 +30,14 @@ param(
 	# With -Fast: draw only every N-th frame (the game logic still runs every tick).
 	[int]$DrawEvery = 1,
 	# Debug experiment: finding ore, crystals, stations and chests ignores the map (no exploring needed).
-	[switch]$XRay
+	[switch]$XRay,
+	# Real-world runs: save the world and player at the late milestones (see SelfTestSystem.CheckpointMilestones) into
+	# .selftest\SaveData\Checkpoints\<milestone>.
+	[switch]$Checkpoints,
+	# Start from a checkpoint folder (its .plr/.tplr/.wld/.twld replace the copies of the originals).
+	[string]$FromCheckpoint = "",
+	# Real-world runs: a game-time budget in days instead of the scenario's own.
+	[double]$BudgetDays = 0
 )
 $ErrorActionPreference = "Stop"
 
@@ -66,6 +73,13 @@ foreach ($ext in ".wld", ".twld") {
 	$src = Join-Path $saves "Worlds\$WorldFile$ext"
 	if (Test-Path $src) { Copy-Item $src (Join-Path $testDir "Worlds") -Force }
 }
+if ($FromCheckpoint -ne "") {
+	if (-not (Test-Path $FromCheckpoint)) { throw "Checkpoint folder $FromCheckpoint not found" }
+	Get-ChildItem $FromCheckpoint -Include *.plr, *.tplr -File -Recurse | ForEach-Object { Copy-Item $_.FullName (Join-Path $testDir "Players") -Force }
+	Get-ChildItem $FromCheckpoint -Include *.wld, *.twld -File -Recurse | ForEach-Object { Copy-Item $_.FullName (Join-Path $testDir "Worlds") -Force }
+	Write-Host "Starting from checkpoint $FromCheckpoint"
+}
+if ($Checkpoints) { Remove-Item (Join-Path $testDir "Checkpoints") -Recurse -Force -ErrorAction SilentlyContinue }
 if (-not (Test-Path (Join-Path $testDir "Players\$Player.plr"))) { throw "Player file $Player.plr not found in $saves\Players" }
 if (-not (Test-Path (Join-Path $testDir "Worlds\$WorldFile.wld"))) { throw "World file $WorldFile.wld not found in $saves\Worlds" }
 
@@ -73,6 +87,8 @@ $tmlArgs = @("tModLoader.dll", "-tmlsavedirectory", "`"$testDir`"", "-skipselect
 	"-terrabotselftest", $Scenarios, "-steamworkshopfolder", "none")
 if ($Fast) { $tmlArgs += @("-terrabotfast", "$DrawEvery") }
 if ($XRay) { $tmlArgs += @("-terrabotxray", "1") }
+if ($Checkpoints) { $tmlArgs += @("-terrabotcheckpoints", "1") }
+if ($BudgetDays -gt 0) { $tmlArgs += @("-terrabotdays", ([string]$BudgetDays).Replace(",", ".")) }
 Write-Host "Launching tModLoader:  $($tmlArgs -join ' ')"
 $started = Get-Date
 $proc = Start-Process -FilePath (Join-Path $TmlDir "dotnet\dotnet.exe") -ArgumentList $tmlArgs -WorkingDirectory $TmlDir -PassThru
