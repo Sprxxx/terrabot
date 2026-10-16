@@ -103,4 +103,66 @@ public class BreathTests
 		var surface = Assert.IsType<Bot.Skills.SurfaceSkill>(brain.Current);
 		Assert.True(surface.Describe().Contains("air") || surface.Describe().Contains("pillaring up"), surface.Describe()); // walking to a dry spot, or straight up
 	}
+
+	/// <summary>
+	/// A flooded shaft <paramref name="width"/> wide from column 4 (unbreakable walls), the bot at its bottom at node (4,12),
+	/// head in row 10; air from row 2 up. <paramref name="row9"/> replaces the shaft's cells in row 9, just over the head.
+	/// </summary>
+	private static FakeGame Shaft(int width, string row9)
+	{
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 3; y++)
+			rows.Add(new string('.', 14));
+		for (int y = 3; y <= 12; y++)
+			rows.Add("@@@@" + (y == 9 ? row9 : new string('~', width)) + new string('@', 10 - width));
+		rows[12] = "@@@@S" + new string('~', width - 1) + new string('@', 10 - width);
+		rows.Add(new string('@', 14));
+		return new FakeGame(rows.ToArray());
+	}
+
+	[Fact]
+	public void ASlopeOverTheHead_IsMinedOnTheWayUp_NotTakenForOpenWater()
+	{
+		// Measured run U6: a slope over the head (and a half block over the next column) read as open water: the column
+		// search went on up through it and the mining never looked at it (only solid tiles), so the bot jumped into it,
+		// the jump ended there (Collision.up), and it drowned pillaring in place.
+		FakeGame g = Shaft(2, "~/");
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.Breath = 100;
+		var surface = new Bot.Skills.SurfaceSkill();
+		surface.Start(ctx);
+		surface.Tick(ctx);
+		output.WriteLine(surface.Describe() + " " + ctx.Output);
+		Assert.Equal("Surface [mining up through (5,9)]", surface.Describe());
+		Assert.Equal(Core.Physics.ToolRequest.Pickaxe, ctx.Output.Tool);
+		Assert.False(ctx.Output.Jump);
+	}
+
+	[Fact]
+	public void OffCentreUnderABlock_TheBotSteersOverItsColumn_BeforeItJumps()
+	{
+		// Measured runs U6/U8: the node on the way-up column, the 20 px hitbox 0.3-1.5 px into the next column, a block over
+		// that one: every jump hit it and ended at once; the bot jumped in place until it drowned (12 of 26 drownings in
+		// U1-U8 had the hitbox across three columns).
+		FakeGame g = Shaft(3, "~~@");
+		Core.Physics.PhysicsParams p = Core.Physics.PhysicsParams.Default;
+		g.Sim.State.X = Core.Pathfinding.Body.CanonicalLeft(4, p) + Core.Pathfinding.Body.CenterOffset(p) + 1f; // 1 px into column 6
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.Breath = 100;
+		Assert.Equal(4, ctx.Node.X);
+		var surface = new Bot.Skills.SurfaceSkill();
+		surface.Start(ctx);
+		bool jumped = false;
+		for (int t = 0; t < 120 && !jumped; t++) {
+			g.Refresh(ctx);
+			surface.Tick(ctx);
+			if (ctx.Output.Jump) {
+				jumped = true;
+				Assert.False(Bot.Skills.SurfaceSkill.OffColumns(ctx.Body.X, 4, p), $"jumped at x {ctx.Body.X} (tick {t}), into the block over column 6");
+			}
+			g.Step(ctx);
+		}
+		output.WriteLine($"{surface.Describe()} at x {ctx.Body.X}");
+		Assert.True(jumped, "never jumped");
+	}
 }
