@@ -115,7 +115,11 @@ public sealed class DigMove : IMoveType
 				dugEarlier |= k.IsSolid();
 				continue;
 			}
-			if (k.HasLava())
+			// A cell that is not mined must be one the body can be in: not lava, nor a non-solid hazard (a pressure plate,
+			// thorns). Seen in game (measured runs U17, U19): a tunnel walk (1928,425)->(1929,425)->(1930,425) broke the blocks
+			// above a pressure plate and read the plate's cell as open; the hitbox went 0.8 px into it and the explosives it was
+			// wired to killed the bot (544 damage), at the same tile in both runs.
+			if (k.HasLava() || !k.IsSolid() && !k.IsPassable())
 				return false;
 			if (k.IsSolid() || k.IsShaped() && (v == Variant.DigDown || c.Y < to.Y))
 				breaks.Add(c); // a slope or half block in the way (below when digging down, above the feet otherwise) is mined

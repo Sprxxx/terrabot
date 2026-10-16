@@ -50,6 +50,22 @@ public class BlockMoveTests
 	}
 
 	[Fact]
+	public void Tunnel_NeverPutsTheBodyOnAPressurePlate()
+	{
+		// Measured runs U17 and U19: a tunnel broke the blocks above a pressure plate ('^', a non-solid hazard) and walked the
+		// body onto it; the explosives wired to it killed the bot at the same tile both times.
+		var (g, b) = TestBlockActions.Parse(
+			"@@@@@@@@@@@@@@@@@@@@",
+			"@.........#........@",
+			"@.........#........@",
+			"@.S.......^......G.@",
+			"@@@@@@@@@@@@@@@@@@@@");
+		PathResult r = Plan(g, b);
+		var plate = new TilePos(10, 3);
+		Assert.DoesNotContain(r.Steps, s => s.To.X <= plate.X && plate.X <= s.To.X + 1 && s.To.Y - 2 <= plate.Y && plate.Y <= s.To.Y);
+	}
+
+	[Fact]
 	public void Tunnel_NotUsed_WithoutPermission()
 	{
 		var (g, b) = TestBlockActions.Parse(Corridor);
