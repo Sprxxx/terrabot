@@ -249,11 +249,15 @@ public sealed class PathExecutor
 
 	private bool At(TilePos node, TilePos planned) => SameNode(ctx.Grid, node, planned);
 
-	/// <summary>A platform (not solid) in the node's feet row, under either body column.</summary>
-	private bool PlatformAt(TilePos n)
+	/// <summary>A platform, slope or half block (read as a platform, not solid) in the node's feet row, under either body column.</summary>
+	private TilePos? RiddenCellAt(TilePos n)
 	{
-		CellKind a = ctx.Grid.Get(n.X, n.Y), b = ctx.Grid.Get(n.X + 1, n.Y);
-		return a.IsPlatform() && !a.IsSolid() || b.IsPlatform() && !b.IsSolid();
+		for (int dx = 0; dx <= 1; dx++) {
+			CellKind k = ctx.Grid.Get(n.X + dx, n.Y);
+			if (k.IsPlatform() && !k.IsSolid())
+				return new TilePos(n.X + dx, n.Y);
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -373,13 +377,23 @@ public sealed class PathExecutor
 			input.Down = s.Y + p.Height <= (step.From.Y + 1) * Body.TileSize + 4f;
 			Phase = input.Down ? "DropThrough (holding Down)" : "DropThrough fall";
 		}
-		// A drop that starts on a platform in its own feet row (a sloped one: the plan stands the body in it, the body rides
-		// on top) goes down through it, as DropThrough does. Seen in game (measured run S9): all 34 "Drop edge" stalls were
-		// "from feet Platform, Shaped", the body still and grounded on the platform until the step timed out.
-		else if (step.Kind == MoveKind.Drop && grounded && PlatformAt(step.From)) {
-			input.Down = s.Y + p.Height <= (step.From.Y + 1) * Body.TileSize + 4f;
-			if (input.Down)
-				Phase = "Drop (through the platform, holding Down)";
+		// A drop that starts on what is in its own feet row (the plan stands the body in it, the body rides on top) first gets
+		// it out of the way: through a platform holding Down, as DropThrough does; a slope or half block (a solid block,
+		// read as a platform so feet can ride it) is mined, as a player digs down off a slope. Seen in game: measured run
+		// S9, all 34 "Drop edge" stalls were "from feet Platform, Shaped", the body still and grounded until the step timed
+		// out; measured run S12, holding Down on them did nothing (18 of the 23 Drop stalls).
+		else if (step.Kind == MoveKind.Drop && grounded && RiddenCellAt(step.From) is TilePos under) {
+			if (ctx.Grid.Get(under.X, under.Y).IsShaped()) {
+				input.Tool = ToolRequest.Pickaxe;
+				input.UseItem = true;
+				input.Aim(under.X, under.Y);
+				Phase = $"Drop (mining the slope {under} it starts on)";
+			}
+			else {
+				input.Down = s.Y + p.Height <= (step.From.Y + 1) * Body.TileSize + 4f;
+				if (input.Down)
+					Phase = "Drop (through the platform, holding Down)";
+			}
 		}
 		return true;
 	}

@@ -476,6 +476,36 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void ADropFromASlopeInItsFeetRow_MinesTheSlope()
+	{
+		// Measured run S12: 18 of 23 Drop stalls held Down on "Platform, Shaped" cells: slopes of solid blocks (read as
+		// platforms so feet can ride them), which no Down drops through. A player mines the slope.
+		var g = ArrayTileGrid.Parse(
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..........",
+			"..../.....",
+			"..........",
+			"##########");
+		var ctx = new MoveContext(g, PhysicsParams.Default);
+		var drop = new PathStep(MoveKind.Drop, new TilePos(4, 6), new TilePos(4, 7), 20f);
+		var exec = new PathExecutor(ctx, new[] { drop });
+		var sim = new SimWorld(g, PhysicsParams.Default, new TilePos(4, 5));
+		sim.State.Y -= 4f;
+		sim.State.VY = 1f;
+		bool mined = false;
+		for (int t = 0; t < 60 && exec.Status == ExecStatus.Running; t++) {
+			MoveInput o = exec.Tick(sim.State);
+			mined |= o.UseItem && o.Tool == ToolRequest.Pickaxe && o.AimX == 4 && o.AimY == 6;
+			sim.Step(o);
+		}
+		Assert.True(mined, "never swung at the slope");
+	}
+
+	[Fact]
 	public void InvisibleWall_IsDetectedAsStuck()
 	{
 		// The planner sees flat ground; the "real" world has a wall the planner does not know about.
