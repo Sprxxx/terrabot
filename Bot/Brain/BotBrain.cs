@@ -495,7 +495,7 @@ public sealed class BotBrain
 		// and one killed the bot (wooden sword, no armour).
 		bool night = ctx.IsNight;
 		if (Auto && night && !wasNight && Work is WalkToSkill or MineSkill or ExploreSkill or GatherWoodSkill
-			&& ctx.Combat.Defense < ProgressionPlanner.NightOutDefense)
+			&& (ctx.Combat.Defense < ProgressionPlanner.NightOutDefense || Planner.NightHuntDue(ctx)))
 			RequestReplan("nightfall");
 		wasNight = night;
 		if (Auto && ctx.Tick % HabitEvery == 0)

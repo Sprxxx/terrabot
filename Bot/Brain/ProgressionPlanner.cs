@@ -446,6 +446,42 @@ public sealed class ProgressionPlanner
 		stationExplores = 0;
 	}
 
+	/// <summary>
+	/// The boss plan, armoured, at night and not deep down: what the summon is made of that only the night has (lenses from
+	/// demon eyes) is hunted now, whatever stage the plan is at, as a player spends the nights getting them. Seen in game
+	/// (measured run S13): everything else ready by day 8, then 34 heartbeats waiting for night and 28 hunting, the
+	/// lenses still short at day 10, while the nights before went to mining.
+	/// </summary>
+	public bool NightHuntDue(BotContext ctx) => NightPartFor(ctx) != null;
+
+	private (int Item, int AiStyle, int Amount)? NightPartFor(BotContext ctx)
+	{
+		GameIds ids = ctx.Ids;
+		// Settled first (a house to come back to): before it, the hunt's fights took the bot off, and the stations and house
+		// went up where the arena should (boss_auto, which starts armoured at night with the house kit in the bag).
+		if (Plan != Plans.Boss || !ctx.IsNight || ctx.Combat.Defense < NightOutDefense || ids.SuspiciousEye <= 0 || ctx.World == null
+			|| HomeInside(ctx) == null
+			|| ctx.World.BossDefeated(ids.EyeBoss) || ctx.Inventory.Count(ids.SuspiciousEye) > 0
+			|| ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + NightMineRows)
+			return null;
+		foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(ids.SuspiciousEye))
+			foreach (Ingredient ing in r.Ingredients) {
+				ItemSource src = ctx.Knowledge.SourceOf(ing.Item);
+				if (src.Kind == SourceKind.Hunt && NocturnalAiStyles.Contains(src.NpcAiStyle) && ctx.Inventory.Count(ing.Item) < ing.Stack)
+					return (ing.Item, src.NpcAiStyle, ing.Stack);
+			}
+		return null;
+	}
+
+	private ISkill NightPartsForTheSummon(BotContext ctx)
+	{
+		if (NightPartFor(ctx) is not var (item, ai, amount))
+			return null;
+		string name = ctx.Knowledge.ItemName(item);
+		return Do($"night: hunting for {amount - ctx.Inventory.Count(item)} more {name} while it is dark (for the {ctx.Knowledge.ItemName(ctx.Ids.SuspiciousEye)})",
+			new HuntSkill(item, ai, amount));
+	}
+
 	/// <summary>The next skill to run, or null when the plan is complete or stuck.</summary>
 	public ISkill Next(BotContext ctx)
 	{
@@ -482,6 +518,8 @@ public sealed class ProgressionPlanner
 				return Do($"mining the life crystal seen at {heart}",
 					new MineSkill(ctx.Ids.LifeCrystal, ctx.Knowledge.SourceOf(ctx.Ids.LifeCrystal).TileType, ctx.Inventory.Count(ctx.Ids.LifeCrystal) + 1));
 		}
+		if (NightPartsForTheSummon(ctx) is ISkill hunt)
+			return hunt;
 		costs.Clear();
 		costEvaluations = 0;
 		stuck = null;

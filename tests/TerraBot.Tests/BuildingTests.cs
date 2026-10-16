@@ -690,7 +690,7 @@ public class BuildingTests
 	}
 
 	/// <summary>Builds a valid house next to the start through the fake's own placement, and tells the planner about it.</summary>
-	private void HouseAlreadyThere(FakeGame g, ProgressionPlanner p, BotContext ctx)
+	internal static void HouseAlreadyThere(FakeGame g, ProgressionPlanner p, BotContext ctx)
 	{
 		GiveHouseKit(g);
 		Blueprint bp = Blueprint.SmallHouse(FakeGame.Ids);

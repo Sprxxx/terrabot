@@ -109,6 +109,35 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void ArmouredNights_GoToTheLenses_WhateverStageThePlanIsAt()
+	{
+		// Measured run S13: all else ready by day 8, then 34 heartbeats waiting for night and 28 hunting, the lenses still
+		// short at day 10, while the armoured nights before went to mining.
+		FakeGame g = ProgressionTests.Mine();
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 25;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Boss);
+		ctx.Combat.Defense = ProgressionPlanner.NightOutDefense;
+		Assert.False(p.NightHuntDue(ctx)); // not settled yet: no house to come back to
+		BuildingTests.HouseAlreadyThere(g, p, ctx);
+		g.Refresh(ctx);
+		ctx.SurfaceY = 25;
+		ctx.Combat.Defense = ProgressionPlanner.NightOutDefense;
+		ISkill night = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {night?.Describe()}");
+		var hunt = Assert.IsType<HuntSkill>(night);
+		Assert.Equal(FakeGame.DemonEyeAi, hunt.AiStyle);
+		Assert.Equal(6, hunt.Amount);
+		ctx.Combat.Defense = ProgressionPlanner.NightOutDefense - 1; // not armoured: not out at night for them
+		Assert.False(p.NightHuntDue(ctx));
+		ctx.Combat.Defense = ProgressionPlanner.NightOutDefense;
+		g.Items[FakeGame.SuspiciousEye] = 1; // the summon in hand: no more lenses
+		Assert.False(p.NightHuntDue(ctx));
+	}
+
+	[Fact]
 	public void SummonItem_IsMadeAtAFoundAltar()
 	{
 		FakeGame g = ProgressionTests.Mine();
