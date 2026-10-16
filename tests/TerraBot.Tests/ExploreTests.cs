@@ -1,5 +1,6 @@
 using System.Linq;
 using TerraBot.Bot;
+using TerraBot.Bot.Brain;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
 using Xunit;
@@ -152,6 +153,65 @@ public class ExploreTests
 		Assert.Contains("explorations", mine.FailureReason);
 		// ...and the next job, after travelling on, starts afresh (run 47: every job failed at once, travel went 1,900 tiles).
 		Assert.False(ctx.ExploresWithoutOre.ContainsKey(FakeGame.IronOre));
+	}
+
+	/// <summary>
+	/// 100 wide, open sky to row 9 (the bot at (50,9)), solid ground to row 120: an antlion charger seen 70 rows under the
+	/// start, so the zone its sighting makes in weak gear (<see cref="BotContext.BiomeZoneRadius"/>) spans the whole width.
+	/// </summary>
+	private static (FakeGame Game, TilePos Seen) GroundUnderASighting()
+	{
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 121; y++)
+			rows.Add(y == 9 ? new string('.', 50) + "S" + new string('.', 49) : y < 10 ? new string('.', 100) : new string('#', 100));
+		rows.Add(new string('@', 100));
+		return (new FakeGame(rows.ToArray()), new TilePos(50, 79));
+	}
+
+	/// <summary>Explores down for the sighting's own rows from the start; the deepest feet row reached, and how it ended.</summary>
+	private (SkillStatus Status, int Deepest) ExploreDownTo(FakeGame g, BotContext ctx, int row)
+	{
+		var explore = new ExploreSkill("the crystal band", c => c.Node.Y >= row, ExploreBias.Down, heading: 1);
+		explore.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		int deepest = ctx.Node.Y;
+		for (int t = 0; t < ExploreSkill.MaxTicks + 1 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = explore.Tick(ctx);
+			g.Step(ctx);
+			deepest = System.Math.Max(deepest, ctx.Node.Y);
+		}
+		output.WriteLine($"{s} ({explore.FailureReason}) after {g.Sim.Ticks} ticks, {explore.Legs} legs, at {g.Sim.Node}, deepest row {deepest}");
+		return (s, deepest);
+	}
+
+	[Fact]
+	public void InAFullSet_ASightingZoneUnderTheStart_IsACost_AndTheExploringStillGoesDownIntoTheBand()
+	{
+		// Measured run U9: an antlion charger seen at (2142,471) in full armour made a zone 120 tiles across under the spawn for
+		// 5 game days; 74% of the exploration legs in it stayed at row 412 or above, life crystals lie evenly in rows 375-900,
+		// and 152 of the 175 crystal-seeking hours went on the last crystal, found within 21 hours of the zone lapsing.
+		var (g, seen) = GroundUnderASighting();
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = BotContext.CavernDefense; // iron armour: under the underground desert's own gate (DeepDefense)
+		FootingTests.SeeADesertMonster(ctx, seen);
+		var (s, deepest) = ExploreDownTo(g, ctx, seen.Y);
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(deepest >= seen.Y, $"deepest row {deepest}");
+	}
+
+	[Fact]
+	public void InWeakGear_ASightingZoneUnderTheStart_IsStillKeptOutOf()
+	{
+		// Runs 58 and 59: antlion chargers killed the bot in the desert's zones in weak gear; there the zone stays off limits.
+		var (g, seen) = GroundUnderASighting();
+		BotContext ctx = g.CreateContext(output);
+		FootingTests.SeeADesertMonster(ctx, seen);
+		int top = seen.Y - BotContext.BiomeZoneRadius;
+		var (s, deepest) = ExploreDownTo(g, ctx, seen.Y);
+		Assert.NotEqual(SkillStatus.Succeeded, s);
+		Assert.True(deepest < top, $"into the zone: deepest row {deepest}, the zone from row {top}");
 	}
 }
 

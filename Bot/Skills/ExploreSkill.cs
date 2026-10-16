@@ -185,7 +185,8 @@ public sealed class ExploreSkill : ISkill
 				TilePos? open = PickDig(ctx, node, ahead, tooDeep);
 				// Every way off limits (inside a biome zone): give up rather than dig on into it. Seen in game (world_eye run
 				// 59): legs went on through the underground desert after an antlion charger was seen, and the bot died there.
-				if (open == null && ctx.OffLimits(ahead))
+				// Not for a sighting's zone in full armour: that is a cost (BotContext.OffLimitsOutright).
+				if (open == null && ctx.OffLimitsOutright(ahead))
 					return Fail(ctx, "every way from here is off limits");
 				t = open ?? ahead;
 			}
@@ -255,7 +256,16 @@ public sealed class ExploreSkill : ISkill
 		return SkillStatus.Running;
 	}
 
-	private static bool Barred(BotContext ctx, TilePos t) => ctx.OffLimits(t) || ctx.UnreachableTiles.Contains(t);
+	private static bool Barred(BotContext ctx, TilePos t) => ctx.OffLimitsOutright(t) || ctx.UnreachableTiles.Contains(t);
+
+	/// <summary>
+	/// A leg target at the centre of a zone where monsters were seen, in full armour, scores this much worse, less towards
+	/// its edge (<see cref="BotContext.SightingDepth"/>): as much as ground already seen, so fresh ground round the zone
+	/// wins, but a leg into it still beats none. A cost, not a ban, like Baritone's mob avoidance. Seen in game (measured
+	/// run U9): with such zones skipped outright, 151 of 204 legs while they stood stayed at row 412 or above, and only 6.6%
+	/// of the 288 legs for life crystals (rows 375-900) reached row 600.
+	/// </summary>
+	public const float SightingPenalty = SeenPenalty;
 
 	/// <summary>
 	/// Where to dig on with no frontier in view: <paramref name="ahead"/> (on in the heading: down, up or level, as the leg
@@ -282,7 +292,7 @@ public sealed class ExploreSkill : ISkill
 			// Too deep: up first, level only with both ways up barred (skeletons killed the bot tunnelling below the floor).
 			if (Barred(ctx, o) || tooDeep && o.Y == n.Y && best != null)
 				continue;
-			float score = o.ChebyshevTo(n);
+			float score = o.ChebyshevTo(n) + ctx.SightingDepth(o) * SightingPenalty;
 			if (NearVisited(ctx, o.X, o.Y))
 				score += VisitedPenalty;
 			if (!NearUnseen(ctx.World, o.X, o.Y))
@@ -318,14 +328,14 @@ public sealed class ExploreSkill : ISkill
 					continue;
 				if (aheadOnly && Math.Sign(x - n.X) != heading)
 					continue;
-				if (y > Deepest(ctx) || ctx.OffLimits(new TilePos(x, y)))
+				if (y > Deepest(ctx) || ctx.OffLimitsOutright(new TilePos(x, y)))
 					continue;
 				if (!w.IsRevealed(x, y) || !Standable(g, x, y) || Body.InLiquid(g, new TilePos(x, y)) || !NearUnseen(w, x, y))
 					continue;
 				var cand = new TilePos(x, y);
 				if (ctx.UnreachableTiles.Contains(cand) || LookedAt(ctx, cand))
 					continue;
-				float score = d;
+				float score = d + ctx.SightingDepth(cand) * SightingPenalty;
 				// Near an earlier leg's target: still worth it if unseen cells are there (NearUnseen), but less so.
 				if (NearVisited(ctx, x, y))
 					score += VisitedPenalty;

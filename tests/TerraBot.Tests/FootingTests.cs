@@ -6,12 +6,16 @@ using TerraBot.Core.Grid;
 using TerraBot.Core.Pathfinding;
 using TerraBot.Core.Physics;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TerraBot.Tests;
 
 /// <summary>Footing next to a deep shaft, and the danger/fight distances for ignored enemies (world_eye run 13).</summary>
 public class FootingTests
 {
+	private readonly ITestOutputHelper output;
+	public FootingTests(ITestOutputHelper output) => this.output = output;
+
 	private static ArrayTileGrid Shaft(int depth)
 	{
 		// Column 3 is a shaft: node (3,1) covers columns 3 and 4 and is held up by column 4 only.
@@ -319,6 +323,94 @@ public class FootingTests
 		var mine = new Bot.Skills.MineSkill(FakeGame.IronOre, FakeGame.TileIron, 6);
 		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, mine, 600));
 		Assert.Contains("explorations", mine.FailureReason); // the planner travels on, as when exploring found nothing
+	}
+
+	/// <summary>Vanilla NPCID.WalkingAntlion, the antlion charger.</summary>
+	public const int AntlionCharger = 508;
+
+	/// <summary>An antlion charger in sight with its feet at <paramref name="feet"/>, as BotBrain notes it (NoteEvilEnemies).</summary>
+	internal static void SeeADesertMonster(BotContext ctx, TilePos feet)
+	{
+		GameIds ids = ctx.Ids;
+		ctx.Ids = new GameIds { DesertEnemies = new[] { AntlionCharger } };
+		const int size = 24; // px, its hitbox's side here
+		ctx.Hostiles = new[] { new EntityInfo(90, AntlionCharger, "Antlion Charger", feet.X * Body.TileSize + Body.TileSize / 2f - size / 2f,
+			(feet.Y + 1) * Body.TileSize - size, size, size, 0, 0, 80, 80, 20) };
+		Assert.Equal(feet, ctx.Hostiles[0].FeetTile);
+		BotBrain.NoteEvilEnemies(ctx);
+		ctx.Hostiles = System.Array.Empty<EntityInfo>();
+		ctx.Ids = ids;
+	}
+
+	[Fact]
+	public void ASightingZone_IsSmallerAndShorterInFullArmour_ADeathZoneIsNot()
+	{
+		// Measured run U9: in iron and silver armour a lone antlion charger hurt the bot 4 and 8 tiles from where it was seen
+		// and died to the first arrows, and every desert monster's hit (25, two deaths) came within 1.5 game hours of a
+		// sighting; yet each sighting closed 120x120 tiles for 5 game days, one of them right under the spawn.
+		var ctx = new BotContext { Tick = 100 };
+		var seen = new TilePos(2142, 471);
+		SeeADesertMonster(ctx, seen); // in weak gear (U9: (2225,507), seen before the armour was on)
+		var farther = new TilePos(seen.X + BotContext.DangerZoneRadius, seen.Y); // a death spot's reach away
+		Assert.True(ctx.InDangerZone(farther));
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = BotContext.CavernDefense;
+		Assert.True(ctx.InDangerZone(seen));
+		Assert.False(ctx.InDangerZone(farther)); // the same zone, with the armour now on: less than a death's
+		ctx.DangerZones.Clear();
+		SeeADesertMonster(ctx, seen); // in the armour (U9: (2142,471))
+		Assert.True(ctx.InDangerZone(seen));
+		Assert.False(ctx.InDangerZone(farther));
+		ctx.Tick += BotContext.DangerZoneTicks; // a death's time on: gone in the armour, there still in weak gear
+		Assert.False(ctx.InDangerZone(seen));
+		ctx.Combat.ArmourPieces = 0;
+		ctx.Combat.Defense = 0;
+		Assert.True(ctx.InDangerZone(seen));
+		// Where the bot was killed: as before, whatever the gear.
+		ctx.DangerZones.Clear();
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = BotContext.CavernDefense;
+		ctx.NoteDeathByEnemy(seen);
+		Assert.True(ctx.InDangerZone(farther));
+		Assert.True(ctx.OffLimits(farther));
+	}
+
+	[Fact]
+	public void InAFullSet_MiningFromInsideASightingZone_ExploresOutOfIt_ButNotFromADeathZone()
+	{
+		// Measured run U9: 17 crystal jobs failed at once "the explorations from here would be off limits", 5 explorations
+		// "every way from here is off limits", inside sighting zones the bot in full armour could have walked out of.
+		FakeGame g = ProgressionTests.Mine(oreRows: 0);
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = BotContext.CavernDefense;
+		TilePos start = ctx.Node;
+		SeeADesertMonster(ctx, start);
+		Assert.True(ctx.InDangerZone(start));
+		var mine = new Bot.Skills.MineSkill(FakeGame.IronOre, FakeGame.TileIron, 6);
+		mine.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		bool explored = false, outOfIt = false;
+		for (int t = 0; t < 60 * 60 * 2 && s == SkillStatus.Running && !outOfIt; t++) {
+			g.Refresh(ctx);
+			s = mine.Tick(ctx);
+			g.Step(ctx);
+			explored |= mine.Describe().Contains("exploring");
+			outOfIt = !ctx.InDangerZone(ctx.Node);
+		}
+		output.WriteLine($"{s} ({mine.FailureReason}) at {ctx.Node}: {mine.Describe()}");
+		Assert.DoesNotContain("off limits", mine.FailureReason);
+		Assert.True(explored, mine.Describe());
+		Assert.True(outOfIt, $"still in the zone at {ctx.Node}");
+		// Where it was killed, though, the job still gives up at once (the planner walks it out: ProgressionPlanner.LeaveOffLimits).
+		g = ProgressionTests.Mine(oreRows: 0);
+		ctx = g.CreateContext(output);
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = BotContext.CavernDefense;
+		ctx.NoteDanger(ctx.Node, BotContext.DangerZoneTicks);
+		mine = new Bot.Skills.MineSkill(FakeGame.IronOre, FakeGame.TileIron, 6);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, mine, 600));
+		Assert.Contains("would be off limits", mine.FailureReason);
 	}
 
 	[Fact]
