@@ -575,6 +575,7 @@ public sealed class ProgressionPlanner
 	public ISkill Next(BotContext ctx)
 	{
 		var watch = System.Diagnostics.Stopwatch.StartNew();
+		ctx.NightDescentFrom = null; // set again below while the night's way down is still the job
 		try {
 			return NextUntimed(ctx);
 		}
@@ -701,6 +702,7 @@ public sealed class ProgressionPlanner
 				// run S6), the tile under the spawn had "no path after 3 attempts", and so the night was spent in the house.
 				int row = Math.Max(ctx.SurfaceY, spawn.Y) + NightMineRows;
 				Status = $"night: down into the ground to row {row} to mine there ({Status})";
+				ctx.NightDescentFrom = inside;
 				return new WalkToSkill(new Core.Pathfinding.GoalRow(row, spawn.X, ctx.Physics) { Below = true, Accept = t => !ctx.OffLimits(t) }) { Quiet = true, Underground = true };
 			}
 			Status = $"night: staying in the house instead of {skill.Name} ({Status})";
@@ -1174,7 +1176,7 @@ public sealed class ProgressionPlanner
 		if (ArenaSite is not TilePos s)
 			return null;
 		Blueprint bp = Blueprint.Arena(ctx.Ids);
-		return (s.X, s.X + bp.Width - 1, s.Y + bp.StandRow);
+		return (s.X + 1, s.X + bp.Width - 2, s.Y + bp.StandRow); // inside the end posts
 	}
 
 	/// <summary>

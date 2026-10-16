@@ -53,6 +53,24 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void Arena_HasAPostAtEachEnd_AndTheFightStaysInsideThem()
+	{
+		// Measured run U17: knocked past the open east end at 234/2800, down a 41-row drop, killed there.
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		int floor = Blueprint.ArenaClearance;
+		for (int y = floor - Blueprint.ArenaEndPostHeight; y < floor; y++) {
+			Assert.Equal(PlanCell.Block, bp.At(0, y));
+			Assert.Equal(PlanCell.Block, bp.At(bp.Width - 1, y));
+		}
+		Assert.NotEqual(PlanCell.Block, bp.At(1, floor - 1));
+		Assert.NotEqual(PlanCell.Block, bp.At(0, floor - Blueprint.ArenaEndPostHeight - 1)); // jumped over
+		var p = new ProgressionPlanner();
+		typeof(ProgressionPlanner).GetProperty(nameof(ProgressionPlanner.ArenaSite)).SetValue(p, new TilePos(100, 10));
+		var ctx = new BotContext { Ids = FakeGame.Ids };
+		Assert.Equal((101, 100 + bp.Width - 2, 10 + bp.StandRow), p.ArenaBounds(ctx));
+	}
+
+	[Fact]
 	public void SiteFinder_Arena_AcceptsTreesBumpsAndPits_ButNotTheHouse()
 	{
 		FakeGame g = RoughField();

@@ -121,6 +121,8 @@ public sealed class Blueprint
 	/// </summary>
 	public const int ArenaWidth = 96;
 	public const int ArenaClearance = 7;
+	/// <summary>Blocks of each end post (a body pushed into a wall two blocks high stops; the bot jumps 6).</summary>
+	public const int ArenaEndPostHeight = 2;
 	public const int ArenaTorchSpacing = 12;
 	/// <summary>How far (columns, the arena's middle from the house) an arena site is looked for first.</summary>
 	public const int ArenaSearchRadius = 80;
@@ -148,6 +150,11 @@ public sealed class Blueprint
 		for (int y = 0; y < ArenaClearance; y++)
 			rows[y] = new string('.', width);
 		rows[ArenaClearance] = new string('#', width);
+		// A post at each end, ArenaEndPostHeight blocks on the floor: knockback does not push the bot off an end. Seen in game
+		// (measured run U17): the Eye of Cthulhu at 234/2800 knocked the bot past the east end at (2127,268), down a 41-row
+		// drop (183 fall damage), and it was killed there. The bot jumps over a post to come and go.
+		for (int y = ArenaClearance - ArenaEndPostHeight; y < ArenaClearance; y++)
+			rows[y] = "#" + rows[y].Substring(1, width - 2) + "#";
 		int top = ArenaClearance - 1, mid = width / 2;
 		var items = new List<PlanItem> { new(ids.Campfire, mid - 1, top - 1, 3, 2) };
 		for (int x = ArenaTorchSpacing / 2; x < width; x += ArenaTorchSpacing)

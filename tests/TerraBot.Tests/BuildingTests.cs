@@ -636,6 +636,45 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AtNight_TheWayDownForMining_IsDugFromTheHouse_NotWalkedToAlongTheSurface()
+	{
+		// Measured run U17: "night: down into the ground to row 362" went 40 tiles west along the surface to a way down, among
+		// the zombies; three deaths in one night. Ground row 25 (feet 24), an open shaft at columns 44-45 down to row 50.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 25; y++)
+			rows.Add(new string('.', 120));
+		for (int y = 25; y < 60; y++) {
+			char[] r = new string(y >= 56 ? '@' : '#', 120).ToCharArray();
+			if (y <= 50)
+				r[44] = r[45] = '.';
+			rows.Add(new string(r));
+		}
+		char[] feet = rows[24].ToCharArray();
+		feet[5] = 'S';
+		rows[24] = new string(feet);
+		foreach (bool night in new[] { false, true }) {
+			var g = new FakeGame(rows.ToArray());
+			BotContext ctx = g.CreateContext(output);
+			ctx.SurfaceY = 30;
+			ctx.NightDescentFrom = night ? new TilePos(5, 24) : null;
+			var walk = new WalkToSkill(new Core.Pathfinding.GoalRow(40, 5, ctx.Physics) { Below = true }) { Underground = true };
+			int farthest = 0;
+			walk.Start(ctx);
+			for (int t = 0; t < 4000 && walk.Tick(ctx) == SkillStatus.Running; t++) {
+				g.Step(ctx);
+				g.Refresh(ctx);
+				if (ctx.Node.Y < ctx.SurfaceY)
+					farthest = System.Math.Max(farthest, System.Math.Abs(ctx.Node.X - 5));
+			}
+			output.WriteLine($"descent from the house {night}: at {ctx.Node}, {farthest} columns along the surface");
+			if (night)
+				Assert.True(farthest <= BotContext.NightDescentShaftTiles, $"walked {farthest} columns along the surface");
+			else
+				Assert.True(farthest > BotContext.NightDescentShaftTiles); // by day the shaft is the cheaper way, as before
+		}
+	}
+
+	[Fact]
 	public void AtNight_ATripForOre_WaitsForTheMorning_AndTheNightGoesToMining()
 	{
 		// Measured run U4: "no more Silver Ore found around here; back to the spawn" at nightfall became a night in the

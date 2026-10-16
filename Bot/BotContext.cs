@@ -111,6 +111,10 @@ public sealed class BotContext
 	public System.Collections.Generic.HashSet<TilePos> OpenedChests { get; } = new();
 	/// <summary>Where exploring legs went (kept across restarts, so a fight or replan does not send it back over old ground).</summary>
 	public PlaceMemory Explored { get; } = new();
+	/// <summary>Set by the planner while the night's walk down for mining is the job (the house's spot): see OffLimitsForPaths.</summary>
+	public TilePos? NightDescentFrom { get; set; }
+	/// <summary>Columns either side of the house the way down may start in at no extra cost (the house is 10 wide).</summary>
+	public const int NightDescentShaftTiles = 6;
 	/// <summary>Where explore legs ended: what is still unseen near these was in sight and is not to be seen by going there.</summary>
 	public PlaceMemory LookedFrom { get; } = new();
 	/// <summary>Expert or Master world (Main.expertMode): bosses attack faster.</summary>
@@ -282,6 +286,12 @@ public sealed class BotContext
 	/// </summary>
 	public bool OffLimitsForPaths(TilePos t)
 	{
+		// The night's way down for mining, in weak gear: the surface away from the house costs (MoveContext.AvoidTicks a step),
+		// so the way down is dug from the house rather than walked to along the surface. Not memoised: it is only on while
+		// that walk is the job. Seen in game (measured run U17): "night: down into the ground to row 362" from the spawn went
+		// 40 tiles west along the surface to a way down, among the zombies; three deaths in one night at (2062..2066,283).
+		if (NightDescentFrom is TilePos home && SurfaceY > 0 && t.Y < SurfaceY && Math.Abs(t.X - home.X) > NightDescentShaftTiles)
+			return true;
 		long k = ((long)(t.X >> 3) << 32) | (uint)(t.Y >> 3);
 		if (offLimitsMemo.TryGetValue(k, out var v) && Tick - v.At < OffLimitsMemoTicks && v.Zones == DangerZones.Count)
 			return v.Off;
