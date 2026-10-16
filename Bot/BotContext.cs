@@ -235,6 +235,9 @@ public sealed class BotContext
 	/// Is the tile where the seen solid tiles around it (48x48) are largely Corruption or Crimson? Seen in game (world_eye
 	/// run 47): eaters of souls killed the bot there in copper gear. Players go in once they have armour (Milestone 10).
 	/// </summary>
+	/// <summary>Any evil-biome ground seen in the chunks around the tile (the biome is there, not just one of its fliers).</summary>
+	public bool EvilGroundNear(TilePos t) => World != null && Ids.EvilTiles.Length > 0 && Share(t, c => c.Evil) > 0f;
+
 	public bool InEvilBiome(TilePos t) => World != null && Ids.EvilTiles.Length > 0 && Share(t, c => c.Evil) >= EvilShare;
 
 	/// <summary>

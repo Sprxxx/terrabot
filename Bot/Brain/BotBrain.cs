@@ -322,7 +322,9 @@ public sealed class BotBrain
 		foreach (EntityInfo e in ctx.Hostiles) {
 			// The evil biome until iron-level armour, the underground desert (antlions; rolling cacti killed the bot in a
 			// desert not yet seen, run 53) until much better gear, as for their tiles (BotContext.OffLimits).
-			string biome = ctx.Combat.Defense < BotContext.CavernDefense && System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) >= 0 ? "the evil biome"
+			// Over evil ground only: eaters of souls fly far from it. Seen in game (measured run S15), three over the house marked
+			// it for 5 days, and every mining job from the spawn failed "off limits" at once: 153 rests, 1.1 game days.
+			string biome = ctx.Combat.Defense < BotContext.CavernDefense && System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) >= 0 && ctx.EvilGroundNear(e.FeetTile) ? "the evil biome"
 				: ctx.Combat.Defense < BotContext.DeepDefense && System.Array.IndexOf(ctx.Ids.DesertEnemies, e.Type) >= 0 ? "the desert"
 				: null;
 			if (biome == null || ctx.InDangerZone(e.FeetTile))

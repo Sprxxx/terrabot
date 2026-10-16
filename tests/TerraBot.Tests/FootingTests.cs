@@ -467,9 +467,18 @@ public class FootingTests
 		// Runs 47 and 49: eaters of souls and devourers killed the bot three times on the corruption's edge.
 		FakeGame g = ProgressionTests.Mine();
 		BotContext ctx = g.CreateContext(null);
-		ctx.Ids = new GameIds { EvilEnemies = new[] { 6 } };
+		const int ebonstone = 25;
+		ctx.Ids = new GameIds { EvilEnemies = new[] { 6 }, EvilTiles = new[] { ebonstone } };
 		var eater = new EntityInfo(3, 6, "Eater of Souls", 40 * 16f, 20 * 16f, 30, 30, 0, 0, 30, 30, 15);
 		ctx.Hostiles = new[] { eater };
+		// Measured run S15: over clean ground (eaters fly far from the biome) it marks nothing: three over the house had
+		// made every mining job from the spawn fail "off limits" for days.
+		BotBrain.NoteEvilEnemies(ctx);
+		Assert.False(ctx.InDangerZone(eater.FeetTile));
+		for (int x = 30; x < 50; x++) // the biome's ground there
+			for (int y = 25; y < 35; y++)
+				g.TileTypes[new TilePos(x, y)] = ebonstone;
+		ctx.Tick += BotContext.DesertRecheckTicks + 1; // chunk counts are kept a while
 		BotBrain.NoteEvilEnemies(ctx);
 		Assert.True(ctx.InDangerZone(eater.FeetTile));
 		ctx.DangerZones.Clear();
