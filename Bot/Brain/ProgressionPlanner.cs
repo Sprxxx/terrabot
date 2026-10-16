@@ -1202,6 +1202,11 @@ public sealed class ProgressionPlanner
 			if (sub != null || stuck != null)
 				return sub;
 		}
+		// From deep down, up to the surface first, as for a trip (UpFirst), not the build's walk to its first cell through the
+		// caves. Seen in game (measured runs U19 and U22): max life 200 came 160+ rows down, and the build's first walk, to
+		// fell a tree by the arena, went through the caves with fights for about 5 game hours.
+		if (UpFirst(ctx, site) is WalkToSkill up)
+			return Do($"up to the surface before building the arena at {site}", up);
 		return Do($"building the arena at {site}", new BuildSkill(bp, site));
 	}
 

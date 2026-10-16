@@ -185,6 +185,40 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void ArenaPlan_FromDeepDown_GoesUpToTheSurfaceFirst_NotThroughTheCaves()
+	{
+		// Measured runs U19 and U22: max life 200 came 160+ rows down, and the build's first walk (to fell a tree by the arena)
+		// went through the caves with fights for about 5 game hours.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 25; y++)
+			rows.Add(new string('.', 400));
+		for (int y = 25; y < 90; y++) {
+			char[] r = new string(y >= 86 ? '@' : '#', 400).ToCharArray();
+			if (y <= 70)
+				r[100] = r[101] = '.';
+			rows.Add(new string(r));
+		}
+		char[] feet = rows[24].ToCharArray();
+		feet[200] = 'S';
+		rows[24] = new string(feet);
+		var g = new FakeGame(rows.ToArray());
+		GiveArenaKit(g);
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 30;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Arena);
+		ISkill first = p.ResolveForTest(new ArenaBuilt("arena"), ctx);
+		output.WriteLine($"on the surface: {p.Status} -> {first?.Describe()}; site {p.ArenaSite}");
+		Assert.NotNull(p.ArenaSite);
+		// Down a shaft 100 tiles off, 46 rows under the ground.
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(100, Core.Physics.PhysicsParams.Default), Y = Core.Pathfinding.Body.StandingTop(70, Core.Physics.PhysicsParams.Default), ReleaseJump = true };
+		g.Refresh(ctx);
+		ISkill next = p.ResolveForTest(new ArenaBuilt("arena"), ctx);
+		output.WriteLine($"at {ctx.Node}: {p.Status} -> {next?.Describe()}");
+		Assert.Contains("up to the surface before building the arena", p.Status);
+	}
+
+	[Fact]
 	public void ArenaPlan_NoSiteNearTheHouse_LooksFartherOut()
 	{
 		// Measured runs U8cp and U9: no site within 80 tiles was a stop ("stuck on arena: no arena site"), five rests and
