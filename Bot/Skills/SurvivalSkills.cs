@@ -399,6 +399,38 @@ public sealed class ShelterSkill : ISkill
 		return SkillStatus.Running;
 	}
 
+	/// <summary>
+	/// Ticks in the air after the flight's walk before what holds the body is cut (or fought from): fewer than the
+	/// <see cref="BotContext.HurtImmunityTicks"/> (40) a hit gives, so it is done before the next bite can land, and about
+	/// what a jump cut short still takes to come down (a full jump falls from its apex, 106 px at gravity 0.4, in 23).
+	/// Seen in game (measured runs U17 and U19, wall creepers): held in a cobweb after the walk gave up ("never landed in
+	/// 181 ticks"), the flight waited for the ground with no limit while it was bitten to death.
+	/// </summary>
+	public const int AirborneWaitTicks = 30;
+	private int airborneTicks;
+	private TilePos? cutting;
+
+	/// <summary>The flight's walk is over but the body is off the ground: wait to land, then cut free (a web) or fight.</summary>
+	private SkillStatus HeldInTheAir(BotContext ctx)
+	{
+		bool hit = ctx.LastEnemyHitTick >= startTick && ctx.Tick - ctx.LastEnemyHitTick < HitRecentTicks;
+		if (++airborneTicks <= AirborneWaitTicks && !hit)
+			return SkillStatus.Running;
+		if (ctx.World != null && WalkToSkill.TileInOrOverBody(ctx) is TilePos web) {
+			if (web != cutting)
+				ctx.Log.Info($"Shelter: held in the air at {ctx.Node} after the flight; cutting {web} (tile {ctx.World.TileTypeAt(web.X, web.Y)})");
+			cutting = web;
+			ctx.Output.Tool = ToolRequest.Pickaxe;
+			ctx.Output.UseItem = true;
+			ctx.Output.Aim(web.X, web.Y);
+		}
+		if (cornered == null && (hit || NearestHostile(ctx, out _) <= FleeClearPx)) {
+			cornered = $"held in the air at {ctx.Node} for {airborneTicks} ticks";
+			ctx.Log.Info($"Shelter: {cornered}");
+		}
+		return SkillStatus.Running;
+	}
+
 	private long waitSince;
 
 	private void BeginWaiting(BotContext ctx)
@@ -556,7 +588,8 @@ public sealed class ShelterSkill : ISkill
 					}
 				}
 				if (!ctx.Body.Grounded)
-					return SkillStatus.Running; // dig in from the ground
+					return HeldInTheAir(ctx); // dig in from the ground
+				airborneTicks = 0;
 				StartDigging(ctx);
 				return SkillStatus.Running;
 			}

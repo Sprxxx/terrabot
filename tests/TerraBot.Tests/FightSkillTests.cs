@@ -239,6 +239,37 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void ShelterFlight_HeldInACobweb_CutsItFreeBeforeTheNextBite()
+	{
+		// Measured runs U17 and U19 (wall creepers): held in a web after the flight's walk gave up ("never landed in 181 ticks
+		// ... vy 0.171"), the shelter waited for the ground with no limit and was bitten to death.
+		FakeGame g = EarlyGameTests.FieldFrom(80, 40);
+		BotContext ctx = g.CreateContext(output);
+		g.AddSlime(9, ctx.Node.X + 3, ctx.Node.Y);
+		g.Refresh(ctx);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		Assert.Equal("Fleeing", shelter.State);
+		TilePos n = ctx.Node;
+		var web = new TilePos(n.X, n.Y - 1);
+		g.Grid.Set(web.X, web.Y, CellKind.Solid); // the grid reads a cobweb as a block to cut
+		g.Slimes.Clear(); // the flight is over
+		BodyState held = ctx.Body;
+		held.VY = 0.171f;
+		int cutAt = -1;
+		for (int t = 0; t < 3 * BotContext.HurtImmunityTicks && cutAt < 0; t++) {
+			g.Refresh(ctx);
+			ctx.Body = held;
+			shelter.Tick(ctx);
+			MoveInput o = ctx.Output;
+			if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && o.AimX == web.X && o.AimY == web.Y)
+				cutAt = t;
+		}
+		output.WriteLine($"cutting the web from t{cutAt}: {shelter.Describe()}");
+		Assert.InRange(cutAt, 0, BotContext.HurtImmunityTicks - 1);
+	}
+
+	[Fact]
 	public void SwordOnly_HoldsGroundAgainstAFlier_AndSwingsAsItComes()
 	{
 		// Classic demon eyes cost 150 life while the bot chased their "feet tile"; it now stands and meets them.

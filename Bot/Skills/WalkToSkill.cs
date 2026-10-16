@@ -116,7 +116,7 @@ public sealed class WalkToSkill : ISkill
 	public const int HeldStillTicks = 60;
 
 	/// <summary>A real tile (any kind) the hitbox overlaps, else one in the row over the head; null if none.</summary>
-	private static TilePos? TileInOrOverBody(BotContext ctx)
+	internal static TilePos? TileInOrOverBody(BotContext ctx)
 	{
 		const float T = Body.TileSize, Margin = 0.5f;
 		float left = ctx.Body.X, top = ctx.Body.Y, right = left + ctx.Physics.Width, bottom = top + ctx.Physics.Height;
