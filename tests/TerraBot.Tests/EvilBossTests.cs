@@ -376,20 +376,20 @@ public class EvilBossTests
 	/// <see cref="CorruptWorld"/>'s corruption over deep stone, with a chasm at x 388-393 down to row <see cref="ChasmFloor"/>,
 	/// as the M10 world's at x 1700-1704 and 1777 (floors at rows 362-401, the surface at 269-294).
 	/// </summary>
-	private static FakeGame ChasmWorld()
+	private static FakeGame ChasmWorld(int floor = ChasmFloor, bool corrupt = true)
 	{
 		const int width = 500;
 		var rows = Enumerable.Repeat(new string('.', width), Feet + 1).ToList();
 		rows[Feet] = "...S" + new string('.', width - 4);
-		while (rows.Count < ChasmFloor + 5)
+		while (rows.Count < floor + 5)
 			rows.Add(new string('s', width));
 		rows.Add(new string('@', width));
 		var g = new FakeGame(rows.ToArray());
-		for (int x = CorruptFrom; x <= CorruptTo; x++)
+		for (int x = CorruptFrom; x <= CorruptTo && corrupt; x++)
 			for (int y = Feet + 1; y < Feet + 13; y++)
 				g.TileTypes[new TilePos(x, y)] = y == Feet + 1 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
 		for (int x = ChasmFrom; x <= ChasmTo; x++)
-			for (int y = Feet + 1; y < ChasmFloor; y++) {
+			for (int y = Feet + 1; y < floor; y++) {
 				g.Grid.Set(x, y, CellKind.Empty);
 				g.TileTypes.Remove(new TilePos(x, y));
 			}
@@ -438,6 +438,36 @@ public class EvilBossTests
 		Assert.IsType<HuntSkill>(s);
 		p.Next(ctx);
 		Assert.Contains(new TilePos(ChasmFrom + 2, Feet + 1), ctx.Protected);
+	}
+
+	[Fact]
+	public void LootAtAChasmsFloor_DeeperThanASafeFall_IsLeft_TheLootOnTheSurfaceIsNot()
+	{
+		// Measured run M10c: a fight's coins had fallen to a corruption chasm's floor, "Collect [fetching Copper Coin x11]" at
+		// (1700,361), some 90 rows under the surface the fight was on. Here the floor is 34 rows down (a safe fall is 25), in
+		// the boss loot's reach (BotBrain.BossLootRadiusTiles, 40), and a coin lies on the surface too.
+		FakeGame g = ChasmWorld(floor: Feet + 35, corrupt: false);
+		BotContext ctx = g.CreateContext(output);
+		MoveTo(g, ctx, ChasmFrom - 4, Feet);
+		g.Drops.Add(new DropInfo(900, 71, "Copper Coin", 11, ChasmFrom * 16f + 20, (Feet + 34) * 16f + 4, 8, 8)); // on the chasm's floor
+		g.Drops.Add(new DropInfo(901, 71, "Copper Coin", 3, (ChasmFrom - 12) * 16f + 4, Feet * 16f + 4, 8, 8)); // on the surface
+		g.Refresh(ctx);
+		Assert.True(CollectDropsSkill.AnyInRange(ctx, _ => true, BotBrain.BossLootRadiusTiles));
+		var collect = new CollectDropsSkill(_ => true, BotBrain.BossLootRadiusTiles);
+		collect.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		int lowest = ctx.Node.Y;
+		for (int t = 0; t < 60 * 60 && st == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			st = collect.Tick(ctx);
+			g.Step(ctx);
+			lowest = System.Math.Max(lowest, ctx.Node.Y);
+		}
+		output.WriteLine($"{st}: {collect.Describe()}, at {ctx.Node}, feet down to row {lowest}, drops left {string.Join(", ", g.Drops.Select(d => d.Tile))}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.True(lowest <= Feet + 1, $"went down to row {lowest} for the coins in the chasm");
+		Assert.DoesNotContain(g.Drops, d => d.Id == 901);
+		Assert.False(CollectDropsSkill.AnyInRange(ctx, _ => true, BotBrain.BossLootRadiusTiles)); // the brain starts no collect for it
 	}
 
 	[Fact]
