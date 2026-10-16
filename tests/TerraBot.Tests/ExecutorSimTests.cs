@@ -553,6 +553,37 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void GroundedBesideASlopeInItsRows_PlansFromWhereTheBodyStands()
+	{
+		// Measured run U1: grounded at (1902,480) with a shaped cell in its body's rows; the grid's body check failed, no node
+		// near was startable, and one explore leg failed "InvalidStart" 33 times.
+		string[] rows = {
+			"....................",
+			"....................",
+			"....................",
+			"....................",
+			"...S..........G.....",
+			"####################",
+		};
+		var planGrid = ArrayTileGrid.Parse(rows);
+		for (int x = 2; x <= 4; x++)
+			planGrid.Set(x, 2, CellKind.Platform | CellKind.Shaped); // slopes in the head row, as the grid reads them
+		var realGrid = ArrayTileGrid.Parse(rows);
+		var sim = new SimWorld(realGrid, PhysicsParams.Default, planGrid.Markers['S'], new TestBlockActions(realGrid));
+		var log = new System.Collections.Generic.List<string>();
+		var ctx = new BotContext { Grid = planGrid, Blocks = new TestBlockActions(planGrid), Log = new EchoLog(output, log) };
+		var skill = new WalkToSkill(planGrid.Markers['G']);
+		ctx.Body = sim.State;
+		skill.Start(ctx);
+		for (int t = 0; t < 600 && skill.Tick(ctx) == SkillStatus.Running; t++) {
+			ctx.Tick = t;
+			sim.Step(ctx.Output);
+			ctx.Body = sim.State;
+		}
+		Assert.DoesNotContain(log, l => l.Contains("InvalidStart"));
+	}
+
+	[Fact]
 	public void InvisibleWall_IsDetectedAsStuck()
 	{
 		// The planner sees flat ground; the "real" world has a wall the planner does not know about.

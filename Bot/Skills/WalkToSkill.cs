@@ -650,7 +650,11 @@ public sealed class WalkToSkill : ISkill
 		TilePos start = node;
 		// Standing (grounded, clear of blocks): the plan starts where the body is, whatever the grid makes of its footing,
 		// so the executor's "at the start" check can hold. Otherwise the nearest node the grid can start from.
-		bool standing = ctx.Body.Grounded && (Body.IsClear(moves.Grid, node) || ctx.UnstickFailedAt == node) && !Body.IsStartable(moves.Grid, node);
+		// Grounded and in no solid block the pickaxe could clear (EmbeddedIn): the body fits there whatever the grid makes of
+		// it (a slope or half block sharing its rows). Seen in game (measured run U1): grounded at (1902,480), the grid's body
+		// check failed on a shaped cell, no node near was startable, and one explore leg failed "InvalidStart" 33 times.
+		bool standing = ctx.Body.Grounded && (Body.IsClear(moves.Grid, node) || ctx.UnstickFailedAt == node || EmbeddedIn(ctx) == null)
+			&& !Body.IsStartable(moves.Grid, node);
 		if (!standing)
 			foreach (TilePos d in StartCandidates) {
 				if (Body.IsStartable(moves.Grid, node + d)) {
