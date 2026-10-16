@@ -1,5 +1,6 @@
 using System.Linq;
 using TerraBot.Bot;
+using TerraBot.Bot.Brain;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
 using Xunit;
@@ -408,5 +409,141 @@ public class WaterTests
 		Assert.True(ctx.Explored.AnyWithin(-5, -5, 6, 6) == false);
 		ctx.Explored.Add(new TilePos(-3, -20));
 		Assert.True(ctx.Explored.AnyWithin(-5, -17, 3, 3));
+	}
+}
+
+/// <summary>Crystal searches resume in the crystal band (BotContext.CrystalBandTop), not from the spawn and the rows above it.</summary>
+public class CrystalBandTests
+{
+	private readonly ITestOutputHelper output;
+	public CrystalBandTests(ITestOutputHelper output) => this.output = output;
+
+	/// <summary>
+	/// 80 wide, 200 deep: open sky down to row 9 (the surface), ground below, and a cave at columns 30-50, rows 110-120 with
+	/// the bot in it at (40,120). Surface row 10 and caverns from 40: the crystal band from row 20. In a full set of armour.
+	/// </summary>
+	private static (FakeGame, BotContext) DeepCave(ITestOutputHelper output)
+	{
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 200; y++) {
+			char[] r = (y < 10 ? new string('.', 80) : new string('#', 80)).ToCharArray();
+			if (y >= 110 && y <= 120)
+				for (int x = 30; x <= 50; x++)
+					r[x] = '.';
+			if (y == 120)
+				r[40] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 40;
+		ctx.Combat.Defense = 9;
+		ctx.Combat.ArmourPieces = 3;
+		return (g, ctx);
+	}
+
+	private static void MoveTo(FakeGame g, BotContext ctx, int x, int feetRow)
+	{
+		var p = Core.Physics.PhysicsParams.Default;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(x, p), Y = Core.Pathfinding.Body.StandingTop(feetRow, p), ReleaseJump = true };
+		g.Refresh(ctx);
+	}
+
+	private static void Ticks(FakeGame g, BotContext ctx, ISkill skill, int n)
+	{
+		for (int t = 0; t < n; t++) {
+			g.Refresh(ctx);
+			skill.Tick(ctx);
+			g.Step(ctx);
+		}
+	}
+
+	[Fact]
+	public void ACrystalSearch_AfterADeath_GoesBackToWhereItLeftOffInTheBand_NotFromTheSpawn()
+	{
+		// Measured run U9: 14 of 28 crystal explorations began within 5 tiles of the spawn (after deaths, recalls and "back to
+		// the spawn to look from there"), and 25% of the 288 crystal legs were above row 375, the top of the crystal band: the
+		// shaft was dug again from the spawn each time.
+		var (g, ctx) = DeepCave(output);
+		var first = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		first.Start(ctx);
+		Ticks(g, ctx, first, 100);
+		Assert.Contains("Explore", first.Describe());
+		first.Stop(ctx);
+		MoveTo(g, ctx, 5, 9); // killed, and back at the spawn on the surface
+		var next = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		next.Start(ctx);
+		Ticks(g, ctx, next, 3);
+		output.WriteLine(next.Describe());
+		Assert.DoesNotContain("exploring", next.Describe());
+		Assert.Contains("left off", next.Describe());
+	}
+
+	[Fact]
+	public void TheSearchIsResumed_FromItsDeepestSpot_NotFromInsideADangerZone()
+	{
+		// The deepest spot is often where the bot was killed: the danger zone round it rules it out, an earlier spot is taken.
+		var (g, ctx) = DeepCave(output);
+		MoveTo(g, ctx, 5, 9);
+		Assert.Equal(20, ctx.CrystalBandTop);
+		ctx.CrystalSearch.AddRange(new[] { new TilePos(40, 100), new TilePos(45, 150), new TilePos(40, 130) });
+		Assert.Equal(new TilePos(45, 150), MineSkill.SearchToResume(ctx));
+		ctx.NoteDanger(new TilePos(42, 145), BotContext.DangerZoneTicks);
+		Assert.Equal(new TilePos(40, 100), MineSkill.SearchToResume(ctx));
+		MoveTo(g, ctx, 40, 120); // within a leg's reach of it: the exploration's own legs get there
+		Assert.Null(MineSkill.SearchToResume(ctx));
+	}
+
+	[Fact]
+	public void NowhereToTravel_InTheCrystalBand_LooksOnFromThere_NotFromTheSpawn()
+	{
+		// Measured run U9: "no more Life Crystal found around here and nowhere to travel; back to the spawn to look from there",
+		// 11 times, and each time the search went down from the spawn again.
+		var (g, ctx) = DeepCave(output);
+		ctx.SpawnTile = new TilePos(5, 9);
+		var p = new ProgressionPlanner();
+		p.NoteFruitless(FakeGame.LifeCrystal); // nowhere to travel in this narrow world
+		ISkill skill = p.ResolveForTest(new LifeAtLeast(200, "max life"), ctx);
+		output.WriteLine($"{p.Status} -> {skill?.Describe()}");
+		Assert.IsType<MineSkill>(skill);
+		// The search from here came to nothing again, the bot still here: the spawn, as before.
+		p.NoteFruitless(FakeGame.LifeCrystal);
+		skill = p.ResolveForTest(new LifeAtLeast(200, "max life"), ctx);
+		output.WriteLine($"{p.Status} -> {skill?.Describe()}");
+		Assert.IsType<WalkToSkill>(skill);
+	}
+
+	[Fact]
+	public void ExploringForACrystal_AboveTheBand_PullsDownIntoIt()
+	{
+		// Measured run U9: 25% of the 288 crystal legs were above row 375, the top of the crystal band. A frontier down in the
+		// band now beats one along the surface that is nearer.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 60; y++) {
+			char[] r = (y < 10 ? new string('.', 120) : new string('#', 120)).ToCharArray();
+			if (y == 9)
+				r[40] = 'S';
+			if (y >= 18 && y <= 20)
+				for (int x = 68; x <= 73; x++)
+					r[x] = '.'; // a cave pocket, seen, with unseen rock round it
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { RevealRadius = 0 };
+		for (int x = 0; x < 120; x++)
+			for (int y = 12; y < 60; y++)
+				if (!(x >= 68 && x <= 73 && y >= 18 && y <= 21))
+					g.Unrevealed.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 100; // the crystal band from row 40
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		var log = (TestLog)ctx.Log;
+		Ticks(g, ctx, mine, 3);
+		string leg = log.Lines.First(l => l.Contains("Explore: leg 1 to"));
+		output.WriteLine(leg);
+		var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\)");
+		Assert.True(int.Parse(m.Groups[2].Value) >= 18, "into the cave pocket, deeper towards the band, not along the surface");
 	}
 }
