@@ -32,6 +32,13 @@ public enum CellKind : ushort
 	/// stood the body "in" half blocks, then dug down from there while it stood on them, 71 drops waiting at the edge.
 	/// </summary>
 	HalfBlock = 256,
+	/// <summary>
+	/// Set together with Solid for a cobweb: a block to cut through (as a player swings at it), but not a floor. The body
+	/// sinks into a web (measured run I1: 1.79 px a tick), breaks it and falls on below. Seen in game (measured run U22): a
+	/// drop planned onto webs over the shaft at x 2050 broke three of them and fell 70 rows to (2050,554), 455 damage; runs
+	/// U4 and U6 died at the foot of the same shaft, (2049,554).
+	/// </summary>
+	Web = 512,
 }
 
 public static class CellKindExtensions
@@ -41,6 +48,7 @@ public static class CellKindExtensions
 	public static bool IsFalling(this CellKind k) => (k & CellKind.Falling) != 0;
 	public static bool IsShaped(this CellKind k) => (k & CellKind.Shaped) != 0;
 	public static bool IsHalfBlock(this CellKind k) => (k & CellKind.HalfBlock) != 0;
+	public static bool IsWeb(this CellKind k) => (k & CellKind.Web) != 0;
 	/// <summary>
 	/// A block of the world, whole or shaped (a slope, a half block: read as a platform so feet can ride it): what building
 	/// counts as a block to keep in a floor or to mine out of a room.
@@ -53,8 +61,8 @@ public static class CellKindExtensions
 	public static bool IsBlockTile(this CellKind k) => (k & (CellKind.Solid | CellKind.Shaped)) != 0;
 	public static bool HasLava(this CellKind k) => (k & CellKind.Lava) != 0;
 
-	/// <summary>Something the player can stand on.</summary>
-	public static bool CanStandOn(this CellKind k) => (k & (CellKind.Solid | CellKind.Platform)) != 0 && (k & CellKind.Hazard) == 0;
+	/// <summary>Something the player can stand on: not a hazard, nor a cobweb (<see cref="CellKind.Web"/>, which the body sinks through).</summary>
+	public static bool CanStandOn(this CellKind k) => (k & (CellKind.Solid | CellKind.Platform)) != 0 && (k & (CellKind.Hazard | CellKind.Web)) == 0;
 
 	/// <summary>Can the player's body occupy this cell? Lava counts as impassable (avoid it entirely).</summary>
 	public static bool IsPassable(this CellKind k) => (k & (CellKind.Solid | CellKind.Lava | CellKind.Hazard)) == 0;
@@ -73,6 +81,7 @@ public static class CellKindExtensions
 	public static char ToChar(this CellKind k)
 	{
 		if ((k & CellKind.Hazard) != 0) return '^';
+		if (k.IsWeb()) return '*';
 		if (k.IsSolid()) return k.IsFalling() ? '%' : (k & CellKind.Water) != 0 ? '&' : '#';
 		if (k.IsHalfBlock()) return '-';
 		if (k.IsShaped()) return '/';
@@ -91,6 +100,7 @@ public static class CellKindExtensions
 	public static CellKind FromChar(char c) => c switch {
 		'#' or '@' => CellKind.Solid,
 		'%' => CellKind.Solid | CellKind.Falling,
+		'*' => CellKind.Solid | CellKind.Web,
 		'&' => CellKind.Solid | CellKind.Water,
 		'=' => CellKind.Platform,
 		'/' => CellKind.Platform | CellKind.Shaped, // a slope, as TerrariaTileGrid reads them

@@ -634,4 +634,96 @@ public class ExecutorSimTests
 		Assert.Equal(ExecStatus.Blocked, exec.Status);
 		output.WriteLine(exec.Reason);
 	}
+
+	/// <summary>
+	/// A ledge (feet row 4) beside a 2-wide shaft (columns 8-9) 40 rows deep, with <paramref name="plug"/> across the shaft
+	/// at row 11 and the floor on the far side level with it: a drop of 6 rows onto the plug and a walk on reaches the goal.
+	/// The ground under the shaft at x 2049-2050 in measured runs U4, U6 and U22, where three falls ended at (2049,554).
+	/// </summary>
+	private static ArrayTileGrid ShaftWithAPlug(char plug)
+	{
+		const int Width = 24, PlugRow = 11, Bottom = 46;
+		var rows = new string[Bottom + 2];
+		for (int y = 0; y < rows.Length; y++) {
+			var r = new System.Text.StringBuilder();
+			for (int x = 0; x < Width; x++) {
+				bool ledge = x <= 7 && y >= 5;
+				bool shaft = x is 8 or 9;
+				bool farSide = x >= 10 && y >= PlugRow;
+				r.Append(y >= Bottom ? '#' : shaft && y == PlugRow ? plug : ledge || farSide ? '#' : '.');
+			}
+			rows[y] = r.ToString();
+		}
+		rows[4] = rows[4].Remove(2, 1).Insert(2, "S");
+		rows[PlugRow - 1] = rows[PlugRow - 1].Remove(15, 1).Insert(15, "G");
+		return ArrayTileGrid.Parse(rows);
+	}
+
+	/// <summary>
+	/// Closed-loop walk that also measures falls as vanilla counts them (Player.fallStart: from the highest point since the
+	/// feet left the ground to where they land), in rows. <paramref name="eachTick"/> may change the world as the walk runs.
+	/// </summary>
+	private (SkillStatus status, WalkToSkill skill, float longestFall) RunMeasuringFalls(ArrayTileGrid g, int maxTicks, Action<WalkToSkill, SimWorld> eachTick = null)
+	{
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		var ctx = new BotContext { Grid = g, Log = new TestLog(output) };
+		var skill = new WalkToSkill(g.Markers['G']);
+		ctx.Body = sim.State;
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		float top = sim.State.Y, longest = 0f;
+		for (int t = 0; t < maxTicks && status == SkillStatus.Running; t++) {
+			ctx.Tick = t;
+			ctx.Body = sim.State;
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+			eachTick?.Invoke(skill, sim);
+			top = Math.Min(top, sim.State.Y);
+			if (sim.State.Grounded) {
+				longest = Math.Max(longest, (sim.State.Y - top) / Body.TileSize);
+				top = sim.State.Y;
+			}
+		}
+		output.WriteLine($"{status} after {sim.Ticks} ticks at {sim.Node}, replans {skill.Replans}, longest fall {longest:0.0} rows");
+		return (status, skill, longest);
+	}
+
+	/// <summary>
+	/// A cobweb across a shaft is no floor: the planner reads it solid (a block to cut), but the body sinks through it and
+	/// falls on. Seen in game (measured run U22): the last drop of a walk landed on webs over the shaft at x 2050, broke
+	/// three of them ("trashing a stack of Cobweb" three times) and fell 70 rows to (2050,554), 455 damage.
+	/// </summary>
+	[Fact]
+	public void ADropOntoACobwebOverAShaft_IsNotPlanned_TheWalkNeverFallsFurtherThanIsSafe()
+	{
+		ArrayTileGrid g = ShaftWithAPlug('*');
+		var (status, skill, longest) = RunMeasuringFalls(g, 3000);
+		Assert.True(longest <= PhysicsParams.Default.SafeFallTiles, $"fell {longest:0.0} rows (safe: {PhysicsParams.Default.SafeFallTiles})");
+		Assert.Equal(SkillStatus.Succeeded, status);
+	}
+
+	/// <summary>
+	/// The landing of a drop goes (cut, mined, fallen away) while the body walks to the edge: the executor must see it before
+	/// stepping off, not fall down the shaft under it. It re-checked a step only before it started, every 15 ticks.
+	/// </summary>
+	[Fact]
+	public void ADropsLandingThatGoesBeforeTheBodyStepsOff_StopsAtTheEdge()
+	{
+		ArrayTileGrid g = ShaftWithAPlug('#');
+		var landing = new TilePos(8, 10);
+		int ticksOnTheDrop = 0;
+		bool removed = false;
+		var (status, _, longest) = RunMeasuringFalls(g, 3000, (skill, sim) => {
+			if (removed || skill.Executor?.Current is not PathStep step || step.Kind != MoveKind.Drop || step.To != landing || !sim.State.Grounded)
+				return;
+			if (++ticksOnTheDrop < 3)
+				return;
+			g.Set(8, 11, CellKind.Empty); // the plug is gone, three ticks into the drop, the body still on the ledge
+			g.Set(9, 11, CellKind.Empty);
+			removed = true;
+		});
+		Assert.True(removed, "the plan never dropped onto the plug");
+		Assert.True(longest <= PhysicsParams.Default.SafeFallTiles, $"fell {longest:0.0} rows (safe: {PhysicsParams.Default.SafeFallTiles})");
+		Assert.Equal(SkillStatus.Succeeded, status);
+	}
 }
