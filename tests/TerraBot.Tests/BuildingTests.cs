@@ -476,6 +476,34 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AtNight_ATripForOre_WaitsForTheMorning_AndTheNightGoesToMining()
+	{
+		// Measured run U4: "no more Silver Ore found around here; back to the spawn" at nightfall became a night in the
+		// house, 46 StayHome heartbeats between the chainmail and the greaves.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45, oreRows: 0);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		ctx.SurfaceY = 40;
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		g.IsNight = true;
+		g.Refresh(ctx);
+		ISkill night = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {night?.Describe()}");
+		Assert.IsNotType<StayHomeSkill>(night);
+		Assert.True(night is WalkToSkill { Underground: true } || night is MineSkill, p.Status);
+	}
+
+	[Fact]
 	public void ATripsWayOut_HoldsWhenAFightMovesTheBot()
 	{
 		// User report (2026-10-14): "changes its mind and jumps out of the hole to do something else". The way up to the

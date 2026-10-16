@@ -1388,6 +1388,12 @@ public sealed class ProgressionPlanner
 
 	private ISkill TravelForOre(BotContext ctx, int item, string name)
 	{
+		// By night, in weak gear with a house: no trip or way out along the surface. The job stays a mining job, which the
+		// night rule (AtNight) takes down below the spawn; the trip waits for the morning (travelDest and exitTarget are
+		// kept). Seen in game (measured run U4): "no more Silver Ore found around here; nowhere to travel; back to the
+		// spawn" at nightfall became a night in the house, 46 StayHome heartbeats between the chainmail and the greaves.
+		if (ctx.IsNight && ctx.Combat.Defense < NightOutDefense && HomeInside(ctx) != null)
+			return null;
 		// The way out chosen before (back to the spawn, or up to the surface at a column) holds until the bot is there: worked
 		// out again from wherever a fight left the bot, it came out different, and each time a new 3-second plan began
 		// (user report, 2026-10-14: "changes its mind and jumps out of the hole to do something else"). Before anything else:
