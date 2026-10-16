@@ -50,6 +50,7 @@ public sealed class BotCommand : ModCommand
 						ProgressionPlanner.Plans.Settle => "TerraBot auto (settle): the iron chain, then a house, an iron-tier broadsword and armour. Fights, hides at night.",
 						ProgressionPlanner.Plans.Crystals => "TerraBot auto (crystals): mine and use life crystals up to 200 max life.",
 						ProgressionPlanner.Plans.Arena => "TerraBot auto (arena): a flat 96-wide boss arena with torches and a campfire.",
+						ProgressionPlanner.Plans.EvilBoss => "TerraBot auto (evilboss): the boss plan, then rotten chunks, vile powder and Worm Food, and the Eater of Worlds in the corruption.",
 						_ => "TerraBot auto (boss): settle, 200 max life, a bow and arrows, an arena, a heart lantern, lenses and a demon altar, then the Eye of Cthulhu at night.",
 					}, Color.LightGray);
 					break;

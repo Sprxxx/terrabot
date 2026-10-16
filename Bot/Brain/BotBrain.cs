@@ -119,6 +119,11 @@ public sealed class BotBrain
 	public ProgressionPlanner Planner { get; } = new();
 	/// <summary>Pick up what a fight dropped (gel, coins...) before going back to the plan.</summary>
 	public const int LootRadiusTiles = 15;
+	/// <summary>
+	/// A boss's loot is looked for this far round (tiles): the Eye dies over the arena and its drops fall to the floor
+	/// (BossFightSkill.ArenaHalfWidth 20 to either side of the kite's centre, and the fall), farther than a fight's.
+	/// </summary>
+	public const int BossLootRadiusTiles = 2 * BossFightSkill.ArenaHalfWidth;
 
 	public void SetTarget(TilePos target, BotContext ctx)
 	{
@@ -324,7 +329,9 @@ public sealed class BotBrain
 			// desert not yet seen, run 53) until much better gear, as for their tiles (BotContext.OffLimits).
 			// Over evil ground only: eaters of souls fly far from it. Seen in game (measured run S15), three over the house marked
 			// it for 5 days, and every mining job from the spawn failed "off limits" at once: 153 rests, 1.1 game days.
-			string biome = ctx.Combat.Defense < BotContext.CavernDefense && System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) >= 0 && ctx.EvilGroundNear(e.FeetTile) ? "the evil biome"
+			// Not on an errand there in full armour (BotContext.EvilErrand): its eaters of souls are what the hunt is for.
+			bool evilErrand = ctx.EvilErrand && ctx.Combat.FullArmour;
+			string biome = !evilErrand && ctx.Combat.Defense < BotContext.CavernDefense && System.Array.IndexOf(ctx.Ids.EvilEnemies, e.Type) >= 0 && ctx.EvilGroundNear(e.FeetTile) ? "the evil biome"
 				: ctx.Combat.Defense < BotContext.DeepDefense && System.Array.IndexOf(ctx.Ids.DesertEnemies, e.Type) >= 0 ? "the desert"
 				: null;
 			if (biome == null || ctx.InDangerZone(e.FeetTile))
@@ -406,13 +413,16 @@ public sealed class BotBrain
 	{
 		GameIds ids = ctx.Ids;
 		var kept = new HashSet<int> { ids.Wood, ids.Gel, ids.Torch, ids.WorkBenchItem, ids.WoodWall, ids.Door, ids.Chair, ids.Table, ids.Acorn,
-			ids.WoodenArrow, ids.Lens, ids.LifeCrystal, ids.RecallPotion, ids.Campfire, ids.HeartLantern, ids.SuspiciousEye };
+			ids.WoodenArrow, ids.Lens, ids.LifeCrystal, ids.RecallPotion, ids.Campfire, ids.HeartLantern, ids.SuspiciousEye,
+			// The evil boss plan's (Milestone 10): the summon's makings, the Eye's demonite, the teeth for unholy arrows.
+			ids.WormFood, ids.VilePowder, ids.VileMushroom, ids.RottenChunk, ids.WormTooth, ids.DemoniteOre, ids.DemoniteBar, ids.Bottle };
 		foreach (var s in stacks)
 			if (ctx.Inventory.IsGear(s.Type))
 				kept.Add(s.Type);
+		// The Bottle in the list for its glass (two recipes deep: glass, sand), as a station the summon's powder is made at.
 		int[] gear = { ids.IronTierPickaxe, ids.IronTierBroadsword, ids.IronTierHelmet, ids.IronTierChainmail, ids.IronTierGreaves, ids.IronTierBow,
 			ids.SilverTierPickaxe, ids.SilverTierBroadsword, ids.SilverTierHelmet, ids.SilverTierChainmail, ids.SilverTierGreaves, ids.SuspiciousEye,
-			ids.HeartLantern, ids.Campfire, ids.WoodenArrow };
+			ids.HeartLantern, ids.Campfire, ids.WoodenArrow, ids.WormFood, ids.DemonBow, ids.UnholyArrow, ids.Bottle };
 		var frontier = new List<int>(gear.Where(g => g > 0));
 		for (int depth = 0; depth < 2; depth++) {
 			var next = new List<int>();
@@ -628,6 +638,13 @@ public sealed class BotBrain
 		}
 		Work = null;
 		Target = null;
+		// A boss down: its loot first, before the plan moves on, as after any fight. The Eye of Cthulhu drops 30-90 demonite
+		// ore and 20-50 unholy arrows in a Classic Corruption world (ItemDropDatabase.cs:498-500), the makings of the Demon
+		// Bow the evil boss plan wants; items on the ground are not saved with the world, so left lying they are lost.
+		if (Auto && skill is BossFightSkill && status == SkillStatus.Succeeded && CollectDropsSkill.AnyInRange(ctx, _ => true, BossLootRadiusTiles)) {
+			ctx.Log.Info("Auto: picking up the boss's loot");
+			BeginOverride(new CollectDropsSkill(_ => true, BossLootRadiusTiles), ctx);
+		}
 		if (Auto) {
 			failures = status == SkillStatus.Failed ? failures + 1 : 0;
 			if (status == SkillStatus.Succeeded) {
