@@ -122,6 +122,13 @@ public sealed class Blueprint
 	public const int ArenaWidth = 96;
 	public const int ArenaClearance = 7;
 	public const int ArenaTorchSpacing = 12;
+	/// <summary>How far (columns, the arena's middle from the house) an arena site is looked for first.</summary>
+	public const int ArenaSearchRadius = 80;
+	/// <summary>
+	/// How far it is looked for when there is none that close, as a player walks a little further for good ground: twice
+	/// <see cref="ArenaSearchRadius"/>, the arena then at most about one more arena's width farther out.
+	/// </summary>
+	public const int ArenaFarSearchRadius = 2 * ArenaSearchRadius;
 
 	/// <summary>
 	/// A boss arena as the guides build one for the Eye of Cthulhu: a flat floor about a screen wide
@@ -135,7 +142,7 @@ public sealed class Blueprint
 	///   ##########################   y7  floor (pits filled)
 	/// </code>
 	/// </summary>
-	public static Blueprint Arena(GameIds ids, int width = ArenaWidth)
+	public static Blueprint Arena(GameIds ids, int width = ArenaWidth, int searchRadius = ArenaSearchRadius)
 	{
 		var rows = new string[ArenaClearance + 1];
 		for (int y = 0; y < ArenaClearance; y++)
@@ -147,7 +154,7 @@ public sealed class Blueprint
 			if (x < mid - 2 || x > mid + 2)
 				items.Add(new PlanItem(ids.Torch, x, top, 1, 1));
 		return new Blueprint("boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
-			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, MaxEdits = 600, SearchRadius = 80,
+			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, MaxEdits = 600, SearchRadius = searchRadius,
 		};
 	}
 

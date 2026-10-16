@@ -156,6 +156,11 @@ public sealed class ProgressionPlanner
 	private readonly List<TilePos> badArenaSites = new();
 	private readonly List<TilePos> badArenaCells = new();
 	private int arenaFailures;
+	/// <summary>
+	/// No arena site near the house nor farther out: the boss is fought on open ground, as the fight does without an arena
+	/// (<see cref="BossFightSkill.Arena"/> null). Kept until the given-up sites are forgotten (<see cref="ForgetGivenUp"/>).
+	/// </summary>
+	public bool ArenaOnOpenGround { get; private set; }
 	/// <summary>Keep the arena this many tiles clear of the house (bosses kill town NPCs; the guides keep them apart).</summary>
 	public const int ArenaHouseGap = 4;
 	/// <summary>Night left (ticks) needed to summon a night boss: the Eye took about 2.5 min on Classic; 4.5 min with margin.</summary>
@@ -248,6 +253,7 @@ public sealed class ProgressionPlanner
 		badSites.Clear();
 		badArenaSites.Clear();
 		badArenaCells.Clear();
+		ArenaOnOpenGround = false;
 		stationExplores = 0;
 		stationHeading = null;
 		siteFailures = 0;
@@ -491,6 +497,7 @@ public sealed class ProgressionPlanner
 		badSites.Clear();
 		badArenaSites.Clear();
 		badArenaCells.Clear();
+		ArenaOnOpenGround = false;
 		siteFailures = 0;
 		arenaFailures = 0;
 		stationExplores = 0;
@@ -592,7 +599,7 @@ public sealed class ProgressionPlanner
 			Plans.Early => "early-game chain complete: work bench placed, wooden sword, wood stockpiled",
 			Plans.Iron => "iron-age chain complete: work bench, furnace and anvil placed, iron-tier pickaxe in hand",
 			Plans.Crystals => $"max life {ctx.Combat.LifeMaxBase} from life crystals",
-			Plans.Arena => $"the arena at {ArenaSite} is ready",
+			Plans.Arena => ArenaOnOpenGround ? "no arena site: the boss is fought on open ground" : $"the arena at {ArenaSite} is ready",
 			Plans.Boss => "the Eye of Cthulhu is defeated",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
@@ -976,12 +983,18 @@ public sealed class ProgressionPlanner
 
 	/// <summary>
 	/// A finished arena, or: pick a site near the house (not overlapping it), get what it still needs (blocks for
-	/// the missing floor, the torches and campfire not yet placed), then build it with <see cref="BuildSkill"/>.
+	/// the missing floor, the torches and campfire not yet placed), then build it with <see cref="BuildSkill"/>. With no site
+	/// within <see cref="Blueprint.ArenaSearchRadius"/>, one up to <see cref="Blueprint.ArenaFarSearchRadius"/> away; with
+	/// none there either, the boss is fought on open ground (<see cref="ArenaOnOpenGround"/>): the arena is a convenience,
+	/// not a need. Seen in game (measured runs U8cp and U9): "no arena site" was a stop, five rests and auto mode off, the
+	/// Eye never summoned, with max life 200, the bow and the arrows in hand.
 	/// </summary>
 	private ISkill ResolveArena(Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		Blueprint bp = Blueprint.Arena(ctx.Ids);
 		if (ArenaSite is TilePos done && ArenaReady(ctx, bp, done))
+			return null;
+		if (ArenaSite == null && ArenaOnOpenGround)
 			return null;
 		if (ArenaSite == null) {
 			TilePos anchor = HouseSite ?? (KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node);
@@ -995,9 +1008,16 @@ public sealed class ProgressionPlanner
 				keepOut.Add((c, c));
 			ArenaSite = SiteFinder.Find(ctx, bp, anchor, badArenaSites, keepOut);
 			if (ArenaSite == null) {
-				stuck = $"no arena site ({bp.Width} wide, at most {bp.MaxEdits} edits) within {bp.SearchRadius} tiles of {anchor}";
-				ctx.Log.Info($"Auto: arena sites round {anchor}: {SiteFinder.Explain(ctx, bp, anchor, keepOut)}");
-				return null;
+				ctx.Log.Info($"Auto: no arena site ({bp.Width} wide, at most {bp.MaxEdits} edits) within {bp.SearchRadius} tiles of {anchor}: "
+					+ $"{SiteFinder.Explain(ctx, bp, anchor, keepOut, badArenaSites)}; looking within {Blueprint.ArenaFarSearchRadius}");
+				Blueprint far = Blueprint.Arena(ctx.Ids, searchRadius: Blueprint.ArenaFarSearchRadius);
+				ArenaSite = SiteFinder.Find(ctx, far, anchor, badArenaSites, keepOut);
+				if (ArenaSite == null) {
+					ArenaOnOpenGround = true;
+					ctx.Log.Info($"Auto: no arena site within {far.SearchRadius} tiles of {anchor} either: "
+						+ $"{SiteFinder.Explain(ctx, far, anchor, keepOut, badArenaSites)}; the boss will be fought on open ground");
+					return null;
+				}
 			}
 			ctx.Log.Info($"Auto: arena site {ArenaSite.Value} ({SiteFinder.Edits(ctx, bp, ArenaSite.Value)} edits)");
 		}

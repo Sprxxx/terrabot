@@ -127,7 +127,8 @@ log stops growing for a minute: the self-test logs a heartbeat every 30 seconds,
 Start from the Milestone 7 state, or let `/bot auto` do everything. `/bot auto arena` builds just the arena.
 
 1. After the arrows, it picks a site near the house, keeping 4 tiles clear of it (`Auto: arena site ... (N edits)`).
-   The site is 96 tiles wide, about a screen.
+   The site is 96 tiles wide, about a screen. With none within 80 tiles it looks within 160; with none there either
+   it fights the Eye on open ground (`Auto: no arena site ...`, with why the sites were ruled out and where).
 2. It crafts torches and a campfire, then builds:
    - fells trees in the way (`ChopTree start`);
    - mines bumps, fills pits;

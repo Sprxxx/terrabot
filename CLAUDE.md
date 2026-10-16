@@ -142,7 +142,8 @@ Gotchas already hit:
     `Boss fight: boss <n> defeated after <t> ticks`, `Boss fight failed: <reason>`.
   - Classic fights: `Boss fight: dodge <dir> (+ jump n) (kiting ... is hit in t ticks ...)`, `Boss fight: forced to turn at
     (x,y) (wall|far end), next dash in t ticks`, `Quick-heal: life a -> b, potion sickness t ticks`, `Died (...)`.
-  - Arena (M8): `Auto: arena site (x,y) (N edits)`, `Build start: boss arena ...`, `ChopTree start` inside it,
+  - Arena (M8): `Auto: arena site (x,y) (N edits)` (none within 80: `Auto: no arena site ... : <reason> N (n at (x,y)), ...;
+    looking within 160`, then `... the boss will be fought on open ground`), `Build start: boss arena ...`, `ChopTree start` inside it,
     `Auto: walking to the arena to summon ...`, `Auto: resting to 90% life before summoning ...`, `fighting ... in the arena`.
   - Survival: `Danger: life a/b and no potion; retreating from <Skill>`, `Shelter start at (x,y): digging in to recover to
     80% life at column x`, `Shelter: done waiting (...)`, `Died during <Skill>; starting afresh from (x,y)`,
