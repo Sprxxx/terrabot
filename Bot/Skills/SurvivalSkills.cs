@@ -58,6 +58,8 @@ public sealed class HuntSkill : ISkill
 	/// the ground is a biome, and wandering on out of it leaves the spawns (the M10 corruption is about 80 tiles wide).
 	/// </summary>
 	public const int GroundWanderSteps = 2;
+	/// <summary>Wanders out of town go this many steps of <see cref="WanderTiles"/> to each side, then start over (see Tick).</summary>
+	public const int OpenWanderSteps = 2;
 	/// <summary>
 	/// Farther than this (tiles) from <see cref="Ground"/> with no prey in sight (a fight or a fall took the bot off), the hunt
 	/// walks back to it: the wanders' own reach. At one wander's reach, every far wander was followed by a walk back first.
@@ -207,6 +209,11 @@ public sealed class HuntSkill : ISkill
 				townSide = System.Math.Sign(node.X - from.X); // a wander back into town: nothing spawns that side
 			int dir = townSide != 0 ? -townSide
 				: wandersOut[Side(wanderDir)] <= wandersOut[Side(-wanderDir)] ? wanderDir : -wanderDir;
+			// Out to OpenWanderSteps on each side, then round again: vanilla spawns 62-84 tiles from the player wherever it
+			// stands (NPC.safeRangeX, spawnRangeX: 0.52 and 0.7 of a 1920-px screen), so walking farther out brings no more
+			// prey. Seen in game (measured run U20): the lens hunt wandered out to x 2494-2704, 400-600 tiles from the house.
+			if (wandersOut[Side(dir)] >= OpenWanderSteps)
+				wandersOut[Side(dir)] = 0;
 			goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], System.Math.Min(from.Y, SpawnsAboveRow ?? int.MaxValue) - 10);
 		}
 		waitTicks = WaitTicks;
