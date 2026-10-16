@@ -452,6 +452,73 @@ public class FightSkillTests
 		Assert.Equal(0, FightSkill.EdgeWithin(ctx, ctx.Node, 1));
 	}
 
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public void AHitsKnockback_TowardsAChasm_IsBrakedAgainst_TheBotStaysOnTheLip(bool flier)
+	{
+		// Measured run M10c: hit in the air at (1708-1709,267-270), "knockback 4.5 dir -1", by an eater of souls (the fight then
+		// shooting at fliers) and by a zombie: carried 5 columns west into a corruption chasm, the bot fell to (1702,364) and
+		// (1701,362). Here the pit's lip is 3 columns west of the body, and the hit comes in a jump (vanilla Player.Hurt: 4.5
+		// and -3.5 px a tick).
+		ArrayTileGrid g = PitGrid(botX: 19, pitFrom: 10, pitTo: 16, pitDepth: 50);
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		BotContext ctx = Archer(g, sim);
+		Assert.Equal(3, FightSkill.EdgeWithin(ctx, ctx.Node, -1));
+		// An eater of souls in the open above (shot at), or a zombie on the ground far east (walked to).
+		EntityInfo foe = flier ? Eater(30, 1) : new EntityInfo(9, 3, "Zombie", 40 * 16f, 10 * 16f - 44f, 18, 40, 0, 0, 45, 45, 14, AiStyle: 3);
+		var skill = new FightSkill();
+		ctx.Hostiles = new[] { foe };
+		skill.Start(ctx);
+		int lowest = sim.Node.Y;
+		for (int t = 0; t < 180; t++) {
+			ctx.Body = sim.State;
+			ctx.Hostiles = new[] { foe };
+			ctx.Tick = t;
+			skill.Tick(ctx);
+			if (t == 5) {
+				sim.State.VX = -4.5f;
+				sim.State.VY = -4.6f; // in a jump, as at (1709,267)
+				ctx.NoteAttacker(foe.Id);
+			}
+			sim.Step(ctx.Output);
+			lowest = Math.Max(lowest, sim.Node.Y);
+		}
+		output.WriteLine($"{skill.Describe()}; at {sim.Node}, feet down to row {lowest}");
+		Assert.Equal(10 - 1, lowest);
+	}
+
+	[Fact]
+	public void ClosingInOnAnEnemy_ThatMovesOffOverAChasm_DoesNotRunOffTheLip()
+	{
+		// Measured run M10c: closing in on a zombie on a corruption chasm's lip (1-3 rows down, 2-5 tiles off), the bot went off
+		// the lip at (1778,294) and fell to (1778,396), 765 damage. Here the enemy moves off over the pit (knocked back by a
+		// swing, or hopping) as the bot closes in.
+		ArrayTileGrid g = PitGrid(botX: 8, pitFrom: 12, pitTo: 17, pitDepth: 50);
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		var ctx = new BotContext {
+			Grid = g, Log = new Log(output), Body = sim.State,
+			Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword", Facing = 1 },
+		};
+		float ex = 12 * 16f, ey = 10 * 16f - 24f;
+		var skill = new FightSkill();
+		ctx.Hostiles = new[] { Enemy(ex, ey, 60) };
+		skill.Start(ctx);
+		int lowest = sim.Node.Y;
+		for (int t = 0; t < 400; t++) {
+			ctx.Body = sim.State;
+			ctx.Hostiles = new[] { Enemy(ex, ey, 60) };
+			ctx.Tick = t;
+			skill.Tick(ctx);
+			sim.Step(ctx.Output);
+			if (ex < 18 * 16f)
+				ex += 0.75f;
+			lowest = Math.Max(lowest, sim.Node.Y);
+		}
+		output.WriteLine($"{skill.Describe()}; at {sim.Node}, feet down to row {lowest}");
+		Assert.True(lowest <= 10, $"fell to row {lowest}");
+	}
+
 	[Fact]
 	public void KillsEnemyAhead_OnFlatGround()
 	{
