@@ -97,6 +97,23 @@ public class EarlyGameTests
 	}
 
 	[Fact]
+	public void GatherWood_Underground_WithNoWayUp_GivesUp_InsteadOfTryingForever()
+	{
+		// A cave sealed in unbreakable blocks far under the surface: the walk up fails, and the next tick built the same walk
+		// again, without end.
+		var rows = Enumerable.Repeat(new string('@', 40), 30).ToArray();
+		rows[26] = rows[27] = "@@@@@" + new string('.', 20) + new string('@', 15);
+		rows[28] = "@@@@@....." + "S" + new string('.', 14) + new string('@', 15);
+		FakeGame game = new FakeGame(rows);
+		BotContext ctx = game.CreateContext(output);
+		ctx.SurfaceY = 5;
+		var wood = new GatherWoodSkill(FakeGame.Wood, 5);
+		SkillStatus s = RunSkill(game, ctx, wood, 60 * 60);
+		output.WriteLine($"{s} after {game.Sim.Ticks} ticks: {wood.FailureReason}");
+		Assert.Equal(SkillStatus.Failed, s);
+	}
+
+	[Fact]
 	public void KnownTrees_AreForgotten_WhenTheirPlaceIsInSightWithoutThem()
 	{
 		var ctx = new BotContext();

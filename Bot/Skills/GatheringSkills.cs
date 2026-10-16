@@ -215,8 +215,11 @@ public sealed class GatherWoodSkill : ISkill
 	public const int UndergroundRows = 12;
 	public const int MaxExplores = 6;
 	public const int CollectRadius = 20;
+	/// <summary>Failed walks up to the surface before the skill gives up: the second one, from where the first left it, is the retry.</summary>
+	public const int MaxFailedWalksUp = 2;
 
 	private ISkill sub;
+	private int failedWalksUp;
 	private readonly HashSet<TilePos> badTrees = new();
 	private readonly HashSet<int> ignoredDrops = new();
 	private int explores;
@@ -284,6 +287,9 @@ public sealed class GatherWoodSkill : ISkill
 				if (chop.FailureReason.StartsWith("no axe"))
 					return Fail(ctx, chop.FailureReason);
 			}
+			// No way up: the next tick would build the same walk again, without end.
+			if (s == SkillStatus.Failed && sub is WalkToSkill { ToSurface: true } && ++failedWalksUp >= MaxFailedWalksUp)
+				return Fail(ctx, $"no way up to the surface after {failedWalksUp} walks");
 			bool felled = s == SkillStatus.Succeeded && sub is ChopTreeSkill;
 			sub.Stop(ctx);
 			sub = null;
