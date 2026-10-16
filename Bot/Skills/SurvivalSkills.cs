@@ -14,6 +14,9 @@ public sealed class HuntSkill : ISkill
 	public const int WanderTiles = 30;
 	public const int WaitTicks = 60 * 5;
 	public const int MaxWanders = 12;
+	/// <summary>Wander steps out of town before the wanders count (town range is 120 tiles: vanilla NPC.townRangeX, 1920 px).</summary>
+	public const int MaxTownWalks = 10;
+	private int townWalks;
 
 	private ISkill sub;
 	private int wanders;
@@ -93,11 +96,24 @@ public sealed class HuntSkill : ISkill
 			State = "waiting for spawns";
 			return SkillStatus.Running;
 		}
-		if (++wanders > MaxWanders)
-			return Fail(ctx, $"no NPC with AI style {AiStyle} found after {MaxWanders} wanders");
 		TilePos node = ctx.Node;
+		// In town (a town NPC near: vanilla spawns no hostile there, spawnInfo.PlayerSafe): out of it first, one way, as a
+		// player goes out of town to farm. Seen in game (measured runs U2, U3): night hunts by the house, the Guide's,
+		// failed "no NPC with AI style 2 found after 12 wanders", wandering 30 tiles out and back; 70 heartbeats of hunting
+		// and 34 waiting for the next night, and still 2 lenses short at day 10.
+		if (ctx.Combat.InTown && townWalks < MaxTownWalks) {
+			if (townWalks++ == 0) {
+				wanderDir = ctx.SaferSide(node);
+				ctx.Log.Info($"Hunt: in town (nothing spawns here); walking out of it {(wanderDir > 0 ? "east" : "west")}");
+			}
+		}
+		else {
+			if (++wanders > MaxWanders)
+				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {MaxWanders} wanders");
+		}
 		var goal = new TilePos(node.X + wanderDir * WanderTiles, node.Y - 10);
-		wanderDir = -wanderDir;
+		if (!ctx.Combat.InTown)
+			wanderDir = -wanderDir;
 		waitTicks = WaitTicks;
 		ctx.Log.Info($"Hunt: nothing to hunt in sight, wandering towards {goal}");
 		Begin(ctx, new WalkToSkill(goal) { Quiet = true, Tolerance = 4 }, "wandering");

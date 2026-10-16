@@ -139,6 +139,33 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AHuntInTown_WalksOutOfIt_OneWay_NotBackAndForth()
+	{
+		// Measured runs U2/U3: night hunts by the house (the Guide's: vanilla spawns nothing hostile there) failed "no NPC with
+		// AI style 2 found after 12 wanders", wandering 30 tiles out and back.
+		FakeGame g = EarlyGameTests.Field(400);
+		g.IsNight = true;
+		var lines = new System.Collections.Generic.List<string>();
+		BotContext ctx = g.CreateContext(output);
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
+		hunt.Start(ctx);
+		int startX = ctx.Node.X;
+		var xs = new System.Collections.Generic.List<int>();
+		for (int t = 0; t < 60 * 60 * 2 && xs.Count < 4; t++) {
+			g.Refresh(ctx);
+			ctx.Combat.InTown = System.Math.Abs(ctx.Node.X - startX) < 100; // the town's range round the house
+			ctx.Tick = t;
+			if (hunt.Tick(ctx) != SkillStatus.Running)
+				break;
+			if (hunt.State == "wandering" && (xs.Count == 0 || xs[^1] != ctx.Node.X / 25))
+				xs.Add(ctx.Node.X / 25);
+			g.Step(ctx);
+		}
+		output.WriteLine($"{hunt.Describe()}; went from {startX} to {ctx.Node.X}");
+		Assert.True(System.Math.Abs(ctx.Node.X - startX) >= 60, $"stayed within {System.Math.Abs(ctx.Node.X - startX)} tiles of the house");
+	}
+
+	[Fact]
 	public void SummonItem_IsMadeAtAFoundAltar()
 	{
 		FakeGame g = ProgressionTests.Mine();

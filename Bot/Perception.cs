@@ -46,6 +46,11 @@ public sealed class CombatInfo
 	public int BreathMax { get; set; } = 200;
 	/// <summary>Player.statDefense: armour and accessories.</summary>
 	public int Defense { get; set; }
+	/// <summary>
+	/// Within a town NPC's range (vanilla Player.townNPCs > 0): the game spawns no hostile there on the surface
+	/// (spawnInfo.PlayerSafe), so nothing to hunt.
+	/// </summary>
+	public bool InTown { get; set; }
 	/// <summary>Armour pieces worn (head, body, legs: 0-3).</summary>
 	public int ArmourPieces { get; set; }
 
