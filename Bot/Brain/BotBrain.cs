@@ -298,6 +298,31 @@ public sealed class BotBrain
 		return false;
 	}
 
+	/// <summary>
+	/// NPC AI styles that fly faster than the player runs, checked in the decompile: 5 (vanilla AI_005_EaterOfSouls: an eater
+	/// of souls, type 6, flies at up to 4 px a tick and homes in on its target) against the player's 3 (Player.maxRunSpeed).
+	/// It collides with tiles (no noTileCollide), so a finished seal stops it, but it outpaces the flight and the dig.
+	/// </summary>
+	public static readonly int[] FastFlierAiStyles = { 5 };
+	/// <summary>A fast flier this close (tiles) catches the bot before a shelter is dug: it is fought with the bow instead.</summary>
+	public const int FastFlierTiles = 10;
+
+	/// <summary>
+	/// Is a fast flier (<see cref="FastFlierAiStyles"/>) within <see cref="FastFlierTiles"/>? Then a retreat to dig in is the
+	/// wrong reflex: with a bow it is fought on, quick-healing as soon as a potion can be drunk (FightSkill). Seen in game
+	/// (measured run M10a): "Danger: life 106/220 and no potion; retreating", then 6 hits from eaters of souls during the
+	/// flight and the dig, the walk to the dig column re-planned 5 times, and "Died (17 damage: ... torn in half by Eater of
+	/// Souls) ... Shelter [Digging]"; the bot had an Iron Bow and some 300 arrows.
+	/// </summary>
+	public static bool FastFlierNear(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (System.Array.IndexOf(FastFlierAiStyles, e.AiStyle) >= 0 && e.DistanceTo(cx, cy) <= FastFlierTiles * 16f)
+				return true;
+		return false;
+	}
+
 	/// <summary>Hostiles in sight at once (within <see cref="MobZoneTiles"/>) that make a place one to keep away from without armour.</summary>
 	public const int MobZoneSize = 5, MobZoneTiles = 20, MobZoneRadius = 25;
 
@@ -495,6 +520,7 @@ public sealed class BotBrain
 		TilePos? retreatHome = null;
 		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill
 			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)
+			&& !(ctx.Combat.HasRanged && FastFlierNear(ctx))
 			&& ((retreatHome = Planner.HomeToRetreatTo(ctx, anyDistance: wormNear = WormNear(ctx))) != null || !wormNear)) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			// Home if it is near (enemies cannot get through the door), else dig in where it is.

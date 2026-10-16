@@ -111,6 +111,34 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void BadlyHurt_WithoutPotions_AnEaterOfSoulsClose_IsShotAt_NotDugInFrom()
+	{
+		// Measured run M10a: "Danger: life 106/220 and no potion; retreating", 6 hits from eaters of souls during the flight
+		// and the dig, and dead in "Shelter [Digging]", an Iron Bow and some 300 arrows in the bag.
+		FakeGame g = EarlyGameTests.Field(60);
+		g.Life = 20; // of 100
+		g.Items[FakeGame.DirtBlock] = 10;
+		BotContext ctx = g.CreateContext(output);
+		ShelterOrFight(g, ctx, bow: false, out ISkill swordOnly);
+		Assert.IsType<ShelterSkill>(swordOnly); // no bow: the dig as before
+		ShelterOrFight(g, ctx, bow: true, out ISkill archer);
+		Assert.IsType<FightSkill>(archer);
+	}
+
+	private void ShelterOrFight(FakeGame g, BotContext ctx, bool bow, out ISkill chosen)
+	{
+		var brain = new Bot.Brain.BotBrain();
+		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
+		g.Refresh(ctx);
+		ctx.Combat.HasRanged = bow;
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		ctx.Hostiles = new[] { new EntityInfo(5, 6, "Eater of Souls", cx + 5 * 16f - 15f, cy - 3 * 16f - 15f, 30, 30, -3f, 1f, 40, 40, 22, AiStyle: 5) };
+		brain.Tick(ctx);
+		output.WriteLine($"bow {bow}: {brain.Describe()}");
+		chosen = brain.Current;
+	}
+
+	[Fact]
 	public void Retreat_DigsBesideBlocksItCannotMine()
 	{
 		// Seen in game: straight down was under the work bench (not mineable from below); the dig found no path.
