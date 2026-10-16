@@ -513,8 +513,24 @@ public sealed class BotContext
 					corrupt += weight;
 			}
 		desertChunks[(cx, cy)] = (Tick, seen == DesertChunk * DesertChunk, solid, desert, evil, corrupt);
+		var centre = new TilePos(cx * DesertChunk + DesertChunk / 2, cy * DesertChunk + DesertChunk / 2);
+		if (evil >= EvilChunkTiles)
+			KnownEvil.AddOnce(centre);
+		else if (KnownEvil.Count > 0)
+			KnownEvil.Remove(centre);
 		return (solid, desert, evil, corrupt);
 	}
+
+	/// <summary>
+	/// The evil biome's ground the map has shown, kept all game wherever the bot goes, as <see cref="KnownCrystals"/>: the
+	/// centre of every chunk counted (by any look at the biome round a tile, a path's gate or the planner's) with at least
+	/// <see cref="EvilChunkTiles"/> seen evil tiles in it, dropped when a count of it no longer shows them. Seen in game
+	/// (measured run M10a): the checkpoint's map showed the corruption at x 1880-1960, 130-210 tiles west of the spawn,
+	/// and the bot explored underground for it for 12 game hours ("exploring for the corruption (none seen yet)").
+	/// </summary>
+	public PlaceMemory KnownEvil { get; } = new();
+	/// <summary>Seen evil tiles that make a chunk evil ground for <see cref="KnownEvil"/>: a chunk's width, one layer of corrupt grass across it.</summary>
+	public const int EvilChunkTiles = DesertChunk;
 
 	/// <summary>
 	/// Is the ground under this surface spot (13 wide, 8 deep) largely desert or evil-biome tiles the bot has seen, while

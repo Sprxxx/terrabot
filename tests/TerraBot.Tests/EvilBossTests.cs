@@ -261,6 +261,59 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void TheCorruptionsSurface_OnTheMap_IsTheHuntingGround_ThoughTooFewOfItsTilesAreSeenForTheZone()
+	{
+		// Measured run M10a: the checkpoint's map showed the corruption 130-210 tiles west of the spawn, by its surface only
+		// (the map shows what daylight lit), and the bot explored underground for it for 12 game hours ("none seen yet").
+		FakeGame g = CorruptWorld();
+		for (int x = 0; x < g.Grid.Width; x++)
+			for (int y = Feet + 2; y < g.Grid.Height; y++)
+				g.Unrevealed.Add(new TilePos(x, y)); // only the top layer seen, the corrupt grass
+		BotContext ctx = Armoured(g);
+		var middle = new TilePos((CorruptFrom + CorruptTo) / 2, Feet);
+		Assert.True(ctx.InEvilBiome(middle));
+		Assert.True(ctx.CorruptionAround(middle) < BotContext.CorruptionZoneTiles, $"{ctx.CorruptionAround(middle)} seen corruption tiles");
+
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(new HaveItem(FakeGame.RottenChunk, ProgressionPlanner.WormFoodChunks, "rotten chunks"), ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		var hunt = Assert.IsType<HuntSkill>(s);
+		Assert.True(hunt.Ground is TilePos gr && gr.X >= CorruptFrom && gr.X <= CorruptTo && gr.Y == Feet, $"hunting ground {hunt.Ground}");
+	}
+
+	[Fact]
+	public void EvilGroundSeenOnlyUnderground_IsRemembered_AndTheErrandGoesToTheSurfaceAboveIt()
+	{
+		// Evil ground seen anywhere counts (BotContext.KnownEvil), not only round the surface samples: here a pocket of
+		// ebonstone 76 rows under a surface that shows none, seen from below on an earlier trip.
+		const int width = 500, deep = 120;
+		var rows = Enumerable.Repeat(new string('.', width), Feet + 1).ToList();
+		rows[Feet] = "...S" + new string('.', width - 4);
+		rows.Add(new string('#', width));
+		while (rows.Count < deep + 20)
+			rows.Add(new string('s', width));
+		rows.Add(new string('@', width));
+		var g = new FakeGame(rows.ToArray());
+		const int pocketFrom = 380, pocketTo = 400;
+		for (int x = 0; x < width; x++)
+			for (int y = Feet + 2; y < rows.Count; y++)
+				if (x >= pocketFrom && x <= pocketTo && y >= deep && y < deep + 5)
+					g.TileTypes[new TilePos(x, y)] = FakeGame.TileEbonstone;
+				else
+					g.Unrevealed.Add(new TilePos(x, y));
+		BotContext ctx = Armoured(g);
+		Assert.True(ctx.InEvilBiome(new TilePos((pocketFrom + pocketTo) / 2, deep))); // a look at it, as a path's gate looks
+		Assert.True(ctx.KnownEvil.Count > 0);
+
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(new HaveItem(FakeGame.RottenChunk, ProgressionPlanner.WormFoodChunks, "rotten chunks"), ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		var hunt = Assert.IsType<HuntSkill>(s);
+		Assert.True(hunt.Ground is TilePos gr && gr.X >= pocketFrom - BotContext.DesertChunk && gr.X <= pocketTo + BotContext.DesertChunk && gr.Y == Feet,
+			$"hunting ground {hunt.Ground}");
+	}
+
+	[Fact]
 	public void WormFood_IsSummonedByDay_InTheCorruption_WhileTheEyeStillWaitsForNight()
 	{
 		FakeGame g = CorruptWorld();
