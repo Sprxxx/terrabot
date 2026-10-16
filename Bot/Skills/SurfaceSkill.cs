@@ -70,7 +70,8 @@ public sealed class SurfaceSkill : ISkill
 
 	/// <summary>
 	/// Is the head in water or honey? As vanilla's Collision.DrownCollision: a 10x12 px box at the top of the hitbox (from
-	/// 2 px above it), against any cell with that liquid (the liquid's level aside). The head cells of the node missed it
+	/// 2 px above it), against any cell with that liquid (the liquid's level aside) but a solid block's own, which vanilla
+	/// skips too (Tile.active and Main.tileSolid). The head cells of the node missed it
 	/// when the bot stood a few pixels low (on a slope): breath ran down from 95 to 18 while they read empty (world_eye run 59).
 	/// </summary>
 	public static bool HeadUnder(BotContext ctx) => HeadUnder(ctx.Grid, ctx.Body.X, ctx.Body.Y, ctx.Physics);
@@ -85,7 +86,7 @@ public sealed class SurfaceSkill : ISkill
 		for (int x = cx0; x <= cx1; x++)
 			for (int y = cy0; y <= cy1; y++) {
 				CellKind k = g.Get(x, y);
-				if ((k & (CellKind.Water | CellKind.Honey)) != 0)
+				if ((k & (CellKind.Water | CellKind.Honey)) != 0 && !k.IsSolid())
 					return true;
 			}
 		return false;

@@ -49,14 +49,14 @@ public static class BlockRules
 	{
 		bool unsafeCell = Unsafe(ctx.Grid, cell, sameMove);
 		// Boxed in (MoveContext.DigAnyway): sand and water may be dug beside after all, at a price; lava never.
-		if (unsafeCell && (!ctx.DigAnyway || NextToLava(ctx.Grid, cell)))
+		if (unsafeCell && (!ctx.DigAnyway || LetsLavaIn(ctx.Grid, cell)))
 			return float.PositiveInfinity;
 
 		float ticks = ctx.BreakTicks(cell.X, cell.Y);
 		if (float.IsInfinity(ticks) || float.IsNaN(ticks))
 			return float.PositiveInfinity;
 		return ticks * ctx.BreakCostMultiplier + ctx.BreakOverheadTicks + (unsafeCell ? DigAnywayTicks : 0f)
-			+ (NextToWater(ctx.Grid, cell) ? WetBreakTicks : 0f);
+			+ (Wet(ctx.Grid, cell) ? WetBreakTicks : 0f);
 	}
 
 	/// <summary>
@@ -69,7 +69,20 @@ public static class BlockRules
 	public static bool NextToWater(ITileGrid g, TilePos cell) =>
 		IsWater(g.Get(cell.X - 1, cell.Y)) || IsWater(g.Get(cell.X + 1, cell.Y)) || IsWater(g.Get(cell.X, cell.Y - 1)) || IsWater(g.Get(cell.X, cell.Y + 1));
 
-	private static bool IsWater(CellKind k) => k.IsLiquid() && !k.HasLava();
+	/// <summary>Open water (or honey) in the cell: a block beside that holds water keeps it until that block is mined.</summary>
+	private static bool IsWater(CellKind k) => k.IsOpenLiquid() && !k.HasLava();
+
+	/// <summary>
+	/// Mining the cell lets water out: water beside it, or the cell's own (a block placed into water keeps it,
+	/// <see cref="CellKindExtensions.IsOpenLiquid"/>). One cell's worth runs off like water beside; it is no dive. Seen in
+	/// game (measured run U10): read as the head under water, mining such a block cost 200x and the ore past it was never
+	/// reached in 4,000 nodes.
+	/// </summary>
+	public static bool Wet(ITileGrid g, TilePos cell)
+	{
+		CellKind k = g.Get(cell.X, cell.Y);
+		return k.IsLiquid() && !k.HasLava() || NextToWater(g, cell);
+	}
 
 	/// <summary>Extra cost of an unsafe break when digging anyway: only when there is nothing else.</summary>
 	public const float DigAnywayTicks = 300f;
@@ -83,10 +96,13 @@ public static class BlockRules
 	public static bool NextToLava(ITileGrid g, TilePos cell) =>
 		g.Get(cell.X - 1, cell.Y).HasLava() || g.Get(cell.X + 1, cell.Y).HasLava() || g.Get(cell.X, cell.Y - 1).HasLava();
 
+	/// <summary>Lava beside or above the cell (<see cref="NextToLava"/>), or held in the block itself: mining it lets the lava out.</summary>
+	public static bool LetsLavaIn(ITileGrid g, TilePos cell) => NextToLava(g, cell) || g.Get(cell.X, cell.Y).HasLava();
+
 	/// <summary>Opening this cell would flood lava in or drop an unsupported falling block (not removed by the same move).</summary>
 	public static bool Unsafe(ITileGrid g, TilePos cell, IReadOnlyCollection<TilePos> sameMove)
 	{
-		if (NextToLava(g, cell))
+		if (LetsLavaIn(g, cell))
 			return true;
 		// Not water: opening a block beside it floods the tunnel, and the bot deals with that (surfaces for breath; once a
 		// shaft into a water pocket drowned it, before surfacing existed). It costs more instead (WetBreakTicks).

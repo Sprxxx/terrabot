@@ -102,6 +102,52 @@ public class DumpReplayTests
 		Assert.NotEqual(PathStatus.NoPath, search.Result.Status);
 	}
 
+	/// <summary>
+	/// Measured run U10 (t99000-136800): from (2035,353) and (2032,348), with a copper pickaxe (tileBoost -1: the log's
+	/// "start h 15" for Reach(2030,359) is 3 columns of 5.2 ticks), every walk to iron or silver ore 4-8 tiles away under
+	/// a pool ended "no path ... expanded 4001", "start h 10, lowest h 10": three stretches of 1.5 game hours each. Both
+	/// dumps replay to a path at once, because the dump drew the cells that mattered as plain rock: at 22:44:51 the bot had
+	/// placed blocks into the flooded row (2036..2040,354) to walk over it ("Walk (2037,353)->(2036,353) 54.2t
+	/// {place(2036,354)}", 3x for the water), and a block keeps the water of its cell (tModLoader's Liquid.Update leaves a
+	/// solid tile's liquid alone; PlaceTile only reads it). The first "no path" came 0.08 s later. The way down from
+	/// (2035,353) mines (2036,354) and lands with it in the head row; its water counted as the head under, 200x: 19,000
+	/// ticks for a 95-tick step. Dumps now draw such a block '&amp;'. The dump holds about 640 standing nodes, so a 4,000-node search cannot run out in it as in the open cave the game
+	/// searched (up to row 306): the step itself is checked, then the plan.
+	/// </summary>
+	[Theory]
+	[InlineData("nopath_2035_353_to_2030_359.txt", 2018, 341)]
+	[InlineData("nopath_2032_348_to_2030_356.txt", 2018, 336)]
+	public void OreUnderAPool_PastBlocksPlacedIntoTheWater_IsReachable(string name, int originX, int originY)
+	{
+		string file = Path.Combine(AppContext.BaseDirectory, "Dumps", name);
+		var (g, b, start, ore) = Load(file);
+		b.BlockCount = 721; // as in the header
+		for (int x = 2036; x <= 2040; x++)
+			g.Set(x - originX, 354 - originY, CellKind.Solid | CellKind.Water);
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
+		float headUnderStep = ctx.HeadUnderCostMultiplier * ctx.WalkTileCost;
+
+		// The way down: from (2035,353), mine (2036,354) and land at (2035,356) with the feet in the pool's water.
+		var top = new TilePos(2035 - originX, 353 - originY);
+		var edges = new System.Collections.Generic.List<PathStep>();
+		foreach (IMoveType m in ctx.Moves)
+			m.Expand(ctx, top, edges);
+		PathStep down = edges.Single(e => e.To == new TilePos(top.X, top.Y + 3));
+		output.WriteLine($"the way down: {down}");
+		Assert.True(down.Cost < headUnderStep, $"{down}: priced as a dive");
+
+		var goal = new GoalReachTile(ore, PhysicsParams.Default, tileBoost: -1);
+		var search = new PathSearch(ctx, start, goal, TerraBot.Bot.Skills.MineSkill.ReachLimits);
+		search.Step(1e9);
+		output.WriteLine($"start {start} h {goal.Heuristic(start):0.#}: {search.Result} {search.Result.Why}");
+		foreach (PathStep s in search.Result.Steps)
+			output.WriteLine("  " + s);
+		Assert.Equal(PathStatus.Found, search.Result.Status);
+		Assert.True(search.Result.Cost < headUnderStep, $"cost {search.Result.Cost:0}");
+		// The next dump draws the block as it is.
+		Assert.Equal(CellKind.Solid | CellKind.Water, CellKindExtensions.FromChar(g.Get(2036 - originX, 354 - originY).ToChar()));
+	}
+
 	[Fact]
 	public void CaveBelowSpawn_HasAWayBackUp()
 	{
