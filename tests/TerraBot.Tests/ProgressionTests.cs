@@ -570,6 +570,58 @@ public class ProgressionTests
 		Assert.True(knocked);
 	}
 
+	/// <summary>A retreat in <see cref="Mine"/>, run until it is sealed in (and a tick on).</summary>
+	private (FakeGame g, BotContext ctx, ShelterSkill shelter) SealedIn()
+	{
+		FakeGame g = Mine();
+		g.Life = 20;
+		g.Items[FakeGame.DirtBlock] = 40;
+		BotContext ctx = g.CreateContext(output);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		for (int t = 0; t < 60 * 30 && !shelter.Sealed; t++) {
+			g.Refresh(ctx);
+			Assert.Equal(SkillStatus.Running, shelter.Tick(ctx));
+			g.Step(ctx);
+		}
+		Assert.True(shelter.Sealed, shelter.Describe());
+		g.Refresh(ctx);
+		Assert.Equal(SkillStatus.Running, shelter.Tick(ctx));
+		g.Step(ctx);
+		return (g, ctx, shelter);
+	}
+
+	[Fact]
+	public void Shelter_HitWhileWaiting_LeavesTheHole()
+	{
+		// Measured runs U19 (a spore skeleton) and U20 (a red slime): bitten in the hole, the bot waited on there until it died.
+		var (g, ctx, shelter) = SealedIn();
+		g.Refresh(ctx);
+		ctx.NoteHit(10);
+		SkillStatus s = shelter.Tick(ctx);
+		output.WriteLine($"{s}: {shelter.FailureReason}");
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.Contains("hit in the hole", shelter.FailureReason);
+	}
+
+	[Fact]
+	public void Shelter_AWormThatBurrowsComesNear_LeavesTheHole()
+	{
+		// Measured run U17 (t54614): a giant worm bit the bot 12 times in its hole over about 7100 ticks; the worm check was
+		// made only when the retreat began.
+		var (g, ctx, shelter) = SealedIn();
+		float x = ctx.Body.X + 10 * 16f, y = ctx.Body.Y;
+		EntityInfo Worm(bool burrows) => new(20, 10, "Giant Worm", x, y, 18, 18, 0, 0, 30, 30, 8, FakeGame.WormAi, NoTileCollide: burrows);
+		g.Refresh(ctx);
+		ctx.Hostiles = new[] { Worm(burrows: false) }; // a worm-like walker cannot come through the seal
+		Assert.Equal(SkillStatus.Running, shelter.Tick(ctx));
+		ctx.Hostiles = new[] { Worm(burrows: true) };
+		SkillStatus s = shelter.Tick(ctx);
+		output.WriteLine($"{s}: {shelter.FailureReason}");
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.Contains("burrows", shelter.FailureReason);
+	}
+
 	[Fact]
 	public void Shelter_WithASlimeInTheHole_IsNotSealedIn_AndFightsIt()
 	{

@@ -399,6 +399,32 @@ public sealed class ShelterSkill : ISkill
 		return SkillStatus.Running;
 	}
 
+	private long waitSince;
+
+	private void BeginWaiting(BotContext ctx)
+	{
+		phase = Phase.Waiting;
+		waitSince = ctx.Tick;
+	}
+
+	/// <summary>How near (px) a hostile that comes through blocks makes a hole no hiding place.</summary>
+	public const float BurrowerNearPx = 30 * 16f;
+
+	/// <summary>
+	/// The nearest worm within <see cref="BurrowerNearPx"/> that really goes through blocks (vanilla NPC.noTileCollide: giant
+	/// worms, devourers, the Eater of Worlds), so a seal does not keep it out.
+	/// </summary>
+	private static EntityInfo? Burrower(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		EntityInfo? best = null;
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (e.AiStyle == WormPattern.WormAiStyle && e.NoTileCollide && e.DistanceTo(cx, cy) <= BurrowerNearPx
+				&& (best == null || e.DistanceTo(cx, cy) < best.Value.DistanceTo(cx, cy)))
+				best = e;
+		return best;
+	}
+
 	/// <summary>The cells walling the body in a hole: both sides, from the feet to the roof's row (its corners give the roof a neighbour to place against).</summary>
 	private static System.Collections.Generic.IEnumerable<TilePos> SideCells(TilePos n)
 	{
@@ -559,7 +585,7 @@ public sealed class ShelterSkill : ISkill
 				if (open == null && inside == null) {
 					sealedOk = true;
 					ctx.Log.Info($"Shelter: sealed in at {n}, waiting {(until != null ? why : "for morning")}");
-					phase = Phase.Waiting;
+					BeginWaiting(ctx);
 					return SkillStatus.Running;
 				}
 				// No blocks at all: the shaft's walls still keep walkers off until they drop in (and one that does is fought,
@@ -568,7 +594,7 @@ public sealed class ShelterSkill : ISkill
 					if (!SideCells(n).All(c => ctx.Grid.Get(c.X, c.Y).IsSolid()))
 						return GiveUpSpot(ctx, $"no blocks, and {open.Value} beside the body is open");
 					ctx.Log.Info($"Shelter: no blocks to seal {open.Value}; waiting unsealed at the bottom of the shaft at {n}");
-					phase = Phase.Waiting;
+					BeginWaiting(ctx);
 					return SkillStatus.Running;
 				}
 				if (++actionTicks > MaxActionTicks)
@@ -580,13 +606,26 @@ public sealed class ShelterSkill : ISkill
 				ctx.Output.Aim(open.Value.X, open.Value.Y);
 				return SkillStatus.Running;
 			}
-			case Phase.Waiting:
+			case Phase.Waiting: {
+				// The hole has failed: hit in it, or something that comes through blocks is near. Out (the brain fights, or a
+				// retreat goes home from any distance with a worm about), not on waiting to be bitten. Seen in game (measured run
+				// U17): a giant worm bit the bot 12 times in its hole over about 7100 ticks, until it died there; the worm check
+				// was made only when the retreat began.
+				string failed = ctx.LastEnemyHitTick >= waitSince ? "hit in the hole"
+					: Burrower(ctx) is EntityInfo w ? $"a {w.Name} that burrows through blocks is {w.DistanceTo(ctx.Body.CenterX(ctx.Physics), ctx.Body.CenterY(ctx.Physics)) / 16f:0} tiles off"
+					: null;
+				if (failed != null) {
+					FailureReason = $"the hole failed: {failed}";
+					ctx.Log.Info($"Shelter: {FailureReason}; leaving it at {ctx.Node}");
+					return SkillStatus.Failed;
+				}
 				if (until != null ? !until(ctx) && ++waitTicks <= MaxRetreatTicks : ctx.IsNight)
 					return SkillStatus.Running;
 				ctx.Log.Info(until != null ? $"Shelter: done waiting ({why}), opening up" : "Shelter: morning, opening up");
 				phase = Phase.Unsealing;
 				actionTicks = 0;
 				return SkillStatus.Running;
+			}
 			default: {
 				TilePos? closed = sealedOk ? seal.Select(c => (TilePos?)c).FirstOrDefault(c => ctx.Grid.Get(c.Value.X, c.Value.Y).IsSolid()) : null;
 				if (closed == null || ctx.PickPower <= 0 || ++actionTicks > MaxActionTicks) {

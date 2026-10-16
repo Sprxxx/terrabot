@@ -354,7 +354,7 @@ public sealed class TerraBotPlayer : ModPlayer
 			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > (IsBossPart(n) ? BossPerceptionRadiusPx : PerceptionRadiusPx))
 				continue;
 			hostiles.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
-				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle, n.ai[0], n.ai[1], n.ai[2], n.ai[3]));
+				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle, n.ai[0], n.ai[1], n.ai[2], n.ai[3], n.noTileCollide));
 		}
 		hostiles.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
 		Context.Hostiles = hostiles;

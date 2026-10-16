@@ -287,7 +287,7 @@ public sealed class BotBrain
 
 	/// <summary>Vanilla aiStyle of worms (devourers, giant worms, the eater of worlds): they burrow through blocks.</summary>
 	public const int WormAi = 6;
-	public const float WormNearPx = 30 * 16f;
+	public const float WormNearPx = ShelterSkill.BurrowerNearPx;
 
 	private static bool WormNear(BotContext ctx)
 	{
@@ -640,8 +640,9 @@ public sealed class BotBrain
 		LastResult = $"{skill.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
 		ctx.Log.Info($"Skill finished: {LastResult}");
 		bool wasFight = skill is FightSkill;
-		// A retreat that found no hole: not straight back into another at the same spot; the fight rule has the hold first.
-		if (skill is ShelterSkill { Retreat: true } && status == SkillStatus.Failed)
+		// A retreat that found no hole, or whose hole failed: not straight back into another at the same spot; the fight rule has
+		// the hold first. With a worm near the retreat rule goes home at once (or not at all), never into a hole.
+		if (skill is ShelterSkill { Retreat: true } && status == SkillStatus.Failed && !WormNear(ctx))
 			fightBackSince = ctx.Tick;
 		if (Auto)
 			Planner.OnSkillFinished(skill, status, ctx);
