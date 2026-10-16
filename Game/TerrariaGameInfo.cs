@@ -74,7 +74,37 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Campfire = ItemID.Campfire,
 		HeartLantern = ItemID.HeartLantern,
 		RecallPotion = ItemID.RecallPotion,
+		// Milestone 10 (docs M10_SPEC.md): the Eater of Worlds and the Worm Food path.
+		EvilBoss = NPCID.EaterofWorldsHead,
+		EvilBossBody = NPCID.EaterofWorldsBody,
+		EvilBossTail = NPCID.EaterofWorldsTail,
+		WormFood = ItemID.WormFood,
+		VilePowder = ItemID.VilePowder,
+		VileMushroom = ItemID.VileMushroom,
+		RottenChunk = ItemID.RottenChunk,
+		WormTooth = ItemID.WormTooth,
+		UnholyArrow = ItemID.UnholyArrow,
+		DemoniteOre = ItemID.DemoniteOre,
+		DemoniteBar = ItemID.DemoniteBar,
+		DemonBow = ItemID.DemonBow,
+		Bottle = ItemID.Bottle,
+		BottleTile = TileID.Bottles,
+		CorruptionWeights = CorruptionZoneWeights(),
 	};
+
+	/// <summary>
+	/// What each tile counts for Player.ZoneCorrupt, as tModLoader sums the scene scan (TileLoader.cs:1640-1652): the
+	/// TileID.Sets.CorruptBiome weights (RemixCorruptBiome in a remix world), mods' tiles included.
+	/// </summary>
+	private static Dictionary<int, int> CorruptionZoneWeights()
+	{
+		int[] set = Main.remixWorld ? TileID.Sets.RemixCorruptBiome : TileID.Sets.CorruptBiome;
+		var weights = new Dictionary<int, int>();
+		for (int t = 0; t < set.Length; t++)
+			if (set[t] != 0)
+				weights[t] = set[t];
+		return weights;
+	}
 
 
 	public void Bind(Player p) => bound = p;
@@ -229,6 +259,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return t.TileType == TileID.OpenDoor ? TileID.ClosedDoor : t.TileType;
 	}
 
+	public int TileFrameX(int x, int y) => WorldGen.InWorld(x, y, 1) && Main.tile[x, y].HasTile ? Main.tile[x, y].TileFrameX : -1;
+
 	/// <summary>
 	/// Debug experiment only (self-test launch flag -terrabotxray): ore, crystals, stations and chests are found whether or
 	/// not the map has revealed them, to measure how much time finding things costs. Never on in normal play.
@@ -249,10 +281,14 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	// ---------- IGameKnowledge (built once from the loaded recipes and items, mods included) ----------
 
-	/// <summary>Natural tiles worth mining for their block/ore (the item that places the tile is what it drops).</summary>
+	/// <summary>
+	/// Natural tiles worth mining for their block/ore (the item that places the tile is what it drops). Sand for glass (2 Sand
+	/// Block at a Furnace, any sand, Recipe.cs:3225), the glass for the Bottle the vile powder is made at (Recipe.cs:1687).
+	/// </summary>
 	private static readonly HashSet<int> MineableTiles = new() {
 		TileID.Stone, TileID.Dirt, TileID.ClayBlock, TileID.Mud, TileID.SnowBlock, TileID.Granite, TileID.Marble,
 		TileID.Copper, TileID.Tin, TileID.Iron, TileID.Lead, TileID.Silver, TileID.Tungsten, TileID.Gold, TileID.Platinum,
+		TileID.Sand,
 	};
 
 	/// <summary>Ore pairs: a world generates only one ore of each tier (WorldGen.SavedOreTiers).</summary>
@@ -333,22 +369,39 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public int TilePlacedBy(int itemType) =>
 		ContentSamples.ItemsByType.TryGetValue(itemType, out Item it) && it.createTile > -1 ? it.createTile : -1;
 
-	/// <summary>Items a tile drops although the item does not place that tile (KillTile_GetItemDrops special cases).</summary>
-	private static readonly Dictionary<int, int> DroppedByTile = new() {
-		[ItemID.LifeCrystal] = TileID.Heart,
+	/// <summary>A corrupt plant (TileID.CorruptPlants) of this frame column is a vile mushroom and drops one (WorldGen.cs:59639-59641).</summary>
+	public const int VileMushroomFrameX = 144;
+
+	/// <summary>
+	/// Items a tile drops although the item does not place that tile (KillTile_GetItemDrops special cases), with the frame
+	/// column that drops it (-1: any), and whether only the evil biome has the tile.
+	/// </summary>
+	private static readonly Dictionary<int, (int Tile, int FrameX, bool Evil)> DroppedByTile = new() {
+		[ItemID.LifeCrystal] = (TileID.Heart, -1, false),
+		// On corrupt grass only (WorldGen.cs:54373: a plant growing there turns mushroom at 1/50 or 1/40); tileNoFail, so
+		// one hit of any pickaxe breaks it (Main.cs:8037, Player.GetPickaxeDamage).
+		[ItemID.VileMushroom] = (TileID.CorruptPlants, VileMushroomFrameX, true),
 	};
 
-	/// <summary>Items hunted from NPCs, by the NPCs' AI style (ItemDropDatabase: gel from slimes, lenses from demon eyes 1/3).</summary>
-	private static readonly Dictionary<int, int> DroppedByNpcAi = new() {
-		[ItemID.Lens] = NPCAIStyleID.DemonEye,
+	/// <summary>
+	/// Items hunted from NPCs, by the NPCs' AI style (ItemDropDatabase: gel from slimes, lenses from demon eyes 1/3), and
+	/// whether those NPCs live only in the evil biome.
+	/// </summary>
+	private static readonly Dictionary<int, (int Ai, bool Evil)> DroppedByNpcAi = new() {
+		[ItemID.Lens] = (NPCAIStyleID.DemonEye, false),
+		// Eaters of souls (NPC 6, aiStyle 5 flying, NPC.cs:3849): 1 in 3 (ItemDropDatabase.cs:1110). They spawn only while the
+		// player is in the Corruption zone.
+		[ItemID.RottenChunk] = (NPCAIStyleID.Flying, true),
+		// Devourers (NPC 7-9, aiStyle 6 worm): 3-8 at 100% (ItemDropDatabase.cs:1113).
+		[ItemID.WormTooth] = (NPCAIStyleID.Worm, true),
 	};
 
 	public ItemSource SourceOf(int itemType)
 	{
-		if (DroppedByTile.TryGetValue(itemType, out int dropTile))
-			return new ItemSource(SourceKind.Mine, dropTile);
-		if (DroppedByNpcAi.TryGetValue(itemType, out int ai))
-			return new ItemSource(SourceKind.Hunt, NpcAiStyle: ai);
+		if (DroppedByTile.TryGetValue(itemType, out var drop))
+			return new ItemSource(SourceKind.Mine, drop.Tile, FrameX: drop.FrameX, EvilBiome: drop.Evil);
+		if (DroppedByNpcAi.TryGetValue(itemType, out var hunted))
+			return new ItemSource(SourceKind.Hunt, NpcAiStyle: hunted.Ai, EvilBiome: hunted.Evil);
 		if (itemType == ItemID.Wood)
 			return new ItemSource(SourceKind.Tree);
 		if (itemType == ItemID.Gel)
@@ -369,9 +422,22 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	// ---------- building (walls, footprints, housing) and armour ----------
 
-	/// <summary>Life crystals are frame-important (2×2) but meant to be mined; any pickaxe breaks them.</summary>
-	public bool CanMineTarget(int x, int y) =>
-		WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == TileID.Heart && WorldGen.CanKillTile(x, y);
+	/// <summary>
+	/// Life crystals are frame-important (2×2) but meant to be mined; any pickaxe breaks them. So are the plants that drop
+	/// something (<see cref="DroppedByTile"/> with its frame: a vile mushroom), cut tiles a pickaxe breaks in one hit.
+	/// </summary>
+	public bool CanMineTarget(int x, int y)
+	{
+		if (!WorldGen.InWorld(x, y, 2) || !Main.tile[x, y].HasTile || !WorldGen.CanKillTile(x, y))
+			return false;
+		Tile t = Main.tile[x, y];
+		if (t.TileType == TileID.Heart)
+			return true;
+		foreach (var drop in DroppedByTile.Values)
+			if (drop.Tile == t.TileType && drop.FrameX >= 0 && drop.FrameX == t.TileFrameX && Main.tileCut[t.TileType])
+				return true;
+		return false;
+	}
 
 	/// <summary>Vanilla bosses' "downed" flags (the Eye of Cthulhu first; extend as bosses are added).</summary>
 	/// <summary>Off the map counts as seen: there is nothing to explore past the world's edge.</summary>

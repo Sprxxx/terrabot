@@ -23,6 +23,12 @@ public interface IWorldInfo
 	int TileTypeAt(int x, int y);
 
 	/// <summary>
+	/// The tile's frame column (vanilla Tile.TileFrameX) at the cell, or -1 when there is no tile: which style of a tile
+	/// type it is (a corrupt plant at frame 144 is a vile mushroom, WorldGen.KillTile_GetItemDrops).
+	/// </summary>
+	int TileFrameX(int x, int y);
+
+	/// <summary>
 	/// Cells holding <paramref name="tileType"/> within <paramref name="radius"/> tiles (Chebyshev) of <paramref name="around"/>,
 	/// nearest first: only cells the player has seen (revealed on the map), as a player would know them.
 	/// </summary>
@@ -180,6 +186,32 @@ public sealed class GameIds
 	public int HeartLantern { get; init; }
 	/// <summary>Recall Potion: drunk, it takes the player home to the spawn point.</summary>
 	public int RecallPotion { get; init; }
+	/// <summary>
+	/// The evil-biome boss of a Corruption world (Milestone 10, docs M10_SPEC.md): the Eater of Worlds' head, body and tail
+	/// (NPC 13, 14, 15), summoned with Worm Food (30 Vile Powder + 15 Rotten Chunk at a Demon Altar, Recipe.cs:14407).
+	/// </summary>
+	public int EvilBoss { get; init; }
+	public int EvilBossBody { get; init; }
+	public int EvilBossTail { get; init; }
+	public int WormFood { get; init; }
+	public int VilePowder { get; init; }
+	public int VileMushroom { get; init; }
+	public int RottenChunk { get; init; }
+	/// <summary>Worm Tooth (Devourers: 3-8 at 100%, ItemDropDatabase.cs:1113): with 5 wooden arrows, 5 Unholy Arrows.</summary>
+	public int WormTooth { get; init; }
+	public int UnholyArrow { get; init; }
+	public int DemoniteOre { get; init; }
+	public int DemoniteBar { get; init; }
+	public int DemonBow { get; init; }
+	/// <summary>The Bottle item and the Placed Bottle tile it makes (TileID.Bottles), the station Vile Powder is made at.</summary>
+	public int Bottle { get; init; }
+	public int BottleTile { get; init; }
+	/// <summary>
+	/// What each tile type counts for the game's Corruption zone (vanilla TileID.Sets.CorruptBiome, summed by
+	/// TileLoader.cs:1642 over the scene scan: corrupt grass, ebonstone, ebonsand... 1 each, a sunflower -10). Worm Food
+	/// works only while that sum is 300 or more (Player.ZoneCorrupt, SceneMetrics.CorruptionTileThreshold).
+	/// </summary>
+	public IReadOnlyDictionary<int, int> CorruptionWeights { get; init; } = new Dictionary<int, int>();
 	/// <summary>
 	/// Accessories that hold the body at the water's surface (the Inner Tube): with one on, nobody sinks to a flooded floor
 	/// unless holding Down, and the paths walk flooded floors.

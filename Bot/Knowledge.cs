@@ -39,8 +39,13 @@ public enum SourceKind
 	Hunt,
 }
 
-/// <summary>Where a raw material comes from.</summary>
-public readonly record struct ItemSource(SourceKind Kind, int TileType = -1, int NpcAiStyle = -1)
+/// <summary>
+/// Where a raw material comes from. <see cref="FrameX"/>: only tiles of that frame column drop it (-1: any), as a corrupt
+/// plant drops a vile mushroom only at frame 144 (WorldGen.cs:59639). <see cref="EvilBiome"/>: it is had only in the evil
+/// biome (rotten chunks from eaters of souls, vile mushrooms on corrupt grass), so getting it is an errand there
+/// (BotContext.EvilErrand).
+/// </summary>
+public readonly record struct ItemSource(SourceKind Kind, int TileType = -1, int NpcAiStyle = -1, int FrameX = -1, bool EvilBiome = false)
 {
 	public static readonly ItemSource None = new(SourceKind.None);
 }

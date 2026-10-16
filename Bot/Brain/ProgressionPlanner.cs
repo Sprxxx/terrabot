@@ -52,11 +52,39 @@ public sealed record Wearing(IReadOnlyList<int> Items, string Label) : Need(Labe
 /// <summary>Max life (from life crystals) is at least <see cref="Life"/>.</summary>
 public sealed record LifeAtLeast(int Life, string Label) : Need(Label);
 
-/// <summary>The world records this boss as defeated: get its summon item, wait for night, summon and fight.</summary>
-public sealed record BossDefeated(int Npc, int SummonItem, int[] Minions, string Label) : Need(Label);
+/// <summary>The world records this boss as defeated: get its summon item, wait for night if it wants one, summon and fight.</summary>
+public sealed record BossDefeated(int Npc, int SummonItem, int[] Minions, string Label) : Need(Label)
+{
+	/// <summary>
+	/// Summoned only at night, and gone at dawn: the Eye of Cthulhu (its summon item does nothing by day, and it leaves at
+	/// dawn, measured in game at 1275/2800). The Eater of Worlds is not: Worm Food has no time condition (Player.cs:43462)
+	/// and it has no daytime despawn (NPC.cs:54533, docs M10_SPEC.md section 4).
+	/// </summary>
+	public bool NightOnly { get; init; } = true;
+	/// <summary>
+	/// Summoned only in the evil biome's zone (Worm Food: Player.ZoneCorrupt, Player.cs:43462), and fought there: away from
+	/// it the worm dives and despawns (NPC.cs:55436). The arena is used only if it lies in the zone.
+	/// </summary>
+	public bool InEvilBiome { get; init; }
+}
 
 /// <summary>Preparation for a boss (life, bow, arrows): moot once that boss is defeated.</summary>
 public sealed record PrepFor(int BossNpc, Need Inner) : Need(Inner.Label);
+
+/// <summary>
+/// <see cref="Inner"/> (an item) only as far as what the bag holds makes it, crafting down its recipes, never by gathering:
+/// "the better bow when buildable". The Demon Bow from the demonite the Eye dropped (8 bars of 3 ore, Recipe.cs:10260 and
+/// 10250); unholy arrows from the worm teeth that devourers drop when the hunt meets one (5 wooden arrows and a tooth make 5,
+/// Recipe.cs:2276). Met when the count is in or no more can be made from the bag.
+/// </summary>
+public sealed record FromBag(HaveItem Inner) : Need(Inner.Label);
+
+/// <summary>
+/// A step toward a later stage, taken in the plan's order (the summon's parts one by one: the chunks, the powder, then the
+/// Worm Food the boss stage summons with): moot once any of <see cref="Made"/> is carried (what the step's things go into),
+/// and claiming nothing, so the later stage that uses them still counts them as there.
+/// </summary>
+public sealed record StepToward(IReadOnlyList<(int Item, int Count)> Made, Need Inner) : Need(Inner.Label);
 
 /// <summary>
 /// Altoclef-style "what is the next thing I need?" planner, re-evaluated whenever a skill ends. Works through a
@@ -126,8 +154,18 @@ public sealed class ProgressionPlanner
 		public const string Crystals = "crystals";
 		/// <summary>Just the boss arena (Milestone 8; also part of the boss plan).</summary>
 		public const string Arena = "arena";
-		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss };
+		/// <summary>
+		/// Boss (the Eye first, if not done), then the evil biome's boss defeated: the Eater of Worlds by Worm Food (Milestone
+		/// 10, docs M10_SPEC.md: the Worm Food path).
+		/// </summary>
+		public const string EvilBoss = "evilboss";
+		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss, EvilBoss };
 	}
+
+	/// <summary>Worm Food: 30 Vile Powder + 15 Rotten Chunk at a Demon Altar (Recipe.cs:14407-14413).</summary>
+	public const int WormFoodPowder = 30, WormFoodChunks = 15;
+	/// <summary>Unholy arrows to carry into the worm fight (spec G3: 150 or more; they pierce 5, Projectile.cs:954).</summary>
+	public const int UnholyArrows = 150;
 
 	private readonly Dictionary<int, long> notedAt = new();
 	/// <summary>Item costs worked out in this planning pass (<see cref="SolveCosts"/>).</summary>
@@ -218,8 +256,39 @@ public sealed class ProgressionPlanner
 		stages.Add(new PrepFor(ids.EyeBoss, new LifeAtLeast(BossLife, "max life")));
 		stages.Add(new PrepFor(ids.EyeBoss, new ArenaBuilt("arena")));
 		stages.Add(new PrepFor(ids.EyeBoss, new HouseBuilt("heart lantern in the house", HeartLantern: true)));
-		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu"));
+		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu") { NightOnly = true });
+		if (plan == Plans.EvilBoss)
+			stages.AddRange(EvilBossStages(ids));
 		return stages;
+	}
+
+	/// <summary>
+	/// After the Eye: the Eater of Worlds by Worm Food (docs M10_SPEC.md section 6, the Worm Food path), in the spec's order.
+	/// <list type="number">
+	/// <item>A bow and arrows, and max life 200, as for the Eye (its own prep stages are moot once it is down).</item>
+	/// <item>(a) The Demon Bow, from the bag: the Eye's demonite (G2).</item>
+	/// <item>(b) Unholy arrows, from the bag: worm teeth met on the way (G3).</item>
+	/// <item>(c) 15 rotten chunks, hunted from eaters of souls in the corruption (G4).</item>
+	/// <item>(f) 30 vile powder (G7), which its recipe resolves as (d) the vile mushrooms it still needs, picked from the
+	/// corruption's grass (G5), then (e) a placed bottle, glass from sand at the furnace (G6), then the crafts: as stages of
+	/// their own, each craft of 5 powder from 1 mushroom left the mushroom stage short again.</item>
+	/// <item>(g) Worm Food at the demon altar (G8), (h) summoned in the corruption, by day or night, and fought (G9, G10).</item>
+	/// </list>
+	/// The summon's parts are each moot once what they go into is carried (<see cref="StepToward"/>).
+	/// </summary>
+	private static IEnumerable<Need> EvilBossStages(GameIds ids)
+	{
+		int boss = ids.EvilBoss;
+		var food = new[] { (ids.WormFood, 1) };
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.DemonBow), 1, "bow"));
+		yield return new PrepFor(boss, new HaveItem(ids.WoodenArrow, BossArrows, "arrows") { RefillBelow = BossArrows * 4 / 5 });
+		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));
+		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.DemonBow, 1, "demon bow")));
+		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, UnholyArrows, "unholy arrows")));
+		yield return new PrepFor(boss, new StepToward(food, new HaveItem(ids.RottenChunk, WormFoodChunks, "rotten chunks")));
+		yield return new PrepFor(boss, new StepToward(food, new HaveItem(ids.VilePowder, WormFoodPowder, "vile powder")));
+		yield return new PrepFor(boss, new StepToward(Array.Empty<(int, int)>(), new HaveItem(ids.WormFood, 1, "worm food")));
+		yield return new BossDefeated(boss, ids.WormFood, new[] { ids.EvilBossBody, ids.EvilBossTail }, "Eater of Worlds") { NightOnly = false, InEvilBiome = true };
 	}
 
 	/// <summary>Mining for this item found none around here (more travel, and a higher cost for it in recipes).</summary>
@@ -264,6 +333,8 @@ public sealed class ProgressionPlanner
 		stationHeading = null;
 		siteFailures = 0;
 		arenaFailures = 0;
+		evilGround = null;
+		evilGroundAt = long.MinValue / 2;
 	}
 
 	/// <summary>Max life from life crystals stops at 400 (vanilla: 15 crystals).</summary>
@@ -545,7 +616,7 @@ public sealed class ProgressionPlanner
 		GameIds ids = ctx.Ids;
 		// Settled first (a house to come back to): before it, the hunt's fights took the bot off, and the stations and house
 		// went up where the arena should (boss_auto, which starts armoured at night with the house kit in the bag).
-		if (Plan != Plans.Boss || !ctx.IsNight || ctx.Combat.Defense < NightOutDefense || ids.SuspiciousEye <= 0 || ctx.World == null
+		if (Plan != Plans.Boss && Plan != Plans.EvilBoss || !ctx.IsNight || ctx.Combat.Defense < NightOutDefense || ids.SuspiciousEye <= 0 || ctx.World == null
 			|| HomeInside(ctx) == null
 			|| ctx.World.BossDefeated(ids.EyeBoss) || ctx.Inventory.Count(ids.SuspiciousEye) > 0
 			|| ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + NightMineRows)
@@ -590,6 +661,8 @@ public sealed class ProgressionPlanner
 
 	private ISkill NextUntimed(BotContext ctx)
 	{
+		// An errand in the evil biome is this pass's to choose again (ResolveItem, ResolveBoss): anything else, it is over.
+		ctx.EvilErrand = false;
 		RememberStations(ctx);
 		ProtectBuilt(ctx);
 		if (recallNext) {
@@ -631,6 +704,7 @@ public sealed class ProgressionPlanner
 			Plans.Crystals => $"max life {ctx.Combat.LifeMaxBase} from life crystals",
 			Plans.Arena => ArenaOnOpenGround ? "no arena site: the boss is fought on open ground" : $"the arena at {ArenaSite} is ready",
 			Plans.Boss => "the Eye of Cthulhu is defeated",
+			Plans.EvilBoss => "the Eater of Worlds is defeated",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
 		Complete = true;
@@ -732,6 +806,9 @@ public sealed class ProgressionPlanner
 			ArenaBuilt => ResolveArena(claims, depth, ctx),
 			BossDefeated b => ResolveBoss(b, claims, depth, ctx),
 			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
+			FromBag fb => ResolveFromBag(fb.Inner, depth, ctx),
+			StepToward st => st.Made.Any(m => m.Item > 0 && ctx.Inventory.Count(m.Item) >= m.Count) ? null
+				: Resolve(st.Inner, new Dictionary<int, int>(claims), depth, ctx),
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
 				: ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 ? Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new UseItemSkill(ctx.Ids.LifeCrystal))
 				: Resolve(new HaveItem(ctx.Ids.LifeCrystal, 1, "life crystal"), claims, depth + 1, ctx),
@@ -828,6 +905,8 @@ public sealed class ProgressionPlanner
 		string name = k.ItemName(item);
 		int target = ctx.Inventory.Count(item) + more;
 		ItemSource src = k.SourceOf(item);
+		if (src.EvilBiome && src.Kind is SourceKind.Hunt or SourceKind.Mine)
+			return ResolveEvilSource(item, src, more, target, ctx);
 		switch (src.Kind) {
 			case SourceKind.Tree:
 				return Do($"need {more} more {name} (gathering to {target})", new GatherWoodSkill(item, target));
@@ -1197,7 +1276,11 @@ public sealed class ProgressionPlanner
 	private static bool InArena(TilePos n, int x0, int x1, int standY) =>
 		Math.Abs(n.X - (x0 + x1) / 2) <= ArenaCentreTolerance + 1 && n.Y == standY;
 
-	/// <summary>Defeated, or: get the summon item (recursively), wait for night, walk to the arena, then summon and fight.</summary>
+	/// <summary>
+	/// Defeated, or: get the summon item (recursively), wait for night (<see cref="BossDefeated.NightOnly"/>), walk to the
+	/// arena, then summon and fight. A boss of the evil biome (<see cref="BossDefeated.InEvilBiome"/>) is summoned and fought
+	/// in its zone instead, at any time of day (<see cref="ResolveEvilBoss"/>).
+	/// </summary>
 	private ISkill ResolveBoss(BossDefeated b, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		if (ctx.World.BossDefeated(b.Npc))
@@ -1207,16 +1290,20 @@ public sealed class ProgressionPlanner
 			ISkill sub = Resolve(new HaveItem(b.SummonItem, 1, ctx.Knowledge.ItemName(b.SummonItem)), claims, depth + 1, ctx);
 			if (sub != null || stuck != null)
 				return sub;
+		}
+		if (b.InEvilBiome)
+			return ResolveEvilBoss(b, bossHere, ctx);
+		if (!bossHere) {
 			// To the arena first, by day, then wait there for night: seen in game (measured run S14), the summon made at an
 			// altar 360 rows down, the bot waited there all day, set off at nightfall, and the walk took the night.
 			if (ArenaBounds(ctx) is (int bx0, int bx1, int by) && !InArena(ctx.Node, bx0, bx1, by)) {
 				return Do($"walking to the arena to summon the {b.Label}", ArenaWalk(ctx, bx0, bx1, by));
 			}
-			if (!ctx.IsNight)
+			if (b.NightOnly && !ctx.IsNight)
 				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
 			// The Eye leaves at dawn: seen in game, summoned late after a long fight with demon eyes, it flew off at
 			// 1275/2800. Not enough night left: wait for the next one (through the day).
-			if (ctx.NightTicksLeft > 0 && ctx.NightTicksLeft < MinNightForBoss)
+			if (b.NightOnly && ctx.NightTicksLeft > 0 && ctx.NightTicksLeft < MinNightForBoss)
 				return Do($"too little night left for the {b.Label} ({ctx.NightTicksLeft / 60}s); waiting for the next night",
 					new WaitSkill("next night", c => c.IsNight && c.NightTicksLeft >= MinNightForBoss, NightWaitTicks + 32400));
 			if (ArenaBounds(ctx) is (int ax0, int ax1, int ay) && !InArena(ctx.Node, ax0, ax1, ay)) {
@@ -1230,6 +1317,189 @@ public sealed class ProgressionPlanner
 		var arena = ArenaBounds(ctx);
 		return Do($"fighting the {b.Label}{(arena != null ? " in the arena" : "")}",
 			new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena });
+	}
+
+	// ---------- the evil biome (Milestone 10: the Eater of Worlds by Worm Food, docs M10_SPEC.md) ----------
+
+	/// <summary>Within this many tiles of the summon spot, the summon is made there (the arena's own tolerance).</summary>
+	public const int SummonSpotTiles = ArenaCentreTolerance;
+
+	/// <summary>
+	/// The evil biome's boss, its summon item in hand: to where the Corruption zone holds (the arena if it lies in it, as the
+	/// M10 world's at (1948,278) does; else <see cref="EvilGround"/>), rest to full, summon and fight, at any time of day.
+	/// Worm Food does nothing outside the zone (Player.cs:43462), and the worm dives away and despawns once no player is in
+	/// it (NPC.cs:55436). The Eye's night rules are its own (<see cref="BossDefeated.NightOnly"/>).
+	/// </summary>
+	private ISkill ResolveEvilBoss(BossDefeated b, bool bossHere, BotContext ctx)
+	{
+		ctx.EvilErrand = true;
+		var arena = ArenaBounds(ctx) is (int x0, int x1, int y) a && ctx.CorruptionAround(new TilePos((x0 + x1) / 2, y)) >= BotContext.CorruptionZoneTiles ? a : ((int, int, int)?)null;
+		if (!bossHere) {
+			if (arena is (int ax0, int ax1, int ay)) {
+				if (!InArena(ctx.Node, ax0, ax1, ay))
+					return Do($"walking to the arena in the corruption to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay));
+			}
+			else if (ctx.CorruptionAround(ctx.Node) < BotContext.CorruptionZoneTiles) {
+				if (EvilGround(ctx) is not TilePos spot)
+					return ExploreForEvilBiome(ctx, $"to summon the {b.Label}");
+				if (spot.ChebyshevTo(ctx.Node) > SummonSpotTiles)
+					return Do($"walking to the corruption at {spot} to summon the {b.Label} ({ctx.CorruptionAround(spot)} corruption tiles round it)",
+						new WalkToSkill(new Core.Pathfinding.GoalNearTile(spot, SummonSpotTiles, ctx.Physics)) { Quiet = true });
+				// There, and still too little seen round it to be sure: the summon is tried anyway (the game counts what is there).
+			}
+			if (ctx.Combat.LifeFraction < SummonLifeFraction && ctx.Tick - lastRestEnd > MaxRestTicks)
+				return Do($"resting to {SummonLifeFraction:P0} life before summoning the {b.Label} ({ctx.Combat.Life}/{ctx.Combat.LifeMax})",
+					new WaitSkill("life", c => c.Combat.LifeFraction >= SummonLifeFraction, MaxRestTicks));
+		}
+		return Do($"fighting the {b.Label} in the corruption{(arena != null ? ", in the arena" : "")} ({(ctx.IsNight ? "night" : "day")})",
+			new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena });
+	}
+
+	/// <summary>
+	/// An item had only in the evil biome (<see cref="ItemSource.EvilBiome"/>): an errand there (<see cref="BotContext.EvilErrand"/>
+	/// opens its surface in full armour). Rotten chunks are hunted on <see cref="EvilGround"/>: eaters of souls spawn only
+	/// while the player is in the Corruption zone (spec G4). Vile mushrooms are picked where the map shows them (only those
+	/// of their frame, <see cref="ItemSource.FrameX"/>), and looked for along the corruption's surface from there (spec G5):
+	/// not a trip to new ground elsewhere, where none grow.
+	/// </summary>
+	private ISkill ResolveEvilSource(int item, ItemSource src, int more, int target, BotContext ctx)
+	{
+		ctx.EvilErrand = true;
+		string name = ctx.Knowledge.ItemName(item);
+		if (src.Kind == SourceKind.Hunt) {
+			if (EvilGround(ctx) is not TilePos ground)
+				return ExploreForEvilBiome(ctx, $"to hunt for {name}");
+			return Do($"need {more} more {name} (hunting to {target} in the corruption round {ground})",
+				new HuntSkill(item, src.NpcAiStyle, target) { Ground = ground });
+		}
+		var mine = new MineSkill(item, src.TileType, target) { FrameX = src.FrameX, Bias = ExploreBias.Sideways };
+		bool known = ctx.World.FindTiles(src.TileType, ctx.Node, MineSkill.MapSearchRadius)
+			.Any(c => src.FrameX < 0 || ctx.World.TileFrameX(c.X, c.Y) == src.FrameX);
+		if (!known && !ctx.InEvilBiome(ctx.Node)) {
+			if (EvilGround(ctx) is not TilePos ground)
+				return ExploreForEvilBiome(ctx, $"to look for {name}");
+			if (ground.ChebyshevTo(ctx.Node) > TravelArrivedTiles)
+				return Do($"no {name} seen; walking to the corruption at {ground} to look for it there",
+					new WalkToSkill(new Core.Pathfinding.GoalNearTile(ground, TravelArrivedTiles, ctx.Physics)) { Quiet = true });
+		}
+		return Do($"need {more} more {name} (picking to {target} in the corruption)", mine);
+	}
+
+	/// <summary>The heading the last exploration for the evil biome went (alternated: the biome may be on either side).</summary>
+	private int evilHeading = 1;
+
+	/// <summary>No evil biome known: explore along the surface, a new heading each time, until standing in it.</summary>
+	private ISkill ExploreForEvilBiome(BotContext ctx, string why)
+	{
+		evilHeading = -evilHeading;
+		return Do($"exploring for the corruption (none seen yet) {why}",
+			new ExploreSkill("the corruption", c => c.InEvilBiome(c.Node), ExploreBias.Sideways, evilHeading) { JobKey = "Explore evil biome" });
+	}
+
+	/// <summary>
+	/// A spot is worth standing on for the evil biome's errands with this much of the Corruption round it: twice the zone's
+	/// threshold, so the zone holds while the fight kites across the spot (BossFightSkill.HardHalfWidth, 40 tiles each way,
+	/// moves the scene scan by a quarter of its 169 columns).
+	/// </summary>
+	public const int EvilGroundTiles = 2 * BotContext.CorruptionZoneTiles;
+	/// <summary>How long a found spot (or none found) is kept before looking again: a game hour (the map fills in).</summary>
+	public const int EvilGroundRecheckTicks = 3600;
+	private TilePos? evilGround;
+	private long evilGroundAt = long.MinValue / 2;
+
+	/// <summary>
+	/// Where on the surface the bot stands in the Corruption zone for its errands there (hunting, picking, the summon): the
+	/// surface spot nearest the spawn, every <see cref="RouteSampleTiles"/> columns out to <see cref="MaxTravelTiles"/> each
+	/// side, that is in the evil biome and has <see cref="EvilGroundTiles"/> of the Corruption round it as the game counts
+	/// it (<see cref="BotContext.CorruptionAround"/>); with none that much, the one with the most, at least the zone's
+	/// <see cref="BotContext.CorruptionZoneTiles"/>. Null if the map shows none (explore for it). In the M10 world the
+	/// corruption is at x 1880-1960 on the surface, 120-200 tiles west of the spawn (spec section 0).
+	/// </summary>
+	public TilePos? EvilGround(BotContext ctx)
+	{
+		// Kept a while: a spot while the zone still holds there, none until the bot stands in the biome (an exploration for it
+		// ended there, or the map filled in on the way).
+		if (ctx.Tick - evilGroundAt < EvilGroundRecheckTicks
+			&& (evilGround is TilePos kept ? ctx.CorruptionAround(kept) >= BotContext.CorruptionZoneTiles : !ctx.InEvilBiome(ctx.Node)))
+			return evilGround;
+		evilGroundAt = ctx.Tick;
+		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
+		TilePos? best = null;
+		int bestCount = BotContext.CorruptionZoneTiles - 1;
+		for (int d = 0; d <= MaxTravelTiles; d += RouteSampleTiles)
+			foreach (int x in d == 0 ? new[] { originX } : new[] { originX - d, originX + d }) {
+				if (SurfaceAt(ctx.Grid, x) is not TilePos c || !ctx.InEvilBiome(c))
+					continue;
+				int n = ctx.CorruptionAround(c);
+				if (n >= EvilGroundTiles) {
+					evilGround = c;
+					return c;
+				}
+				if (n > bestCount) {
+					bestCount = n;
+					best = c;
+				}
+			}
+		evilGround = best;
+		return best;
+	}
+
+	/// <summary>
+	/// <see cref="FromBag"/>: as many of the item (up to the count, in whole crafts) as the bag makes now, through its recipes;
+	/// null when none more can be made from it, or the count is in. Claims nothing: what the bag holds is used as it is.
+	/// </summary>
+	private ISkill ResolveFromBag(HaveItem h, int depth, BotContext ctx)
+	{
+		int item = h.Accepts[0];
+		int have = ctx.Inventory.CountAny(h.Accepts);
+		if (item <= 0 || have >= h.Count)
+			return null;
+		int step = ctx.Knowledge.RecipesFor(item).Select(r => Math.Max(1, r.ResultStack)).DefaultIfEmpty(1).Min();
+		int carried = ctx.Inventory.Count(item);
+		for (int want = h.Count - have; want > 0; want = want > step ? want - step : 0)
+			if (MakeableFromBag(item, carried + want, ctx, new Dictionary<int, int>(), 0))
+				return Resolve(new HaveItem(item, carried + want, h.Label), new Dictionary<int, int>(), depth + 1, ctx);
+		return null;
+	}
+
+	/// <summary>
+	/// Can <paramref name="n"/> of the item be had from what the bag holds (less what <paramref name="used"/> has taken for
+	/// this check), crafting down its recipes (<see cref="MaxShortfallDepth"/> deep), with nothing gathered? Stations are
+	/// left to the craft (walked to, as for any).
+	/// </summary>
+	private bool MakeableFromBag(int item, int n, BotContext ctx, Dictionary<int, int> used, int depth)
+	{
+		int have = Math.Max(0, ctx.Inventory.Count(item) - used.GetValueOrDefault(item));
+		int take = Math.Min(have, n);
+		used[item] = used.GetValueOrDefault(item) + take;
+		int missing = n - take;
+		if (missing <= 0)
+			return true;
+		if (depth >= MaxShortfallDepth)
+			return false;
+		foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item)) {
+			var trial = new Dictionary<int, int>(used);
+			int crafts = (missing + Math.Max(1, r.ResultStack) - 1) / Math.Max(1, r.ResultStack);
+			bool ok = true;
+			foreach (Ingredient ing in r.Ingredients) {
+				int need = ing.Stack * crafts;
+				foreach (int a in ing.Accepts.Skip(1)) { // a recipe group's other items, carried, before the listed one is made
+					int got = Math.Min(need, Math.Max(0, ctx.Inventory.Count(a) - trial.GetValueOrDefault(a)));
+					trial[a] = trial.GetValueOrDefault(a) + got;
+					need -= got;
+				}
+				if (need > 0 && !MakeableFromBag(ing.Item, need, ctx, trial, depth + 1)) {
+					ok = false;
+					break;
+				}
+			}
+			if (ok) {
+				foreach (var kv in trial)
+					used[kv.Key] = kv.Value;
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// ---------- cost estimate (rough ticks; infinity = cannot be had) ----------
@@ -1872,6 +2142,7 @@ public sealed class ProgressionPlanner
 	/// <summary>Resolve a single need against the current state (tests).</summary>
 	public ISkill ResolveForTest(Need need, BotContext ctx)
 	{
+		ctx.EvilErrand = false;
 		costs.Clear();
 		costEvaluations = 0;
 		stuck = null;

@@ -306,7 +306,64 @@ public sealed class BotContext
 	private readonly System.Collections.Generic.Dictionary<long, (long At, int Zones, bool Off)> offLimitsMemo = new();
 
 	/// <summary>The gear gates of <see cref="OffLimits"/> alone (the underground desert, the evil biome), without the danger zones.</summary>
-	public bool BiomeOffLimits(TilePos t) => Combat.Defense < DeepDefense && InUndergroundDesert(t) || (Combat.Defense < CavernDefense || EvilStoneTooHard) && InEvilBiome(t);
+	public bool BiomeOffLimits(TilePos t) => Combat.Defense < DeepDefense && InUndergroundDesert(t)
+		|| (Combat.Defense < CavernDefense || EvilStoneTooHard) && !EvilSurfaceOpen(t) && InEvilBiome(t);
+
+	/// <summary>
+	/// Set by the planner for its pass when the work it chose is an errand in the evil biome: hunting eaters of souls for
+	/// rotten chunks, picking vile mushrooms, summoning and fighting the Eater of Worlds (Milestone 10). All three are had
+	/// only there: the chunks' eaters spawn only while the player is in the Corruption zone, the mushrooms grow only on its
+	/// grass, and Worm Food works only in it (Player.cs:43462, docs M10_SPEC.md). Cleared by the next pass that chose
+	/// something else.
+	/// </summary>
+	public bool EvilErrand
+	{
+		get => evilErrand;
+		set {
+			if (value != evilErrand)
+				offLimitsMemo.Clear(); // the biome gate changed: the remembered answers are stale
+			evilErrand = value;
+		}
+	}
+	private bool evilErrand;
+
+	/// <summary>
+	/// The evil biome's surface, opened for an <see cref="EvilErrand"/> in a full set of armour: the gate's reason, stone the
+	/// pickaxe cannot break (<see cref="EvilStoneTooHard"/>: pockets in ebonstone the bot cannot dig out of, measured run S4),
+	/// is underground. Its surface is corrupt grass and dirt any pickaxe breaks; the danger there is eaters of souls, which
+	/// iron armour and a bow take on (spec: 40 life, 22 contact damage). Not below the surface row (Main.worldSurface): the
+	/// chasms' floors and their orbs' ebonstone shells stay a cost to paths (MoveContext.AvoidTicks a step), so a walk keeps
+	/// out of them. A scoped opening, not the gate lifted: with the errand over, or in weaker armour, it is as before.
+	/// </summary>
+	public bool EvilSurfaceOpen(TilePos t) => EvilErrand && Combat.FullArmour && (SurfaceY <= 0 || t.Y <= SurfaceY);
+
+	/// <summary>
+	/// Half the size of the game's scene scan (tiles), round the player's centre: vanilla Main.buffScanAreaWidth and Height
+	/// (Main.cs:882-884) are (maxScreenW + 800) / 16 - 1 = 169 and (maxScreenH + 800) / 16 - 1 = 124 at the smallest
+	/// maxScreenW/H, 1920 x 1200; a larger screen only widens it, so counting this box undercounts, never over.
+	/// </summary>
+	public const int SceneScanHalfWidth = 84, SceneScanHalfHeight = 62;
+	/// <summary>Weighted Corruption tiles in the scene scan for Player.ZoneCorrupt (SceneMetrics.CorruptionTileThreshold, SceneMetrics.cs:14).</summary>
+	public const int CorruptionZoneTiles = 300;
+
+	/// <summary>
+	/// The Corruption's weight (<see cref="GameIds.CorruptionWeights"/>: TileID.Sets.CorruptBiome, a sunflower -10) of the
+	/// seen tiles in the game's scene scan round the tile, as Player.ZoneCorrupt counts it: only the 16x16 chunks wholly
+	/// inside the box (<see cref="SceneScanHalfWidth"/>), and only tiles the map has revealed, so it never counts more than
+	/// the game does. Worm Food works where this is <see cref="CorruptionZoneTiles"/> or more.
+	/// </summary>
+	public int CorruptionAround(TilePos t)
+	{
+		if (World == null || Ids.CorruptionWeights.Count == 0)
+			return 0;
+		int x0 = (int)Math.Ceiling((t.X - SceneScanHalfWidth) / (double)DesertChunk), x1 = (int)Math.Floor((t.X + SceneScanHalfWidth + 1) / (double)DesertChunk) - 1;
+		int y0 = (int)Math.Ceiling((t.Y - SceneScanHalfHeight) / (double)DesertChunk), y1 = (int)Math.Floor((t.Y + SceneScanHalfHeight + 1) / (double)DesertChunk) - 1;
+		int sum = 0;
+		for (int cx = x0; cx <= x1; cx++)
+			for (int cy = Math.Max(0, y0); cy <= y1; cy++)
+				sum += ChunkCounts(cx, cy).Corrupt;
+		return sum;
+	}
 
 	/// <summary>
 	/// The evil biome's stone (ebonstone, crimstone) wants pick power 65 (vanilla Player.PickTile): with less, the bot cannot
@@ -404,7 +461,7 @@ public sealed class BotContext
 	public const int DesertRecheckTicks = 60 * 60;
 	/// <summary>How soon a chunk not all seen yet is counted again.</summary>
 	public const int PartlySeenRecheckTicks = 60;
-	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, bool AllSeen, int Solid, int Desert, int Evil)> desertChunks = new();
+	private readonly System.Collections.Generic.Dictionary<(int, int), (long At, bool AllSeen, int Solid, int Desert, int Evil, int Corrupt)> desertChunks = new();
 
 	/// <summary>
 	/// Is the tile below the surface where the seen solid tiles around it (48x48) are largely desert (sand, sandstone...)?
@@ -418,7 +475,7 @@ public sealed class BotContext
 	}
 
 	/// <summary>The share of seen solid tiles in the 3x3 chunks around the tile that <paramref name="count"/> picks (0 with too few seen).</summary>
-	private float Share(TilePos t, Func<(int Solid, int Desert, int Evil), int> count)
+	private float Share(TilePos t, Func<(int Solid, int Desert, int Evil, int Corrupt), int> count)
 	{
 		int cx = (int)Math.Floor(t.X / (double)DesertChunk), cy = t.Y / DesertChunk;
 		int solid = 0, some = 0;
@@ -431,13 +488,14 @@ public sealed class BotContext
 		return solid >= 80 ? some / (float)solid : 0f;
 	}
 
-	private (int Solid, int Desert, int Evil) ChunkCounts(int cx, int cy)
+	/// <summary>The chunk's seen tiles: all of them, the desert's, the evil biome's, and the Corruption zone's weight (<see cref="CorruptionAround"/>).</summary>
+	private (int Solid, int Desert, int Evil, int Corrupt) ChunkCounts(int cx, int cy)
 	{
 		// A chunk not yet all seen is counted again soon: counted from afar (a path search) before the bot got there, the
 		// underground desert stayed "not desert" for a game minute while the bot explored it (world_eye run 59).
 		if (desertChunks.TryGetValue((cx, cy), out var v) && Tick - v.At < (v.AllSeen ? DesertRecheckTicks : PartlySeenRecheckTicks))
-			return (v.Solid, v.Desert, v.Evil);
-		int solid = 0, desert = 0, evil = 0, seen = 0;
+			return (v.Solid, v.Desert, v.Evil, v.Corrupt);
+		int solid = 0, desert = 0, evil = 0, corrupt = 0, seen = 0;
 		for (int x = cx * DesertChunk; x < (cx + 1) * DesertChunk; x++)
 			for (int y = cy * DesertChunk; y < (cy + 1) * DesertChunk; y++) {
 				if (!World.IsRevealed(x, y))
@@ -451,9 +509,11 @@ public sealed class BotContext
 					desert++;
 				else if (Array.IndexOf(Ids.EvilTiles, type) >= 0)
 					evil++;
+				if (Ids.CorruptionWeights.TryGetValue(type, out int weight))
+					corrupt += weight;
 			}
-		desertChunks[(cx, cy)] = (Tick, seen == DesertChunk * DesertChunk, solid, desert, evil);
-		return (solid, desert, evil);
+		desertChunks[(cx, cy)] = (Tick, seen == DesertChunk * DesertChunk, solid, desert, evil, corrupt);
+		return (solid, desert, evil, corrupt);
 	}
 
 	/// <summary>

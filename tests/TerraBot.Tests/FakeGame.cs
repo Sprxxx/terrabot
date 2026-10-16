@@ -42,6 +42,11 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int SlimeAi = 1;
 	public const int RecallPotion = 2350;
 	public const int Campfire = 966, HeartLantern = 1859, Chain = 85, TileCampfire = 215, TileLantern = 42;
+	// Milestone 10 (docs M10_SPEC.md; ItemID, TileID, NPCID and the recipes checked against the decompiled tML 2026.08).
+	public const int WormFood = 70, VilePowder = 67, VileMushroom = 60, RottenChunk = 68, WormTooth = 69, UnholyArrow = 47;
+	public const int DemoniteOre = 56, DemoniteBar = 57, DemonBow = 44, Bottle = 31, Glass = 170, SandBlock = 169;
+	public const int TileBottles = 13, TileDemonite = 22, TileCorruptGrass = 23, TileCorruptPlants = 24, TileEbonstone = 25;
+	public const int EowHead = 13, EowBody = 14, EowTail = 15, FlyingAi = 5, WormAi = 6, VileMushroomFrame = 144;
 
 	public static readonly GameIds Ids = new() {
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
@@ -54,6 +59,11 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
 		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion, FloatingAccessories = new[] { InnerTube },
 		DesertTiles = new[] { TileSand }, // only cells a test marks with it (TileTypes) count
+		EvilTiles = new[] { TileCorruptGrass, TileEbonstone }, // likewise
+		CorruptionWeights = new Dictionary<int, int> { [TileCorruptGrass] = 1, [TileCorruptPlants] = 1, [TileEbonstone] = 1 },
+		EvilBoss = EowHead, EvilBossBody = EowBody, EvilBossTail = EowTail, WormFood = WormFood, VilePowder = VilePowder,
+		VileMushroom = VileMushroom, RottenChunk = RottenChunk, WormTooth = WormTooth, UnholyArrow = UnholyArrow,
+		DemoniteOre = DemoniteOre, DemoniteBar = DemoniteBar, DemonBow = DemonBow, Bottle = Bottle, BottleTile = TileBottles,
 	};
 
 	/// <summary>A desert tile type for biome tests: set on cells through <see cref="TileTypes"/>.</summary>
@@ -152,6 +162,17 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		// come from iron bars, so "bars from fences" is never a way to get bars.
 		Add(new RecipeInfo { Result = IronFence, ResultStack = 4, Ingredients = new[] { new Ingredient(1, IronBar) }, Stations = new[] { TileAnvil } });
 		recipes[IronBar].Insert(0, new RecipeInfo { Result = IronBar, Ingredients = new[] { new Ingredient(4, IronFence) } });
+		// Milestone 10, vanilla Recipe.cs: demonite bar 3 ore at a furnace (10250), Demon Bow 8 bars at an anvil (10260), unholy
+		// arrows 5 from 5 wooden arrows and a worm tooth at an anvil (2276), Worm Food 30 vile powder and 15 rotten chunks at a
+		// demon altar (14407), vile powder 5 from a vile mushroom at a placed bottle (2507), 2 bottles from a glass at a furnace
+		// (1687), glass from 2 sand at a furnace (3225).
+		Add(new RecipeInfo { Result = DemoniteBar, Ingredients = new[] { new Ingredient(3, DemoniteOre) }, Stations = new[] { TileFurnace } });
+		Add(new RecipeInfo { Result = DemonBow, Ingredients = new[] { new Ingredient(8, DemoniteBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = UnholyArrow, ResultStack = 5, Ingredients = new[] { new Ingredient(5, WoodenArrow), new Ingredient(1, WormTooth) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = WormFood, Ingredients = new[] { new Ingredient(30, VilePowder), new Ingredient(15, RottenChunk) }, Stations = new[] { TileDemonAltar } });
+		Add(new RecipeInfo { Result = VilePowder, ResultStack = 5, Ingredients = new[] { new Ingredient(1, VileMushroom) }, Stations = new[] { TileBottles } });
+		Add(new RecipeInfo { Result = Bottle, ResultStack = 2, Ingredients = new[] { new Ingredient(1, Glass) }, Stations = new[] { TileFurnace } });
+		Add(new RecipeInfo { Result = Glass, Ingredients = new[] { new Ingredient(2, SandBlock) }, Stations = new[] { TileFurnace } });
 	}
 
 	public void Add(RecipeInfo r)
@@ -184,6 +205,11 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		SilverOre => new ItemSource(SourceKind.Mine, TileSilver),
 		LifeCrystal => new ItemSource(SourceKind.Mine, TileHeart),
 		Lens => new ItemSource(SourceKind.Hunt, NpcAiStyle: DemonEyeAi),
+		RottenChunk => new ItemSource(SourceKind.Hunt, NpcAiStyle: FlyingAi, EvilBiome: true),
+		WormTooth => new ItemSource(SourceKind.Hunt, NpcAiStyle: WormAi, EvilBiome: true),
+		VileMushroom => new ItemSource(SourceKind.Mine, TileCorruptPlants, FrameX: VileMushroomFrame, EvilBiome: true),
+		DemoniteOre => new ItemSource(SourceKind.Mine, TileDemonite),
+		SandBlock => new ItemSource(SourceKind.Mine, TileSand),
 		_ => ItemSource.None, // lead ore: not in this world
 	};
 
@@ -197,13 +223,14 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		TileTorch => new[] { Torch },
 		TileCampfire => new[] { Campfire },
 		TileLantern => new[] { HeartLantern },
+		TileBottles => new[] { Bottle },
 		_ => Array.Empty<int>(),
 	};
 
 	public int TilePlacedBy(int itemType) => itemType switch {
 		WorkBench => TileBench, Furnace => TileFurnace, IronAnvil or LeadAnvil => TileAnvil,
 		Table => TileTable, Chair => TileChair, Door => TileDoor, Torch => TileTorch,
-		Campfire => TileCampfire, HeartLantern => TileLantern, _ => -1,
+		Campfire => TileCampfire, HeartLantern => TileLantern, Bottle => TileBottles, _ => -1,
 	};
 
 	public string ItemName(int itemType) => $"item{itemType}";
@@ -292,6 +319,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		return TileTypes.TryGetValue(new TilePos(x, y), out int t) ? t : TileDirt;
 	}
 
+	/// <summary>Frame columns of cells (plants' styles); unlisted cells with a tile are frame 0.</summary>
+	public readonly Dictionary<TilePos, int> FrameXs = new();
+	public int TileFrameX(int x, int y) => TileTypeAt(x, y) < 0 ? -1 : FrameXs.TryGetValue(new TilePos(x, y), out int f) ? f : 0;
+
 	public IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius)
 	{
 		var found = new List<TilePos>();
@@ -303,7 +334,15 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 
 	/// <summary>Life crystals (2×2 heart objects) are the only frame-important targets worth mining.</summary>
-	public bool CanMineTarget(int x, int y) => TileTypeAt(x, y) == TileHeart;
+	public bool CanMineTarget(int x, int y) => TileTypeAt(x, y) == TileHeart || TileTypeAt(x, y) == TileCorruptPlants && TileFrameX(x, y) == VileMushroomFrame;
+
+	/// <summary>A corrupt plant (a cut tile, open to walk through) at the cell, a vile mushroom if <paramref name="mushroom"/>.</summary>
+	public void AddPlant(int x, int y, bool mushroom)
+	{
+		Grid.Set(x, y, CellKind.Empty);
+		Furniture[new TilePos(x, y)] = TileCorruptPlants;
+		FrameXs[new TilePos(x, y)] = mushroom ? VileMushroomFrame : 0;
+	}
 	public readonly System.Collections.Generic.HashSet<int> BossesDefeated = new();
 	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
 	/// <summary>Light everywhere; tests set it lower for the torch habit.</summary>
@@ -523,6 +562,14 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 					Furniture.Remove(c);
 				Drops.Add(new DropInfo(nextDropId++, LifeCrystal, "Life Crystal", 1, key.X * 16f, FallRow(key.X, key.Y) * 16f + 4, 16, 16));
 			}
+		}
+		// A pickaxe on a corrupt plant: one hit (tileNoFail); a mushroom drops a vile mushroom.
+		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int pt) && pt == TileCorruptPlants
+			&& Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
+			var cell = new TilePos(o.AimX, o.AimY);
+			Furniture.Remove(cell);
+			if (FrameXs.Remove(cell, out int frame) && frame == VileMushroomFrame)
+				Drops.Add(new DropInfo(nextDropId++, VileMushroom, "Vile Mushroom", 1, cell.X * 16f + 4, FallRow(cell.X, cell.Y) * 16f + 4, 8, 8));
 		}
 		// Using a life crystal: +20 max life up to 400.
 		if (o.Tool == ToolRequest.Item && o.ToolItem == LifeCrystal && o.UseItem && Count(LifeCrystal) > 0 && LifeMax < 400 && ++useTicks >= 30) {
