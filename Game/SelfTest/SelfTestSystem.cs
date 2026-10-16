@@ -34,8 +34,10 @@ public sealed class SelfTestSystem : ModSystem
 	/// <summary>
 	/// Milestones a checkpoint is saved at: the late stages can then be measured from there in a few minutes instead of a
 	/// whole 10-day run from day 1 (user, 2026-10-16: "do we REALLY have to start from the beginning every time?").
+	/// "Eye loot collected": after the Eye's demonite and unholy arrows are picked up (items on the ground are not saved with the
+	/// world), the start of the world_eow runs.
 	/// </summary>
-	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated" };
+	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated", "Eye loot collected" };
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
@@ -379,6 +381,10 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				if (!finished && phaseTicks < Timeout(s))
 					return;
+				// The milestones of the last ticks too (they are tracked every 60): world_eye ends as the Eye's loot is picked
+				// up, the tick its checkpoint is due.
+				if (s.RealWorld)
+					TrackMilestones(p, bot);
 				Mod.Logger.Info($"SELFTEST speed {s.Name}: {phaseTicks} ticks in {runClock.Elapsed.TotalSeconds:0} s = {Speed(phaseTicks, runClock)} normal");
 				Evaluate(bot, s, finished);
 				index++;
@@ -486,6 +492,17 @@ public sealed class SelfTestSystem : ModSystem
 		Note("arena site", plan.ArenaSite != null);
 		Note("Eye fight", NPC.AnyNPCs(NPCID.EyeofCthulhu));
 		Note("Eye of Cthulhu defeated", NPC.downedBoss1);
+		// The boss's loot picked up (BotBrain.BossLootRadiusTiles) or none to pick up: the fight and the pickup are over.
+		Note("Eye loot collected", NPC.downedBoss1 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill));
+		// Milestone 10 (docs M10_SPEC.md): the Worm Food path, in the plan's order.
+		int Count(int type) => Enumerable.Range(0, 58).Where(i => p.inventory[i].type == type).Sum(i => p.inventory[i].stack);
+		bool food = Count(ItemID.WormFood) > 0;
+		Note("demon bow", Has(new int[] { ItemID.DemonBow }));
+		Note("rotten chunks 15", Count(ItemID.RottenChunk) >= Bot.Brain.ProgressionPlanner.WormFoodChunks || food);
+		Note("vile powder 30", Count(ItemID.VilePowder) >= Bot.Brain.ProgressionPlanner.WormFoodPowder || food);
+		Note("worm food", food);
+		Note("Eater fight", NPC.AnyNPCs(NPCID.EaterofWorldsHead));
+		Note("Eater of Worlds defeated", NPC.downedBoss2);
 	}
 
 	private void TrackRun(Player p, TerraBotPlayer bot, Scenario s)
@@ -520,6 +537,7 @@ public sealed class SelfTestSystem : ModSystem
 		result.Wood = bot.GameInfo.Count(ItemID.Wood);
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
 		result.EyeDefeated = NPC.downedBoss1;
+		result.EvilBossDefeated = NPC.downedBoss2;
 		result.Milestones = string.Join(", ", milestones);
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		// The hotbar is restocked every 30 ticks, one swap at a time: a pickaxe crafted on the last tick can still be in

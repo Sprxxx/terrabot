@@ -34,6 +34,8 @@ public sealed class RunResult
 	public bool SwordOnHotbar;
 	/// <summary>NPC.downedBoss1 at the end (the Eye of Cthulhu).</summary>
 	public bool EyeDefeated;
+	/// <summary>NPC.downedBoss2 at the end (the Eater of Worlds, or the Brain of Cthulhu in a Crimson world).</summary>
+	public bool EvilBossDefeated;
 	/// <summary>Real-world runs: the milestones reached, in order, with the tick each came at.</summary>
 	public string Milestones = "";
 	/// <summary>The planner's arena: null = finished (floor, open air, torches, campfire), else why not.</summary>
@@ -189,6 +191,22 @@ public sealed class Scenario
 			// the best runs got full armour by day 5, and the stages after it (life, bow, arena, the fight) were never seen.
 			TimeoutTicks = 10 * 86400,
 			Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
+		},
+		new() {
+			// Milestone 10: the Eater of Worlds by Worm Food (docs M10_SPEC.md, the Worm Food path), /bot auto evilboss. Started
+			// from the checkpoint after the Eye (selftest.ps1 -FromCheckpoint ...\Checkpoints\Eye_loot_collected): the boss plan's
+			// stages are met there, and the evil boss's begin. Run it by name.
+			Name = "world_eow",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "auto",
+			AutoPlan = Bot.Brain.ProgressionPlanner.Plans.EvilBoss,
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			// 5 in-game days, the spec's budget (about 3 expected: the hunt for 45 eaters of souls about 1, the rest about 1.5).
+			TimeoutTicks = 5 * 86400,
+			Check = r => !r.EvilBossDefeated ? "the Eater of Worlds was not defeated" : null,
 		},
 		new() {
 			// Times path searches on the real world from the spawn (PathBench). Run it by name.
