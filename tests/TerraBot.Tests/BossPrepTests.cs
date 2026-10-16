@@ -45,6 +45,22 @@ public class BossPrepTests
 	}
 
 	[Fact]
+	public void ALifeCrystalMiningGaveUpOn_IsNotSeenAgain_UntilTheFailuresFade()
+	{
+		// Audit of the 10-day world_eye runs (2026-10-16): a crystal job gave up on its crystal, and at once the crystal was
+		// "seen" again, the brain replanned for it and a fresh job went for the same crystal first.
+		FakeGame g = ProgressionTests.Mine();
+		g.AddHeart(8, 23); // on the grass beside the bot
+		BotContext ctx = g.CreateContext(output);
+		Assert.NotNull(ProgressionPlanner.SeenLifeCrystal(ctx));
+		ProgressionTests.MineUntilGivenUp(g, ctx, new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1), 2);
+		Assert.Null(ProgressionPlanner.SeenLifeCrystal(ctx));
+		// Facts that fade, not a ban: two game hours on it is gone for again.
+		ctx.Tick += BotContext.StepFailureMemoryTicks;
+		Assert.NotNull(ProgressionPlanner.SeenLifeCrystal(ctx));
+	}
+
+	[Fact]
 	public void UseItem_ConsumesALifeCrystal()
 	{
 		FakeGame g = EarlyGameTests.Field(30);

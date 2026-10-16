@@ -451,6 +451,29 @@ public sealed class BotContext
 		return side;
 	}
 
+	/// <summary>
+	/// Where an exploration last was (a leg's start or end) and which way it was heading there (ExploreSkill keeps it, turns
+	/// included). Seen in game (10-day world_eye runs, audit of 2026-10-16: 138-262 mining heartbeats a run, ore found in
+	/// 15-28% of explorations): each exploration went the other way from the one before, so at the gear's depth floor, where
+	/// legs are level tunnels, one tunnelled east and the next walked back west through it from its far end.
+	/// </summary>
+	public (TilePos At, int Heading)? LastExplore { get; set; }
+	/// <summary>A new exploration this close (tiles) to where the last one was carries on its heading: one leg's reach.</summary>
+	public const int KeepHeadingTiles = Skills.ExploreSkill.MaxLegTiles;
+
+	/// <summary>
+	/// The heading for a new exploration from <paramref name="from"/>: on the way the last one was going, if it was near
+	/// here and that side has no more off-limits ground ahead than the other (a player, like Baritone, keeps on into new
+	/// ground); else (the first one, or somewhere else now) <see cref="SaferSide"/>.
+	/// </summary>
+	public int ExploreSide(TilePos from)
+	{
+		if (LastExplore is { } last && last.Heading != 0 && last.At.ChebyshevTo(from) <= KeepHeadingTiles
+			&& OffLimitsAhead(from, last.Heading) <= OffLimitsAhead(from, -last.Heading))
+			return LastExploreSide = last.Heading;
+		return SaferSide(from);
+	}
+
 	/// <summary>How many of the spots ahead on one side (out to 60 tiles, down to 60 rows) are off limits.</summary>
 	public int OffLimitsAhead(TilePos from, int side)
 	{
@@ -508,6 +531,39 @@ public sealed class BotContext
 	/// <summary>Extra planner cost of a step that failed lately (a decaying cost, not a ban: Baritone keeps none).</summary>
 	public float StepPenalty(TilePos from, TilePos to) =>
 		StepFailures.Count > 0 && StepFailures.TryGetValue((from, to), out var f) && Tick - f.At < StepFailureMemoryTicks ? f.Count * StepFailureTicks : 0f;
+
+	/// <summary>
+	/// Times mining gave up on each tile lately (within <see cref="MineFailureMemoryTicks"/>), over all mining jobs: still
+	/// there after hacking at it, walked to and still out of reach, no path to it. Seen in game (audit of the 10-day world_eye
+	/// runs, 2026-10-16): the give-up went only into the job's own skip list, so the next job (and each "a life crystal came
+	/// into sight" replan) went for the same tile first. Facts that fade with time, as <see cref="StepFailures"/>: the brain's
+	/// rest after failures and the planner's ForgetGivenUp leave them be.
+	/// </summary>
+	public System.Collections.Generic.Dictionary<TilePos, (int Count, long At)> MineFailures { get; } = new();
+	/// <summary>A tile's mining failures are forgotten this long after the last one: two game hours, as a failed step's.</summary>
+	public const long MineFailureMemoryTicks = StepFailureMemoryTicks;
+	/// <summary>
+	/// Each failure lately takes 1/this of a search's reach off a tile (<see cref="InMiningReach"/>): after one it is gone for
+	/// only within half the reach, and after fresh tiles; after two, not until they are forgotten. A cost, not a ban.
+	/// </summary>
+	public const int MineFailuresToForgo = 2;
+
+	/// <summary>One more give-up on mining the tile; returns how many there have been lately.</summary>
+	public int NoteMineFailure(TilePos t)
+	{
+		int n = MineFailuresLately(t) + 1;
+		MineFailures[t] = (n, Tick);
+		return n;
+	}
+
+	public int MineFailuresLately(TilePos t) =>
+		MineFailures.Count > 0 && MineFailures.TryGetValue(t, out var f) && Tick - f.At < MineFailureMemoryTicks ? f.Count : 0;
+
+	/// <summary>Tiles of distance a tile's failures lately add to it, for a search reaching <paramref name="reach"/> tiles.</summary>
+	public float MineFailureCost(TilePos t, int reach) => MineFailuresLately(t) * reach / (float)MineFailuresToForgo;
+
+	/// <summary>Is the tile within <paramref name="reach"/> of <paramref name="from"/>, its failures lately counted as distance?</summary>
+	public bool InMiningReach(TilePos t, TilePos from, int reach) => from.ChebyshevTo(t) + MineFailureCost(t, reach) <= reach;
 
 	public BotContext()
 	{

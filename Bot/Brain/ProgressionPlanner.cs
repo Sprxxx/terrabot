@@ -287,24 +287,46 @@ public sealed class ProgressionPlanner
 
 	public static bool LifeCrystalUseful(BotContext ctx) => ctx.Ids.LifeCrystal > 0 && ctx.Combat.LifeMaxBase > 0 && ctx.Combat.LifeMaxBase < MaxCrystalLife;
 
-	/// <summary>The nearest life crystal (heart tile) the player has seen within <see cref="CrystalRadius"/> that can be mined.</summary>
+	/// <summary>
+	/// The nearest life crystal (heart tile) the player has seen within <see cref="CrystalRadius"/> that can be mined, the
+	/// times mining gave up on it lately counted as distance (BotContext.InMiningReach). Seen in game (audit of the 10-day
+	/// world_eye runs, 2026-10-16): a crystal mining had given up on was "seen" again at once, and the replan for it started a
+	/// fresh crystal job beside it, which went for the same crystal first.
+	/// </summary>
 	public static TilePos? SeenLifeCrystal(BotContext ctx)
 	{
 		int heart = ctx.Knowledge?.SourceOf(ctx.Ids.LifeCrystal).TileType ?? -1;
 		if (heart <= 0)
 			return null;
-		foreach (TilePos c in ctx.World.FindTiles(heart, ctx.Node, CrystalRadius)) {
+		TilePos node = ctx.Node;
+		TilePos? best = null;
+		float bestDist = float.MaxValue;
+		foreach (TilePos c in ctx.World.FindTiles(heart, node, CrystalRadius)) {
+			int d = c.ChebyshevTo(node);
+			if (d >= bestDist)
+				break; // nearest first: none further on can beat it
+			if (!ctx.InMiningReach(c, node, CrystalRadius)) {
+				if (ctx.CrystalNotes.Add((c.X >> 1, c.Y >> 1, "given up on")))
+					ctx.Log.Info($"Life crystal at {c} seen, left alone for now: mining gave up on it {ctx.MineFailuresLately(c)} times lately");
+				continue;
+			}
 			// Not deeper than the gear allows (mining skips those too): seen in game, a crystal 7 rows below the limit
 			// interrupted mining every second, the crystal job failing at once each time.
 			// As mining itself would judge it (MineSkill.WouldMine), so the job it gets is one it takes on.
 			string why = !ctx.World.CanMineTarget(c.X, c.Y) ? "the pickaxe cannot break it" : MineSkill.WhyNotMine(ctx, ctx.Moves, c, valuable: true);
-			if (why == null)
-				return c;
+			if (why == null) {
+				float dist = d + ctx.MineFailureCost(c, CrystalRadius);
+				if (dist < bestDist) {
+					bestDist = dist;
+					best = c;
+				}
+				continue;
+			}
 			// Said once per crystal and reason: seen in game, the bot ran past crystals and nothing in the log said why.
 			if (ctx.CrystalNotes.Add((c.X >> 1, c.Y >> 1, why)))
 				ctx.Log.Info($"Life crystal at {c} seen, left alone: {why}");
 		}
-		return null;
+		return best;
 	}
 
 	/// <summary>Chests closer than this (tiles) that are seen and not looted yet are looted before anything else.</summary>

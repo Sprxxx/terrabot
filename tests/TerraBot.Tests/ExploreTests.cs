@@ -79,6 +79,67 @@ public class ExploreTests
 	}
 
 	[Fact]
+	public void AfterOreFound_TheNextExploration_CarriesOnTheWayTheLastOneWent()
+	{
+		// Audit of the 10-day world_eye runs (2026-10-16): each exploration turned the other way from the one before, so the
+		// second walked back over the ground the first had just explored. Here the first goes east and finds a little ore;
+		// with it mined, the next exploration goes on east, not back west over the way it came.
+		FakeGame g = ProgressionTests.Mine(200, oreRows: 0);
+		for (int x = 100; x <= 102; x++)
+			g.TileTypes[new TilePos(x, 29)] = FakeGame.TileIron;
+		g.HideFrom(50);
+		BotContext ctx = g.CreateContext(output);
+		var log = (TestLog)ctx.Log;
+		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 10);
+		mine.Start(ctx);
+		string[] Starts() => log.Lines.Where(l => l.StartsWith("Explore start")).ToArray();
+		for (int t = 0; t < 60 * 60 * 6 && Starts().Length < 2; t++) {
+			g.Refresh(ctx);
+			if (mine.Tick(ctx) != SkillStatus.Running)
+				break;
+			g.Step(ctx);
+		}
+		string[] starts = Starts();
+		output.WriteLine(string.Join("\n", starts) + $"\nmined {mine.Mined}, at {g.Sim.Node}");
+		Assert.True(mine.Mined >= 3, $"the ore not mined ({mine.Describe()})");
+		Assert.Equal(2, starts.Length);
+		Assert.Contains("heading right", starts[0]);
+		Assert.Contains("heading right", starts[1]);
+	}
+
+	[Fact]
+	public void DiggingOn_FacingBackDownItsOwnTunnel_GoesIntoFreshRock()
+	{
+		// Audit of the 10-day world_eye runs (2026-10-16): at the gear's depth floor legs are level tunnels, and "digging on"
+		// 25 tiles from where the bot stood, facing back from a tunnel's far end, went back through the open tunnel.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 40; y++) {
+			if (y < 10)
+				rows.Add(new string('.', 120));
+			else if (y >= 20 && y <= 22)
+				rows.Add(new string('s', 20) + (y == 22 ? new string('.', 60) + "S." : new string('.', 62)) + new string('s', 38));
+			else
+				rows.Add(new string(y == 39 ? '@' : 's', 120));
+		}
+		var g = new FakeGame(rows.ToArray());
+		g.HideFrom(86); // the rock east of the tunnel's end not seen yet
+		BotContext ctx = g.CreateContext(output);
+		ctx.CavernY = 22 - BotContext.ShallowMargin; // the depth floor at the tunnel: no digging down
+		Assert.Equal(22, ctx.DeepestRow);
+		foreach (int x in new[] { 45, 70 })
+			ctx.Explored.Add(new TilePos(x, 22)); // the legs that dug the tunnel eastwards
+		var explore = new ExploreSkill("ore", _ => false, ExploreBias.Down, heading: -1);
+		explore.Start(ctx);
+		g.Refresh(ctx);
+		explore.Tick(ctx);
+		string leg = ((TestLog)ctx.Log).Lines.First(l => l.Contains("Explore: leg 1 to"));
+		output.WriteLine(leg);
+		var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\) \((.+?)\) from \((\d+),");
+		Assert.Equal("digging on", m.Groups[3].Value);
+		Assert.True(int.Parse(m.Groups[1].Value) > int.Parse(m.Groups[4].Value), "back through the open tunnel");
+	}
+
+	[Fact]
 	public void FruitlessExplorations_AreCountedAcrossRestarts()
 	{
 		// world_eye run 42: a fight every few seconds restarted mining, its own count went back to 0, and it never gave up.
