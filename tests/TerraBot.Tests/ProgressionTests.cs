@@ -363,6 +363,55 @@ public class ProgressionTests
 		output.WriteLine($"second run took {g.Sim.Ticks - before} ticks");
 	}
 
+	/// <summary>Iron ore at <paramref name="ore"/>, sealed in an unbreakable block 0-<paramref name="right"/> x 25-32 under the start.</summary>
+	private static FakeGame SealedOre(int right, params TilePos[] ore)
+	{
+		FakeGame g = Mine(oreRows: 0);
+		for (int x = 0; x <= right; x++)
+			for (int y = 25; y <= 32; y++) {
+				g.Grid.Set(x, y, CellKind.Solid);
+				g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		foreach (TilePos c in ore) {
+			g.Blocks.Unbreakable.Remove(c);
+			g.TileTypes[c] = FakeGame.TileIron;
+		}
+		return g;
+	}
+
+	[Fact]
+	public void MineSkill_TakingTheOtherTiersOre_SkipsItsUnreachableClusterAtOnce()
+	{
+		// Measured run U10: "no Silver Ore in sight, but Iron Ore at ..., which does as well; taking that", and on a failed
+		// walk the silver round the tile was marked unreachable, not the iron. One vein at (2029-2033,355-361): 142 "skipping"
+		// lines and 44 jobs failed with "4 Silver Ore tiles in a row unreachable", about 11 game hours.
+		var sealedOff = new[] { new TilePos(5, 30), new TilePos(6, 30), new TilePos(7, 30), new TilePos(8, 30) };
+		FakeGame g = SealedOre(13, sealedOff);
+		BotContext ctx = g.CreateContext(output);
+		var mine = new MineSkill(FakeGame.SilverOre, FakeGame.TileSilver, 3) { Also = new[] { (FakeGame.IronOre, FakeGame.TileIron) } };
+		MineUntilGivenUp(g, ctx, mine, 1);
+		foreach (TilePos c in sealedOff)
+			Assert.Contains(c, ctx.UnreachableTiles);
+	}
+
+	[Fact]
+	public void MineSkill_UnreachableInARow_TheLastTileIsMarkedToo()
+	{
+		// Measured run U10: the job failed on its 4th unreachable tile without marking it, and the next job went straight
+		// for that same tile ("taking that" at (2031,356) right after the failure there).
+		var sealedOff = new[] { new TilePos(5, 30), new TilePos(15, 30), new TilePos(25, 30), new TilePos(35, 30) };
+		FakeGame g = SealedOre(40, sealedOff);
+		BotContext ctx = g.CreateContext(output);
+		var mine = new MineSkill(FakeGame.SilverOre, FakeGame.TileSilver, 3) { Also = new[] { (FakeGame.IronOre, FakeGame.TileIron) } };
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, mine, 60 * 120);
+		output.WriteLine($"{s}: {mine.FailureReason}");
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.Contains("in a row unreachable", mine.FailureReason);
+		foreach (TilePos c in sealedOff)
+			Assert.Contains(c, ctx.UnreachableTiles);
+		Assert.Contains($"item{FakeGame.IronOre} tiles", mine.FailureReason); // the ore it was going for
+	}
+
 	/// <summary>
 	/// Run <paramref name="mine"/> with its pickaxe swings at the target not landing (as when something keeps a tile from
 	/// breaking), until <paramref name="skips"/> "skipping" give-ups are logged; the skill is stopped then.
