@@ -553,6 +553,14 @@ public sealed class ProgressionPlanner
 					recallNext = true;
 					stationWalkFailures.Remove(stationWalkType);
 				}
+				else if (n >= MaxStationWalkFailures && ctx.Knowledge.ItemsPlacing(stationWalkType).Count == 0) {
+					TilePos site = KnownStations.GetValueOrDefault(stationWalkType);
+					failedStationSites[site] = ctx.Tick;
+					ctx.Log.Info($"Auto: no way to the {ctx.Knowledge.TileName(stationWalkType)} at {site} ({n} walks failed); not that one again for a day, another one");
+					KnownStations.Remove(stationWalkType);
+					stationWalkFailures.Remove(stationWalkType);
+					searchedFor.Remove(stationWalkType);
+				}
 				else if (n >= MaxStationWalkFailures) {
 					ctx.Log.Info($"Auto: no way back to the {ctx.Knowledge.TileName(stationWalkType)} at {KnownStations.GetValueOrDefault(stationWalkType)} ({n} walks failed); making a new one here");
 					KnownStations.Remove(stationWalkType);
@@ -858,7 +866,7 @@ public sealed class ProgressionPlanner
 		}
 		if (items.Count == 0) {
 			// Nothing places it (a demon altar): find one in the world.
-			TilePos? found = ctx.World.FindTiles(s.TileType, ctx.Node, StationSearchRadius).Cast<TilePos?>().FirstOrDefault();
+			TilePos? found = FindReachableUnplaceable(s.TileType, ctx);
 			if (found == null) {
 				// None seen yet (only what is revealed on the map counts): go and look, a new direction each time; that found
 				// nothing, new ground, as for ore that ran out (TravelForOre: along the surface, farther each time). Seen in
@@ -1878,6 +1886,23 @@ public sealed class ProgressionPlanner
 	public const int MaxStationTrips = 6;
 	private readonly HashSet<int> searchedFor = new();
 
+	/// <summary>
+	/// Stations nothing places (a demon altar) that no walk got to, and when: not chosen again for <see cref="FailedTripTicks"/>
+	/// (a fact about the place, like <see cref="failedTrips"/>); the next nearest is, or an exploration for one. Seen in game
+	/// (measured run M10d, world_eow): with the Worm Food's all else in hand at d5 +19h, the altar at (1732,358) lay behind the
+	/// ebonstone lining of a chasm (pick power 40 breaks none of it); "no way back to the DemonAltar (2 walks failed); making
+	/// a new one here" removed it, and the search found the same altar again, 5 times until the run's 5 days were up.
+	/// </summary>
+	private readonly Dictionary<TilePos, long> failedStationSites = new();
+	/// <summary>Cells of one placed station (an altar is 3×2): found again as another of its cells.</summary>
+	public const int StationSiteTiles = 3;
+
+	/// <summary>The nearest seen station of this type that no walk lately failed to reach.</summary>
+	private TilePos? FindReachableUnplaceable(int tile, BotContext ctx) =>
+		ctx.World.FindTiles(tile, ctx.Node, StationSearchRadius)
+			.Where(t => !failedStationSites.Any(f => ctx.Tick - f.Value < FailedTripTicks && f.Key.ChebyshevTo(t) <= StationSiteTiles))
+			.Cast<TilePos?>().FirstOrDefault();
+
 	/// <summary>Look for a station nothing can place (once per planner reset); remember it when found.</summary>
 	private bool FindUnplaceableStation(int tile, BotContext ctx)
 	{
@@ -1885,7 +1910,7 @@ public sealed class ProgressionPlanner
 			return true;
 		if (!searchedFor.Add(tile))
 			return false;
-		TilePos? found = ctx.World.FindTiles(tile, ctx.Node, StationSearchRadius).Cast<TilePos?>().FirstOrDefault();
+		TilePos? found = FindReachableUnplaceable(tile, ctx);
 		if (found == null)
 			return false;
 		KnownStations[tile] = found.Value;

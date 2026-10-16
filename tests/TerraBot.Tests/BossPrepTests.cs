@@ -334,6 +334,39 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AnAltarNoWalkGetsTo_IsNotFoundAgain_TheNextOneIs()
+	{
+		// Measured run M10d (world_eow): the altar at (1732,358) lay behind a chasm's ebonstone lining (pick 40 breaks none);
+		// after 2 failed walks it was dropped, and the search found the same altar again, 5 times until the run's end.
+		FakeGame g = ProgressionTests.Mine(width: 120);
+		for (int x = 26; x <= 36; x++)
+			for (int y = 27; y <= 35; y++) {
+				bool inside = x > 27 && x < 35 && y > 28 && y < 34;
+				g.Grid.Set(x, y, inside ? CellKind.Empty : CellKind.Solid);
+				if (!inside)
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.AddAltar(30, 32); // sealed in, on the shell's floor (row 34)
+		g.AddAltar(80, 23); // out in the open, farther
+		g.Items[FakeGame.Lens] = 6;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		for (int i = 0; i < ProgressionPlanner.MaxStationWalkFailures; i++) {
+			ISkill s = p.ResolveForTest(Eye, ctx);
+			output.WriteLine($"{p.Status} -> {s?.Describe()}");
+			var walk = Assert.IsType<WalkToSkill>(s);
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 600));
+			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		}
+		ISkill next = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}; known {string.Join(", ", p.KnownStations)}");
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos altar), p.Status);
+		Assert.True(altar.X >= 80, $"the sealed altar again: {altar}");
+	}
+
+	[Fact]
 	public void NoAltarFoundAround_TravelsToNewGround_NotStuck()
 	{
 		// Measured run S17: all else ready at d5 +21h, then "no DemonAltar found after 10 explorations" and auto mode
