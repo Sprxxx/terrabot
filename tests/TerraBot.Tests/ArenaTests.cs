@@ -107,6 +107,111 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_Arena_ATreeStandingInADip_IsFelledAndFilledIn_NotARuleOut()
+	{
+		// Measured run U9: trees standing in dips beside the house, their trunks up through the floor row ((1986,283) on
+		// ground at row 284), ruled out 29 of the 47 arena sites clear of the house ("a tree in the floor"), the bot's
+		// work benches on bumps the other 18, and auto mode stopped at max life 200.
+		FakeGame g = EarlyGameTests.Field(300, 50, 75);
+		for (int x = 20; x < 290; x += 40) {
+			g.Grid.Set(x, 25, CellKind.Empty); // a dip one deep, a tree standing in it
+			g.Trees[new TilePos(x, 25)] = 8;
+		}
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		var anchor = new TilePos(150, 24);
+		TilePos? site = SiteFinder.Find(ctx, bp, anchor);
+		output.WriteLine($"site {site}; {SiteFinder.Explain(ctx, bp, anchor)}");
+		Assert.NotNull(site);
+		Assert.Equal(25, site.Value.Y + bp.Height - 1);
+		// A house's floor still may not have one (no axe in its plan).
+		Assert.Equal(-1, SiteFinder.Edits(ctx, Blueprint.SmallHouse(FakeGame.Ids), new TilePos(15, 25 - 5)));
+	}
+
+	[Fact]
+	public void SiteFinder_Explain_SaysWhereAndTheFewestEdits()
+	{
+		// Measured run U9: "a tree in the floor 29, unbreakable tile 2 under 18 18" said what ruled the sites out but not
+		// where; finding the trees and the benches took a parse of the saved world.
+		FakeGame g = EarlyGameTests.Field(300, 50, 75);
+		for (int x = 100; x <= 120; x++)
+			g.Grid.Set(x, 24, CellKind.Water); // a pond in most of the sites
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		string why = SiteFinder.Explain(ctx, bp, new TilePos(150, 24));
+		output.WriteLine(why);
+		Assert.Matches(@"liquid \d+ \(\d+ at \(\d+,24\)\)", why);
+		Assert.Matches(@"fewest edits \d+ at \(\d+,18\)", why);
+	}
+
+	[Fact]
+	public void BuildSkill_Arena_FellsATreeWhoseTopIsInTheFloor_ThenFillsItIn()
+	{
+		// A tree standing in a pit, all of it at or below the floor row: nothing of it in the open air to fell it by, and a
+		// floor block cannot go into its trunk. The floor row's trees are felled too (SiteFinder counts them as felled).
+		FakeGame g = EarlyGameTests.Field(140);
+		for (int x = 58; x <= 62; x++)
+			for (int y = 25; y <= 27; y++)
+				g.Grid.Set(x, y, CellKind.Empty); // a pit 5 wide and 3 deep
+		g.Trees[new TilePos(60, 27)] = 3; // its top in the floor row
+		GiveArenaKit(g);
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		var site = new TilePos(20, 25 - bp.Height + 1);
+		Assert.True(SiteFinder.Edits(ctx, bp, site) > 0);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, new BuildSkill(bp, site), 60 * 60 * 6);
+		output.WriteLine($"{s} after {g.Sim.Ticks} ticks; placed {g.Sim.Placed}, broken {g.Sim.Broken}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.DoesNotContain(new TilePos(60, 27), g.Trees.Keys);
+		Assert.True(ProgressionPlanner.ArenaReady(ctx, bp, site));
+	}
+
+	[Fact]
+	public void ArenaPlan_NoSiteNearTheHouse_LooksFartherOut()
+	{
+		// Measured runs U8cp and U9: no site within 80 tiles was a stop ("stuck on arena: no arena site"), five rests and
+		// auto mode off, with max life 200 and the bow made. A player walks a little further for good ground.
+		FakeGame g = EarlyGameTests.FieldFrom(400, 200);
+		for (int x = 120; x <= 280; x++)
+			g.Grid.Set(x, 24, CellKind.Water); // a lake round the bot: every site within 80 has some of it
+		GiveArenaKit(g);
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Arena);
+		ISkill s = p.ResolveForTest(new ArenaBuilt("arena"), ctx);
+		output.WriteLine($"{p.Status} stuck [{p.ResolveForTestStuck}] -> {s?.Describe()}; site {p.ArenaSite}");
+		Assert.Null(p.ResolveForTestStuck);
+		Assert.NotNull(p.ArenaSite);
+		int mid = p.ArenaSite.Value.X + Blueprint.ArenaWidth / 2;
+		Assert.InRange(System.Math.Abs(mid - 200), Blueprint.ArenaSearchRadius + 1, Blueprint.ArenaFarSearchRadius);
+		Assert.False(p.ArenaOnOpenGround);
+	}
+
+	[Fact]
+	public void ArenaPlan_NoSiteAnywhere_TheBossIsFoughtOnOpenGround()
+	{
+		// Measured runs U8cp and U9: "no arena site" stopped auto mode before the summon. The arena is a convenience: the
+		// fight does without one (BossFightSkill.Arena null), as a player fights the Eye on the surface.
+		FakeGame g = EarlyGameTests.FieldFrom(500, 250);
+		for (int x = 0; x < 500; x++)
+			g.Grid.Set(x, 24, CellKind.Water); // water everywhere
+		GiveArenaKit(g);
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Arena);
+		ISkill s = p.ResolveForTest(new ArenaBuilt("arena"), ctx);
+		output.WriteLine($"{p.Status} stuck [{p.ResolveForTestStuck}] -> {s?.Describe()}");
+		Assert.Null(p.ResolveForTestStuck);
+		Assert.Null(s);
+		Assert.True(p.ArenaOnOpenGround);
+		Assert.Null(p.ArenaSite);
+		Assert.Null(p.ArenaBounds(ctx));
+		Assert.Null(p.ResolveForTest(new ArenaBuilt("arena"), ctx)); // not looked for again at every plan
+		p.ForgetGivenUp();
+		Assert.False(p.ArenaOnOpenGround); // after a rest it is looked for again
+	}
+
+	[Fact]
 	public void SiteFinder_Arena_LooksLeftOfTheHouse_AsFarAsRight()
 	{
 		// Measured run S12: searched by its left edge within 80 tiles, a 96-wide arena could never go left of the house:
