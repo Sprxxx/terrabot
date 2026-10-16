@@ -288,9 +288,19 @@ public sealed class MineSkill : ISkill
 	private int arrivedOutOfReach;
 	public const int MaxArrivedOutOfReach = 3;
 
+	/// <summary>
+	/// Skip the tile for the rest of this job, and remember the failure on the context (BotContext.MineFailures) so later
+	/// jobs go for other tiles first. A life crystal is one object of 2×2 tiles: the failure is noted on all of them.
+	/// </summary>
 	private SkillStatus GiveUp(BotContext ctx, TilePos t, string why)
 	{
-		ctx.Log.Info($"Mine: skipping {t}: {why}");
+		int type = alt?.Tile ?? TileType;
+		int n = ctx.NoteMineFailure(t);
+		if (ctx.World.CanMineTarget(t.X, t.Y))
+			foreach (TilePos c in ctx.World.FindTiles(type, t, 1))
+				if (c != t)
+					ctx.NoteMineFailure(c);
+		ctx.Log.Info($"Mine: skipping {t}: {why}" + (n > 1 ? $" ({n} times lately)" : ""));
 		bad.Add(t);
 		target = null;
 		sub?.Stop(ctx);
@@ -298,15 +308,8 @@ public sealed class MineSkill : ISkill
 		return SkillStatus.Running;
 	}
 
-	/// <summary>Nearest safe tile of the type, weighting depth (digging down is cheap, climbing back is not).</summary>
 	/// <summary>The nearest tile of this kind within <paramref name="radius"/> of <paramref name="around"/> that mining would take on.</summary>
-	private TilePos? Nearest(BotContext ctx, TilePos around, int radius)
-	{
-		foreach (TilePos c in ctx.World.FindTiles(TileType, around, radius))
-			if (!bad.Contains(c) && WouldMine(ctx, ctx.Moves, c, Valuable(ctx)))
-				return c;
-		return null;
-	}
+	private TilePos? Nearest(BotContext ctx, TilePos around, int radius) => NearestOf(ctx, TileType, around, radius);
 
 	/// <summary>The tile of this ore to go for, else (none in sight) one of an <see cref="Also"/> ore; sets <see cref="alt"/>.</summary>
 	private TilePos? PickTarget(BotContext ctx)
@@ -327,12 +330,27 @@ public sealed class MineSkill : ISkill
 		return null;
 	}
 
+	/// <summary>
+	/// The nearest tile of the type within <paramref name="radius"/> that mining would take on, failures lately (on this job
+	/// or an earlier one: BotContext.MineFailures) counted as distance.
+	/// </summary>
 	private TilePos? NearestOf(BotContext ctx, int tile, TilePos around, int radius)
 	{
-		foreach (TilePos c in ctx.World.FindTiles(tile, around, radius))
-			if (!bad.Contains(c) && WouldMine(ctx, ctx.Moves, c, Valuable(ctx)))
-				return c;
-		return null;
+		TilePos? best = null;
+		float bestDist = float.MaxValue;
+		foreach (TilePos c in ctx.World.FindTiles(tile, around, radius)) {
+			int d = c.ChebyshevTo(around);
+			if (d >= bestDist)
+				break; // nearest first: none further on can beat it
+			if (bad.Contains(c) || !ctx.InMiningReach(c, around, radius) || !WouldMine(ctx, ctx.Moves, c, Valuable(ctx)))
+				continue;
+			float dist = d + ctx.MineFailureCost(c, radius);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = c;
+			}
+		}
+		return best;
 	}
 
 	private TilePos? BestOf(BotContext ctx, int tileType)
@@ -342,9 +360,10 @@ public sealed class MineSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		foreach (TilePos c in ctx.World.FindTiles(tileType, node, SearchRadius)) {
-			if (bad.Contains(c) || !WouldMine(ctx, moves, c, Valuable(ctx)))
+			if (bad.Contains(c) || !ctx.InMiningReach(c, node, SearchRadius) || !WouldMine(ctx, moves, c, Valuable(ctx)))
 				continue;
-			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y);
+			// Given up on lately, by this job or an earlier one: after the tiles not tried yet.
+			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y) + ctx.MineFailureCost(c, SearchRadius);
 			// The row the bot stands on, under its feet and a step either side, last: seen in the settle scenario, it mined
 			// the stone it stood on tile by tile, placing a block each time to keep its footing, and the count never rose.
 			if (c.Y == node.Y + 1 && c.X >= node.X - 1 && c.X <= node.X + 2)

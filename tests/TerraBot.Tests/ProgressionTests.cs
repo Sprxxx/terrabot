@@ -363,6 +363,49 @@ public class ProgressionTests
 		output.WriteLine($"second run took {g.Sim.Ticks - before} ticks");
 	}
 
+	/// <summary>
+	/// Run <paramref name="mine"/> with its pickaxe swings at the target not landing (as when something keeps a tile from
+	/// breaking), until <paramref name="skips"/> "skipping" give-ups are logged; the skill is stopped then.
+	/// </summary>
+	public static void MineUntilGivenUp(FakeGame g, BotContext ctx, MineSkill mine, int skips)
+	{
+		var log = (TestLog)ctx.Log;
+		int before = log.Lines.Count(l => l.StartsWith("Mine: skipping"));
+		mine.Start(ctx);
+		for (int t = 0; t < 60 * 120 && log.Lines.Count(l => l.StartsWith("Mine: skipping")) < before + skips; t++) {
+			g.Refresh(ctx);
+			Assert.Equal(SkillStatus.Running, mine.Tick(ctx));
+			if (mine.State.StartsWith("mining"))
+				ctx.Output.UseItem = false;
+			g.Step(ctx);
+		}
+		Assert.Equal(before + skips, log.Lines.Count(l => l.StartsWith("Mine: skipping")));
+		mine.Stop(ctx);
+	}
+
+	[Fact]
+	public void MineSkill_OreAnEarlierJobGaveUpOn_IsTriedAfterTheRest()
+	{
+		// Audit of the 10-day world_eye runs (2026-10-16): a give-up ("still there after 480 ticks") went only into the job's
+		// own skip list, and the next job went for the same tile first.
+		FakeGame g = Mine(oreRows: 0);
+		var near = new TilePos(7, 25);
+		var far = new TilePos(20, 25);
+		g.TileTypes[near] = g.TileTypes[far] = FakeGame.TileIron;
+		BotContext ctx = g.CreateContext(output);
+		MineUntilGivenUp(g, ctx, new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 1), 1);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.StartsWith($"Mine: skipping {near}"));
+		var next = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 1);
+		next.Start(ctx);
+		for (int t = 0; t < 5; t++) {
+			g.Refresh(ctx);
+			next.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine(next.Describe());
+		Assert.Contains(far.ToString(), next.Describe());
+	}
+
 	[Fact]
 	public void MineSkill_GivesUpQuickly_WhenNothingIsReachable()
 	{

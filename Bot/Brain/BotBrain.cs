@@ -645,7 +645,7 @@ public sealed class BotBrain
 					ctx.UnreachableTiles.Clear();
 				}
 				else {
-					ctx.Log.Warn($"Auto: {failures} failures in a row ({LastResult}); resting {BackoffTicks} ticks, forgetting what was unreachable (not the steps that failed 3 times: those are facts), then trying again ({backoffs}/{MaxBackoffs})");
+					ctx.Log.Warn($"Auto: {failures} failures in a row ({LastResult}); resting {BackoffTicks} ticks, forgetting what was unreachable (not the steps that failed 3 times, nor the tiles mining gave up on: those are facts that fade), then trying again ({backoffs}/{MaxBackoffs})");
 					failures = 0;
 					backoffUntil = ctx.Tick + BackoffTicks;
 					ctx.UnreachableTiles.Clear();
