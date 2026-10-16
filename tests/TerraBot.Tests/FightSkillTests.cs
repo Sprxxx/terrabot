@@ -110,6 +110,62 @@ public class FightSkillTests
 		Assert.IsType<FightSkill>(brain2.Current);
 	}
 
+	/// <summary>Auto brain at 20/100 life, no potion, a slime 5 tiles off: the retreat's first tick (Shelter).</summary>
+	private (FakeGame g, BotContext ctx, Bot.Brain.BotBrain brain) Retreating()
+	{
+		FakeGame g = EarlyGameTests.FieldFrom(100, 40);
+		g.Life = 20;
+		g.AddSlime(7, 45, 24);
+		g.Items[FakeGame.DirtBlock] = 10;
+		BotContext ctx = g.CreateContext(output);
+		var brain = new Bot.Brain.BotBrain();
+		brain.SetAuto(true, ctx, Bot.Brain.ProgressionPlanner.Plans.Early);
+		g.Refresh(ctx);
+		brain.Tick(ctx);
+		g.Step(ctx);
+		Assert.IsType<ShelterSkill>(brain.Current);
+		return (g, ctx, brain);
+	}
+
+	[Fact]
+	public void Retreat_HitWhileSheltering_FightsBack_AndDoesNotFlipBackAtOnce()
+	{
+		// Measured runs U13, U14, U17, U19, U20 and M10a: 13 deaths in Shelter, not one swing once the retreat began (the fight
+		// rule skipped retreats), however often the bot was hit.
+		var (g, ctx, brain) = Retreating();
+		const int hitAt = 10;
+		for (int t = 1; t <= hitAt + 2 * BotContext.HurtImmunityTicks; t++) { // BotBrain.FightBackHoldTicks
+			g.Refresh(ctx);
+			if (t == hitAt)
+				ctx.NoteHit(10);
+			brain.Tick(ctx);
+			g.Step(ctx);
+			if (t >= hitAt)
+				Assert.True(brain.Current is FightSkill, $"t{t}: {brain.Describe()}");
+		}
+	}
+
+	[Fact]
+	public void Retreat_WalkerBesideTheHole_IsFoughtBeforeItBites()
+	{
+		// Measured run U20 (t77502): dug in 17 tiles from the zombie, it caught up while the bot mined row 2 of 5 and killed it.
+		var (g, ctx, brain) = Retreating();
+		int t = 0;
+		for (; t < 60 * 20 && !brain.Describe().Contains("[Digging]"); t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		Assert.Contains("[Digging]", brain.Describe());
+		// The slime has walked up: beside the hole, not yet a hit.
+		TilePos n = g.Sim.Node;
+		g.Slimes[0] = (7, (n.X + 2) * 16f + 4, g.Slimes[0].y, 40);
+		g.Refresh(ctx);
+		brain.Tick(ctx);
+		output.WriteLine($"t{t}: {brain.Describe()}");
+		Assert.IsType<FightSkill>(brain.Current);
+	}
+
 	[Fact]
 	public void Retreat_DigsBesideBlocksItCannotMine()
 	{

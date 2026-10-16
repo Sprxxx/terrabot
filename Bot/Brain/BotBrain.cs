@@ -448,6 +448,20 @@ public sealed class BotBrain
 	/// <summary>Life to recover to before coming out of a retreat.</summary>
 	public const float RetreatUntil = 0.8f;
 
+	/// <summary>
+	/// A retreat that turned to fight (<see cref="ShelterSkill.FightBackReason"/>) is not taken up again for this long, nor while
+	/// that fight is still being hit this recently: two immunity windows (<see cref="BotContext.HurtImmunityTicks"/>), so
+	/// an enemy still on the bot has bitten again in that time. Without it the retreat and the fight would take turns every
+	/// tick (the fight starts below the retreat threshold, so the retreat rule fires on its first tick).
+	/// </summary>
+	public const int FightBackHoldTicks = 2 * BotContext.HurtImmunityTicks;
+	private long fightBackSince = long.MinValue / 2;
+	private ISkill fightBackFight;
+
+	private bool RetreatHeldOff(BotContext ctx) =>
+		ctx.Tick - fightBackSince < FightBackHoldTicks
+		|| fightBackFight != null && ReferenceEquals(Current, fightBackFight) && ctx.Tick - ctx.LastEnemyHitTick < FightBackHoldTicks;
+
 	public void Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
@@ -494,7 +508,7 @@ public sealed class BotBrain
 		bool wormNear = false;
 		TilePos? retreatHome = null;
 		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill
-			&& ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)
+			&& !RetreatHeldOff(ctx) && ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && !ctx.Combat.CanQuickHeal && ProgressionPlanner.InDanger(ctx)
 			&& ((retreatHome = Planner.HomeToRetreatTo(ctx, anyDistance: wormNear = WormNear(ctx))) != null || !wormNear)) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and no potion; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			// Home if it is near (enemies cannot get through the door), else dig in where it is.
@@ -544,10 +558,20 @@ public sealed class BotBrain
 			|| Current is StayHomeSkill { Home: false, RecoverTo: > 0 }
 			|| Current is StayHomeSkill { Home: false } walking && walking.Inside.ChebyshevTo(ctx.Node) <= ProgressionPlanner.RetreatHomeTiles
 				&& ctx.RecentAttacker < 0;
-		if (Auto && !safeAtHome && Current is not FightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not BossFightSkill && Current is not ShelterSkill { Sealed: true } && ProgressionPlanner.InDanger(ctx, toFight: true)) {
-			if (Current != null)
+		// A retreat (or a sealed hole) is not stopped for every hostile in sight, only when it is caught: hit, or something within
+		// a swing (ShelterSkill.FightBackReason). The shelter is dropped for the fight, and afterwards the retreat is decided
+		// afresh, not before FightBackHoldTicks (RetreatHeldOff).
+		string fightBack = Current is ShelterSkill caught ? caught.FightBackReason(ctx) : null;
+		bool shelterHolds = Current is ShelterSkill { Retreat: true } or ShelterSkill { Sealed: true } && fightBack == null;
+		if (Auto && !safeAtHome && Current is not FightSkill && !shelterHolds && Current is not SurfaceSkill && Current is not BossFightSkill && ProgressionPlanner.InDanger(ctx, toFight: true)) {
+			if (fightBack != null) {
+				ctx.Log.Info($"Danger: {fightBack}; fighting back");
+				fightBackSince = ctx.Tick;
+			}
+			else if (Current != null)
 				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
 			BeginOverride(new FightSkill(), ctx);
+			fightBackFight = fightBack != null ? Override : null;
 		}
 		// Work asked to be planned again (nightfall, a chest in sight): only between reflexes, and the same job goes on.
 		if (replan && Override == null && Work != null && Auto) {

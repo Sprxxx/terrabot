@@ -82,9 +82,20 @@ public sealed class BotContext
 	private int biggestHit;
 	private long biggestHitTick = long.MinValue / 2;
 
-	/// <summary>The bot took a hit of <paramref name="damage"/>.</summary>
-	public void NoteHit(int damage)
+	/// <summary>
+	/// Ticks a hit leaves the player immune to the next (vanilla Player.Hurt: immuneTime 40, 80 with the Cross Necklace's
+	/// longInvince): an enemy still on the bot lands its next hit within this long once the last one has worn off.
+	/// </summary>
+	public const int HurtImmunityTicks = 40;
+
+	/// <summary>When an enemy (an NPC's touch or a projectile) last hurt the bot; not falls or tiles.</summary>
+	public long LastEnemyHitTick { get; private set; } = long.MinValue / 2;
+
+	/// <summary>The bot took a hit of <paramref name="damage"/>; <paramref name="byEnemy"/>: from an NPC or a projectile.</summary>
+	public void NoteHit(int damage, bool byEnemy = true)
 	{
+		if (byEnemy)
+			LastEnemyHitTick = Tick;
 		if (damage >= BiggestRecentHit) {
 			biggestHit = damage;
 			biggestHitTick = Tick;

@@ -279,8 +279,51 @@ public sealed class ShelterSkill : ISkill
 
 	public string Describe() => $"Shelter [{phase}]" + (dig != null ? " > " + dig.Describe() : "");
 
+	private long startTick;
+
+	/// <summary>
+	/// A hit this recent (ticks) means the shelter is not keeping enemies off: two of the immunity windows a hit gives, so an
+	/// enemy still on the bot has had the chance to bite again (<see cref="BotContext.HurtImmunityTicks"/>).
+	/// </summary>
+	public const int HitRecentTicks = 2 * BotContext.HurtImmunityTicks;
+	/// <summary>Hitboxes this close (px) touch: half a tile, closed by a walker in a few ticks.</summary>
+	public const float ContactPx = 8f;
+	/// <summary>
+	/// A flight starts with the enemy beside the bot (that is why it runs): its contact counts only after the immunity the
+	/// hit that set off the retreat gave (<see cref="BotContext.HurtImmunityTicks"/>), when it would bite again.
+	/// </summary>
+	public const int FleeGraceTicks = BotContext.HurtImmunityTicks;
+
+	/// <summary>
+	/// Why the shelter should turn and fight now, or null: an enemy hit the bot since it began (the flight is not getting
+	/// away, the hole is not holding), or a hostile is within a swing (or touching, without a sword) with a clear line to it.
+	/// The brain lets a retreat be interrupted only for this. Seen in game (13 deaths in Shelter in measured runs U13, U14,
+	/// U17, U19, U20 and M10a): not one swing once a retreat began; walkers caught up while it dug, a slime sat in the hole,
+	/// a crawdad bit through the seal, a giant worm 12 times while it waited.
+	/// </summary>
+	public string FightBackReason(BotContext ctx)
+	{
+		if (phase == Phase.Unsealing)
+			return null;
+		if (ctx.LastEnemyHitTick >= startTick && ctx.Tick - ctx.LastEnemyHitTick < HitRecentTicks)
+			return $"hit while sheltering ({phase})";
+		if (phase == Phase.Fleeing && ctx.Tick - startTick < FleeGraceTicks)
+			return null;
+		PhysicsParams p = ctx.Physics;
+		float reach = System.Math.Max(ctx.Combat.WeaponReach, ContactPx);
+		float left = ctx.Body.X, top = ctx.Body.Y, cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		foreach (EntityInfo e in ctx.Hostiles) {
+			float gapX = System.Math.Max(0f, System.Math.Max(e.X - (left + p.Width), left - (e.X + e.Width)));
+			float gapY = System.Math.Max(0f, System.Math.Max(e.Y - (top + p.Height), top - (e.Y + e.Height)));
+			if (gapX <= reach && gapY <= reach && FightSkill.ClearShot(ctx, cx, cy, e.CenterX, e.CenterY))
+				return $"a {e.Name} on me while sheltering ({phase})";
+		}
+		return null;
+	}
+
 	public void Start(BotContext ctx)
 	{
+		startTick = ctx.Tick;
 		// Hurt with something on it: run off first (the bot outruns slimes and zombies), then dig. Seen in game: most
 		// deaths of the night runs were while digging in with the attacker beside the hole, or in it.
 		if (Retreat && NearestHostile(ctx, out float hx) <= FleeWithinPx) {
