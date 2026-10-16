@@ -252,6 +252,32 @@ public sealed class BotContext
 	/// <summary>Life crystals and reasons already logged (each skip of a crystal is said once).</summary>
 	public System.Collections.Generic.HashSet<(int, int, string)> CrystalNotes { get; } = new();
 
+	/// <summary>
+	/// Life crystal cells the map has shown, kept all game wherever the bot goes, as Baritone caches the ore positions it has
+	/// seen and AltoClef's block tracker the blocks: filled by every crystal lookup (<see cref="SeeCrystals"/>), a cell dropped
+	/// when a lookup over it no longer shows it (mined). Seen in game (measured run U9): a crystal found at (2013,607) at d9
+	/// +11.0h was lost when skeletons killed the bot 26 tiles from it; from the spawn, 325 rows up, it was beyond mining's
+	/// 200-tile map lookup and the planner's 25, and only came back into range at d10 +11.5h, 23 game hours and 2 deaths later.
+	/// </summary>
+	public PlaceMemory KnownCrystals { get; } = new();
+
+	/// <summary>
+	/// The cells of <paramref name="crystalTile"/> the map shows within <paramref name="radius"/> of <paramref name="around"/>
+	/// (<see cref="IWorldInfo.FindTiles"/>: revealed cells only, nearest first), remembered in <see cref="KnownCrystals"/>.
+	/// Remembered cells in that square it does not show any more are gone (a revealed cell stays revealed) and are forgotten.
+	/// </summary>
+	public System.Collections.Generic.IReadOnlyList<TilePos> SeeCrystals(int crystalTile, TilePos around, int radius)
+	{
+		System.Collections.Generic.IReadOnlyList<TilePos> found = World.FindTiles(crystalTile, around, radius);
+		if (KnownCrystals.Count > 0)
+			foreach (TilePos c in KnownCrystals.Within(around.X, around.Y, radius, radius))
+				if (!System.Linq.Enumerable.Contains(found, c))
+					KnownCrystals.Remove(c);
+		foreach (TilePos c in found)
+			KnownCrystals.AddOnce(c);
+		return found;
+	}
+
 	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t)
 		|| (Combat.Defense < CavernDefense || EvilStoneTooHard) && InEvilBiome(t);
 

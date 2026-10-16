@@ -302,8 +302,12 @@ public sealed class ProgressionPlanner
 	/// times mining gave up on it lately counted as distance (BotContext.InMiningReach). Seen in game (audit of the 10-day
 	/// world_eye runs, 2026-10-16): a crystal mining had given up on was "seen" again at once, and the replan for it started a
 	/// fresh crystal job beside it, which went for the same crystal first.
+	/// With <paramref name="remembered"/>, else the nearest crystal remembered from before, however far (BotContext.KnownCrystals,
+	/// MineSkill.RememberedCrystal): for a job that wants a crystal anyway, not to break off other work. Seen in game (measured
+	/// run U9): killed 26 tiles from a crystal at (2013,607), the bot looked for crystals from the spawn, 325 rows up, for 23 game
+	/// hours (and 2 more deaths) before it came within the map lookup again.
 	/// </summary>
-	public static TilePos? SeenLifeCrystal(BotContext ctx)
+	public static TilePos? SeenLifeCrystal(BotContext ctx, bool remembered = false)
 	{
 		int heart = ctx.Knowledge?.SourceOf(ctx.Ids.LifeCrystal).TileType ?? -1;
 		if (heart <= 0)
@@ -311,7 +315,7 @@ public sealed class ProgressionPlanner
 		TilePos node = ctx.Node;
 		TilePos? best = null;
 		float bestDist = float.MaxValue;
-		foreach (TilePos c in ctx.World.FindTiles(heart, node, CrystalRadius)) {
+		foreach (TilePos c in ctx.SeeCrystals(heart, node, CrystalRadius)) {
 			int d = c.ChebyshevTo(node);
 			if (d >= bestDist)
 				break; // nearest first: none further on can beat it
@@ -336,7 +340,7 @@ public sealed class ProgressionPlanner
 			if (ctx.CrystalNotes.Add((c.X >> 1, c.Y >> 1, why)))
 				ctx.Log.Info($"Life crystal at {c} seen, left alone: {why}");
 		}
-		return best;
+		return best ?? (remembered ? MineSkill.RememberedCrystal(ctx, heart, node) : null);
 	}
 
 	/// <summary>Chests closer than this (tiles) that are seen and not looted yet are looted before anything else.</summary>
@@ -812,6 +816,10 @@ public sealed class ProgressionPlanner
 					target += BlockMargin;
 				if (LeaveOffLimits(ctx, name) is ISkill leave)
 					return leave;
+				// A crystal remembered from before, however far: back to it, not a trip to new ground or the spawn's (see
+				// SeenLifeCrystal).
+				if (item == ctx.Ids.LifeCrystal && SeenLifeCrystal(ctx, remembered: true) is TilePos known)
+					return Do($"mining the life crystal remembered at {known} ({known.ChebyshevTo(ctx.Node)} tiles away)", new MineSkill(item, src.TileType, target));
 				if (TravelForOre(ctx, item, name) is ISkill travel)
 					return travel;
 				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target) { Also = AltOres(item, ctx) });

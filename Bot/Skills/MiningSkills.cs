@@ -186,6 +186,15 @@ public sealed class MineSkill : ISkill
 			ctx.Log.Debug($"Mine: target {next}");
 			return SkillStatus.Running;
 		}
+		// A life crystal remembered, however far (BotContext.KnownCrystals): back for it before any new ground, and before the
+		// count of fruitless explorations (going for a crystal known is not one).
+		if (Valuable(ctx) && RememberedCrystal(ctx, TileType, ctx.Node, bad.Contains) is TilePos remembered) {
+			target = remembered;
+			mineTicks = 0;
+			arrivedOutOfReach = 0;
+			ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, but one remembered at {remembered} ({remembered.ChebyshevTo(ctx.Node)} tiles away); going back for it");
+			return SkillStatus.Running;
+		}
 		// Counted on the context per item: a fight pauses the skill and the planner starts it afresh, and a count of its
 		// own went back to 0 each time (world_eye run 42: 12 game hours of the same first leg, never reaching the give-up).
 		int explores = ctx.ExploresWithoutOre[ItemType] = ctx.ExploresWithoutOre.GetValueOrDefault(ItemType) + 1;
@@ -338,7 +347,7 @@ public sealed class MineSkill : ISkill
 	{
 		TilePos? best = null;
 		float bestDist = float.MaxValue;
-		foreach (TilePos c in ctx.World.FindTiles(tile, around, radius)) {
+		foreach (TilePos c in Find(ctx, tile, around, radius)) {
 			int d = c.ChebyshevTo(around);
 			if (d >= bestDist)
 				break; // nearest first: none further on can beat it
@@ -353,13 +362,54 @@ public sealed class MineSkill : ISkill
 		return best;
 	}
 
+	/// <summary>The tiles of the type the map shows round <paramref name="around"/>; life crystals among them are remembered (BotContext.SeeCrystals).</summary>
+	private IReadOnlyList<TilePos> Find(BotContext ctx, int tile, TilePos around, int radius) =>
+		Valuable(ctx) && tile == TileType ? ctx.SeeCrystals(tile, around, radius) : ctx.World.FindTiles(tile, around, radius);
+
+	/// <summary>
+	/// The nearest remembered life crystal cell (BotContext.KnownCrystals), with no radius cap, that mining would take on
+	/// (<see cref="WhyNotMine"/> for a valuable: the gear's depth for crystals, lava, biomes), not <paramref name="skip"/>ped.
+	/// Its give-ups lately (BotContext.MineFailures) count as distance, half a map lookup's reach (<see cref="MapSearchRadius"/>)
+	/// each, and at BotContext.MineFailuresToForgo it waits until they fade, as for crystals in sight. A remembered cell the map
+	/// no longer shows (mined) is forgotten. Seen in game (measured run U9): a crystal 325 rows from the respawn, beyond the
+	/// 200-tile map lookup, was found again 23 game hours later.
+	/// </summary>
+	public static TilePos? RememberedCrystal(BotContext ctx, int crystalTile, TilePos from, Func<TilePos, bool> skip = null)
+	{
+		if (ctx.KnownCrystals.Count == 0 || ctx.Moves.Blocks == null)
+			return null;
+		TilePos? best = null;
+		float bestDist = float.MaxValue;
+		List<TilePos> gone = null;
+		foreach (TilePos c in ctx.KnownCrystals.All) {
+			if (ctx.World.TileTypeAt(c.X, c.Y) != crystalTile) {
+				(gone ??= new List<TilePos>()).Add(c);
+				continue;
+			}
+			int d = c.ChebyshevTo(from);
+			if (d >= bestDist || skip != null && skip(c) || ctx.MineFailuresLately(c) >= BotContext.MineFailuresToForgo)
+				continue;
+			if (!ctx.World.CanMineTarget(c.X, c.Y) || WhyNotMine(ctx, ctx.Moves, c, valuable: true) != null)
+				continue;
+			float dist = d + ctx.MineFailureCost(c, MapSearchRadius);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = c;
+			}
+		}
+		if (gone != null)
+			foreach (TilePos c in gone)
+				ctx.KnownCrystals.Remove(c);
+		return best;
+	}
+
 	private TilePos? BestOf(BotContext ctx, int tileType)
 	{
 		TilePos node = ctx.Node;
 		MoveContext moves = ctx.Moves;
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
-		foreach (TilePos c in ctx.World.FindTiles(tileType, node, SearchRadius)) {
+		foreach (TilePos c in Find(ctx, tileType, node, SearchRadius)) {
 			if (bad.Contains(c) || !ctx.InMiningReach(c, node, SearchRadius) || !WouldMine(ctx, moves, c, Valuable(ctx)))
 				continue;
 			// Given up on lately, by this job or an earlier one: after the tiles not tried yet.

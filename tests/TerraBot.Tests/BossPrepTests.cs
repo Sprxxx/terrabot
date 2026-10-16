@@ -86,6 +86,69 @@ public class BossPrepTests
 		Assert.Equal(FakeGame.TileHeart, mine.TileType);
 	}
 
+	/// <summary>
+	/// A 260-wide field with a crystal on the grass, seen once from beside it; the bot then 230 columns off, beyond mining's
+	/// 200-tile map lookup and the planner's 25.
+	/// </summary>
+	private (FakeGame, BotContext) CrystalSeenThenFarAway(TilePos heart)
+	{
+		FakeGame g = ProgressionTests.Mine(width: 260);
+		g.AddHeart(heart.X, heart.Y);
+		BotContext ctx = g.CreateContext(output);
+		Assert.NotNull(ProgressionPlanner.SeenLifeCrystal(ctx)); // seen, as the bot passes by
+		g.Sim.State.X += 230 * 16;
+		g.Refresh(ctx);
+		Assert.True(heart.ChebyshevTo(ctx.Node) > MineSkill.MapSearchRadius);
+		return (g, ctx);
+	}
+
+	[Fact]
+	public void ACrystalSeenBefore_BeyondTheMapLookup_IsGoneBackFor_NotExploredPast()
+	{
+		// Measured run U9: a crystal found at (2013,607) at d9 +11.0h; skeletons killed the bot 26 tiles from it and from the
+		// respawn, 325 rows up, it was beyond the 200-tile map lookup. It came back into range at d10 +11.5h ("some at
+		// (2012,607) on the map (138 tiles away)"): 23 game hours and 2 more deaths.
+		var (g, ctx) = CrystalSeenThenFarAway(new TilePos(8, 23));
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		for (int t = 0; t < 5; t++) {
+			g.Refresh(ctx);
+			mine.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine(mine.Describe());
+		Assert.DoesNotContain("exploring", mine.Describe());
+		Assert.Contains("walking to (", mine.Describe());
+	}
+
+	[Fact]
+	public void ACrystalSeenBefore_FarAway_IsAMiningJob_NotATripToNewGround()
+	{
+		// Measured run U9: with the crystal at (2013,607) out of mind, the fruitless crystal jobs sent the bot back to the spawn
+		// "to look from there". The planner knows of the crystal however far it is.
+		var (_, ctx) = CrystalSeenThenFarAway(new TilePos(8, 23));
+		ctx.SpawnTile = new TilePos(3, 24); // where the bot started, beside the crystal
+		var p = new ProgressionPlanner();
+		p.NoteFruitless(FakeGame.LifeCrystal); // the crystal search round here came to nothing (and nowhere to travel here)
+		var mine = Assert.IsType<MineSkill>(Resolve(p, ctx, new LifeAtLeast(200, "max life")));
+		Assert.Equal(FakeGame.TileHeart, mine.TileType);
+	}
+
+	[Fact]
+	public void ARememberedCrystal_ThatIsGone_IsForgotten()
+	{
+		// Mined (or gone) since: not gone back for.
+		var (g, ctx) = CrystalSeenThenFarAway(new TilePos(8, 23));
+		foreach (TilePos c in g.Furniture.Where(kv => kv.Value == FakeGame.TileHeart).Select(kv => kv.Key).ToList())
+			g.Furniture.Remove(c);
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		g.Refresh(ctx);
+		mine.Tick(ctx);
+		output.WriteLine(mine.Describe());
+		Assert.Contains("exploring", mine.Describe());
+	}
+
 	private ISkill Resolve(ProgressionPlanner p, BotContext ctx, Need need)
 	{
 		ISkill s = p.ResolveForTest(need, ctx);
