@@ -36,9 +36,10 @@ public sealed class BossFightSkill : ISkill
 	public const int ArenaSoftMargin = 10, ArenaHardMargin = 4; // hard: a hit knocks the bot a tile or two (4.5 px/tick)
 	/// <summary>Extra room (px) kept from an arena end when braking.</summary>
 	public const float BrakeMarginPx = 8f;
-	/// <summary>Walking back to the arena ends within this many columns of its middle.</summary>
-	public const int ArenaReturnTolerance = 6;
 	private WalkToSkill backToArena;
+	/// <summary>After a walk back that found no way, this long (5 s) fighting from where the bot is before the next.</summary>
+	public const int BackRetryTicks = 300;
+	private long backFailedAt = long.MinValue / 2;
 	/// <summary>Boss speed (px/tick) that counts as a dash (the Eye: 6 / 6.8 Classic, 7+ Expert; hovers at up to 5–6).</summary>
 	public const float DashSpeed = 5.5f;
 	/// <summary>Ticks after a dash starts before it has gone by, and how long the gap that follows is safe for a turn.</summary>
@@ -217,9 +218,17 @@ public sealed class BossFightSkill : ISkill
 		}
 		if (!off)
 			return backToArena != null && WalkBack(ctx); // in the air on the way back: keep going
+		// No way back found lately: fight on from here for a while (the fight works on open ground) rather than plan again
+		// every tick.
+		if (backToArena == null && ctx.Tick - backFailedAt < BackRetryTicks)
+			return false;
 		if (backToArena == null) {
 			ctx.Log.Info($"Boss fight: off the arena at {n}, walking back");
-			backToArena = new WalkToSkill(new GoalNearTile(new TilePos((x0 + x1) / 2, standY), ArenaReturnTolerance, ctx.Physics)) { Quiet = true };
+			// Onto the arena's floor anywhere, the same test as "off" above: a goal near its middle was "reached" from below
+			// the floor, and every tick the next walk began. Seen in game (measured run U11cp): knocked down to (2084,272),
+			// 5 rows under the floor and within 6 tiles of the middle, "off the arena, walking back" 6460 times while the Eye
+			// of Cthulhu killed the bot.
+			backToArena = new WalkToSkill(new GoalStandOnRow(standY, x0, x1, ctx.Physics)) { Quiet = true };
 			backToArena.Start(ctx);
 		}
 		return WalkBack(ctx);
@@ -229,6 +238,8 @@ public sealed class BossFightSkill : ISkill
 	{
 		SkillStatus s = backToArena.Tick(ctx);
 		State = "walking back to the arena";
+		if (s == SkillStatus.Failed)
+			backFailedAt = ctx.Tick;
 		if (s != SkillStatus.Running) {
 			backToArena.Stop(ctx);
 			backToArena = null;

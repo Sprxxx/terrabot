@@ -446,6 +446,41 @@ public class ArenaFightTests
 	}
 
 	[Fact]
+	public void UnderTheArenaNearItsMiddle_TheWalkBackGoesOntoTheFloor_NotDoneAtOnce()
+	{
+		// Measured run U11cp: knocked to 5 rows under the floor and within 6 tiles of the middle, the walk back was "reached"
+		// at once and began again every tick, 6460 times, while the Eye of Cthulhu killed the bot.
+		FakeGame g = EarlyGameTests.Field(200);
+		BotContext ctx = g.CreateContext(output);
+		ctx.Body = new Core.Physics.BodyState { X = 97 * 16f, Y = 25 * 16f - P.Height, ReleaseJump = true };
+		var lines = new System.Collections.Generic.List<string>();
+		ctx.Log = new CountLog(lines);
+		ctx.Combat.HasRanged = true;
+		ctx.Combat.Projectile = new Core.Physics.ProjectileModel(9f, 15, 0.1f, 16f);
+		ctx.Hostiles = new[] { new EntityInfo(1, FakeGame.EyeNpc, "Eye of Cthulhu", 97 * 16f, 2 * 16f, 100, 110, 0, 0, 2800, 2800, 15,
+			EyePattern.EyeAiStyle, 0, 0, 10, 0) };
+		var fight = new BossFightSkill(FakeGame.SuspiciousEye, FakeGame.EyeNpc) { Arena = (50, 145, 19) }; // the floor 5 rows up
+		fight.Start(ctx);
+		for (int t = 0; t < 30; t++) {
+			ctx.Tick = t;
+			fight.Tick(ctx);
+		}
+		int starts = lines.Count(l => l.Contains("off the arena"));
+		output.WriteLine($"{fight.Describe()}; {starts} walk(s) back begun");
+		Assert.Equal(1, starts);
+	}
+
+	private sealed class CountLog : IBotLog
+	{
+		private readonly System.Collections.Generic.List<string> lines;
+		public CountLog(System.Collections.Generic.List<string> lines) => this.lines = lines;
+		public void Info(string m) => lines.Add(m);
+		public void Warn(string m) => lines.Add(m);
+		public void Error(string m, System.Exception ex = null) => lines.Add(m);
+		public void Debug(string m) { }
+	}
+
+	[Fact]
 	public void OffTheArena_WalksBack()
 	{
 		var (ctx, fight) = Setup(160 * 16f, 0f);
