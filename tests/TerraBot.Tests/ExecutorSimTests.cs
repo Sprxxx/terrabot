@@ -506,6 +506,53 @@ public class ExecutorSimTests
 	}
 
 	[Fact]
+	public void InsideABlockThatWillNotGo_PlansFromWhereTheBodyStands()
+	{
+		// Measured run T0a: the grid had a solid cell in the body's head row at (2574,588) that mining never cleared; every
+		// plan from (2574,590) failed "InvalidStart" for the last 83 heartbeats. The body stood there: the grid was wrong.
+		string[] rows = {
+			"....................",
+			"....................",
+			"....................",
+			"....................",
+			"...S..........G.....",
+			"####################",
+		};
+		var planGrid = ArrayTileGrid.Parse(rows);
+		for (int x = 2; x <= 4; x++)
+			planGrid.Set(x, 2, CellKind.Solid); // what the grid makes of the head cells: no node near to start from either
+		var realGrid = ArrayTileGrid.Parse(rows); // what is really there
+		var blocks = new TestBlockActions(planGrid);
+		var sim = new SimWorld(realGrid, PhysicsParams.Default, planGrid.Markers['S'], new TestBlockActions(realGrid));
+		var log = new System.Collections.Generic.List<string>();
+		var ctx = new BotContext { Grid = planGrid, Blocks = blocks, Log = new EchoLog(output, log) };
+		var skill = new WalkToSkill(planGrid.Markers['G']);
+		ctx.Body = sim.State;
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		for (int t = 0; t < 1200 && status == SkillStatus.Running; t++) {
+			ctx.Tick = t;
+			ctx.Body = sim.State;
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+		}
+		output.WriteLine($"{status}: {skill.FailureReason} at {sim.Node}");
+		Assert.DoesNotContain(log, l => l.Contains("InvalidStart"));
+		Assert.Contains(log, l => l.Contains("planning from where the body stands"));
+	}
+
+	private sealed class EchoLog : IBotLog
+	{
+		private readonly ITestOutputHelper o;
+		private readonly System.Collections.Generic.List<string> lines;
+		public EchoLog(ITestOutputHelper o, System.Collections.Generic.List<string> lines) { this.o = o; this.lines = lines; }
+		public void Info(string m) { lines.Add(m); o.WriteLine("INFO  " + m); }
+		public void Warn(string m) { lines.Add(m); o.WriteLine("WARN  " + m); }
+		public void Error(string m, Exception ex = null) { lines.Add(m); o.WriteLine("ERROR " + m); }
+		public void Debug(string m) { lines.Add(m); o.WriteLine("DEBUG " + m); }
+	}
+
+	[Fact]
 	public void InvisibleWall_IsDetectedAsStuck()
 	{
 		// The planner sees flat ground; the "real" world has a wall the planner does not know about.

@@ -420,17 +420,24 @@ public sealed class WalkToSkill : ISkill
 				// Inside a block (a pillar step's block, placed as the bot came down beside it): mine it out first, as a player
 				// does. Seen in game (measured runs K1 and L2): "feet cells Empty/Solid" after a pillar step; every plan from
 				// then on began on top of the block the bot was in, and step 0 timed out 40-odd times at one spot.
-				if (unstickTicks < MaxUnstickTicks && EmbeddedIn(ctx) is TilePos inside) {
+				if (unstickTicks < MaxUnstickTicks && ctx.UnstickFailedAt != node && EmbeddedIn(ctx) is TilePos inside) {
 					if (unstickTicks++ == 0)
-						Info(ctx, $"WalkTo: inside the block at {inside} (bot at {node}); mining out of it first");
+						Info(ctx, $"WalkTo: inside the block at {inside} (tile {ctx.World?.TileTypeAt(inside.X, inside.Y)}, bot at {node}); mining out of it first");
 					ctx.Output.Tool = ToolRequest.Pickaxe;
 					ctx.Output.UseItem = true;
 					ctx.Output.Aim(inside.X, inside.Y);
 					State = $"mining out of {inside}";
 					return SkillStatus.Running;
 				}
-				if (EmbeddedIn(ctx) == null)
+				if (EmbeddedIn(ctx) is not TilePos still)
 					unstickTicks = 0;
+				else if (ctx.UnstickFailedAt != node) {
+					// Mined at for MaxUnstickTicks and still "inside" it: the body stands there all the same, so the grid is
+					// wrong about it. Seen in game (measured run T0a): the head cell at (2574,588) stayed solid in the grid,
+					// and every plan from (2574,590) failed "InvalidStart" for the last 83 heartbeats of the run.
+					ctx.UnstickFailedAt = node;
+					Info(ctx, $"WalkTo: could not mine out of {still} (tile {ctx.World?.TileTypeAt(still.X, still.Y)}); planning from where the body stands");
+				}
 				if (!TryResumePlan(ctx, node))
 					StartSearch(ctx, node);
 			}
@@ -643,7 +650,7 @@ public sealed class WalkToSkill : ISkill
 		TilePos start = node;
 		// Standing (grounded, clear of blocks): the plan starts where the body is, whatever the grid makes of its footing,
 		// so the executor's "at the start" check can hold. Otherwise the nearest node the grid can start from.
-		bool standing = ctx.Body.Grounded && Body.IsClear(moves.Grid, node) && !Body.IsStartable(moves.Grid, node);
+		bool standing = ctx.Body.Grounded && (Body.IsClear(moves.Grid, node) || ctx.UnstickFailedAt == node) && !Body.IsStartable(moves.Grid, node);
 		if (!standing)
 			foreach (TilePos d in StartCandidates) {
 				if (Body.IsStartable(moves.Grid, node + d)) {

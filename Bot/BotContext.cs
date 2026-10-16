@@ -388,6 +388,11 @@ public sealed class BotContext
 
 	/// <summary>Mining/placing capabilities (null = the bot may not change the world).</summary>
 	public IBlockActions Blocks { get; set; }
+	/// <summary>
+	/// Where mining out of a block the body overlaps came to nothing (the grid says solid, the body stands there): from
+	/// here the walk plans from where the body is instead of mining at it again.
+	/// </summary>
+	public TilePos? UnstickFailedAt { get; set; }
 	/// <summary>Player-controlled switches (/bot dig, /bot build).</summary>
 	public bool AllowBreak { get; set; } = true;
 	public bool AllowPlace { get; set; } = true;
