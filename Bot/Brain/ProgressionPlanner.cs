@@ -981,6 +981,13 @@ public sealed class ProgressionPlanner
 			ISkill sub = Resolve(new HaveItem(b.SummonItem, 1, ctx.Knowledge.ItemName(b.SummonItem)), claims, depth + 1, ctx);
 			if (sub != null || stuck != null)
 				return sub;
+			// To the arena first, by day, then wait there for night: seen in game (measured run S14), the summon made at an
+			// altar 360 rows down, the bot waited there all day, set off at nightfall, and the walk took the night.
+			if (ArenaBounds(ctx) is (int bx0, int bx1, int by) && !InArena(ctx.Node, bx0, bx1, by)) {
+				var centre = new TilePos((bx0 + bx1) / 2, by);
+				return Do($"walking to the arena to summon the {b.Label}",
+					new WalkToSkill(new Core.Pathfinding.GoalNearTile(centre, ArenaCentreTolerance, ctx.Physics)));
+			}
 			if (!ctx.IsNight)
 				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
 			// The Eye leaves at dawn: seen in game, summoned late after a long fight with demon eyes, it flew off at

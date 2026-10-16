@@ -1,3 +1,4 @@
+using TerraBot.Bot.Building;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
 using TerraBot.Bot.Skills;
@@ -173,6 +174,23 @@ public class BossPlannerTests
 		g2.Items[FakeGame.SuspiciousEye] = 1;
 		var fight = Assert.IsType<BossFightSkill>(Next(g2, night: true, out _));
 		Assert.Equal(FakeGame.EyeNpc, fight.BossType);
+	}
+
+	[Fact]
+	public void WithTheSummonItem_ByDay_GoesToTheArenaFirst_ThenWaitsThere()
+	{
+		// Measured run S14: the summon made at an altar 360 rows down, the bot waited there all day, set off at nightfall,
+		// and the walk to the arena took the night.
+		FakeGame g = EarlyGameTests.Field(160, 50, 75);
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.ResolveForTest(new ArenaBuilt("arena"), ctx); // picks the site
+		Assert.NotNull(p.ArenaSite);
+		g.Items[FakeGame.SuspiciousEye] = 1;
+		ISkill day = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {day?.Describe()}");
+		Assert.IsType<WalkToSkill>(day);
+		Assert.Contains("walking to the arena", p.Status);
 	}
 
 	[Fact]
