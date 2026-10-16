@@ -2111,7 +2111,7 @@ public sealed class ProgressionPlanner
 	}
 
 	/// <summary>The first spot to stand on, coming down from the sky in column <paramref name="x"/>; null if none.</summary>
-	private static TilePos? SurfaceAt(ITileGrid g, int x)
+	public static TilePos? SurfaceAt(ITileGrid g, int x)
 	{
 		for (int y = 40; y < 900; y++)
 			if (g.Get(x, y + 1).CanStandOn() && Core.Pathfinding.Body.IsStandable(g, new TilePos(x, y)))

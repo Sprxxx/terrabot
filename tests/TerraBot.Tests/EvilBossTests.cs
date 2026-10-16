@@ -314,6 +314,61 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void AFlierHunt_SeesItsPreyFromATunnel_AndGoesOutToTheOpenGroundFirst()
+	{
+		// Measured run M10a: at (1868-1889,333-340), in tunnels under the corruption's surface, 45 fights against eaters of
+		// souls ended with 0 kills; no shot was ever clear from there.
+		FakeGame g = CorruptWorld();
+		for (int x = 340; x <= 372; x++)
+			for (int y = Feet + 4; y <= Feet + 6; y++)
+				g.Grid.Set(x, y, CellKind.Empty); // a tunnel under the corruption's surface
+		BotContext ctx = Armoured(g);
+		MoveTo(g, ctx, 350, Feet + 6);
+		ctx.EvilErrand = true;
+		var ground = new TilePos(360, Feet);
+		Assert.False(FightSkill.OpenSky(ctx, ctx.Node));
+		Assert.True(FightSkill.OpenSky(ctx, ground));
+		var hunt = new HuntSkill(FakeGame.RottenChunk, FakeGame.FlyingAi, 15) { Ground = ground };
+		hunt.Start(ctx);
+		var eater = new EntityInfo(5, 6, "Eater of Souls", 355 * 16f, (Feet - 10) * 16f, 30, 30, 0, 0, 40, 40, 22, AiStyle: FakeGame.FlyingAi);
+		ctx.Hostiles = new[] { eater };
+		hunt.Tick(ctx);
+		output.WriteLine(hunt.Describe());
+		Assert.Equal(HuntSkill.ToOpenGround, hunt.State);
+	}
+
+	[Fact]
+	public void TheWandersRoundAHuntingGround_GoToTheSurface_NotIntoAChasmsFloor()
+	{
+		// Measured run M10a: the wanders from the hunting ground (1915,310) went under the corruption's surface, and its
+		// chasms' floors lie far down (three deaths at (1777,401), a chasm's floor 105 rows under its edge).
+		const int width = 500, chasmFrom = 388, chasmTo = 393, chasmFloor = Feet + 60;
+		var rows = Enumerable.Repeat(new string('.', width), Feet + 1).ToList();
+		rows[Feet] = "...S" + new string('.', width - 4);
+		while (rows.Count < chasmFloor + 5)
+			rows.Add(new string('s', width));
+		rows.Add(new string('@', width));
+		var g = new FakeGame(rows.ToArray());
+		for (int x = chasmFrom; x <= chasmTo; x++)
+			for (int y = Feet + 1; y < chasmFloor; y++)
+				g.Grid.Set(x, y, CellKind.Empty);
+		BotContext ctx = Armoured(g);
+		var ground = new TilePos(360, Feet);
+		MoveTo(g, ctx, ground.X, Feet);
+		ctx.EvilErrand = true;
+		var hunt = new HuntSkill(FakeGame.RottenChunk, FakeGame.FlyingAi, 15) { Ground = ground };
+		hunt.Start(ctx);
+		hunt.Tick(ctx); // the first wander: one wander's reach east, over the chasm
+		string d = hunt.Describe();
+		output.WriteLine(d);
+		Assert.Equal("wandering", hunt.State);
+		var m = System.Text.RegularExpressions.Regex.Match(d, @"goal \w+\((\d+),(\d+)\)");
+		Assert.True(m.Success, d);
+		int goalX = int.Parse(m.Groups[1].Value), goalY = int.Parse(m.Groups[2].Value);
+		Assert.True(goalY <= Feet && (goalX < chasmFrom || goalX > chasmTo), $"wandering to ({goalX},{goalY})"); // up on the surface
+	}
+
+	[Fact]
 	public void WormFood_IsSummonedByDay_InTheCorruption_WhileTheEyeStillWaitsForNight()
 	{
 		FakeGame g = CorruptWorld();

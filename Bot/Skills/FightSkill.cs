@@ -453,6 +453,22 @@ public sealed class FightSkill : ISkill
 		State += ", off the edge";
 	}
 
+	/// <summary>Open air over the head this many rows: as far as a fight engages (<see cref="EngageRadius"/>), where fliers come from.</summary>
+	public const int OpenSkyRows = (int)(EngageRadius / 16f);
+
+	/// <summary>
+	/// Is the sky open over the body standing at <paramref name="feet"/>: no solid cell in its two columns for
+	/// <see cref="OpenSkyRows"/> rows over its head? Not in a tunnel, a cave or under a chasm's overhang.
+	/// </summary>
+	public static bool OpenSky(BotContext ctx, TilePos feet)
+	{
+		int head = feet.Y - Core.Pathfinding.Body.HeightTiles + 1;
+		for (int y = head - 1; y >= head - OpenSkyRows; y--)
+			if (ctx.Grid.Get(feet.X, y).IsSolid() || ctx.Grid.Get(feet.X + 1, y).IsSolid())
+				return false;
+		return true;
+	}
+
 	/// <summary>Columns (1..<see cref="KnockbackTiles"/>) to a sheer drop on that side of the feet tile; 0 if none.</summary>
 	public static int EdgeWithin(BotContext ctx, TilePos feet, int dir)
 	{
