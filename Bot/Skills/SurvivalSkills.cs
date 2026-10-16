@@ -251,7 +251,7 @@ public sealed class ShelterSkill : ISkill
 	public bool Sealed => phase == Phase.Waiting && seal != null && sealedOk;
 	private bool sealedOk;
 
-	/// <summary>A retreat to recover life (<see cref="Recover"/>) rather than sitting out the night: never interrupted to fight.</summary>
+	/// <summary>A retreat to recover life (<see cref="Recover"/>) rather than sitting out the night: interrupted to fight only when caught (<see cref="FightBackReason"/>).</summary>
 	public bool Retreat => until != null;
 	private readonly System.Func<BotContext, bool> until;
 	private readonly string why = "for the night";
@@ -307,8 +307,8 @@ public sealed class ShelterSkill : ISkill
 			return null;
 		if (ctx.LastEnemyHitTick >= startTick && ctx.Tick - ctx.LastEnemyHitTick < HitRecentTicks)
 			return $"hit while sheltering ({phase})";
-		if (notOutrun != null && NearestHostile(ctx, out _) <= FleeClearPx)
-			return notOutrun;
+		if (cornered != null && NearestHostile(ctx, out _) <= FleeClearPx)
+			return cornered;
 		if (phase == Phase.Fleeing && ctx.Tick - startTick < FleeGraceTicks)
 			return null;
 		PhysicsParams p = ctx.Physics;
@@ -335,9 +335,13 @@ public sealed class ShelterSkill : ISkill
 		StartDigging(ctx);
 	}
 
-	/// <summary>A leg of the flight: <see cref="FleeTiles"/> away from the nearest hostile.</summary>
-	private void StartFlee(BotContext ctx, string what, string then)
+	/// <summary>
+	/// A leg of the flight: <see cref="FleeTiles"/> away from the nearest hostile. <paramref name="moveOn"/>: to dig in somewhere
+	/// else, so the leg is walked to its end even with nothing near (a flight stops once clear, <see cref="FleeClearPx"/>).
+	/// </summary>
+	private void StartFlee(BotContext ctx, string what, string then, bool moveOn = false)
 	{
+		movingOn = moveOn;
 		TilePos n0 = ctx.Node;
 		NearestHostile(ctx, out float hx);
 		int dir = hx > ctx.Body.CenterX(ctx.Physics) ? -1 : hx < ctx.Body.CenterX(ctx.Physics) ? 1 : fleeDir;
@@ -360,8 +364,63 @@ public sealed class ShelterSkill : ISkill
 	public const int FleeTiles = 25, FleeTolerance = 8, MaxFleeTicks = 60 * 6;
 	private int fleeTicks;
 	private int fleeDir = 1;
-	/// <summary>Set when the flight could not outrun what chased it: the brain fights it (<see cref="FightBackReason"/>).</summary>
-	private string notOutrun;
+	private bool movingOn;
+	/// <summary>
+	/// Set when the flight could not outrun what chased it, or no hole could be made with it near: the brain fights it
+	/// (<see cref="FightBackReason"/>, while it is within <see cref="FleeClearPx"/>).
+	/// </summary>
+	private string cornered;
+
+	/// <summary>
+	/// Places to dig in at before the shelter fails (the brain decides again): as the brain's three failures in a row,
+	/// a pattern rather than bad luck. Each is a flight of <see cref="FleeTiles"/> on from the last.
+	/// </summary>
+	public const int MaxSpots = 3;
+	private int spotsTried;
+
+	/// <summary>
+	/// No hole here (the dig failed, the seal timed out): never wait in the open. Seen in game (measured runs U17, U19 and
+	/// U20: 4 deaths): after a failed dig the seal went to the two cells over the head out in the open, and after a seal
+	/// timed out it "waited unsealed", both among the enemies. With one near, fight it; and run on to try elsewhere.
+	/// </summary>
+	private SkillStatus GiveUpSpot(BotContext ctx, string what)
+	{
+		sealedOk = false;
+		if (++spotsTried >= MaxSpots) {
+			FailureReason = $"{what}; no hole after {MaxSpots} places";
+			ctx.Log.Info($"Shelter failed: {FailureReason}");
+			return SkillStatus.Failed;
+		}
+		float near = NearestHostile(ctx, out _);
+		if (near <= FleeClearPx)
+			cornered = $"{what} with something {near / 16f:0} tiles off";
+		fleeTicks = 0;
+		StartFlee(ctx, $"Shelter: {what} at {ctx.Node}", $"on to dig in further away ({spotsTried + 1}/{MaxSpots})", moveOn: true);
+		return SkillStatus.Running;
+	}
+
+	/// <summary>The cells walling the body in a hole: both sides, from the feet to the roof's row (its corners give the roof a neighbour to place against).</summary>
+	private static System.Collections.Generic.IEnumerable<TilePos> SideCells(TilePos n)
+	{
+		for (int y = n.Y; y >= n.Y - Core.Pathfinding.Body.HeightTiles; y--) {
+			yield return new TilePos(n.X - 1, y);
+			yield return new TilePos(n.X + 2, y);
+		}
+	}
+
+	/// <summary>
+	/// A hostile in the hole with the bot (its hitbox in the body's cells or the roof's): sealing it in is no shelter. Seen in
+	/// game (measured run U20): "sealed in" with a red slime in the hole, which killed the bot there.
+	/// </summary>
+	private static EntityInfo? InTheHole(BotContext ctx, TilePos n)
+	{
+		const float T = Core.Pathfinding.Body.TileSize;
+		float left = n.X * T, right = (n.X + 2) * T, top = (n.Y - Core.Pathfinding.Body.HeightTiles) * T, bottom = (n.Y + 1) * T;
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (e.X < right && e.X + e.Width > left && e.Y < bottom && e.Y + e.Height > top)
+				return e;
+		return null;
+	}
 
 	private static float NearestHostile(BotContext ctx, out float x)
 	{
@@ -453,7 +512,7 @@ public sealed class ShelterSkill : ISkill
 				if (dig != null) {
 					SkillStatus fs = dig.Tick(ctx);
 					float near = NearestHostile(ctx, out _);
-					if (fs == SkillStatus.Running && ++fleeTicks <= MaxFleeTicks && near <= FleeClearPx)
+					if (fs == SkillStatus.Running && ++fleeTicks <= MaxFleeTicks && (near <= FleeClearPx || movingOn))
 						return SkillStatus.Running;
 					dig.Stop(ctx);
 					dig = null;
@@ -466,8 +525,8 @@ public sealed class ShelterSkill : ISkill
 							StartFlee(ctx, $"Shelter: something still {near / 16f:0} tiles behind at {ctx.Node}", "on");
 							return SkillStatus.Running;
 						}
-						notOutrun = $"cannot outrun it ({near / 16f:0} tiles behind after {fleeTicks} ticks{(fs == SkillStatus.Failed ? ", no way on" : "")})";
-						ctx.Log.Info($"Shelter: {notOutrun}");
+						cornered = $"cannot outrun it ({near / 16f:0} tiles behind after {fleeTicks} ticks{(fs == SkillStatus.Failed ? ", no way on" : "")})";
+						ctx.Log.Info($"Shelter: {cornered}");
 					}
 				}
 				if (!ctx.Body.Grounded)
@@ -482,27 +541,40 @@ public sealed class ShelterSkill : ISkill
 				string why = dig.FailureReason;
 				dig.Stop(ctx);
 				dig = null;
-				TilePos n = ctx.Node;
-				seal = new[] { new TilePos(n.X, n.Y - 3), new TilePos(n.X + 1, n.Y - 3) };
 				if (s == SkillStatus.Failed)
-					ctx.Log.Info($"Shelter: could not dig down ({why}); waiting here at {n}");
+					return GiveUpSpot(ctx, $"could not dig down ({why})");
 				phase = Phase.Sealing;
 				actionTicks = 0;
 				return SkillStatus.Running;
 			}
 			case Phase.Sealing: {
-				TilePos? open = seal.Select(c => (TilePos?)c).FirstOrDefault(c => !ctx.Grid.Get(c.Value.X, c.Value.Y).IsSolid());
-				if (open == null) {
+				// From where the body is now, not where the dig ended: seen in game (measured run U19), knockback moved the bot
+				// 6 tiles, the seal cells stayed at the shaft, and placing ran out of time with 1854 blocks in hand.
+				if (!ctx.Body.Grounded)
+					return ++actionTicks > MaxActionTicks ? GiveUpSpot(ctx, $"knocked about for {MaxActionTicks} ticks while sealing") : SkillStatus.Running;
+				TilePos n = ctx.Node;
+				seal = new[] { new TilePos(n.X, n.Y - Core.Pathfinding.Body.HeightTiles), new TilePos(n.X + 1, n.Y - Core.Pathfinding.Body.HeightTiles) };
+				TilePos? open = SideCells(n).Concat(seal).Select(c => (TilePos?)c).FirstOrDefault(c => !ctx.Grid.Get(c.Value.X, c.Value.Y).IsSolid());
+				EntityInfo? inside = InTheHole(ctx, n);
+				if (open == null && inside == null) {
 					sealedOk = true;
-					ctx.Log.Info($"Shelter: sealed in at {ctx.Node}, waiting {(until != null ? why : "for morning")}");
+					ctx.Log.Info($"Shelter: sealed in at {n}, waiting {(until != null ? why : "for morning")}");
 					phase = Phase.Waiting;
 					return SkillStatus.Running;
 				}
-				if (ctx.Blocks == null || ctx.Blocks.BlockCount <= 0 || ++actionTicks > MaxActionTicks) {
-					ctx.Log.Info($"Shelter: cannot seal {open.Value} (blocks {ctx.Blocks?.BlockCount ?? 0}); waiting unsealed");
+				// No blocks at all: the shaft's walls still keep walkers off until they drop in (and one that does is fought,
+				// FightBackReason); out of the shaft there is nothing to wait in.
+				if (open != null && (ctx.Blocks == null || ctx.Blocks.BlockCount <= 0)) {
+					if (!SideCells(n).All(c => ctx.Grid.Get(c.X, c.Y).IsSolid()))
+						return GiveUpSpot(ctx, $"no blocks, and {open.Value} beside the body is open");
+					ctx.Log.Info($"Shelter: no blocks to seal {open.Value}; waiting unsealed at the bottom of the shaft at {n}");
 					phase = Phase.Waiting;
 					return SkillStatus.Running;
 				}
+				if (++actionTicks > MaxActionTicks)
+					return GiveUpSpot(ctx, inside is EntityInfo e ? $"a {e.Name} in the hole" : $"could not seal {open.Value} in {MaxActionTicks} ticks");
+				if (inside != null)
+					return SkillStatus.Running; // not sealing it in with the bot: the brain fights it (FightBackReason, within a swing)
 				ctx.Output.Tool = ToolRequest.Block;
 				ctx.Output.UseItem = true;
 				ctx.Output.Aim(open.Value.X, open.Value.Y);

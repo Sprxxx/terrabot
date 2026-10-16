@@ -640,6 +640,9 @@ public sealed class BotBrain
 		LastResult = $"{skill.Name} {status}" + (status == SkillStatus.Failed && why.Length > 0 ? $": {why}" : "");
 		ctx.Log.Info($"Skill finished: {LastResult}");
 		bool wasFight = skill is FightSkill;
+		// A retreat that found no hole: not straight back into another at the same spot; the fight rule has the hold first.
+		if (skill is ShelterSkill { Retreat: true } && status == SkillStatus.Failed)
+			fightBackSince = ctx.Tick;
 		if (Auto)
 			Planner.OnSkillFinished(skill, status, ctx);
 		skill.Stop(ctx);

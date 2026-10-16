@@ -499,6 +499,107 @@ public class ProgressionTests
 		Assert.False(g.Grid.Get(end.X, end.Y - 3).IsSolid(), "seal not opened");
 	}
 
+	/// <summary>Waiting in the open: in Waiting with a side cell over the body rows (or the roof's corners) open.</summary>
+	private static string OpenSide(FakeGame g)
+	{
+		TilePos n = g.Sim.Node;
+		for (int y = n.Y - 3; y <= n.Y; y++)
+			foreach (int x in new[] { n.X - 1, n.X + 2 })
+				if (!g.Grid.Get(x, y).IsSolid())
+					return $"({x},{y}) beside the body at {n} is open";
+		return null;
+	}
+
+	[Fact]
+	public void Shelter_DigFails_RunsOnToDigElsewhere_NeverWaitsInTheOpen()
+	{
+		// Measured runs U17, U19 and U20 (4 deaths): the dig failed (NoPath), and the shelter sealed the cells over the head
+		// and waited out in the open among the enemies.
+		FakeGame g = Mine();
+		for (int x = 0; x < 90; x++)
+			for (int y = 25; y < 38; y++)
+				g.Blocks.Unbreakable.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		int t = 0;
+		for (; t < 60 * 60 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = shelter.Tick(ctx);
+			g.Step(ctx);
+			Assert.False(shelter.State == "Waiting", $"t{t}: waiting at {g.Sim.Node} after the dig failed");
+		}
+		output.WriteLine($"{s} after {t} ticks at {g.Sim.Node}: {shelter.FailureReason}");
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.True(g.Sim.Node.X >= 3 + ShelterSkill.FleeTiles - ShelterSkill.FleeTolerance, "did not run on to try elsewhere");
+	}
+
+	[Fact]
+	public void Shelter_KnockedOutOfTheShaftWhileSealing_SealsWhereItIs_NotTheShaft()
+	{
+		// Measured run U19: knockback moved the bot 6 tiles while sealing; the seal cells stayed over the shaft.
+		FakeGame g = Mine();
+		g.Items[FakeGame.DirtBlock] = 40;
+		BotContext ctx = g.CreateContext(output);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		bool knocked = false;
+		for (int t = 0; t < 60 * 60 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = shelter.Tick(ctx);
+			g.Step(ctx);
+			if (!knocked && shelter.State == "Sealing") {
+				knocked = true;
+				TilePos n = g.Sim.Node;
+				g.Sim.State = new Core.Physics.BodyState {
+					X = Core.Pathfinding.Body.CanonicalLeft(n.X + 4, Core.Physics.PhysicsParams.Default),
+					Y = Core.Pathfinding.Body.StandingTop(24, Core.Physics.PhysicsParams.Default), ReleaseJump = true,
+				};
+				output.WriteLine($"t{t}: knocked from {n} to {g.Sim.Node}");
+			}
+			if (shelter.State == "Waiting") {
+				output.WriteLine($"t{t}: {shelter.Describe()} at {g.Sim.Node}, sealed {shelter.Sealed}");
+				Assert.Null(OpenSide(g));
+				TilePos n = g.Sim.Node;
+				Assert.True(g.Grid.Get(n.X, n.Y - 3).IsSolid() && g.Grid.Get(n.X + 1, n.Y - 3).IsSolid(), $"roof over {n} open");
+				break;
+			}
+		}
+		Assert.True(knocked);
+	}
+
+	[Fact]
+	public void Shelter_WithASlimeInTheHole_IsNotSealedIn_AndFightsIt()
+	{
+		// Measured run U20 (t147146): "sealed in" with a red slime in the hole; it bit the bot to death while it waited.
+		FakeGame g = Mine();
+		g.Items[FakeGame.DirtBlock] = 40;
+		BotContext ctx = g.CreateContext(output);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		bool inHole = false;
+		TilePos hole = default;
+		for (int t = 0; t < 60 * 30; t++) {
+			g.Refresh(ctx);
+			shelter.Tick(ctx);
+			g.Step(ctx);
+			if (!inHole && shelter.State == "Sealing") {
+				inHole = true;
+				hole = g.Sim.Node;
+				g.AddSlime(9, hole.X, hole.Y); // in the body's cells
+				output.WriteLine($"t{t}: a slime in the hole at {hole}");
+			}
+			if (inHole && g.Sim.Node == hole && shelter.State is "Sealing" or "Waiting") {
+				g.Refresh(ctx);
+				Assert.False(shelter.Sealed, $"t{t}: sealed in with the slime at {g.Sim.Node}");
+				Assert.NotNull(shelter.FightBackReason(ctx));
+			}
+		}
+		Assert.True(inHole);
+	}
+
 	[Fact]
 	public void AutoBrain_RunsTheIronChain()
 	{
