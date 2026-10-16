@@ -183,6 +183,36 @@ public class FightSkillTests
 		Assert.DoesNotContain($"WalkTo ({s.X + 1},", shelter.Describe());
 	}
 
+	[Theory]
+	[InlineData(0.5f)]
+	[InlineData(0.8f)]
+	public void ShelterFlight_WithTheChaserCloseBehind_RunsOnBeforeDigging_OrFightsWhatItCannotOutrun(float speedOfBot)
+	{
+		// Measured runs U20, M10a, U19 (6 deaths): the 25-tile flight "arrived" after 17 tiles (tolerance 8) with the walker
+		// a few tiles behind, and it caught the bot digging. A chaser at half the bot's run speed is outrun in time; one as
+		// nearly as fast is not, and is fought.
+		FakeGame g = EarlyGameTests.FieldFrom(240, 200);
+		g.AddSlime(9, 204, 24);
+		BotContext ctx = g.CreateContext(output);
+		var shelter = ShelterSkill.Recover(0.8f);
+		shelter.Start(ctx);
+		Assert.Equal("Fleeing", shelter.State);
+		float chase = PhysicsParams.Default.MaxRunSpeed * speedOfBot;
+		for (int t = 0; t < 60 * 20 && shelter.State == "Fleeing"; t++) {
+			g.Refresh(ctx);
+			shelter.Tick(ctx);
+			g.Step(ctx);
+			var s = g.Slimes[0];
+			float bx = g.Sim.State.CenterX(PhysicsParams.Default);
+			g.Slimes[0] = (s.id, s.x + System.Math.Sign(bx - (s.x + 12f)) * chase, s.y, s.life);
+		}
+		g.Refresh(ctx);
+		float gap = ctx.Hostiles[0].DistanceTo(ctx.Body.CenterX(ctx.Physics), ctx.Body.CenterY(ctx.Physics));
+		output.WriteLine($"{shelter.Describe()} at {g.Sim.Node}, chaser {gap / 16f:0.0} tiles behind; fight back: {shelter.FightBackReason(ctx)}");
+		Assert.Equal("Digging", shelter.State);
+		Assert.True(gap > ShelterSkill.FleeClearPx || shelter.FightBackReason(ctx) != null, $"digging in with the chaser {gap / 16f:0.0} tiles behind");
+	}
+
 	[Fact]
 	public void ShelterFlight_OverInMidAir_WaitsForTheGround_WithoutThrowing()
 	{

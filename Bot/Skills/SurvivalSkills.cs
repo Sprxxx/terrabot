@@ -307,6 +307,8 @@ public sealed class ShelterSkill : ISkill
 			return null;
 		if (ctx.LastEnemyHitTick >= startTick && ctx.Tick - ctx.LastEnemyHitTick < HitRecentTicks)
 			return $"hit while sheltering ({phase})";
+		if (notOutrun != null && NearestHostile(ctx, out _) <= FleeClearPx)
+			return notOutrun;
 		if (phase == Phase.Fleeing && ctx.Tick - startTick < FleeGraceTicks)
 			return null;
 		PhysicsParams p = ctx.Physics;
@@ -326,29 +328,40 @@ public sealed class ShelterSkill : ISkill
 		startTick = ctx.Tick;
 		// Hurt with something on it: run off first (the bot outruns slimes and zombies), then dig. Seen in game: most
 		// deaths of the night runs were while digging in with the attacker beside the hole, or in it.
-		if (Retreat && NearestHostile(ctx, out float hx) <= FleeWithinPx) {
-			TilePos n0 = ctx.Node;
-			int dir = hx > ctx.Body.CenterX(ctx.Physics) ? -1 : 1;
-			var away = new TilePos(n0.X + dir * FleeTiles, n0.Y);
-			// Not into somewhere off limits (seen in game, run 54: away from one antlion, straight into the desert it came from).
-			var other = new TilePos(n0.X - dir * FleeTiles, n0.Y);
-			if (ctx.OffLimits(away) && !ctx.OffLimits(other)) {
-				dir = -dir;
-				away = other;
-			}
-			ctx.Log.Info($"Shelter start at {n0}: something on me; running {(dir > 0 ? "right" : "left")} first, then digging in {why}");
-			dig = new WalkToSkill(new Core.Pathfinding.GoalNearTile(away, FleeTolerance, ctx.Physics)) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
-			dig.Start(ctx);
-			phase = Phase.Fleeing;
+		if (Retreat && NearestHostile(ctx, out _) <= FleeWithinPx) {
+			StartFlee(ctx, $"Shelter start at {ctx.Node}: something on me", $"first, then digging in {why}");
 			return;
 		}
 		StartDigging(ctx);
+	}
+
+	/// <summary>A leg of the flight: <see cref="FleeTiles"/> away from the nearest hostile.</summary>
+	private void StartFlee(BotContext ctx, string what, string then)
+	{
+		TilePos n0 = ctx.Node;
+		NearestHostile(ctx, out float hx);
+		int dir = hx > ctx.Body.CenterX(ctx.Physics) ? -1 : hx < ctx.Body.CenterX(ctx.Physics) ? 1 : fleeDir;
+		var away = new TilePos(n0.X + dir * FleeTiles, n0.Y);
+		// Not into somewhere off limits (seen in game, run 54: away from one antlion, straight into the desert it came from).
+		var other = new TilePos(n0.X - dir * FleeTiles, n0.Y);
+		if (ctx.OffLimits(away) && !ctx.OffLimits(other)) {
+			dir = -dir;
+			away = other;
+		}
+		fleeDir = dir;
+		ctx.Log.Info($"{what}; running {(dir > 0 ? "right" : "left")} {then}");
+		dig = new WalkToSkill(new Core.Pathfinding.GoalNearTile(away, FleeTolerance, ctx.Physics)) { Quiet = true, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
+		dig.Start(ctx);
+		phase = Phase.Fleeing;
 	}
 
 	/// <summary>Running off before digging in: an enemy this close, this far, at most this long.</summary>
 	public const float FleeWithinPx = 6 * 16f, FleeClearPx = 14 * 16f;
 	public const int FleeTiles = 25, FleeTolerance = 8, MaxFleeTicks = 60 * 6;
 	private int fleeTicks;
+	private int fleeDir = 1;
+	/// <summary>Set when the flight could not outrun what chased it: the brain fights it (<see cref="FightBackReason"/>).</summary>
+	private string notOutrun;
 
 	private static float NearestHostile(BotContext ctx, out float x)
 	{
@@ -439,10 +452,23 @@ public sealed class ShelterSkill : ISkill
 				// ticked the dropped walk, and the exception switched the bot off among zombies).
 				if (dig != null) {
 					SkillStatus fs = dig.Tick(ctx);
-					if (fs == SkillStatus.Running && ++fleeTicks <= MaxFleeTicks && NearestHostile(ctx, out _) <= FleeClearPx)
+					float near = NearestHostile(ctx, out _);
+					if (fs == SkillStatus.Running && ++fleeTicks <= MaxFleeTicks && near <= FleeClearPx)
 						return SkillStatus.Running;
 					dig.Stop(ctx);
 					dig = null;
+					// There, but the chaser is still close behind: not digging in under its nose, on with another leg. Seen in game
+					// (measured runs U20, M10a and U19: 6 deaths): the walk "arrived" 17 tiles on (25 tiles, tolerance 8) with the
+					// enemy beside it, digging 5 rows took 170-430 ticks, and zombies and a crawdad caught up. Out of time or of
+					// way on with it still close: it cannot be outrun, so the brain fights it (FightBackReason).
+					if (near <= FleeClearPx) {
+						if (fs == SkillStatus.Succeeded && fleeTicks <= MaxFleeTicks) {
+							StartFlee(ctx, $"Shelter: something still {near / 16f:0} tiles behind at {ctx.Node}", "on");
+							return SkillStatus.Running;
+						}
+						notOutrun = $"cannot outrun it ({near / 16f:0} tiles behind after {fleeTicks} ticks{(fs == SkillStatus.Failed ? ", no way on" : "")})";
+						ctx.Log.Info($"Shelter: {notOutrun}");
+					}
 				}
 				if (!ctx.Body.Grounded)
 					return SkillStatus.Running; // dig in from the ground
