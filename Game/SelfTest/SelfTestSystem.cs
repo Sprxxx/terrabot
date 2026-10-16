@@ -379,6 +379,11 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				if (!finished && phaseTicks < Timeout(s))
 					return;
+				// Milestones are looked at every 60 ticks, and the run ends the tick its goal is met: once more, or the last one
+				// (the boss defeated, and its checkpoint) was never noted. Seen (measured run U17): PASS, no "Eye of Cthulhu
+				// defeated" milestone and no checkpoint of it.
+				if (s.RealWorld)
+					TrackMilestones(p, bot);
 				Mod.Logger.Info($"SELFTEST speed {s.Name}: {phaseTicks} ticks in {runClock.Elapsed.TotalSeconds:0} s = {Speed(phaseTicks, runClock)} normal");
 				Evaluate(bot, s, finished);
 				index++;
