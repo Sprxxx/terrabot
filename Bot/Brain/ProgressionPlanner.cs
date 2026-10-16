@@ -1031,6 +1031,21 @@ public sealed class ProgressionPlanner
 		return (s.X, s.X + bp.Width - 1, s.Y + bp.StandRow);
 	}
 
+	/// <summary>
+	/// Onto the arena's floor first, anywhere along it (its ends are open to the world), then along the floor to the middle.
+	/// Seen in game (measured run U7): from under the floor (protected from path moves), the walk to the 9 tiles over the
+	/// middle made partial plans of 3,000-14,000 nodes straight up at it all night, and the summon waited a whole day.
+	/// </summary>
+	private static WalkToSkill ArenaWalk(BotContext ctx, int x0, int x1, int standY)
+	{
+		TilePos n = ctx.Node;
+		int mid = (x0 + x1) / 2;
+		bool onFloor = n.Y == standY && n.X >= x0 && n.X <= x1;
+		return new WalkToSkill(onFloor
+			? new Core.Pathfinding.GoalStandOnRow(standY, mid - ArenaCentreTolerance, mid + ArenaCentreTolerance, ctx.Physics)
+			: new Core.Pathfinding.GoalStandOnRow(standY, x0, x1, ctx.Physics));
+	}
+
 	private static bool InArena(TilePos n, int x0, int x1, int standY) =>
 		Math.Abs(n.X - (x0 + x1) / 2) <= ArenaCentreTolerance + 1 && n.Y == standY;
 
@@ -1047,9 +1062,7 @@ public sealed class ProgressionPlanner
 			// To the arena first, by day, then wait there for night: seen in game (measured run S14), the summon made at an
 			// altar 360 rows down, the bot waited there all day, set off at nightfall, and the walk took the night.
 			if (ArenaBounds(ctx) is (int bx0, int bx1, int by) && !InArena(ctx.Node, bx0, bx1, by)) {
-				var centre = new TilePos((bx0 + bx1) / 2, by);
-				return Do($"walking to the arena to summon the {b.Label}",
-					new WalkToSkill(new Core.Pathfinding.GoalStandOnRow(by, centre.X - ArenaCentreTolerance, centre.X + ArenaCentreTolerance, ctx.Physics)));
+				return Do($"walking to the arena to summon the {b.Label}", ArenaWalk(ctx, bx0, bx1, by));
 			}
 			if (!ctx.IsNight)
 				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
@@ -1059,9 +1072,7 @@ public sealed class ProgressionPlanner
 				return Do($"too little night left for the {b.Label} ({ctx.NightTicksLeft / 60}s); waiting for the next night",
 					new WaitSkill("next night", c => c.IsNight && c.NightTicksLeft >= MinNightForBoss, NightWaitTicks + 32400));
 			if (ArenaBounds(ctx) is (int ax0, int ax1, int ay) && !InArena(ctx.Node, ax0, ax1, ay)) {
-				var middle = new TilePos((ax0 + ax1) / 2, ay);
-				return Do($"walking to the arena to summon the {b.Label}",
-					new WalkToSkill(new Core.Pathfinding.GoalStandOnRow(ay, middle.X - ArenaCentreTolerance, middle.X + ArenaCentreTolerance, ctx.Physics)));
+				return Do($"walking to the arena to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay));
 			}
 			// Summon at (nearly) full life: the arena's campfire and the heart lantern bring it back up quickly.
 			if (ctx.Combat.LifeFraction < SummonLifeFraction && ctx.Tick - lastRestEnd > MaxRestTicks)
