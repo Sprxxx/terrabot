@@ -76,6 +76,12 @@ public sealed class MineSkill : ISkill
 	/// <summary>The ore being mined when it is one of <see cref="Also"/>; null for this job's own.</summary>
 	private (int Item, int Tile)? alt;
 	private bool tookAlt;
+	/// <summary>
+	/// The <see cref="Also"/> ore this job mined instead of its own (null if none), and the tiles of its own it mined: the
+	/// planner clears the fruitless count of the ore actually found (ProgressionPlanner.OnSkillFinished).
+	/// </summary>
+	public int? OtherOreTaken { get; private set; }
+	public int MinedOwn { get; private set; }
 	public int Mined { get; private set; }
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
@@ -317,8 +323,12 @@ public sealed class MineSkill : ISkill
 			target = null;
 			sub?.Stop(ctx);
 			sub = null;
-			if (alt != null)
+			if (alt is (int altItem, _)) {
 				tookAlt = true;
+				OtherOreTaken = altItem;
+			}
+			else
+				MinedOwn++;
 			int altDrop = alt?.Item ?? -1;
 			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType || d.Type == altDrop, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;

@@ -291,6 +291,35 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ASilverJobThatTookIron_ClearsIronsFruitlessCount()
+	{
+		// Measured run U10: iron stayed "fruitless" from t41400 while 145+ iron ore was mined by silver jobs ("took Iron Ore
+		// instead of Silver Ore", 13 times): the success cleared silver's count, not iron's, and the plan kept choosing
+		// "Silver Ore x40 (have 3)" for the pickaxe, 25.6 game hours.
+		FakeGame g = ProgressionTests.Mine(); // an iron vein, no silver
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		var silver = Assert.IsType<MineSkill>(p.Next(ctx));
+		Assert.Equal(FakeGame.SilverOre, silver.ItemType);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, silver, 60 * 120));
+		Assert.Equal(FakeGame.IronOre, silver.OtherOreTaken);
+		p.OnSkillFinished(silver, SkillStatus.Succeeded, ctx);
+		g.Items[FakeGame.IronOre] = 0; // smelted and made into other gear: the tier is chosen afresh, not from the bag
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Contains($"item{FakeGame.IronOre}", p.Status); // iron again: it is being found
+	}
+
+	[Fact]
 	public void ATripForNewOre_StoppedByAFight_GoesOnToTheSamePlace()
 	{
 		// world_eye run 61: a fight stopped the trip in the desert, mining there failed at once, and the next trip went the other way.

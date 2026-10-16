@@ -413,8 +413,17 @@ public sealed class ProgressionPlanner
 		if (skill is MineSkill mine) {
 			if (status == SkillStatus.Succeeded) {
 				exitTarget = null; // ore found after all: no trip
-				fruitlessMines.Remove(mine.ItemType);
-				travelledFor.Remove(mine.ItemType);
+				// The ore found is the one mined: the other tier's when the job took that (MineSkill.Also), not the one it was
+				// for. Seen in game (measured run U10): iron stayed "fruitless" from t41400 while 145+ iron ore was mined by
+				// silver jobs, so the plan kept choosing "Silver Ore x40 (have 3)" for the pickaxe, 25.6 game hours.
+				if (mine.OtherOreTaken is int other) {
+					fruitlessMines.Remove(other);
+					travelledFor.Remove(other);
+				}
+				if (mine.OtherOreTaken == null || mine.MinedOwn > 0) {
+					fruitlessMines.Remove(mine.ItemType);
+					travelledFor.Remove(mine.ItemType);
+				}
 			}
 			else if (status == SkillStatus.Failed && mine.FailureReason.Contains("explorations"))
 				NoteFruitless(mine.ItemType);
