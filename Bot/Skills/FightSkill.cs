@@ -80,6 +80,24 @@ public sealed class FightSkill : ISkill
 	private const int RetargetDistance = 6;
 	private const int RetargetAnywayTicks = 180;
 
+	/// <summary>
+	/// The distance (tiles) a hostile in sight starts a fight at (ProgressionPlanner.InDanger): a flier out of sight farther
+	/// off than this is only waited for so long (<see cref="MaxFarWaitTicks"/>).
+	/// </summary>
+	public const int ThreatTiles = Brain.ProgressionPlanner.DangerRadiusTiles;
+	/// <summary>
+	/// How long a fight waits in the open, all told, for fliers out of sight beyond <see cref="ThreatTiles"/> that come no
+	/// closer: an eater of souls flies at 4 px a tick at most and turns at 0.02 a tick (vanilla NPC.AI_005_EaterOfSouls,
+	/// type 6), 200 ticks to stop flying away and 200 to come back up to speed; one that has not come closer in that long is
+	/// not coming. Then the fight is over, the work goes on, and those fliers are fought when they come within
+	/// <see cref="ThreatTiles"/> (or into sight). Seen in game (measured run M10c, world_eow): 66 of 240 heartbeats were
+	/// "waiting for it in the open", 49 of them for an eater of souls 18-39 tiles off; 101 times "no closer to Eater of
+	/// Souls in 600 ticks (26-36 tiles); leaving it", and with new ones spawning the fights went on; 233 "Danger: pausing",
+	/// 27 heartbeats patrolling, and the mushrooms at 3/6 for 12 game hours and 5/6 at the end.
+	/// </summary>
+	public const int MaxFarWaitTicks = 400;
+	private int farWaitTicks;
+
 	private WalkToSkill approach;
 	private TilePos approachTarget;
 	private int approachAge;
@@ -237,6 +255,8 @@ public sealed class FightSkill : ISkill
 				}
 			}
 		}
+		else if (flier && FarWaitOver(ctx, t, cx, cy))
+			return SkillStatus.Succeeded;
 		else if (flier) {
 			// A flier is never chased on foot: it comes at the player on its own (AI 2, 5 and 14 all fly at their target), and
 			// the ground beneath it is wherever it happens to be over. In sight with a sword: hold ground and meet it (chasing
@@ -356,6 +376,7 @@ public sealed class FightSkill : ISkill
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
 			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
 				&& NotTooDeep(ctx, e, d)
+				&& (!ctx.WaitedOut(e.Id) || d <= ThreatTiles * 16f || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) // not waited for again
 				&& (!InWater(ctx, e) || e.Id == ctx.RecentAttacker); // nor into water after jellyfish and piranhas
 			if (e.Id == targetId && candidate)
 				current = e;
@@ -388,6 +409,31 @@ public sealed class FightSkill : ISkill
 			ctx.Log.Info($"Fight: target {e2.Name} #{e2.Id} at {e2.FeetTile}, {e2.DistanceTo(cx, cy) / 16f:0.0} tiles, life {e2.Life}/{e2.LifeMax}");
 		}
 		return pick;
+	}
+
+	/// <summary>
+	/// A flier not in reach nor shot at, so waited for (<see cref="HoldAndMeet"/>, <see cref="WaitInTheOpen"/>): beyond
+	/// <see cref="ThreatTiles"/> and no closer than it has been (by a tile), the wait counts towards
+	/// <see cref="MaxFarWaitTicks"/>; over that, every flier out of sight beyond <see cref="ThreatTiles"/> is waited out
+	/// (<see cref="BotContext.WaitOut"/>, for <see cref="IgnoreTicks"/>) and the fight is over.
+	/// </summary>
+	private bool FarWaitOver(BotContext ctx, EntityInfo t, float cx, float cy)
+	{
+		if (targetDistance <= ThreatTiles * 16f || !progress.TryGetValue(t.Id, out var pr) || pr.Since == 0)
+			return false;
+		if (++farWaitTicks <= MaxFarWaitTicks)
+			return false;
+		int n = 0;
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (FlyingAiStyles.Contains(e.AiStyle) && e.DistanceTo(cx, cy) > ThreatTiles * 16f && !ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) {
+				ctx.WaitOut(e.Id, IgnoreTicks);
+				n++;
+			}
+		ctx.Log.Info($"Fight: {MaxFarWaitTicks} ticks waiting for fliers out of sight beyond {ThreatTiles} tiles that come no closer ({t.Name} at "
+			+ $"{targetDistance / 16f:0.0}); leaving {n} until they come within {ThreatTiles}");
+		targetId = -1;
+		State = "done";
+		return true;
 	}
 
 	/// <summary>Stand, face the flier and swing as it comes within <see cref="MeetMargin"/> of reach.</summary>
