@@ -240,13 +240,16 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// <summary>Main-inventory slots (stacks of 999); unlimited unless a test sets it.</summary>
 	public int SlotLimit = int.MaxValue;
 	public const int MaxStack = 999;
+	/// <summary>Items that stack less than <see cref="MaxStack"/> (accessories, tools: 1).</summary>
+	public readonly Dictionary<int, int> StackSize = new();
+	private int StackOf(int type) => StackSize.TryGetValue(type, out int s) ? s : MaxStack;
 	public int FreeSlots => SlotLimit == int.MaxValue ? 50 : SlotLimit - Stacks().Count;
 	public IReadOnlyList<(int Type, int Stack)> Stacks()
 	{
 		var list = new List<(int, int)>();
 		foreach (var (type, n) in Items)
-			for (int left = n; left > 0; left -= MaxStack)
-				list.Add((type, Math.Min(left, MaxStack)));
+			for (int left = n; left > 0; left -= StackOf(type))
+				list.Add((type, Math.Min(left, StackOf(type))));
 		return list;
 	}
 	public bool TryTrash(int itemType)
@@ -254,7 +257,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		int n = Count(itemType);
 		if (n <= 0)
 			return false;
-		int smallest = n % MaxStack == 0 ? MaxStack : n % MaxStack;
+		int smallest = n % StackOf(itemType) == 0 ? StackOf(itemType) : n % StackOf(itemType);
 		Items[itemType] = n - smallest;
 		Trashed.Add(itemType);
 		return true;

@@ -58,6 +58,8 @@ public sealed class HuntSkill : ISkill
 	/// the ground is a biome, and wandering on out of it leaves the spawns (the M10 corruption is about 80 tiles wide).
 	/// </summary>
 	public const int GroundWanderSteps = 2;
+	/// <summary>Wanders out of town go this many steps of <see cref="WanderTiles"/> to each side, then start over (see Tick).</summary>
+	public const int OpenWanderSteps = 2;
 	/// <summary>
 	/// Farther than this (tiles) from <see cref="Ground"/> with no prey in sight (a fight or a fall took the bot off), the hunt
 	/// walks back to it: the wanders' own reach. At one wander's reach, every far wander was followed by a walk back first.
@@ -110,7 +112,7 @@ public sealed class HuntSkill : ISkill
 			return Fail(ctx, "no melee weapon");
 		if (sub != null) {
 			SkillStatus s = sub.Tick(ctx);
-			if (s == SkillStatus.Running && !(sub is WalkToSkill && PreyInSight(ctx)))
+			if (s == SkillStatus.Running && !(sub is WalkToSkill && State != ToOpenGround && PreyInSight(ctx)))
 				return SkillStatus.Running;
 			if (s == SkillStatus.Failed && sub is WalkToSkill { ToSurface: true } && ++failedWalksUp >= MaxFailedWalksUp) {
 				sub.Stop(ctx);
@@ -134,6 +136,16 @@ public sealed class HuntSkill : ISkill
 			return SkillStatus.Running;
 		}
 		if (PreyInSight(ctx)) {
+			// Fliers are fought from open ground: from under cover (a tunnel, a chasm's side) no shot at them is clear, and
+			// they are waited for, not chased (FightSkill). Seen in game (measured run M10a): at (1868-1889,333-340), in
+			// tunnels under the corruption's surface, 45 fights against eaters of souls ended with 0 kills.
+			if (Ground is TilePos open && FightSkill.FlyingAiStyles.Contains(AiStyle) && !FightSkill.OpenSky(ctx, ctx.Node)
+				&& open.ChebyshevTo(ctx.Node) > Tolerance && groundWalks < MaxGroundWalks) {
+				groundWalks++;
+				ctx.Log.Info($"Hunt: prey in sight from under cover at {ctx.Node}; out to open ground at {open} first");
+				Begin(ctx, new WalkToSkill(new Core.Pathfinding.GoalNearTile(open, Tolerance, ctx.Physics)) { Quiet = true }, ToOpenGround);
+				return SkillStatus.Running;
+			}
 			Begin(ctx, new FightSkill { Leash = FightSkill.LeashRadius }, "fighting"); // hunting: the prey is the point
 			return SkillStatus.Running;
 		}
@@ -161,7 +173,8 @@ public sealed class HuntSkill : ISkill
 				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {MaxWanders} wanders round {ground}");
 			int side = wanders % 2 == 1 ? 1 : -1;
 			int step = (wanders - 1) / 2 % GroundWanderSteps + 1;
-			var to = new TilePos(ground.X + side * WanderTiles * step, ground.Y - Tolerance);
+			int wx = ground.X + side * WanderTiles * step;
+			TilePos to = GroundNear(ctx, ground, wx, side) ?? new TilePos(wx, ground.Y - Tolerance);
 			waitTicks = WaitTicks;
 			ctx.Log.Info($"Hunt: nothing to hunt in sight, wandering round the hunting ground towards {to}");
 			Begin(ctx, new WalkToSkill(to) { Quiet = true, Tolerance = Tolerance }, "wandering");
@@ -196,6 +209,11 @@ public sealed class HuntSkill : ISkill
 				townSide = System.Math.Sign(node.X - from.X); // a wander back into town: nothing spawns that side
 			int dir = townSide != 0 ? -townSide
 				: wandersOut[Side(wanderDir)] <= wandersOut[Side(-wanderDir)] ? wanderDir : -wanderDir;
+			// Out to OpenWanderSteps on each side, then round again: vanilla spawns 62-84 tiles from the player wherever it
+			// stands (NPC.safeRangeX, spawnRangeX: 0.52 and 0.7 of a 1920-px screen), so walking farther out brings no more
+			// prey. Seen in game (measured run U20): the lens hunt wandered out to x 2494-2704, 400-600 tiles from the house.
+			if (wandersOut[Side(dir)] >= OpenWanderSteps)
+				wandersOut[Side(dir)] = 0;
 			goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], System.Math.Min(from.Y, SpawnsAboveRow ?? int.MaxValue) - 10);
 		}
 		waitTicks = WaitTicks;
@@ -205,6 +223,25 @@ public sealed class HuntSkill : ISkill
 	}
 
 	private static int Side(int dir) => dir > 0 ? 1 : 0;
+
+	/// <summary>The state of the walk out from under cover to the open ground (not broken off for prey in sight).</summary>
+	public const string ToOpenGround = "to open ground";
+
+	/// <summary>
+	/// A wander's goal round <see cref="Ground"/>: the surface of column <paramref name="x"/> (the first spot to stand on from
+	/// the sky), or of the nearest column back towards the ground whose surface is no deeper below the ground's row than a
+	/// fall the body takes unhurt (<see cref="PhysicsParams.SafeFallTiles"/>): not the floor of a chasm. A goal in the air,
+	/// a few rows over the ground's row, was walked to as the spot beneath it. Seen in game (measured run M10a): from the
+	/// hunting ground (1915,310) the wanders went to rows under the corruption's surface, and its chasms' floors lie
+	/// 26-110 rows down (the bot died three times at (1777,401), a chasm's floor).
+	/// </summary>
+	private static TilePos? GroundNear(BotContext ctx, TilePos ground, int x, int side)
+	{
+		for (int d = 0; d < WanderTiles; d++)
+			if (Brain.ProgressionPlanner.SurfaceAt(ctx.Grid, x - side * d) is TilePos c && c.Y - ground.Y <= ctx.Physics.SafeFallTiles)
+				return c;
+		return null;
+	}
 
 	private bool PreyInSight(BotContext ctx)
 	{

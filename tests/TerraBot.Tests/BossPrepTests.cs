@@ -256,7 +256,7 @@ public class BossPlannerTests
 		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
 		hunt.Start(ctx);
 		int startX = ctx.Node.X, east = 0, west = 0;
-		int far = 3 * HuntSkill.WanderTiles - 4; // three wanders out on each side, within the walk's tolerance of 4
+		int far = HuntSkill.OpenWanderSteps * HuntSkill.WanderTiles - 6; // the sweep's reach on each side, within the walk's tolerance (4) and a column of rounding
 		for (int t = 0; t < 60 * 60 * 3 && (east < far || west < far); t++) {
 			g.Refresh(ctx);
 			ctx.Tick = t;
@@ -268,6 +268,9 @@ public class BossPlannerTests
 		}
 		output.WriteLine($"{hunt.Describe()}; reached {east} east and {west} west of {startX}");
 		Assert.True(east >= far && west >= far, $"reached {east} east and {west} west");
+		// and no farther than that: vanilla spawns round the player wherever it stands (measured run U20: 400-600 tiles out)
+		int limit = HuntSkill.OpenWanderSteps * HuntSkill.WanderTiles + 8;
+		Assert.True(east <= limit && west <= limit, $"wandered {east} east and {west} west, past {limit}");
 	}
 
 	[Fact]

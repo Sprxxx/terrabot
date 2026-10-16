@@ -1412,20 +1412,30 @@ public sealed class ProgressionPlanner
 	/// surface spot nearest the spawn, every <see cref="RouteSampleTiles"/> columns out to <see cref="MaxTravelTiles"/> each
 	/// side, that is in the evil biome and has <see cref="EvilGroundTiles"/> of the Corruption round it as the game counts
 	/// it (<see cref="BotContext.CorruptionAround"/>); with none that much, the one with the most, at least the zone's
-	/// <see cref="BotContext.CorruptionZoneTiles"/>. Null if the map shows none (explore for it). In the M10 world the
-	/// corruption is at x 1880-1960 on the surface, 120-200 tiles west of the spawn (spec section 0).
+	/// <see cref="BotContext.CorruptionZoneTiles"/>. In the M10 world the corruption is at x 1880-1960 on the surface, 120-200
+	/// tiles west of the spawn (spec section 0).
+	/// <para>
+	/// The count is of revealed tiles only, and the map shows a biome's surface (lit by day), not the ground under it: so
+	/// where none reaches the zone's count, a surface spot the biome is seen at (<see cref="BotContext.InEvilBiome"/>) is the
+	/// place to go, the one with the most of the Corruption round it, and failing that the surface above the nearest evil
+	/// ground remembered anywhere (<see cref="BotContext.KnownEvil"/>), as a player walks to the corruption the map shows.
+	/// The game's zone counts every tile, seen or not, and once there the bot sees the rest. Null only if the map shows no
+	/// evil ground at all (explore for it). Seen in game (measured run M10a): from the spawn, with the corruption on the
+	/// checkpoint's map, "exploring for the corruption (none seen yet)" for 12 game hours, 16-leg explorations underground
+	/// at rows 340-565, before the hunting ground (1900,263) was found.
+	/// </para>
 	/// </summary>
 	public TilePos? EvilGround(BotContext ctx)
 	{
-		// Kept a while: a spot while the zone still holds there, none until the bot stands in the biome (an exploration for it
-		// ended there, or the map filled in on the way).
+		// Kept a while: a spot while the biome is still seen there, none until the bot stands in the biome (an exploration for
+		// it ended there, or the map filled in on the way).
 		if (ctx.Tick - evilGroundAt < EvilGroundRecheckTicks
-			&& (evilGround is TilePos kept ? ctx.CorruptionAround(kept) >= BotContext.CorruptionZoneTiles : !ctx.InEvilBiome(ctx.Node)))
+			&& (evilGround is TilePos kept ? ctx.InEvilBiome(kept) || ctx.CorruptionAround(kept) >= BotContext.CorruptionZoneTiles : !ctx.InEvilBiome(ctx.Node)))
 			return evilGround;
 		evilGroundAt = ctx.Tick;
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
-		TilePos? best = null;
-		int bestCount = BotContext.CorruptionZoneTiles - 1;
+		TilePos? best = null, seen = null;
+		int bestCount = BotContext.CorruptionZoneTiles - 1, seenCount = -1;
 		for (int d = 0; d <= MaxTravelTiles; d += RouteSampleTiles)
 			foreach (int x in d == 0 ? new[] { originX } : new[] { originX - d, originX + d }) {
 				if (SurfaceAt(ctx.Grid, x) is not TilePos c || !ctx.InEvilBiome(c))
@@ -1439,7 +1449,21 @@ public sealed class ProgressionPlanner
 					bestCount = n;
 					best = c;
 				}
+				if (n > seenCount) {
+					seenCount = n;
+					seen = c;
+				}
 			}
+		// The zone's count undercounts (seen tiles only): the surface the biome is seen at, then evil ground seen anywhere.
+		best ??= seen;
+		if (best == null && ctx.KnownEvil.Count > 0) {
+			TilePos from = ctx.SpawnTile ?? ctx.Node;
+			foreach (TilePos e in ctx.KnownEvil.All.OrderBy(e => Math.Abs(e.X - from.X)))
+				if (Math.Abs(e.X - originX) <= MaxTravelTiles && SurfaceAt(ctx.Grid, e.X) is TilePos above) {
+					best = above;
+					break;
+				}
+		}
 		evilGround = best;
 		return best;
 	}
@@ -2087,7 +2111,7 @@ public sealed class ProgressionPlanner
 	}
 
 	/// <summary>The first spot to stand on, coming down from the sky in column <paramref name="x"/>; null if none.</summary>
-	private static TilePos? SurfaceAt(ITileGrid g, int x)
+	public static TilePos? SurfaceAt(ITileGrid g, int x)
 	{
 		for (int y = 40; y < 900; y++)
 			if (g.Get(x, y + 1).CanStandOn() && Core.Pathfinding.Body.IsStandable(g, new TilePos(x, y)))

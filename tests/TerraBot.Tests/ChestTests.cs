@@ -71,6 +71,34 @@ public class ChestTests
 		Assert.Equal(1, worn.Count(FakeGame.InnerTube));
 	}
 
+	[Fact]
+	public void AFullBag_OfKeptThings_TrashesTheSpareCopiesOfOneThatDoesNotStack()
+	{
+		// Measured run M10b: nine Shackles (an accessory, so kept as gear) in a bag of 50 full slots, nothing else to trash;
+		// 31 crafts failed "crafting stayed blocked (cursor item / full inventory)".
+		FakeGame g = EarlyGameTests.Field(80);
+		BotContext ctx = g.CreateContext(output);
+		const int shackle = 3000;
+		g.Items.Clear();
+		for (int i = 0; i < 41; i++) {
+			g.Items[2000 + i] = 1; // gear of one kind each
+			g.Gear.Add(2000 + i);
+			g.Values[2000 + i] = 100;
+		}
+		g.Items[shackle] = 9;
+		g.StackSize[shackle] = 1;
+		g.Gear.Add(shackle);
+		g.Values[shackle] = 1000;
+		g.SlotLimit = 50;
+		Assert.Equal(0, g.FreeSlots);
+		BotBrain.KeepRoom(ctx);
+		output.WriteLine($"trashed: {string.Join(", ", g.Trashed)}; free {g.FreeSlots}");
+		Assert.True(g.FreeSlots >= BotBrain.MinFreeSlots);
+		Assert.All(g.Trashed, t => Assert.Equal(shackle, t));
+		Assert.True(g.Count(shackle) >= 1);
+		Assert.All(Enumerable.Range(2000, 41), t => Assert.Equal(1, g.Count(t)));
+	}
+
 	/// <summary>Measured run S9: a full bag (dirt, stone, mud, cobwebs) left a mined life crystal on the floor.</summary>
 	[Fact]
 	public void AFullBag_TrashesWorthlessStacks_NotTheOnesInUse()
