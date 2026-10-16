@@ -197,8 +197,11 @@ public sealed class FightSkill : ISkill
 			progress[t.Id] = (Math.Min(targetDistance, progress[t.Id].Best), 0); // swinging at it is progress (the no-damage rule covers swings that do nothing)
 		wasInReach = inReach;
 
+		bool flier = FlyingAiStyles.Contains(t.AiStyle);
 		if (!inReach && UseRanged(ctx, t, cx, cy)) {
 			Shoot(ctx, t, cx, cy);
+			if (flier)
+				KeepOffEdge(ctx);
 			Heal(ctx);
 			return SkillStatus.Running;
 		}
@@ -232,10 +235,19 @@ public sealed class FightSkill : ISkill
 				}
 			}
 		}
-		else if (FlyingAiStyles.Contains(t.AiStyle) && ctx.Combat.HasWeapon && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY)) {
-			// A flier in sight with only a sword: hold ground and meet it. Fliers (demon eyes) come at the player on
-			// their own; chasing their "feet tile" ran the bot under them and cost it 150 life on Classic.
-			HoldAndMeet(ctx, t, dx, dy, reachX, reachY);
+		else if (flier) {
+			// A flier is never chased on foot: it comes at the player on its own (AI 2, 5 and 14 all fly at their target), and
+			// the ground beneath it is wherever it happens to be over. In sight with a sword: hold ground and meet it (chasing
+			// demon eyes' "feet tile" cost the bot 150 life on Classic). Out of sight: wait for it in the open, shooting the
+			// moment the arc clears. Seen in game (measured run M10a): chasing eaters of souls walked to "beneath" them, a
+			// corruption chasm's floor 26 rows and more down ("target (1780,315) -> StandAt(1780,341)"), and dug tunnels to them
+			// at rows 333-340 where no shot was ever clear (45 fights, 0 kills, 13 "out of sight and there is no way to it");
+			// over the chasm at x 1777, three falls to its floor at row 401 killed the bot (801-804 damage).
+			if (ctx.Combat.HasWeapon && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY))
+				HoldAndMeet(ctx, t, dx, dy, reachX, reachY);
+			else
+				WaitInTheOpen(ctx, t, dx);
+			KeepOffEdge(ctx);
 		}
 		else {
 			Approach(ctx, t, dx, dy);
@@ -402,6 +414,60 @@ public sealed class FightSkill : ISkill
 				State = $"picking up {d.Name} while it is far";
 			}
 		}
+	}
+
+	/// <summary>A flier out of sight: stand, face it with the weapon to hand (the bow if carried), and let it come.</summary>
+	private void WaitInTheOpen(BotContext ctx, EntityInfo t, float dx)
+	{
+		approach?.Stop(ctx);
+		approach = null;
+		int want = dx >= 0 ? 1 : -1;
+		ctx.Output.Tool = ctx.Combat.HasRanged ? ToolRequest.Ranged : ToolRequest.Weapon;
+		ctx.Output.AimMouse(t.CenterX, t.CenterY);
+		if (ctx.Combat.Facing != want && ctx.Combat.ItemAnimation == 0)
+			ctx.Output.Horizontal = want;
+		State = "waiting for it in the open";
+	}
+
+	/// <summary>
+	/// How far (tiles) a hit throws the player: vanilla Player.Hurt sets velocity (4.5 * hitDirection, -4.5 * 7/9 = -3.5) for
+	/// an enemy's 4.5 knockback, so about 17 ticks in the air at gravity 0.4, some 79 px.
+	/// </summary>
+	public const int KnockbackTiles = 5;
+
+	/// <summary>
+	/// Standing against fliers within <see cref="KnockbackTiles"/> of a sheer drop on one side (deeper than a fall the body
+	/// takes unhurt, <see cref="PhysicsParams.SafeFallTiles"/>): a step away from it, so a hit does not throw the bot over
+	/// the edge. Both sides sheer (a ledge, a pillar): stay. Seen in game (measured run M10a): knocked back by eaters of souls
+	/// ("Hurt 12 ... knockback 4.5") at a chasm's edge at x 1778, the bot fell 105 rows to (1777,401) and died.
+	/// </summary>
+	private void KeepOffEdge(BotContext ctx)
+	{
+		if (ctx.Output.Horizontal != 0 || !ctx.Body.Grounded)
+			return;
+		TilePos n = ctx.Node;
+		int left = EdgeWithin(ctx, n, -1), right = EdgeWithin(ctx, n, 1);
+		if ((left > 0) == (right > 0))
+			return;
+		ctx.Output.Horizontal = left > 0 ? 1 : -1;
+		State += ", off the edge";
+	}
+
+	/// <summary>Columns (1..<see cref="KnockbackTiles"/>) to a sheer drop on that side of the feet tile; 0 if none.</summary>
+	public static int EdgeWithin(BotContext ctx, TilePos feet, int dir)
+	{
+		int maxDrop = ctx.Physics.SafeFallTiles;
+		for (int k = 1; k <= KnockbackTiles; k++) {
+			int x = dir > 0 ? feet.X + 1 + k : feet.X - k; // the body is two columns wide from its feet tile
+			if (ctx.Grid.Get(x, feet.Y).IsSolid())
+				return 0; // a wall that way: the bot is stopped there, not thrown over anything
+			int drop = 0;
+			while (drop <= maxDrop && !ctx.Grid.Get(x, feet.Y + 1 + drop).CanStandOn())
+				drop++;
+			if (drop > maxDrop)
+				return k;
+		}
+		return 0;
 	}
 
 	/// <summary>Drops within this many tiles (and 3 rows) are picked up while the flier is over <see cref="PickUpWhileFarTiles"/> away.</summary>

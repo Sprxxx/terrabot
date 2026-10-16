@@ -176,6 +176,92 @@ public class FightSkillTests
 		Assert.True(ctx.Output.UseItem);
 	}
 
+	/// <summary>
+	/// Flat ground at row <paramref name="ground"/> (the bot's feet a row above, at column <paramref name="botX"/>) with a pit
+	/// in columns <paramref name="pitFrom"/>-<paramref name="pitTo"/> going <paramref name="pitDepth"/> rows down to a floor.
+	/// </summary>
+	private static ArrayTileGrid PitGrid(int botX, int pitFrom, int pitTo, int pitDepth, int ground = 10, int width = 60)
+	{
+		var rows = new List<string>();
+		for (int y = 0; y <= ground + pitDepth + 1; y++) {
+			var r = new char[width];
+			for (int x = 0; x < width; x++)
+				r[x] = y < ground ? '.' : y < ground + pitDepth && x >= pitFrom && x <= pitTo ? '.' : '#';
+			if (y == ground - 1)
+				r[botX] = 'S';
+			rows.Add(new string(r));
+		}
+		return ArrayTileGrid.Parse(rows.ToArray());
+	}
+
+	private BotContext Archer(ArrayTileGrid g, SimWorld sim) => new() {
+		Grid = g, Log = new Log(output), Body = sim.State,
+		Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword", Facing = 1, HasRanged = true, RangedName = "test bow", AmmoCount = 500,
+			Projectile = new ProjectileModel(9f, 15, 0.1f, 16f) },
+	};
+
+	/// <summary>An eater of souls (AI 5, 30x30 like vanilla type 6) centred in the tile.</summary>
+	private static EntityInfo Eater(int tx, int ty) => new(5, 6, "Eater of Souls", tx * 16f + 8f - 15f, ty * 16f + 8f - 15f, 30, 30, 0, 0, 40, 40, 22, AiStyle: 5);
+
+	[Fact]
+	public void AFlierOverAPit_IsWaitedFor_NotChasedDownIntoThePit()
+	{
+		// Measured run M10a: chasing eaters of souls walked to the ground "beneath" them, a corruption chasm's floor 26 rows
+		// and more down ("target (1780,315) -> StandAt(1780,341)"), and into tunnels where no shot was ever clear.
+		ArrayTileGrid g = PitGrid(botX: 10, pitFrom: 16, pitTo: 21, pitDepth: 20);
+		for (int x = 22; x <= 28; x++)
+			for (int y = 24; y < 30; y++)
+				g.Set(x, y, CellKind.Empty); // a side cave off the pit's floor, under the ground the bot stands on
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		BotContext ctx = Archer(g, sim);
+		EntityInfo eater = Eater(26, 26); // in the side cave: out of sight from anywhere up on the ground
+		for (int x = 0; x <= 15; x++)
+			Assert.False(FightSkill.ClearShot(ctx, x * 16f + 10f, 9 * 16f - 13f, eater.CenterX, eater.CenterY));
+		var skill = new FightSkill();
+		ctx.Hostiles = new[] { eater };
+		skill.Start(ctx);
+		int start = sim.Node.Y, lowest = start;
+		for (int t = 0; t < 60 * 10; t++) {
+			ctx.Body = sim.State;
+			ctx.Hostiles = new[] { eater };
+			ctx.Tick = t;
+			if (skill.Tick(ctx) != SkillStatus.Running)
+				break;
+			sim.Step(ctx.Output);
+			lowest = Math.Max(lowest, sim.Node.Y);
+		}
+		output.WriteLine($"{skill.Describe()}; feet from row {start} down to {lowest}, at {sim.Node}");
+		Assert.Equal(start, lowest);
+	}
+
+	[Fact]
+	public void ShootingAFlier_AtASheerDrop_StepsBackFromTheEdge()
+	{
+		// Measured run M10a: knocked back by eaters of souls at a chasm's edge (x 1778), the bot fell 105 rows to (1777,401).
+		ArrayTileGrid g = PitGrid(botX: 11, pitFrom: 13, pitTo: 18, pitDepth: 50);
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		BotContext ctx = Archer(g, sim);
+		Assert.True(FightSkill.EdgeWithin(ctx, ctx.Node, 1) > 0);
+		EntityInfo eater = Eater(8, 1); // in the open above, in clear sight: shot at
+		var skill = new FightSkill();
+		ctx.Hostiles = new[] { eater };
+		skill.Start(ctx);
+		bool shot = false;
+		for (int t = 0; t < 90; t++) {
+			ctx.Body = sim.State;
+			ctx.Hostiles = new[] { eater };
+			ctx.Tick = t;
+			skill.Tick(ctx);
+			shot |= ctx.Output.Tool == ToolRequest.Ranged && ctx.Output.UseItem;
+			sim.Step(ctx.Output);
+		}
+		ctx.Body = sim.State;
+		output.WriteLine($"{skill.Describe()}; at {sim.Node}, edge {FightSkill.EdgeWithin(ctx, ctx.Node, 1)} columns to the right");
+		Assert.True(shot, "never shot at it");
+		Assert.Equal(10 - 1, sim.Node.Y);
+		Assert.Equal(0, FightSkill.EdgeWithin(ctx, ctx.Node, 1));
+	}
+
 	[Fact]
 	public void KillsEnemyAhead_OnFlatGround()
 	{
