@@ -114,6 +114,42 @@ public class EarlyGameTests
 	}
 
 	[Fact]
+	public void GatherWood_ARememberedTreeWithNoWayThere_IsNotWalkedToAgain_ByAFreshSkill()
+	{
+		// The bot shut in an unbreakable box, a tree it remembers 150 columns off (out of sight): no way there.
+		FakeGame game = FieldFrom(300, 100, 250);
+		game.TreeSight = 50;
+		for (int x = 90; x <= 110; x++)
+			for (int y = 17; y < 30; y++)
+				if (x == 90 || x == 110 || y == 17 || y >= 25) { // walls, roof, and the ground under it (no digging out)
+					game.Grid.Set(x, y, Core.Grid.CellKind.Solid);
+					game.Blocks.Unbreakable.Add(new Core.Grid.TilePos(x, y));
+				}
+		var tree = new Core.Grid.TilePos(250, 24);
+		BotContext ctx = game.CreateContext(output);
+		ctx.Seen = new Surroundings { Trees = new[] { tree } };
+		var first = new GatherWoodSkill(FakeGame.Wood, 5);
+		first.Start(ctx);
+		bool walked = false;
+		for (int t = 0; t < 60 * 60 && first.Tick(ctx) == SkillStatus.Running; t++) {
+			bool walking = first.State.StartsWith("walking to a tree");
+			if (walked && !walking)
+				break; // that walk is over
+			walked |= walking;
+			game.Step(ctx);
+			game.Refresh(ctx);
+		}
+		first.Stop(ctx);
+		output.WriteLine($"first: {first.Describe()}, at {game.Sim.Node}");
+		Assert.True(walked);
+		var fresh = new GatherWoodSkill(FakeGame.Wood, 5);
+		fresh.Start(ctx);
+		fresh.Tick(ctx);
+		output.WriteLine($"fresh: {fresh.Describe()}");
+		Assert.False(fresh.State.StartsWith("walking to a tree"), fresh.State);
+	}
+
+	[Fact]
 	public void KnownTrees_AreForgotten_WhenTheirPlaceIsInSightWithoutThem()
 	{
 		var ctx = new BotContext();

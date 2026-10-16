@@ -276,9 +276,12 @@ public sealed class GatherWoodSkill : ISkill
 			if (s == SkillStatus.Running)
 				return SkillStatus.Running;
 			if (walkingTo is TilePos w) {
-				// Arrived (the tree is in sight now, or it is gone: the scan forgets it), or no way there.
-				if (s == SkillStatus.Failed)
+				// Arrived (the tree is in sight now, or it is gone: the scan forgets it), or no way there: then not again, nor
+				// by a fresh GatherWood (as for a tree ChopTree could not get at).
+				if (s == SkillStatus.Failed) {
 					badTrees.Add(w);
+					ctx.UnreachableTiles.Add(w);
+				}
 				walkingTo = null;
 			}
 			if (s == SkillStatus.Failed && sub is ChopTreeSkill chop) {
