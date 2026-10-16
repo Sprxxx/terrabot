@@ -197,10 +197,16 @@ public sealed class MineSkill : ISkill
 		}
 		// Standing somewhere off limits (a biome zone, the underground desert): no exploring here, but somewhere new. Seen in
 		// game (world_eye run 59): explorations in the underground desert went on until antlion chargers killed the bot.
-		if (ctx.OffLimits(ctx.Node)) {
+		// The planner walks the bot out (ProgressionPlanner.LeaveOffLimits).
+		if (ctx.OffLimitsOutright(ctx.Node)) {
 			ctx.ExploresWithoutOre.Remove(ItemType);
 			return Fail(ctx, $"no {Label(ctx)} seen, and the explorations from here would be off limits");
 		}
+		// In a zone where monsters were seen, in full armour: a cost, not a ban, so the exploring weighs its way out (leg
+		// targets score worse towards the zone's centre, ExploreSkill.SightingPenalty). Seen in game (measured run U9): 17
+		// crystal jobs failed here at once in sighting zones the bot could have walked out of.
+		if (ctx.OffLimits(ctx.Node))
+			ctx.Log.Info($"Mine: in a zone where monsters were seen at {ctx.Node}; exploring out of it in full armour");
 		// Ore seen before and still on the map: back for it before new ground (a player looks at the map). Not stone or dirt:
 		// those are everywhere.
 		if (!ctx.Ids.BuildingBlocks.Contains(ItemType) && Nearest(ctx, ctx.Node, MapSearchRadius) is TilePos known) {
@@ -410,8 +416,9 @@ public sealed class MineSkill : ISkill
 			return $"below row {deepest}, deeper than the gear allows";
 		// A crystal in a biome: worth going in for in a full set of armour (defense 8+, CavernDefense), as a player does; the
 		// biome's own gate is defense 16, more than full iron or silver gives (measured run S1: two crystals in the underground
-		// desert left alone while the bot explored for others for three game days).
-		if (valuable ? (!ctx.Combat.FullArmour || ctx.EvilStoneTooHard && ctx.InEvilBiome(c)) && ctx.BiomeOffLimits(c) : ctx.OffLimits(c))
+		// desert left alone while the bot explored for others for three game days). Ore in a zone where monsters were seen, in
+		// full armour, is mined too: the exploring goes in there now, the zone a cost (BotContext.OffLimitsOutright).
+		if (valuable ? (!ctx.Combat.FullArmour || ctx.EvilStoneTooHard && ctx.InEvilBiome(c)) && ctx.BiomeOffLimits(c) : ctx.OffLimitsOutright(c))
 			return valuable || !ctx.InDangerZone(c) ? "in a biome the gear is too weak for" : "in a danger zone";
 		return null;
 	}

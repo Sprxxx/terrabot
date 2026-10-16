@@ -181,9 +181,10 @@ public sealed class BotContext
 	/// <summary>
 	/// Where the bot was killed by enemies: exploring, ore and chests within <see cref="DangerZoneRadius"/> tiles are left
 	/// alone for <see cref="DangerZoneTicks"/>, like a player who stays away from where they keep dying. Seen in game:
-	/// antlions in the underground desert killed the bot in nearly every run.
+	/// antlions in the underground desert killed the bot in nearly every run. Also where it saw monsters its gear is too weak
+	/// for (<see cref="DangerZone.Seen"/>: a biome's, a crowd): those scale with the gear (<see cref="ZoneRadius"/>).
 	/// </summary>
-	public System.Collections.Generic.List<(TilePos At, long Until, int Radius)> DangerZones { get; } = new();
+	public System.Collections.Generic.List<DangerZone> DangerZones { get; } = new();
 	public const int DangerZoneRadius = 30, DangerZoneTicks = 60 * 60 * 30;
 
 	public void NoteDeathByEnemy(TilePos at)
@@ -201,11 +202,14 @@ public sealed class BotContext
 	/// <summary>Round the spawn (columns either side, rows below it) where a death marks no danger zone.</summary>
 	public const int HomeGroundTiles = 45, HomeGroundRows = 20;
 
-	/// <summary>A danger zone at <paramref name="at"/> for <paramref name="ticks"/>, <paramref name="radius"/> tiles round.</summary>
-	public void NoteDanger(TilePos at, long ticks, int radius = DangerZoneRadius)
+	/// <summary>
+	/// A danger zone at <paramref name="at"/> for <paramref name="ticks"/>, <paramref name="radius"/> tiles round; made from
+	/// monsters in sight rather than a death if <paramref name="seen"/> (smaller and shorter in full armour, see <see cref="ZoneRadius"/>).
+	/// </summary>
+	public void NoteDanger(TilePos at, long ticks, int radius = DangerZoneRadius, bool seen = false)
 	{
 		DangerZones.RemoveAll(z => z.Until <= Tick);
-		DangerZones.Add((at, Tick + ticks, radius));
+		DangerZones.Add(new DangerZone(at, Tick, Tick + ticks, radius, seen));
 	}
 
 	/// <summary>A biome seen by its monsters spans more than a death spot: run 58 died to an antlion charger 30 tiles past the zones.</summary>
@@ -215,12 +219,39 @@ public sealed class BotContext
 	public const long BiomeZoneTicks = 5L * 86400;
 
 	/// <summary>
+	/// A zone from monsters seen, in full armour (<see cref="CombatInfo.FullArmour"/>): this many tiles round at most, not
+	/// <see cref="BiomeZoneRadius"/>. Seen in game (measured run U9): in iron and silver armour a lone antlion charger,
+	/// targeted 12 tiles off, hurt the bot 4 and 8 tiles from where it was seen (19 and 21 damage) and died to the first
+	/// arrows; 20 is those 12 and its 8-tile charge. The 60-tile zones closed the ground under the spawn (x 2082-2202,
+	/// y 411-531) and kept 74% of the exploration legs at row 412 or above, and the two deaths to desert monsters in the
+	/// armour came inside them anyway (41 and 36 tiles from the sightings); those deaths mark zones of their own.
+	/// </summary>
+	public const int ArmouredSightingRadius = 20;
+
+	/// <summary>
+	/// How long a zone from monsters seen lasts in full armour, not <see cref="BiomeZoneTicks"/>: half a game day (a day
+	/// is 86400 ticks), less than a death's <see cref="DangerZoneTicks"/>. Seen in game (measured run U9): every hit from a desert
+	/// monster in the armour (25 of them) came within 1.5 game hours of a sighting, but each sighting held its ground for 5
+	/// days; 152 of the 175 crystal-seeking hours went on the last crystal, found within 21 hours of the zone under the
+	/// spawn lapsing.
+	/// </summary>
+	public const long ArmouredSightingTicks = 86400 / 2;
+
+	/// <summary>How far the zone reaches with the gear worn: a sighting's, in full armour, <see cref="ArmouredSightingRadius"/> at most.</summary>
+	public int ZoneRadius(DangerZone z) => z.Seen && Combat.FullArmour ? Math.Min(z.Radius, ArmouredSightingRadius) : z.Radius;
+
+	/// <summary>When the zone lapses with the gear worn: a sighting's, in full armour, <see cref="ArmouredSightingTicks"/> after it was seen at most.</summary>
+	public long ZoneUntil(DangerZone z) => z.Seen && Combat.FullArmour ? Math.Min(z.Until, z.Since + ArmouredSightingTicks) : z.Until;
+
+	/// <summary>
 	/// Somewhere to stay away from for now: where the bot was killed lately, or the underground desert while the gear
 	/// is weak. Seen in game (world_eye run 40): antlion chargers, swarmers and rolling cacti killed the bot 6 times in
 	/// one run in the underground desert east of the spawn, a place players leave until they have better gear.
 	/// </summary>
 	/// <summary>
-	/// <see cref="OffLimits"/> for path costs, remembered per 8x8 block for <see cref="OffLimitsMemoTicks"/>: every edge
+	/// <see cref="OffLimitsOutright"/> for path costs (a sighting's zone in full armour is the exploring's to weigh, not the
+	/// walk's: at <see cref="MoveContext.AvoidTicks"/> an edge, the path to a leg's target in it would cost more than a walk
+	/// round the whole region), remembered per 8x8 block for <see cref="OffLimitsMemoTicks"/>: every edge
 	/// of every search asked it, about 50 chunk lookups each (the biome shares), tens of thousands of times a search.
 	/// </summary>
 	public bool OffLimitsForPaths(TilePos t)
@@ -228,7 +259,7 @@ public sealed class BotContext
 		long k = ((long)(t.X >> 3) << 32) | (uint)(t.Y >> 3);
 		if (offLimitsMemo.TryGetValue(k, out var v) && Tick - v.At < OffLimitsMemoTicks && v.Zones == DangerZones.Count)
 			return v.Off;
-		bool off = OffLimits(t);
+		bool off = OffLimitsOutright(t);
 		offLimitsMemo[k] = (Tick, DangerZones.Count, off);
 		if (offLimitsMemo.Count > 20_000)
 			offLimitsMemo.Clear();
@@ -252,8 +283,32 @@ public sealed class BotContext
 	/// <summary>Life crystals and reasons already logged (each skip of a crystal is said once).</summary>
 	public System.Collections.Generic.HashSet<(int, int, string)> CrystalNotes { get; } = new();
 
-	public bool OffLimits(TilePos t) => InDangerZone(t) || Combat.Defense < DeepDefense && InUndergroundDesert(t)
-		|| (Combat.Defense < CavernDefense || EvilStoneTooHard) && InEvilBiome(t);
+	public bool OffLimits(TilePos t) => InDangerZone(t) || BiomeOffLimits(t);
+
+	/// <summary>
+	/// <see cref="OffLimits"/> as a ban, with nothing to weigh: where the bot was killed, the biome gates, and in weaker gear
+	/// where it saw monsters too. In full armour a sighting's zone is a cost instead (<see cref="SightingDepth"/>), as
+	/// Baritone weighs ground near mobs rather than banning it. Seen in game (measured run U9): 22 jobs failed at once in
+	/// sighting zones, 17 "the explorations from here would be off limits" and 5 "every way from here is off limits".
+	/// </summary>
+	public bool OffLimitsOutright(TilePos t) => InZone(t, sightings: !Combat.FullArmour) || BiomeOffLimits(t);
+
+	/// <summary>
+	/// How deep the tile lies in sighting zones that full armour lets exploring cross: 0 outside them, rising to 1 at a
+	/// zone's centre (summed where they overlap); 0 in weaker gear, where they are off limits outright.
+	/// </summary>
+	public float SightingDepth(TilePos t)
+	{
+		if (!Combat.FullArmour)
+			return 0f;
+		float depth = 0f;
+		foreach (DangerZone z in DangerZones) {
+			int r = ZoneRadius(z), d = z.At.ChebyshevTo(t);
+			if (z.Seen && ZoneUntil(z) > Tick && d <= r)
+				depth += (r + 1 - d) / (float)(r + 1);
+		}
+		return depth;
+	}
 
 	/// <summary>
 	/// Is the tile where the seen solid tiles around it (48x48) are largely Corruption or Crimson? Seen in game (world_eye
@@ -366,11 +421,13 @@ public sealed class BotContext
 		return Combat.Defense < DeepDefense && desert >= 0.3f * solid || Combat.Defense < CavernDefense && evil >= 0.3f * solid;
 	}
 
-	/// <summary>Is the tile inside a zone where the bot was recently killed?</summary>
-	public bool InDangerZone(TilePos t)
+	/// <summary>Is the tile inside a danger zone (where the bot was recently killed, or saw monsters), as far as it reaches with the gear worn?</summary>
+	public bool InDangerZone(TilePos t) => InZone(t, sightings: true);
+
+	private bool InZone(TilePos t, bool sightings)
 	{
-		foreach (var (at, until, radius) in DangerZones)
-			if (until > Tick && at.ChebyshevTo(t) <= radius)
+		foreach (DangerZone z in DangerZones)
+			if ((sightings || !z.Seen) && ZoneUntil(z) > Tick && z.At.ChebyshevTo(t) <= ZoneRadius(z))
 				return true;
 		return false;
 	}
@@ -615,3 +672,11 @@ public sealed class BotContext
 	/// <summary>Boxed in after all the rests: dig through sand and beside water anyway (MoveContext.DigAnyway) until a skill succeeds.</summary>
 	public bool DigAnyway { get; set; }
 }
+
+/// <summary>
+/// A place to keep away from for a while (<see cref="BotContext.DangerZones"/>), noted at <see cref="Since"/>: where the bot
+/// was killed, or, if <see cref="Seen"/>, where it saw monsters its gear is too weak for (a biome's, a crowd). The radius and
+/// end are those for weak gear; <see cref="BotContext.ZoneRadius"/> and <see cref="BotContext.ZoneUntil"/> scale a sighting's
+/// to the gear worn.
+/// </summary>
+public readonly record struct DangerZone(TilePos At, long Since, long Until, int Radius, bool Seen);

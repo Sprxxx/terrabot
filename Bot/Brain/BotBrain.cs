@@ -313,7 +313,7 @@ public sealed class BotBrain
 				n++;
 		if (n < MobZoneSize)
 			return;
-		ctx.NoteDanger(ctx.Node, BotContext.DangerZoneTicks, MobZoneRadius);
+		ctx.NoteDanger(ctx.Node, BotContext.DangerZoneTicks, MobZoneRadius, seen: true);
 		ctx.Log.Info($"Danger: {n} hostiles about at {ctx.Node}; keeping away from here for now");
 	}
 
@@ -329,8 +329,9 @@ public sealed class BotBrain
 				: null;
 			if (biome == null || ctx.InDangerZone(e.FeetTile))
 				continue;
-			ctx.NoteDanger(e.FeetTile, BotContext.BiomeZoneTicks, BotContext.BiomeZoneRadius);
-			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: {biome} is near; keeping away from there for now");
+			// Seen, not a death: in full armour the zone is smaller and shorter (BotContext.ZoneRadius), and a cost to exploring.
+			ctx.NoteDanger(e.FeetTile, BotContext.BiomeZoneTicks, BotContext.BiomeZoneRadius, seen: true);
+			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: {biome} is near; keeping away from there for now ({ctx.ZoneRadius(ctx.DangerZones[^1])} tiles round)");
 		}
 	}
 
