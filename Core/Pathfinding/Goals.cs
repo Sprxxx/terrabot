@@ -41,6 +41,34 @@ public sealed class GoalRow : IGoal
 	public override string ToString() => Below ? $"AtOrBelowRow{Row}" : $"AtOrAboveRow{Row}";
 }
 
+/// <summary>
+/// Feet on <see cref="Row"/>, anywhere from <see cref="MinX"/> to <see cref="MaxX"/>: standing on a floor (an arena's), not
+/// just near it. Seen in game (measured run U6): "near the arena's middle" was met four rows under its floor, where the
+/// fight's "in the arena" check (that row only) was not, and the walk there began again 87,000 times over 46 heartbeats.
+/// </summary>
+public sealed class GoalStandOnRow : IGoal
+{
+	private readonly float horizontalTicksPerTile, verticalTicksPerTile;
+	public int Row { get; }
+	public int MinX { get; }
+	public int MaxX { get; }
+	public TilePos Anchor => new((MinX + MaxX) / 2, Row);
+
+	public GoalStandOnRow(int row, int minX, int maxX, PhysicsParams p)
+	{
+		Row = row;
+		MinX = minX;
+		MaxX = maxX;
+		horizontalTicksPerTile = Body.TileSize / p.MaxHorizontalSpeed;
+		verticalTicksPerTile = Body.TileSize / Math.Max(p.MaxFallSpeed, p.JumpSpeed);
+	}
+
+	public bool IsGoal(TilePos n) => n.Y == Row && n.X >= MinX && n.X <= MaxX;
+	public float Heuristic(TilePos n) =>
+		(n.X < MinX ? MinX - n.X : n.X > MaxX ? n.X - MaxX : 0) * horizontalTicksPerTile + Math.Abs(n.Y - Row) * verticalTicksPerTile;
+	public override string ToString() => $"OnRow{Row}[{MinX}..{MaxX}]";
+}
+
 /// <summary>Exactly this node (plan repair: rejoin the old plan where one of its steps starts).</summary>
 public sealed class GoalNode : IGoal
 {

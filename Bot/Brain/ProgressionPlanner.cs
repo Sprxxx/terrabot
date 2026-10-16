@@ -863,6 +863,23 @@ public sealed class ProgressionPlanner
 	/// A valid house, or: pick a site (near the work bench), get the materials it still needs (blocks for the
 	/// missing frame cells, walls for the bare ones, each furniture item not yet placed), then build.
 	/// </summary>
+	/// <summary>A house of this blueprint standing near <paramref name="anchor"/>: its door where the plan puts one, valid housing.</summary>
+	private static TilePos? BuiltHouseNear(BotContext ctx, Blueprint bp, TilePos anchor)
+	{
+		int doorTile = ctx.Knowledge?.TilePlacedBy(ctx.Ids.Door) ?? -1;
+		PlanItem door = bp.Items.FirstOrDefault(it => it.ItemType == ctx.Ids.Door);
+		if (doorTile < 0 || door == null || ctx.World == null)
+			return null;
+		var tried = new HashSet<TilePos>();
+		foreach (TilePos d in ctx.World.FindTiles(doorTile, anchor, SiteFinder.SearchRadius))
+			for (int dy = 0; dy < door.Height; dy++) {
+				var origin = new TilePos(d.X - door.X, d.Y - dy - door.Y);
+				if (tried.Add(origin) && ctx.World.CheckHousing(origin.X + bp.Inside.X, origin.Y + bp.Inside.Y) == null)
+					return origin;
+			}
+		return null;
+	}
+
 	private ISkill ResolveHouse(bool heartLantern, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		Blueprint bp = Blueprint.SmallHouse(ctx.Ids, heartLantern);
@@ -875,6 +892,13 @@ public sealed class ProgressionPlanner
 			TilePos anchor = KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node;
 			if (ctx.SpawnTile is TilePos spawn && anchor.ChebyshevTo(spawn) > HouseNearSpawnTiles)
 				anchor = spawn;
+			// A house of this kind already standing (built before this session: a saved world, a checkpoint) is the house:
+			// found by its door, checked by the game's own housing check, not built again beside it.
+			if (BuiltHouseNear(ctx, Blueprint.SmallHouse(ctx.Ids), anchor) is TilePos standing) {
+				HouseSite = standing;
+				ctx.Log.Info($"Auto: a house already stands at {standing}; living in it");
+				return ResolveHouse(heartLantern, claims, depth, ctx);
+			}
 			HouseSite = SiteFinder.Find(ctx, bp, anchor, badSites);
 			if (HouseSite == null) {
 				stuck = $"no building site within {SiteFinder.SearchRadius} tiles of {anchor}";
@@ -1025,7 +1049,7 @@ public sealed class ProgressionPlanner
 			if (ArenaBounds(ctx) is (int bx0, int bx1, int by) && !InArena(ctx.Node, bx0, bx1, by)) {
 				var centre = new TilePos((bx0 + bx1) / 2, by);
 				return Do($"walking to the arena to summon the {b.Label}",
-					new WalkToSkill(new Core.Pathfinding.GoalNearTile(centre, ArenaCentreTolerance, ctx.Physics)));
+					new WalkToSkill(new Core.Pathfinding.GoalStandOnRow(by, centre.X - ArenaCentreTolerance, centre.X + ArenaCentreTolerance, ctx.Physics)));
 			}
 			if (!ctx.IsNight)
 				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
@@ -1037,7 +1061,7 @@ public sealed class ProgressionPlanner
 			if (ArenaBounds(ctx) is (int ax0, int ax1, int ay) && !InArena(ctx.Node, ax0, ax1, ay)) {
 				var middle = new TilePos((ax0 + ax1) / 2, ay);
 				return Do($"walking to the arena to summon the {b.Label}",
-					new WalkToSkill(new Core.Pathfinding.GoalNearTile(middle, ArenaCentreTolerance, ctx.Physics)));
+					new WalkToSkill(new Core.Pathfinding.GoalStandOnRow(ay, middle.X - ArenaCentreTolerance, middle.X + ArenaCentreTolerance, ctx.Physics)));
 			}
 			// Summon at (nearly) full life: the arena's campfire and the heart lantern bring it back up quickly.
 			if (ctx.Combat.LifeFraction < SummonLifeFraction && ctx.Tick - lastRestEnd > MaxRestTicks)

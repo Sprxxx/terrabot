@@ -251,8 +251,14 @@ public class BossPlannerTests
 		g.Items[FakeGame.SuspiciousEye] = 1;
 		ISkill day = p.ResolveForTest(Eye, ctx);
 		output.WriteLine($"{p.Status} -> {day?.Describe()}");
-		Assert.IsType<WalkToSkill>(day);
+		var walk = Assert.IsType<WalkToSkill>(day);
 		Assert.Contains("walking to the arena", p.Status);
+		// On the arena's floor, not just near its middle: measured run U6, "near" was met four rows under the floor, where the
+		// fight's "in the arena" check was not, and the walk began again 87,000 times.
+		walk.Start(ctx);
+		var (x0, x1, standY) = p.ArenaBounds(ctx).Value;
+		Assert.True(walk.Goal.IsGoal(new TilePos((x0 + x1) / 2, standY)));
+		Assert.False(walk.Goal.IsGoal(new TilePos((x0 + x1) / 2 + 4, standY + 4)), "under the floor counted as there");
 	}
 
 	[Fact]

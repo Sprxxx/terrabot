@@ -504,6 +504,28 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AHouseAlreadyStanding_IsLivedIn_NotBuiltAgain()
+	{
+		// A run from a checkpoint (or a saved world) starts with a fresh planner: the house standing by the bench is the
+		// house, not a reason to build another beside it.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		BotContext ctx = g.CreateContext(output);
+		var first = new ProgressionPlanner();
+		first.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, first, ctx);
+		TilePos built = first.HouseSite.Value;
+		var fresh = new ProgressionPlanner();
+		fresh.Reset(ProgressionPlanner.Plans.Settle);
+		g.Refresh(ctx);
+		ISkill next = fresh.ResolveForTest(new HouseBuilt("house"), ctx);
+		output.WriteLine($"{fresh.Status} -> {next?.Describe() ?? "nothing to do"}; site {fresh.HouseSite}");
+		Assert.Null(next);
+		Assert.Equal(built, fresh.HouseSite);
+	}
+
+	[Fact]
 	public void ATripsWayOut_HoldsWhenAFightMovesTheBot()
 	{
 		// User report (2026-10-14): "changes its mind and jumps out of the hole to do something else". The way up to the
