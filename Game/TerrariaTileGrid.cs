@@ -37,6 +37,11 @@ public sealed class TerrariaTileGrid : ITileGrid
 				k = CellKind.Platform;
 			if (TileID.Sets.TouchDamageImmediate[type] > 0)
 				k |= CellKind.Hazard;
+			// A pressure plate (TileID.Sets.PressurePlate: 135, 428, 442) sets off whatever is wired to it when stepped on: not
+			// to be walked on, jumped over like thorns. Seen in game (measured run U17): walking to look for floor for a bench at
+			// (1929,425), an explosives trap went off (projectile 108, 425 damage).
+			if (TileID.Sets.PressurePlate[type] != -1)
+				k |= CellKind.Hazard;
 			// A cobweb is not solid (a cut tile, as grass), but it holds the player nearly still: a block to cut through,
 			// as a player swings at it. Seen in game (measured run I1): read as open air, every walk sank through webs at
 			// 1.79 px a tick, "never landed", and the rests ran out until auto mode stopped.
