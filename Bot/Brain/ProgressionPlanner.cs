@@ -235,6 +235,8 @@ public sealed class ProgressionPlanner
 		lastDeeperTick = long.MinValue / 2;
 		travelDest = null;
 		failedTrips.Clear();
+		leaveTarget = null;
+		leaveWalk = null;
 		exitTarget = null;
 		KnownStations.Clear();
 		notedAt.Clear();
@@ -411,6 +413,11 @@ public sealed class ProgressionPlanner
 			}
 			else if (status == SkillStatus.Failed && mine.FailureReason.Contains("explorations"))
 				NoteFruitless(mine.ItemType);
+			if (status == SkillStatus.Failed && mine.FailureReason.Contains("would be off limits") && ctx.SpawnTile is TilePos spawn
+				&& spawn.ChebyshevTo(ctx.Node) > TravelArrivedTiles) {
+				leaveTarget = spawn;
+				ctx.Log.Info($"Auto: standing on off-limits ground at {ctx.Node}; back towards the spawn at {spawn} before mining again");
+			}
 		}
 		if (skill is CraftSkill && status == SkillStatus.Failed && skill.FailureReason.StartsWith(nameof(CraftResult.NeedsStation))) {
 			// Walked right up to it and still none in range: the station is not where it is remembered (placed elsewhere,
@@ -803,6 +810,8 @@ public sealed class ProgressionPlanner
 				// used one to climb out of its hole on the way back to the bench, and went down for one more, forever.
 				if (ctx.Ids.BuildingBlocks.Contains(item))
 					target += BlockMargin;
+				if (LeaveOffLimits(ctx, name) is ISkill leave)
+					return leave;
 				if (TravelForOre(ctx, item, name) is ISkill travel)
 					return travel;
 				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target) { Also = AltOres(item, ctx) });
@@ -1466,6 +1475,29 @@ public sealed class ProgressionPlanner
 	/// trip to (1495,241) failed "no path" and was chosen again after every fruitless job, 13 heartbeats and more.
 	/// </summary>
 	private readonly Dictionary<TilePos, long> failedTrips = new();
+
+	/// <summary>
+	/// Where to walk to, out of off-limits ground a mining job cannot explore from (towards the spawn), until the ground
+	/// under the bot is not off limits. Day or night: by night trips wait for the morning, and this did too, so every
+	/// mining job failed at once where the bot stood. Seen in game (measured run U8): "need 4 more Iron Ore", the job
+	/// failing "the explorations from here would be off limits" at (2172,457) for 6 game hours, 83 times over the run.
+	/// </summary>
+	private TilePos? leaveTarget;
+	private WalkToSkill leaveWalk;
+
+	private ISkill LeaveOffLimits(BotContext ctx, string name)
+	{
+		if (leaveTarget is not TilePos to)
+			return null;
+		if (!ctx.OffLimits(ctx.Node) || to.ChebyshevTo(ctx.Node) <= TravelArrivedTiles || leaveWalk != null && leaveWalk.FailureReason != "") {
+			leaveTarget = null;
+			leaveWalk = null;
+			return null;
+		}
+		if (leaveWalk == null || leaveWalk.FailureReason != "")
+			leaveWalk = UpFirst(ctx, to) ?? new WalkToSkill(new Core.Pathfinding.GoalNearTile(to, 4, ctx.Physics)) { Quiet = true };
+		return Do($"no {name} to be found from off-limits ground; walking out of it towards the spawn at {to}", leaveWalk);
+	}
 	/// <summary>A game day, as for ground looked at before (see <see cref="ChooseTravelDest"/>: it is new to look at again).</summary>
 	public const int FailedTripTicks = 86400;
 	/// <summary>The way out to the surface (or the spawn) a trip set off on, held until reached.</summary>

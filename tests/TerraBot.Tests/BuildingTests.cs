@@ -511,6 +511,33 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void MiningFromOffLimitsGround_WalksOutOfIt_InsteadOfFailingOverAndOver()
+	{
+		// Measured run U8: "the explorations from here would be off limits" at (2172,457), 83 times, 6 game hours in one stretch.
+		FakeGame g = ProgressionTests.Mine(width: 200, sky: 45, oreRows: 0);
+		g.Stations[FakeGame.TileBench] = new TilePos(150, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(152, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(154, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(150, 44);
+		ctx.NoteDanger(ctx.Node, 100000, 12);
+		Assert.True(ctx.OffLimits(ctx.Node));
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Iron);
+		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 10);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, mine, 60));
+		Assert.Contains("would be off limits", mine.FailureReason);
+		p.OnSkillFinished(mine, SkillStatus.Failed, ctx);
+		ISkill next = p.ResolveForTest(new HaveItem(FakeGame.IronOre, 10, "iron ore"), ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.True(next is WalkToSkill, p.Status);
+		Assert.Contains("walking out of it", p.Status);
+	}
+
+	[Fact]
 	public void DownAChasm_BelowTheGroundButAboveTheWorldsSurfaceRow_ATripGoesUpFirst()
 	{
 		// Measured run U8: at row 342 in a chasm, the ground about 57 rows above, but the world's surface row lower still:
