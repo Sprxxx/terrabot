@@ -410,7 +410,11 @@ public sealed class BotBrain
 				int n = g.Count();
 				bool block = ctx.Ids.BuildingBlocks.Contains(g.Key);
 				int value = ctx.Knowledge.ItemValue(g.Key);
-				if (block ? n < 2 : kept.Contains(g.Key))
+				// A kept thing that does not stack, carried several times over (one is kept): the spares are the bag's to trash.
+				// Seen in game (measured run M10b): nine Shackles (an accessory, so "gear") among 50 full slots; with nothing
+				// else to trash, 31 crafts failed "crafting stayed blocked (cursor item / full inventory)".
+				bool spare = !block && kept.Contains(g.Key) && n > 1 && g.All(s => s.Stack == 1);
+				if (!spare && (block ? n < 2 : kept.Contains(g.Key)))
 					continue;
 				if (value == 0) {
 					// Spare block stacks before the rest, then whatever has the most stacks.
