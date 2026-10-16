@@ -635,6 +635,11 @@ public sealed class BotContext
 	public const long UnreachableTicks = 3600; // a game hour
 	/// <summary>Per ore item: explorations in a row that found none (MineSkill), across restarts of the skill.</summary>
 	public System.Collections.Generic.Dictionary<int, int> ExploresWithoutOre { get; } = new();
+	/// <summary>
+	/// Per item that grows back on the evil biome's surface: passes along it in a row that found none (MineSkill,
+	/// Skills.PatrolSkill), across restarts of the skill, as <see cref="ExploresWithoutOre"/>.
+	/// </summary>
+	public System.Collections.Generic.Dictionary<int, int> PatrolPasses { get; } = new();
 
 	/// <summary>Which way the last exploration with no side to prefer went (alternated across mining jobs).</summary>
 	public int LastExploreSide { get; set; } = -1;

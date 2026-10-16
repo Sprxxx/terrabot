@@ -83,6 +83,28 @@ public sealed class MineSkill : ISkill
 	/// what grows on it (vile mushrooms on corrupt grass).
 	/// </summary>
 	public ExploreBias Bias { get; init; } = ExploreBias.Down;
+	/// <summary>
+	/// What grows back on the evil biome's surface (vile mushrooms on corrupt grass): with none in sight or on the map, the
+	/// job walks the known stretch of that surface end to end and back (<see cref="PatrolSkill"/>, cutting the other plants
+	/// of <see cref="TileType"/> so new ones grow) for up to <see cref="MaxPatrolPasses"/> passes, before exploring new
+	/// ground. Seen in game (measured run M10b): the mushrooms the bot got were ones grown back in the corruption it had
+	/// seen ((1931,244), (1914,244), "on the map"), while its "Sideways" explorations went out to (1625,268), 140 tiles
+	/// west of the corruption (x 1765-1960), and found none: 2 of 6 at day 2 +20h, 4 at day 5 +4h. In measured run M10a,
+	/// 222 such explorations, and the sixth mushroom 49 game hours after the rotten chunks (day 5 +10h).
+	/// </summary>
+	public bool PatrolEvilSurface { get; init; }
+	/// <summary>
+	/// Passes along the known evil surface with none found before the job explores instead (BotContext.PatrolPasses).
+	/// An 80-tile stretch with its plants cut grows about 0.13 mushrooms a game hour (PatrolSkill's remarks), and a pass
+	/// of it takes about 0.47 game hours at the 21 ticks a tile the bot walked the corruption in measured run M10b
+	/// ((1875,291) at tick 100800 to (1788,298) at 102600, 87 tiles in 1800 ticks): 0.06 a pass. 48 passes are 2.9
+	/// mushrooms expected, so none in them (e^-2.9, 6%) says nothing is growing back there.
+	/// </summary>
+	public const int MaxPatrolPasses = 48;
+	/// <summary>Passes in a row that could not walk to their end before the job explores instead.</summary>
+	public const int MaxPatrolFails = 2;
+	private int patrolFails;
+	private TilePos? patrolFailedAt;
 	/// <summary>The ore being mined when it is one of <see cref="Also"/>; null for this job's own.</summary>
 	private (int Item, int Tile)? alt;
 	private bool tookAlt;
@@ -189,6 +211,16 @@ public sealed class MineSkill : ISkill
 				}
 				resumeWalk = null;
 			}
+			if (sub is PatrolSkill patrol) {
+				if (s == SkillStatus.Failed) {
+					patrolFailedAt = patrol.End;
+					ctx.Log.Info($"Mine: patrol for {Label(ctx)} failed ({patrol.FailureReason})");
+					if (++patrolFails >= MaxPatrolFails)
+						ctx.PatrolPasses[ItemType] = MaxPatrolPasses; // no way along it: explore instead
+				}
+				else
+					patrolFails = 0;
+			}
 			sub.Stop(ctx);
 			sub = null;
 		}
@@ -237,6 +269,9 @@ public sealed class MineSkill : ISkill
 			Begin(ctx, resumeWalk, $"back to {from}, where the crystal search left off");
 			return SkillStatus.Running;
 		}
+		// What grows back on the evil surface: the stretch of it the map shows is walked again, not new ground (PatrolEvilSurface).
+		if (PatrolEvilSurface && ctx.PatrolPasses.GetValueOrDefault(ItemType) < MaxPatrolPasses && Patrol(ctx))
+			return SkillStatus.Running;
 		// Counted on the context per item: a fight pauses the skill and the planner starts it afresh, and a count of its
 		// own went back to 0 each time (world_eye run 42: 12 game hours of the same first leg, never reaching the give-up).
 		int explores = ctx.ExploresWithoutOre[ItemType] = ctx.ExploresWithoutOre.GetValueOrDefault(ItemType) + 1;
@@ -244,6 +279,7 @@ public sealed class MineSkill : ISkill
 			// Given up: the next job (after travelling to new ground) starts counting afresh. Kept, every later job failed at
 			// once, each a "fruitless" mine, and the travel target went out 120 tiles further each time (1,900 in run 47).
 			ctx.ExploresWithoutOre.Remove(ItemType);
+			ctx.PatrolPasses.Remove(ItemType); // and the next job walks the evil surface again first
 			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations in a row");
 		}
 		// Standing somewhere off limits (a biome zone, the underground desert): no exploring here, but somewhere new. Seen in
@@ -281,6 +317,36 @@ public sealed class MineSkill : ISkill
 			Band = valuable && ctx.CrystalBandTop > 0 ? (ctx.CrystalBandTop, ctx.CrystalBandBottom) : null,
 		}, "exploring");
 		return SkillStatus.Running;
+	}
+
+	/// <summary>
+	/// <see cref="PatrolEvilSurface"/>: one seen on the map (within <see cref="MapSearchRadius"/>) is gone for; else a pass
+	/// to the far end of the known evil surface round the bot (PatrolSkill.EvilSurfaceSpan), the other end if the last pass
+	/// could not get to that one. False when the known stretch is too small to wait on, or has no surface to stand on at
+	/// its ends: the job explores instead.
+	/// </summary>
+	private bool Patrol(BotContext ctx)
+	{
+		if (Nearest(ctx, ctx.Node, MapSearchRadius) is TilePos known) {
+			target = known;
+			mineTicks = 0;
+			arrivedOutOfReach = 0;
+			ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, but some at {known} on the map ({known.ChebyshevTo(ctx.Node)} tiles away); going back for it");
+			return true;
+		}
+		if (PatrolSkill.EvilSurfaceSpan(ctx, ctx.Node) is not (int x0, int x1))
+			return false;
+		TilePos? west = PatrolSkill.EndSpot(ctx, x0, 1), east = PatrolSkill.EndSpot(ctx, x1, -1);
+		if (west is not TilePos w || east is not TilePos e)
+			return false;
+		TilePos far = Math.Abs(w.X - ctx.Node.X) >= Math.Abs(e.X - ctx.Node.X) ? w : e;
+		if (patrolFailedAt == far)
+			far = far == w ? e : w;
+		patrolFailedAt = null;
+		int pass = ctx.PatrolPasses[ItemType] = ctx.PatrolPasses.GetValueOrDefault(ItemType) + 1;
+		ctx.Log.Info($"Mine: no {Label(ctx)} seen; along the evil surface x {x0}-{x1} to {far}, pass {pass}/{MaxPatrolPasses}, cutting its plants so new ones grow");
+		Begin(ctx, new PatrolSkill(Label(ctx), far, c => PickTarget(c) != null) { CutTile = TileType, KeepFrameX = FrameX }, $"patrolling, pass {pass}");
+		return true;
 	}
 
 	private bool walkedBack;
@@ -330,6 +396,7 @@ public sealed class MineSkill : ISkill
 			lastMined = t;
 			unreachableInARow = 0;
 			ctx.ExploresWithoutOre.Remove(ItemType); // exploring found ore that got mined: only fruitless explorations in a row count
+			ctx.PatrolPasses.Remove(ItemType); // likewise passes along the evil surface
 			target = null;
 			sub?.Stop(ctx);
 			sub = null;
