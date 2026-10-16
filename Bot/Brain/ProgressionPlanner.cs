@@ -329,6 +329,10 @@ public sealed class ProgressionPlanner
 		badArenaSites.Clear();
 		badArenaCells.Clear();
 		ArenaOnOpenGround = false;
+		badBridges.Clear();
+		bridgeFailures = 0;
+		Bridges.Clear();
+		evilChasms = null;
 		stationExplores = 0;
 		stationHeading = null;
 		siteFailures = 0;
@@ -560,6 +564,21 @@ public sealed class ProgressionPlanner
 			ctx.OpenedChests.Add(loot.Chest); // looted, or not reachable: either way not again
 		if (skill is WaitSkill { What: "life" })
 			lastRestEnd = ctx.Tick; // one rest per summon attempt: a rest that timed out is not started again at once
+		if (skill is BuildSkill bridge && bridge.Blueprint.IsBridge) {
+			var o = new ChasmOpening(bridge.Origin.X, bridge.Origin.X + bridge.Blueprint.Width - 1, bridge.Origin.Y);
+			if (status == SkillStatus.Succeeded) {
+				bridgeFailures = 0;
+				if (!Bridges.Contains(o))
+					Bridges.Add(o);
+				ctx.Log.Info($"Auto: the chasm at {o} is bridged ({Bridges.Count} bridged)");
+			}
+			else if (status == SkillStatus.Failed && ++bridgeFailures >= MaxBuildFailuresPerSite) {
+				ctx.Log.Info($"Auto: giving up on the bridge over the chasm at {o}: {bridge.FailureReason}");
+				badBridges.Add(o.X0);
+				bridgeFailures = 0;
+			}
+			return;
+		}
 		if (skill is BuildSkill arena && !arena.Blueprint.IsHouse) {
 			if (status == SkillStatus.Succeeded)
 				arenaFailures = 0;
@@ -598,6 +617,8 @@ public sealed class ProgressionPlanner
 		badArenaSites.Clear();
 		badArenaCells.Clear();
 		ArenaOnOpenGround = false;
+		badBridges.Clear();
+		bridgeFailures = 0;
 		siteFailures = 0;
 		arenaFailures = 0;
 		stationExplores = 0;
@@ -906,7 +927,7 @@ public sealed class ProgressionPlanner
 		int target = ctx.Inventory.Count(item) + more;
 		ItemSource src = k.SourceOf(item);
 		if (src.EvilBiome && src.Kind is SourceKind.Hunt or SourceKind.Mine)
-			return ResolveEvilSource(item, src, more, target, ctx);
+			return ResolveEvilSource(item, src, more, target, claims, depth, ctx);
 		switch (src.Kind) {
 			case SourceKind.Tree:
 				return Do($"need {more} more {name} (gathering to {target})", new GatherWoodSkill(item, target));
@@ -1205,17 +1226,17 @@ public sealed class ProgressionPlanner
 		return Do($"building the arena at {site}", new BuildSkill(bp, site));
 	}
 
-	private (TilePos?, TilePos?) protectedFor = (null, null);
+	private (TilePos?, TilePos?, int) protectedFor = (null, null, 0);
 
 	/// <summary>
-	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house
-	/// and the arena's floor. Rebuilt only when a site changes.
+	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house,
+	/// the arena's floor and the chasm bridges. Rebuilt only when a site changes or a bridge is built.
 	/// </summary>
 	private void ProtectBuilt(BotContext ctx)
 	{
-		if (protectedFor == (HouseSite, ArenaSite) && ctx.Protected != null)
+		if (protectedFor == (HouseSite, ArenaSite, Bridges.Count) && ctx.Protected != null)
 			return;
-		protectedFor = (HouseSite, ArenaSite);
+		protectedFor = (HouseSite, ArenaSite, Bridges.Count);
 		var cells = new HashSet<TilePos>();
 		if (HouseSite is TilePos h) {
 			Blueprint house = Blueprint.SmallHouse(ctx.Ids);
@@ -1231,6 +1252,9 @@ public sealed class ProgressionPlanner
 					if (arena.At(x, y) == PlanCell.Block)
 						cells.Add(new TilePos(a.X + x, a.Y + y));
 		}
+		foreach (ChasmOpening o in Bridges)
+			for (int x = o.X0; x <= o.X1; x++)
+				cells.Add(new TilePos(x, o.Row));
 		ctx.Protected = cells;
 	}
 
@@ -1292,7 +1316,7 @@ public sealed class ProgressionPlanner
 				return sub;
 		}
 		if (b.InEvilBiome)
-			return ResolveEvilBoss(b, bossHere, ctx);
+			return ResolveEvilBoss(b, bossHere, claims, depth, ctx);
 		if (!bossHere) {
 			// To the arena first, by day, then wait there for night: seen in game (measured run S14), the summon made at an
 			// altar 360 rows down, the bot waited there all day, set off at nightfall, and the walk took the night.
@@ -1330,11 +1354,17 @@ public sealed class ProgressionPlanner
 	/// Worm Food does nothing outside the zone (Player.cs:43462), and the worm dives away and despawns once no player is in
 	/// it (NPC.cs:55436). The Eye's night rules are its own (<see cref="BossDefeated.NightOnly"/>).
 	/// </summary>
-	private ISkill ResolveEvilBoss(BossDefeated b, bool bossHere, BotContext ctx)
+	private ISkill ResolveEvilBoss(BossDefeated b, bool bossHere, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		ctx.EvilErrand = true;
 		var arena = ArenaBounds(ctx) is (int x0, int x1, int y) a && ctx.CorruptionAround(new TilePos((x0 + x1) / 2, y)) >= BotContext.CorruptionZoneTiles ? a : ((int, int, int)?)null;
 		if (!bossHere) {
+			TilePos? stretch = arena is (int sx0, int sx1, int sy) ? new TilePos((sx0 + sx1) / 2, sy) : ctx.InEvilBiome(ctx.Node) ? ctx.Node : EvilGround(ctx);
+			if (stretch is TilePos st) {
+				ISkill bridgeFirst = BridgeTheChasms(st, claims, depth, ctx);
+				if (bridgeFirst != null || stuck != null)
+					return bridgeFirst;
+			}
 			if (arena is (int ax0, int ax1, int ay)) {
 				if (!InArena(ctx.Node, ax0, ax1, ay))
 					return Do($"walking to the arena in the corruption to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay));
@@ -1363,19 +1393,27 @@ public sealed class ProgressionPlanner
 	/// not a trip to new ground elsewhere, where none grow: the known stretch of it is walked to and fro, its plants cut so
 	/// new ones grow, some of them mushrooms (MineSkill.PatrolEvilSurface; measured run M10b: 4 of 6 in 5 game days).
 	/// </summary>
-	private ISkill ResolveEvilSource(int item, ItemSource src, int more, int target, BotContext ctx)
+	private ISkill ResolveEvilSource(int item, ItemSource src, int more, int target, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		ctx.EvilErrand = true;
 		string name = ctx.Knowledge.ItemName(item);
 		if (src.Kind == SourceKind.Hunt) {
 			if (EvilGround(ctx) is not TilePos ground)
 				return ExploreForEvilBiome(ctx, $"to hunt for {name}");
+			ISkill bridgeFirst = BridgeTheChasms(ground, claims, depth, ctx);
+			if (bridgeFirst != null || stuck != null)
+				return bridgeFirst;
 			return Do($"need {more} more {name} (hunting to {target} in the corruption round {ground})",
 				new HuntSkill(item, src.NpcAiStyle, target) { Ground = ground });
 		}
 		var mine = new MineSkill(item, src.TileType, target) { FrameX = src.FrameX, Bias = ExploreBias.Sideways, PatrolEvilSurface = true };
 		bool known = ctx.World.FindTiles(src.TileType, ctx.Node, MineSkill.MapSearchRadius)
 			.Any(c => src.FrameX < 0 || ctx.World.TileFrameX(c.X, c.Y) == src.FrameX);
+		if ((ctx.InEvilBiome(ctx.Node) ? ctx.Node : EvilGround(ctx)) is TilePos stretch) {
+			ISkill bridgeFirst = BridgeTheChasms(stretch, claims, depth, ctx);
+			if (bridgeFirst != null || stuck != null)
+				return bridgeFirst;
+		}
 		if (!known && !ctx.InEvilBiome(ctx.Node)) {
 			if (EvilGround(ctx) is not TilePos ground)
 				return ExploreForEvilBiome(ctx, $"to look for {name}");
@@ -1384,6 +1422,49 @@ public sealed class ProgressionPlanner
 					new WalkToSkill(new Core.Pathfinding.GoalNearTile(ground, TravelArrivedTiles, ctx.Physics)) { Quiet = true });
 		}
 		return Do($"need {more} more {name} (picking to {target} in the corruption)", mine);
+	}
+
+	/// <summary>The chasm openings bridged so far (kept across re-plans; their blocks are <see cref="BotContext.Protected"/>).</summary>
+	public List<ChasmOpening> Bridges { get; } = new();
+	/// <summary>Chasm openings given up on, by their west column: a bridge that failed <see cref="MaxBuildFailuresPerSite"/> times.</summary>
+	private readonly HashSet<int> badBridges = new();
+	private int bridgeFailures;
+	private List<ChasmOpening> evilChasms;
+	private (int, int) evilChasmsSpan;
+	private long evilChasmsAt = long.MinValue / 2;
+
+	/// <summary>
+	/// Before the errands on the evil biome's surface (the hunt, the mushroom patrol, the summon), once: a bridge over each
+	/// chasm opening (<see cref="Chasms.Openings"/>) along the stretch of it the map shows round <paramref name="around"/>
+	/// (PatrolSkill.EvilSurfaceSpan, the patrol's own), the nearest first, with the blocks in the bag (dirt and stone:
+	/// <see cref="GameIds.BuildingBlocks"/>). As players bridge the corruption's chasms: the walks, the patrol and the fights
+	/// then stay on the surface, and what a hit throws off a lip lands on the bridge. Seen in game (measured run M10c,
+	/// world_eow): three deaths by falls into its chasms, 665-765 damage at (1702,364), (1701,362) and (1778,396), on the
+	/// patrol's stretch x 1699-1967. Null when all are bridged or given up, with building off, or no stretch is known. The
+	/// openings are looked for again every <see cref="EvilGroundRecheckTicks"/> (the map fills in).
+	/// </summary>
+	private ISkill BridgeTheChasms(TilePos around, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		if (!ctx.AllowPlace || ctx.Blocks == null || PatrolSkill.EvilSurfaceSpan(ctx, around) is not (int x0, int x1))
+			return null;
+		if (evilChasms == null || evilChasmsSpan != (x0, x1) || ctx.Tick - evilChasmsAt >= EvilGroundRecheckTicks) {
+			evilChasms = Chasms.Openings(ctx.Grid, x0, x1, ctx.Physics.SafeFallTiles).Where(o => ctx.SurfaceY <= 0 || o.Row <= ctx.SurfaceY).ToList();
+			evilChasmsSpan = (x0, x1);
+			evilChasmsAt = ctx.Tick;
+			if (evilChasms.Count > 0)
+				ctx.Log.Info($"Auto: {evilChasms.Count} chasm opening(s) on the evil surface x {x0}-{x1}: {string.Join(", ", evilChasms)}");
+		}
+		int Missing(ChasmOpening o) => Enumerable.Range(o.X0, o.Width).Count(x => !ctx.Grid.Get(x, o.Row).IsBlock());
+		TilePos node = ctx.Node;
+		ChasmOpening? next = evilChasms.Where(o => !badBridges.Contains(o.X0) && Missing(o) > 0)
+			.OrderBy(o => Math.Abs((o.X0 + o.X1) / 2 - node.X)).Cast<ChasmOpening?>().FirstOrDefault();
+		if (next is not ChasmOpening c)
+			return null;
+		int blocks = Missing(c);
+		ISkill sub = Resolve(new HaveItem(ctx.Ids.BuildingBlocks, blocks + BlockMargin, "building blocks"), claims, depth + 1, ctx);
+		if (sub != null || stuck != null)
+			return sub;
+		return Do($"bridging the chasm at x {c.X0}-{c.X1} ({blocks} blocks at row {c.Row})", new BuildSkill(Blueprint.Bridge(c.Width), c.Origin));
 	}
 
 	/// <summary>The heading the last exploration for the evil biome went (alternated: the biome may be on either side).</summary>

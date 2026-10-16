@@ -47,6 +47,8 @@ public sealed class Blueprint
 	public bool IsHouse { get; init; } = true;
 	/// <summary>Fell trees standing in the plan's open cells (else a tree rules the site out).</summary>
 	public bool ChopTrees { get; init; }
+	/// <summary>A row of blocks over a chasm's opening (<see cref="Bridge"/>): the planner keeps its own count of these.</summary>
+	public bool IsBridge { get; init; }
 	/// <summary>Reserve only the block and item cells while building, so walking may dig through open cells that are mined anyway.</summary>
 	public bool ReserveBlocksOnly { get; init; }
 	/// <summary>Sites needing more edits than this are not considered (<see cref="SiteFinder"/>).</summary>
@@ -164,6 +166,22 @@ public sealed class Blueprint
 			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, MaxEdits = 600, SearchRadius = searchRadius,
 		};
 	}
+
+	/// <summary>
+	/// One row of blocks <paramref name="width"/> long across a chasm's opening, level with the lower of its two lips
+	/// (<see cref="Chasms.Openings"/>), as a player bridges a corruption chasm with dirt: the walk, the patrol and the fights
+	/// go across on it, and a hit's knockback lands the bot on it rather than at the chasm's floor. Placed from a lip
+	/// outwards, each block next to the last (BuildSkill: a solid neighbour first).
+	/// <code>
+	///   ######.......######   the lips, the opening between them
+	///   ######XXXXXXX######   the bridge, the lower lip's ground row
+	///   ######.......######
+	/// </code>
+	/// </summary>
+	public static Blueprint Bridge(int width) => new("chasm bridge", new[] { new string('#', width) }, Array.Empty<PlanItem>(),
+		inside: new TilePos(0, 0), outsideStand: new TilePos(0, 0), wallItem: 0) {
+		IsHouse = false, IsBridge = true, ReserveBlocksOnly = true, MaxEdits = Chasms.MaxBridgeTiles,
+	};
 
 	/// <summary>The feet row a player standing on the floor has (arena blueprints: the row above the floor).</summary>
 	public int StandRow => Height - 2;
