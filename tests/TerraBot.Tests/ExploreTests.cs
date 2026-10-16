@@ -393,4 +393,20 @@ public class WaterTests
 		Assert.True(FirstLeg(null).Y <= limit, "the gear's own limit");
 		Assert.True(FirstLeg(limit + MineSkill.ValuableDepthMargin).Y > limit, "down to the crystal depth");
 	}
+
+	[Fact]
+	public void ExploredGround_IsRememberedAllGame_NotOnlyTheLast300Legs()
+	{
+		// Measured runs T0b, U1, U5: with the last 300 leg targets kept, of some 850 a run makes, later days' crystal searches
+		// went back over the same legs ("leg 2 to (2094,318)" on days 6, 7 and 8 of U5).
+		var ctx = new BotContext();
+		ctx.Explored.Add(new TilePos(2094, 318));
+		for (int i = 0; i < 1000; i++)
+			ctx.Explored.Add(new TilePos(100 + (i % 50) * 25, 400 + i / 50 * 25));
+		Assert.True(ExploreSkill.NearVisited(ctx, 2100, 322));
+		Assert.False(ExploreSkill.NearVisited(ctx, 2120, 318));
+		Assert.True(ctx.Explored.AnyWithin(-5, -5, 6, 6) == false);
+		ctx.Explored.Add(new TilePos(-3, -20));
+		Assert.True(ctx.Explored.AnyWithin(-5, -17, 3, 3));
+	}
 }

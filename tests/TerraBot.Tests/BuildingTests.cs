@@ -476,6 +476,77 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void ATripThatFoundNoWayThere_IsNotChosenAgain_TheNextGoesFarther()
+	{
+		// Measured run U8: from a pocket in a corruption chasm the trip to (1495,241) failed "no path" and was chosen again
+		// after every fruitless job.
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ISkill first = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {first?.Describe()}");
+		Assert.True(first is WalkToSkill { Travel: true }, p.Status);
+		string firstStatus = p.Status;
+		// No way there: a walk off the map fails "no path" as the trip did.
+		var failed = new WalkToSkill(new TilePos(1000, 44)) { Travel = true };
+		typeof(WalkToSkill).GetProperty(nameof(WalkToSkill.FailureReason)).SetValue(failed, "no path after 3 attempts");
+		p.OnSkillFinished(failed, SkillStatus.Failed, ctx);
+		p.NoteFruitless(FakeGame.IronOre);
+		p.NoteFruitless(FakeGame.SilverOre);
+		ISkill next = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.NotEqual(firstStatus.Replace("travelling", "on"), p.Status.Replace("travelling", "on"));
+		Assert.DoesNotContain("(123,", p.Status);
+	}
+
+	[Fact]
+	public void DownAChasm_BelowTheGroundButAboveTheWorldsSurfaceRow_ATripGoesUpFirst()
+	{
+		// Measured run U8: at row 342 in a chasm, the ground about 57 rows above, but the world's surface row lower still:
+		// the trip planned from the chasm's floor and found no path for 18 game hours.
+		// Ground at row 45 (feet row 44), a shaft at columns 1-6 down to a floor under row 74.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 45; y++)
+			rows.Add(new string('.', 400));
+		for (int y = 45; y < 100; y++) {
+			char[] r = new string(y >= 96 ? '@' : '#', 400).ToCharArray();
+			if (y <= 74)
+				for (int x = 1; x <= 6; x++)
+					r[x] = y == 74 && x == 3 ? 'S' : '.';
+			rows.Add(new string(r));
+		}
+		FakeGame g = new FakeGame(rows.ToArray());
+		g.Stations[FakeGame.TileBench] = new TilePos(3, 74);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(4, 74);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(5, 74);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.Items[FakeGame.StoneBlock] = 300;
+		g.Items[FakeGame.Wood] = 300;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		ctx.SpawnTile = new TilePos(200, 44);
+		ctx.SurfaceY = 80; // the world's surface row, below the chasm's floor
+		int row = ProgressionPlanner.SurfaceRow(ctx);
+		output.WriteLine($"at {ctx.Node}: surface row {row}");
+		// The ground beside the shaft (feet row 44), so the bot at row 74 is 30 below it: up first (TravelFromSurfaceRows 15).
+		Assert.Equal(44, row);
+		Assert.True(ctx.Node.Y > row + ProgressionPlanner.TravelFromSurfaceRows);
+	}
+
+	[Fact]
 	public void AtNight_ATripForOre_WaitsForTheMorning_AndTheNightGoesToMining()
 	{
 		// Measured run U4: "no more Silver Ore found around here; back to the spawn" at nightfall became a night in the

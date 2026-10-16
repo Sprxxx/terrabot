@@ -66,7 +66,6 @@ public sealed class ExploreSkill : ISkill
 	/// <summary>The found check is a tile search: every this many ticks.</summary>
 	public const int FoundCheckEvery = 15;
 	/// <summary>Leg targets remembered in <see cref="BotContext.Explored"/>.</summary>
-	public const int MaxRemembered = 300;
 
 	private readonly Func<BotContext, bool> found;
 	private WalkToSkill walk;
@@ -88,6 +87,15 @@ public sealed class ExploreSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Explore";
+	/// <summary>The heading it was started with (0: chosen by itself).</summary>
+	public int Heading => startHeading;
+	private readonly int startHeading;
+	/// <summary>
+	/// The job, if the caller names one (<see cref="ISkill.Key"/>): with a key, an exploration a fight paused goes on with
+	/// what it had learnt instead of a fresh one from wherever the fight left the bot.
+	/// </summary>
+	public string JobKey { get; init; }
+	public string Key => JobKey;
 
 	public ExploreSkill(string what, Func<BotContext, bool> found, ExploreBias bias, int heading = 0)
 	{
@@ -95,6 +103,7 @@ public sealed class ExploreSkill : ISkill
 		this.found = found;
 		Bias = bias;
 		this.heading = heading;
+		startHeading = heading;
 	}
 
 	public bool Found(BotContext ctx) => found(ctx);
@@ -183,8 +192,6 @@ public sealed class ExploreSkill : ISkill
 			legs++;
 			legTarget = t;
 			ctx.Explored.Add(t);
-			if (ctx.Explored.Count > MaxRemembered)
-				ctx.Explored.RemoveAt(0);
 			if (t.X != node.X)
 				heading = Math.Sign(t.X - node.X);
 			ctx.LastExplore = (node, heading); // the next exploration from near here carries on this way (BotContext.ExploreSide)
@@ -243,8 +250,6 @@ public sealed class ExploreSkill : ISkill
 		lastFallbackFailed = legWasFallback && !legDown && (s == SkillStatus.Failed || wentNowhere);
 		ctx.LastExplore = (ctx.Node, heading); // turned round included
 		ctx.LookedFrom.Add(ctx.Node);
-		if (ctx.LookedFrom.Count > MaxRemembered)
-			ctx.LookedFrom.RemoveAt(0);
 		walk.Stop(ctx);
 		walk = null;
 		return SkillStatus.Running;
@@ -357,21 +362,10 @@ public sealed class ExploreSkill : ISkill
 	/// going there (Baritone keeps the chunks it has been in as explored). Seen in game (measured run S7): legs 10, 12 and
 	/// 14 of one exploration all went to the frontier at (2024,476), with "digging on" legs between, back and forth.
 	/// </summary>
-	private static bool LookedAt(BotContext ctx, TilePos c)
-	{
-		foreach (TilePos v in ctx.LookedFrom)
-			if (v.ChebyshevTo(c) + FrontierReach <= SightTiles)
-				return true;
-		return false;
-	}
+	private static bool LookedAt(BotContext ctx, TilePos c) =>
+		ctx.LookedFrom.AnyWithin(c.X, c.Y, SightTiles - FrontierReach, SightTiles - FrontierReach);
 
-	private static bool NearVisited(BotContext ctx, int x, int y)
-	{
-		foreach (TilePos v in ctx.Explored)
-			if (Math.Abs(v.X - x) <= VisitedRadius && Math.Abs(v.Y - y) <= VisitedRadius)
-				return true;
-		return false;
-	}
+	internal static bool NearVisited(BotContext ctx, int x, int y) => ctx.Explored.AnyWithin(x, y, VisitedRadius, VisitedRadius);
 
 	private SkillStatus Fail(BotContext ctx, string reason)
 	{

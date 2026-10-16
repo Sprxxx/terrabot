@@ -38,6 +38,15 @@ public sealed class HuntSkill : ISkill
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Hunt";
 	public string Key => $"Hunt {ItemType} {AiStyle} {Amount}";
+	/// <summary>
+	/// The prey spawns only at or above this row (null: anywhere): the hunt goes up there first and wanders there. Vanilla
+	/// (NPC.SpawnNPC): demon eyes come only at night and only where the spawn tile is above the world's surface row
+	/// (flag20 = num2 &lt;= Main.worldSurface). Seen in game (measured run U3): a lens hunt wandered round (1975,345), below
+	/// it, for 13 heartbeats, then "no NPC with AI style 2 found after 12 wanders".
+	/// </summary>
+	public int? SpawnsAboveRow { get; init; }
+	public const int MaxFailedWalksUp = 2;
+	private int failedWalksUp;
 
 	public HuntSkill(int itemType, int aiStyle, int amount)
 	{
@@ -82,6 +91,11 @@ public sealed class HuntSkill : ISkill
 			SkillStatus s = sub.Tick(ctx);
 			if (s == SkillStatus.Running && !(sub is WalkToSkill && PreyInSight(ctx)))
 				return SkillStatus.Running;
+			if (s == SkillStatus.Failed && sub is WalkToSkill { ToSurface: true } && ++failedWalksUp >= MaxFailedWalksUp) {
+				sub.Stop(ctx);
+				sub = null;
+				return Fail(ctx, $"no way up to row {SpawnsAboveRow} after {failedWalksUp} walks");
+			}
 			bool fought = sub is FightSkill;
 			sub.Stop(ctx);
 			sub = null;
@@ -103,6 +117,11 @@ public sealed class HuntSkill : ISkill
 			return SkillStatus.Running;
 		}
 		TilePos node = ctx.Node;
+		if (SpawnsAboveRow is int top && node.Y > top) {
+			ctx.Log.Info($"Hunt: nothing spawns down here (row {node.Y}); up to row {top} first");
+			Begin(ctx, new WalkToSkill(new Core.Pathfinding.GoalRow(top, node.X, ctx.Physics)) { Quiet = true, ToSurface = true }, "going up");
+			return SkillStatus.Running;
+		}
 		// In town (a town NPC near: vanilla spawns no hostile there, spawnInfo.PlayerSafe): out of it first, one way, as a
 		// player goes out of town to farm. Seen in game (measured runs U2, U3): night hunts by the house, the Guide's,
 		// failed "no NPC with AI style 2 found after 12 wanders", wandering 30 tiles out and back; 70 heartbeats of hunting
@@ -132,7 +151,7 @@ public sealed class HuntSkill : ISkill
 				townSide = System.Math.Sign(node.X - from.X); // a wander back into town: nothing spawns that side
 			int dir = townSide != 0 ? -townSide
 				: wandersOut[Side(wanderDir)] <= wandersOut[Side(-wanderDir)] ? wanderDir : -wanderDir;
-			goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], from.Y - 10);
+			goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], System.Math.Min(from.Y, SpawnsAboveRow ?? int.MaxValue) - 10);
 		}
 		waitTicks = WaitTicks;
 		ctx.Log.Info($"Hunt: nothing to hunt in sight, wandering towards {goal}");

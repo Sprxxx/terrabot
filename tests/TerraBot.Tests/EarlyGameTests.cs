@@ -150,6 +150,23 @@ public class EarlyGameTests
 	}
 
 	[Fact]
+	public void GatherWood_ARememberedTreeThatIsNotThere_IsForgotten_NotWalkedToEveryTick()
+	{
+		// Measured run U9: respawned on a remembered tree's spot with no tree there, "back to one seen at" every tick.
+		FakeGame game = FieldFrom(300, 200, 40);
+		game.TreeSight = 50;
+		BotContext ctx = game.CreateContext(output);
+		ctx.KnownTrees.Add(ctx.Node); // stale: no tree stands here
+		var skill = new GatherWoodSkill(FakeGame.Wood, 5);
+		skill.Start(ctx);
+		for (int t = 0; t < 5; t++) {
+			skill.Tick(ctx); // no refresh: the scan is stale, as in the 20 ticks between game scans
+			game.Step(ctx);
+		}
+		Assert.DoesNotContain(ctx.Node, ctx.KnownTrees);
+	}
+
+	[Fact]
 	public void KnownTrees_AreForgotten_WhenTheirPlaceIsInSightWithoutThem()
 	{
 		var ctx = new BotContext();

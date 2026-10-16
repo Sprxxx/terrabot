@@ -208,6 +208,43 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void ALensHunt_DownAShaft_GoesUpAboveTheSurfaceRow_WhereDemonEyesSpawn()
+	{
+		// Vanilla NPC.SpawnNPC: demon eyes spawn only above Main.worldSurface. Measured run U3: a lens hunt wandered at row 345,
+		// below it, for 13 heartbeats.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 45; y++)
+			rows.Add(new string('.', 300));
+		for (int y = 45; y < 100; y++) {
+			char[] r = new string(y >= 96 ? '@' : '#', 300).ToCharArray();
+			if (y <= 74)
+				for (int x = 141; x <= 146; x++)
+					r[x] = y == 74 && x == 143 ? 'S' : '.';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { IsNight = true };
+		BotContext ctx = g.CreateContext(output);
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6) { SpawnsAboveRow = 50 };
+		hunt.Start(ctx);
+		int deepestWander = 0, wanders = 0;
+		for (int t = 0; t < 60 * 60 * 2; t++) {
+			g.Refresh(ctx);
+			ctx.Tick = t;
+			if (hunt.Tick(ctx) != SkillStatus.Running)
+				break;
+			g.Step(ctx);
+			var m = System.Text.RegularExpressions.Regex.Match(hunt.Describe(), @"\[wandering\] > WalkTo \((\d+),(\d+)\)");
+			if (m.Success) {
+				wanders++;
+				deepestWander = System.Math.Max(deepestWander, int.Parse(m.Groups[2].Value));
+			}
+		}
+		output.WriteLine($"{hunt.Describe()}; wander goals down to row {deepestWander}");
+		Assert.True(wanders > 0);
+		Assert.True(deepestWander <= 50, $"wandered down to row {deepestWander}");
+	}
+
+	[Fact]
 	public void TheBowComesBeforeTheCrystals_SoTheNightHuntsCanShootDemonEyes()
 	{
 		// Measured run U5: the bow came at d9, after max life 200; the night hunts took 46 hits from demon eyes, most of them
@@ -244,12 +281,31 @@ public class BossPlannerTests
 		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage;
 		var p = new ProgressionPlanner();
 		for (int i = 0; i < ProgressionPlanner.MaxStationExplores; i++)
-			Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx));
+			p.OnSkillFinished(Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx)), SkillStatus.Failed, ctx);
 		ISkill next = p.ResolveForTest(Eye, ctx);
 		output.WriteLine($"{p.Status} -> {next?.Describe()} (stuck: {p.ResolveForTestStuck})");
 		Assert.Null(p.ResolveForTestStuck);
 		Assert.True(next is WalkToSkill, p.Status);
 		Assert.Contains("new ground", p.Status);
+	}
+
+	[Fact]
+	public void TheAltarSearch_AfterAFight_GoesOnTheSameWay_AndDoesNotCountTheReplan()
+	{
+		// Audit after measured run U8: each replan (after every fight) started a fresh exploration the other way and counted
+		// it; the 10 explorations went to and fro in about 10 fights (run S17: "no DemonAltar found after 10 explorations").
+		FakeGame g = ProgressionTests.Mine(width: 400, sky: 45);
+		g.Items[FakeGame.Lens] = 6;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		var first = Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx));
+		var second = Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx)); // the planner asked again, the first unfinished
+		Assert.Equal(first.Heading, second.Heading);
+		Assert.NotNull(first.Key);
+		Assert.Equal(first.Key, second.Key);
+		for (int i = 0; i < 3 * ProgressionPlanner.MaxStationExplores; i++)
+			Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx)); // replans alone never use the explorations up
 	}
 
 	[Fact]
@@ -262,7 +318,7 @@ public class BossPlannerTests
 		BotContext ctx = g.CreateContext(output);
 		var p = new ProgressionPlanner();
 		for (int i = 0; i < ProgressionPlanner.MaxStationExplores; i++)
-			Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx));
+			p.OnSkillFinished(Assert.IsType<ExploreSkill>(p.ResolveForTest(Eye, ctx)), SkillStatus.Failed, ctx);
 		Assert.Null(p.ResolveForTest(Eye, ctx));
 		Assert.Contains("nothing can place one", p.ResolveForTestStuck);
 	}

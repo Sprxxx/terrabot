@@ -298,7 +298,7 @@ public class ProgressionTests
 		p.Reset(ProgressionPlanner.Plans.Iron); // the iron chain: no house before the anvil
 		// Nothing places it and none is seen: explore for one a few times, then stuck.
 		for (int i = 0; i < ProgressionPlanner.MaxStationExplores; i++)
-			Assert.IsType<ExploreSkill>(p.Next(ctx));
+			p.OnSkillFinished(Assert.IsType<ExploreSkill>(p.Next(ctx)), SkillStatus.Failed, ctx);
 		Assert.Null(p.Next(ctx));
 		Assert.True(p.Stuck);
 		Assert.False(p.Complete);

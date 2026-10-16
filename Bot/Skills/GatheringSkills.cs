@@ -282,6 +282,10 @@ public sealed class GatherWoodSkill : ISkill
 					badTrees.Add(w);
 					ctx.UnreachableTiles.Add(w);
 				}
+				// There, and no tree in sight: forgotten (a scan that sees it again remembers it). Seen in game (measured run
+				// U9): just respawned on the spot of a remembered tree, the walk "arrived" each tick, 19 ticks running.
+				else if (NearestTree(ctx) == null)
+					ctx.KnownTrees.Remove(w);
 				walkingTo = null;
 			}
 			if (s == SkillStatus.Failed && sub is ChopTreeSkill chop) {

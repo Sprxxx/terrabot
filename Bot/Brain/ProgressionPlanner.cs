@@ -229,6 +229,7 @@ public sealed class ProgressionPlanner
 			Plan = plan;
 		lastDeeperTick = long.MinValue / 2;
 		travelDest = null;
+		failedTrips.Clear();
 		exitTarget = null;
 		KnownStations.Clear();
 		notedAt.Clear();
@@ -248,6 +249,7 @@ public sealed class ProgressionPlanner
 		badArenaSites.Clear();
 		badArenaCells.Clear();
 		stationExplores = 0;
+		stationHeading = null;
 		siteFailures = 0;
 		arenaFailures = 0;
 	}
@@ -371,6 +373,8 @@ public sealed class ProgressionPlanner
 					stationHereAt[tile] = ctx.Tick;
 			}
 		}
+		if (skill is ExploreSkill { JobKey: string key } && key.StartsWith("Explore station") && status != SkillStatus.Running)
+			stationExplores++;
 		if (skill is ShelterSkill)
 			lastShelterEnd = ctx.Tick;
 		// Not a death on the way (no failure reason): the house is still reachable, and after the respawn at the spawn it
@@ -380,8 +384,13 @@ public sealed class ProgressionPlanner
 			ctx.Log.Info($"Auto: cannot get home ({skill.FailureReason}); sheltering where I am tonight");
 		}
 		if (skill is WalkToSkill { Travel: true } && status != SkillStatus.Running && ctx.Combat.Life > 0
-			&& (status == SkillStatus.Succeeded || !string.IsNullOrEmpty(skill.FailureReason)))
+			&& (status == SkillStatus.Succeeded || !string.IsNullOrEmpty(skill.FailureReason))) {
+			if (status == SkillStatus.Failed && travelDest is TilePos failedDest) {
+				failedTrips[failedDest] = ctx.Tick;
+				ctx.Log.Info($"Auto: no way to {failedDest} from {ctx.Node} ({skill.FailureReason}); not a trip again for a day");
+			}
 			travelDest = null; // there, or no way there (not a death on the way)
+		}
 		if (skill is WalkToSkill { ToSurface: true } && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason))
 			exitTarget = null; // no way there: work the way out again
 		if (skill is WalkToSkill { Underground: true } && status == SkillStatus.Failed && !string.IsNullOrEmpty(skill.FailureReason)) {
@@ -520,8 +529,11 @@ public sealed class ProgressionPlanner
 			return null;
 		string name = ctx.Knowledge.ItemName(item);
 		return Do($"night: hunting for {amount - ctx.Inventory.Count(item)} more {name} while it is dark (for the {ctx.Knowledge.ItemName(ctx.Ids.SuspiciousEye)})",
-			new HuntSkill(item, ai, amount));
+			new HuntSkill(item, ai, amount) { SpawnsAboveRow = SurfaceSpawnRow(ctx) });
 	}
+
+	/// <summary>Night prey (demon eyes) spawns only above the world's surface row (vanilla NPC.SpawnNPC; see HuntSkill).</summary>
+	private static int? SurfaceSpawnRow(BotContext ctx) => ctx.SurfaceY > 0 ? ctx.SurfaceY : null;
 
 	/// <summary>The next skill to run, or null when the plan is complete or stuck.</summary>
 	public ISkill Next(BotContext ctx)
@@ -721,6 +733,7 @@ public sealed class ProgressionPlanner
 					if (fruitlessMines.GetValueOrDefault(tripKey) < MaxStationTrips) {
 						NoteFruitless(tripKey);
 						stationExplores = 0;
+						stationHeading = null; // new ground: the safer side there
 						if (TravelForOre(ctx, tripKey, k.TileName(s.TileType)) is ISkill first)
 							return first;
 					}
@@ -728,9 +741,15 @@ public sealed class ProgressionPlanner
 					return null;
 				}
 				int tile = s.TileType;
-				int heading = stationExplores++ % 2 == 0 ? 1 : -1;
+				// One heading, kept (the safer side, chosen once), and one job that a fight pauses and resumes (its key): an
+				// exploration counts when it ends, not each time the planner is asked. Seen in the code (audit after measured
+				// run U8): every replan after a fight started a fresh exploration the other way from wherever the fight left the
+				// bot and counted it, so the 10 explorations went to and fro over the same ground in about 10 fights (run S17:
+				// "no DemonAltar found after 10 explorations").
+				stationHeading ??= ctx.SaferSide(ctx.Node);
 				return Do($"exploring for a {k.TileName(s.TileType)} (none seen yet)",
-					new ExploreSkill(k.TileName(s.TileType), c => c.World.FindTiles(tile, c.Node, StationSearchRadius).Count > 0, ExploreBias.Down, heading));
+					new ExploreSkill(k.TileName(s.TileType), c => c.World.FindTiles(tile, c.Node, StationSearchRadius).Count > 0, ExploreBias.Down, stationHeading.Value)
+					{ JobKey = $"Explore station {tile}" });
 			}
 			KnownStations[s.TileType] = found.Value;
 			notedAt[s.TileType] = ctx.Tick + 60 * 60 * 60; // far away: do not forget it before going there
@@ -783,7 +802,8 @@ public sealed class ProgressionPlanner
 			case SourceKind.Hunt:
 				if (NocturnalAiStyles.Contains(src.NpcAiStyle) && !ctx.IsNight)
 					return Do($"waiting for night to hunt for {name}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
-				return Do($"need {more} more {name} (hunting to {target})", new HuntSkill(item, src.NpcAiStyle, target));
+				return Do($"need {more} more {name} (hunting to {target})",
+					new HuntSkill(item, src.NpcAiStyle, target) { SpawnsAboveRow = NocturnalAiStyles.Contains(src.NpcAiStyle) ? SurfaceSpawnRow(ctx) : null });
 		}
 
 		RecipeInfo recipe = BestRecipe(item, ctx);
@@ -1347,7 +1367,9 @@ public sealed class ProgressionPlanner
 	/// <summary>A station nothing can place and none seen yet: findable by exploring, but costly.</summary>
 	private const float UnseenStationCost = 3000f;
 	private int stationExplores;
-	public const int MaxStationExplores = 10; // fights interrupt explores and each restart counts
+	/// <summary>The heading explorations for a station go in, chosen once (see ResolveStation).</summary>
+	private int? stationHeading;
+	public const int MaxStationExplores = 10;
 	/// <summary>Trips to new ground for a station nothing can place (a demon altar), before the plan is stuck.</summary>
 	public const int MaxStationTrips = 6;
 	private readonly HashSet<int> searchedFor = new();
@@ -1418,6 +1440,14 @@ public sealed class ProgressionPlanner
 	/// limits), and the next trip went the other way: back and forth across the desert until a slime killed the bot.
 	/// </summary>
 	private TilePos? travelDest;
+	/// <summary>
+	/// Trips that found no way there, and when: not chosen again for <see cref="FailedTripTicks"/>, wherever the bot is (a
+	/// fact about the place, kept through rests). Seen in game (measured run U8): from a pocket in a corruption chasm the
+	/// trip to (1495,241) failed "no path" and was chosen again after every fruitless job, 13 heartbeats and more.
+	/// </summary>
+	private readonly Dictionary<TilePos, long> failedTrips = new();
+	/// <summary>A game day, as for ground looked at before (see <see cref="ChooseTravelDest"/>: it is new to look at again).</summary>
+	public const int FailedTripTicks = 86400;
 	/// <summary>The way out to the surface (or the spawn) a trip set off on, held until reached.</summary>
 	private TilePos? exitTarget;
 	private bool exitIsRow;
@@ -1437,10 +1467,29 @@ public sealed class ProgressionPlanner
 	/// <summary>Deep below a far target: a walk up to near the surface's height first (null if not needed).</summary>
 	private static WalkToSkill UpFirst(BotContext ctx, TilePos target)
 	{
-		if (ctx.SurfaceY <= 0 || ctx.Node.Y <= ctx.SurfaceY + TravelFromSurfaceRows || target.Y > ctx.SurfaceY + TravelFromSurfaceRows
+		int surface = SurfaceRow(ctx);
+		if (surface <= 0 || ctx.Node.Y <= surface + TravelFromSurfaceRows || target.Y > surface + TravelFromSurfaceRows
 			|| target.ChebyshevTo(ctx.Node) < 40)
 			return null;
-		return new WalkToSkill(new Core.Pathfinding.GoalRow(ctx.SurfaceY + TravelFromSurfaceRows - 3, ctx.Node.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true };
+		return new WalkToSkill(new Core.Pathfinding.GoalRow(surface + TravelFromSurfaceRows - 3, ctx.Node.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true };
+	}
+
+	/// <summary>Columns either side (tiles, every <see cref="SurfaceRowStep"/>) looked at for the ground's height here.</summary>
+	public const int SurfaceRowSpan = 8, SurfaceRowStep = 4;
+
+	/// <summary>
+	/// The surface's height here: the higher of the world's surface row and the ground seen from the sky in the columns
+	/// round the bot (0 if neither is known). Seen in game (measured run U8): in a corruption chasm at row 342, below ground
+	/// at about row 285 but above the world's surface row, "up first" never came; the trip west planned from the chasm's
+	/// floor, where the only way out goes east and up (away from the goal), and found no path, 18 game hours.
+	/// </summary>
+	internal static int SurfaceRow(BotContext ctx)
+	{
+		int row = ctx.SurfaceY > 0 ? ctx.SurfaceY : int.MaxValue;
+		for (int dx = -SurfaceRowSpan; dx <= SurfaceRowSpan; dx += SurfaceRowStep)
+			if (SurfaceAt(ctx.Grid, ctx.Node.X + dx) is TilePos s && s.Y < row)
+				row = s.Y;
+		return row == int.MaxValue ? 0 : row;
 	}
 	public const int TravelArrivedTiles = 8;
 	/// <summary>How far (tiles) along the surface to go to look for ore in new ground.</summary>
@@ -1489,7 +1538,7 @@ public sealed class ProgressionPlanner
 			// Nowhere to go (seen in game, world_eye run 68: between a corruption and a desert, every way crosses one):
 			// no trip, and no recall potion drunk for one either (five were, in a minute, each followed by mining from the spawn).
 			// Instead: back to the spawn to look from there, and from there deeper (run 70: auto mode stopped, every job failing).
-			if (ChooseTravelDest(ctx, fails) is not TilePos chosen)
+			if (ChooseTravelDest(ctx, fails, failedTrips) is not TilePos chosen)
 				return NoTripPossible(ctx, name);
 			travelDest = chosen;
 			fresh = true;
@@ -1504,7 +1553,8 @@ public sealed class ProgressionPlanner
 				new UseItemSkill(ctx.Ids.RecallPotion));
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
-		if (ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
+		int surfaceRow = SurfaceRow(ctx);
+		if (surfaceRow > 0 && ctx.Node.Y > surfaceRow + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
 			// Out of somewhere off limits, or under a desert's or evil biome's ground: back to the spawn instead. Seen in game
 			// (world_eye run 61): "up to the surface" from the underground desert's edge, four times, each interrupted by a
 			// fight and started again from wherever the bot was, drifted 100 tiles into the desert, where a charger killed it.
@@ -1515,7 +1565,7 @@ public sealed class ProgressionPlanner
 			}
 			else {
 				// Up, by the cheapest way, to near the surface's height (GoalRow), not to one tile on it.
-				exitTarget = new TilePos(ctx.Node.X, ctx.SurfaceY + TravelFromSurfaceRows - 3);
+				exitTarget = new TilePos(ctx.Node.X, surfaceRow + TravelFromSurfaceRows - 3);
 				exitIsRow = true;
 				exitWhy = "up to the surface before travelling";
 			}
@@ -1562,8 +1612,9 @@ public sealed class ProgressionPlanner
 	/// spawn between a corruption and a desert, and every trip landed in one of them), nor above known off-limits ground
 	/// (run 60: the surface by the spawn, over the underground desert's edge). Null if nowhere.
 	/// </summary>
-	private static TilePos? ChooseTravelDest(BotContext ctx, int fails)
+	private static TilePos? ChooseTravelDest(BotContext ctx, int fails, Dictionary<TilePos, long> failed)
 	{
+		bool FailedLately(TilePos c) => failed.Any(f => ctx.Tick - f.Value < FailedTripTicks && f.Key.ChebyshevTo(c) <= TravelArrivedTiles);
 		int dir = fails % 2 == 1 ? 1 : -1;
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
 		int reach = Math.Min(TravelTiles * ((fails + 1) / 2), MaxTravelTiles); // not across the world (1,900 tiles in run 47)
@@ -1573,7 +1624,7 @@ public sealed class ProgressionPlanner
 		for (int i = 0; i < MaxTravelTiles / TravelTiles; i++) {
 			int r = (reach - TravelTiles + i * TravelTiles) % MaxTravelTiles + TravelTiles;
 			foreach (int d in new[] { dir, -dir })
-				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
+				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !FailedLately(c) && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
 					return c;
 		}
 		return null;
