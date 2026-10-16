@@ -1,3 +1,4 @@
+using TerraBot.Core.Pathfinding.Moves;
 using System;
 using System.Linq;
 using TerraBot.Bot;
@@ -391,5 +392,29 @@ public class BlockMoveTests
 		public void Warn(string m) { Lines.Add(m); o.WriteLine("WARN  " + m); }
 		public void Error(string m, Exception ex = null) => o.WriteLine("ERROR " + m + " " + ex);
 		public void Debug(string m) => o.WriteLine("DEBUG " + m);
+	}
+
+	/// <summary>
+	/// Measured run S15: 331 of 350 "no longer valid" re-plans were bridges and pillars that break a cell (a track, a
+	/// torch) and then place a block in it; the check said "nothing can be placed there" about the very tile the step
+	/// breaks first, and 21 walks failed "too many re-plans".
+	/// </summary>
+	[Fact]
+	public void ABridgeThatClearsItsCellFirst_StaysValid()
+	{
+		var (g, b) = TestBlockActions.Parse(
+			"..........",
+			"..........",
+			"..........",
+			"...S......",
+			"####..####",
+			"####.#####");
+		b.NoPlace.Add(new TilePos(4, 4)); // something there that takes no block until it is broken
+		var ctx = new MoveContext(g, PhysicsParams.Default) { Blocks = b, AllowBreak = true, AllowPlace = true };
+		var steps = new System.Collections.Generic.List<PathStep>();
+		new BuildMove().Expand(ctx, g.Markers['S'], steps);
+		PathStep bridge = steps.Single(st => st.Kind == MoveKind.Walk && st.Dir > 0);
+		Assert.Contains(bridge.Actions, a => a.Kind == ActionKind.Break && a.Cell == new TilePos(4, 4));
+		Assert.True(new BuildMove().IsValid(ctx, bridge));
 	}
 }

@@ -40,12 +40,12 @@ public sealed class BuildMove : IMoveType
 			bool placed = g.Get(step.From.X, step.From.Y).IsSolid() || g.Get(step.From.X + 1, step.From.Y).IsSolid();
 			TilePos pillarCell = PillarCell(g, step.From);
 			bool headroom = PillarHeadroomClear(g, step.From) || ctx.CanBreak && step.CountActions(ActionKind.Break) > 0;
-			return headroom && (placed || (ctx.CanPlace && ctx.CanPlaceAt(pillarCell.X, pillarCell.Y)));
+			return headroom && (placed || ctx.CanPlace && Placeable(ctx, step, pillarCell));
 		}
 		// Bridge: fine if the block is already there (placed by us) or can still be placed.
 		TilePos cell = BridgeCell(step.From, step.Dir);
 		return Body.IsClear(ctx.Grid, step.To)
-			&& (ctx.Grid.Get(cell.X, cell.Y).CanStandOn() || (ctx.CanPlace && ctx.CanPlaceAt(cell.X, cell.Y)));
+			&& (ctx.Grid.Get(cell.X, cell.Y).CanStandOn() || ctx.CanPlace && Placeable(ctx, step, cell));
 	}
 
 	/// <summary>The cell under the leading body column when bridging in direction <paramref name="dir"/>.</summary>
@@ -142,6 +142,23 @@ public sealed class BuildMove : IMoveType
 	/// minecart track: passable, but nothing goes into its cell), +inf if neither. Seen in game (measured run R1): on a track
 	/// along a cave floor, no pillar or bridge from it was possible, and "up to the surface" found no way, for hours.
 	/// </summary>
+	/// <summary>
+	/// The block can go in now, or once this step's own break has cleared the cell (a track, a torch): as the search priced
+	/// it. Seen in game (measured run S15): 331 of 350 "no longer valid" re-plans were such steps, the check saying "nothing
+	/// can be placed there" about the very tile the step breaks first; 21 walks failed "too many re-plans".
+	/// </summary>
+	private static bool Placeable(MoveContext ctx, in PathStep step, TilePos cell)
+	{
+		if (ctx.CanPlaceAt(cell.X, cell.Y))
+			return true;
+		if (step.Actions == null)
+			return false;
+		foreach (BlockAction a in step.Actions)
+			if (a.Kind == ActionKind.Break && a.Cell == cell)
+				return !float.IsPositiveInfinity(ClearForBlock(ctx, cell));
+		return false;
+	}
+
 	private static float ClearForBlock(MoveContext ctx, TilePos cell)
 	{
 		if (ctx.CanPlaceAt(cell.X, cell.Y))
