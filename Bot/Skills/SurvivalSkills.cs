@@ -47,6 +47,27 @@ public sealed class HuntSkill : ISkill
 	public int? SpawnsAboveRow { get; init; }
 	public const int MaxFailedWalksUp = 2;
 	private int failedWalksUp;
+	/// <summary>
+	/// Where the prey lives (null: anywhere): the hunt goes there first, and its wanders sweep round it, not round wherever
+	/// the bot stood. Eaters of souls spawn only while the player is in the Corruption zone (Player.ZoneCorrupt), so a hunt
+	/// for rotten chunks from the house, 120-200 tiles from the corruption in the M10 world (docs M10_SPEC.md), finds none.
+	/// </summary>
+	public TilePos? Ground { get; init; }
+	/// <summary>
+	/// Wanders round <see cref="Ground"/> go out this many steps of <see cref="WanderTiles"/> to each side, then start over:
+	/// the ground is a biome, and wandering on out of it leaves the spawns (the M10 corruption is about 80 tiles wide).
+	/// </summary>
+	public const int GroundWanderSteps = 2;
+	/// <summary>
+	/// Farther than this (tiles) from <see cref="Ground"/> with no prey in sight (a fight or a fall took the bot off), the hunt
+	/// walks back to it: the wanders' own reach. At one wander's reach, every far wander was followed by a walk back first.
+	/// </summary>
+	public const int GroundTiles = WanderTiles * GroundWanderSteps + Tolerance;
+	/// <summary>Walks to the ground (each after a fight or a failed walk) before the hunt gives up on getting there.</summary>
+	public const int MaxGroundWalks = 12;
+	private int groundWalks;
+	/// <summary>How near (tiles) a walk of the hunt gets to its goal: the wanders' own 4.</summary>
+	public const int Tolerance = 4;
 
 	public HuntSkill(int itemType, int aiStyle, int amount)
 	{
@@ -99,6 +120,10 @@ public sealed class HuntSkill : ISkill
 			bool fought = sub is FightSkill;
 			sub.Stop(ctx);
 			sub = null;
+			// On its ground the prey was there: the wanders that found none start counting afresh. A long hunt (15 rotten
+			// chunks at 1 in 3 is about 45 eaters of souls, spec G4) would otherwise run out of wanders between kills.
+			if (fought && Ground != null)
+				wanders = 0;
 			if (fought) {
 				Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, 20, ignoredDrops), "collecting");
 				return SkillStatus.Running;
@@ -120,6 +145,26 @@ public sealed class HuntSkill : ISkill
 		if (SpawnsAboveRow is int top && node.Y > top) {
 			ctx.Log.Info($"Hunt: nothing spawns down here (row {node.Y}); up to row {top} first");
 			Begin(ctx, new WalkToSkill(new Core.Pathfinding.GoalRow(top, node.X, ctx.Physics)) { Quiet = true, ToSurface = true }, "going up");
+			return SkillStatus.Running;
+		}
+		if (Ground is TilePos ground) {
+			// To the prey's ground first, then round it (no town walk: the ground is where it spawns).
+			if (ground.ChebyshevTo(node) > GroundTiles) {
+				if (++groundWalks > MaxGroundWalks)
+					return Fail(ctx, $"no way to the hunting ground at {ground} after {MaxGroundWalks} walks");
+				waitTicks = WaitTicks;
+				ctx.Log.Info($"Hunt: to the hunting ground at {ground} ({ground.ChebyshevTo(node)} tiles away)");
+				Begin(ctx, new WalkToSkill(new Core.Pathfinding.GoalNearTile(ground, Tolerance, ctx.Physics)) { Quiet = true }, "going to the hunting ground");
+				return SkillStatus.Running;
+			}
+			if (++wanders > MaxWanders)
+				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {MaxWanders} wanders round {ground}");
+			int side = wanders % 2 == 1 ? 1 : -1;
+			int step = (wanders - 1) / 2 % GroundWanderSteps + 1;
+			var to = new TilePos(ground.X + side * WanderTiles * step, ground.Y - Tolerance);
+			waitTicks = WaitTicks;
+			ctx.Log.Info($"Hunt: nothing to hunt in sight, wandering round the hunting ground towards {to}");
+			Begin(ctx, new WalkToSkill(to) { Quiet = true, Tolerance = Tolerance }, "wandering");
 			return SkillStatus.Running;
 		}
 		// In town (a town NPC near: vanilla spawns no hostile there, spawnInfo.PlayerSafe): out of it first, one way, as a

@@ -73,6 +73,16 @@ public sealed class MineSkill : ISkill
 	/// mined and the job ends, so the planner picks again with it in the bag (see ProgressionPlanner.AltOres).
 	/// </summary>
 	public IReadOnlyList<(int Item, int Tile)> Also { get; init; } = Array.Empty<(int, int)>();
+	/// <summary>
+	/// Only tiles of this frame column drop the item (ItemSource.FrameX; -1: any). A corrupt plant (tile 24) drops a vile
+	/// mushroom only at frame 144 (WorldGen.cs:59639); the other plants on the grass beside it drop nothing.
+	/// </summary>
+	public int FrameX { get; init; } = -1;
+	/// <summary>
+	/// Which way exploring goes when none is in sight: down into the ground for ore and crystals; along the surface for
+	/// what grows on it (vile mushrooms on corrupt grass).
+	/// </summary>
+	public ExploreBias Bias { get; init; } = ExploreBias.Down;
 	/// <summary>The ore being mined when it is one of <see cref="Also"/>; null for this job's own.</summary>
 	private (int Item, int Tile)? alt;
 	private bool tookAlt;
@@ -266,7 +276,7 @@ public sealed class MineSkill : ISkill
 		int exploreDir = ctx.ExploreSide(ctx.Node);
 		bool valuable = Valuable(ctx);
 		bool deeper = valuable && ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin;
-		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, ExploreBias.Down, exploreDir) {
+		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, Bias, exploreDir) {
 			DeepestRow = deeper ? ctx.DeepestRow + ValuableDepthMargin : null,
 			Band = valuable && ctx.CrystalBandTop > 0 ? (ctx.CrystalBandTop, ctx.CrystalBandBottom) : null,
 		}, "exploring");
@@ -314,7 +324,7 @@ public sealed class MineSkill : ISkill
 
 	private SkillStatus TickTarget(BotContext ctx, TilePos t)
 	{
-		if (ctx.World.TileTypeAt(t.X, t.Y) != (alt?.Tile ?? TileType)) {
+		if (!StillThere(ctx, t)) {
 			// Mined (or changed under us): the drop falls nearby; pick it up before the next tile.
 			Mined++;
 			lastMined = t;
@@ -456,8 +466,20 @@ public sealed class MineSkill : ISkill
 	}
 
 	/// <summary>The tiles of the type the map shows round <paramref name="around"/>; life crystals among them are remembered (BotContext.SeeCrystals).</summary>
-	private IReadOnlyList<TilePos> Find(BotContext ctx, int tile, TilePos around, int radius) =>
-		Valuable(ctx) && tile == TileType ? ctx.SeeCrystals(tile, around, radius) : ctx.World.FindTiles(tile, around, radius);
+	private IReadOnlyList<TilePos> Find(BotContext ctx, int tile, TilePos around, int radius)
+	{
+		if (Valuable(ctx) && tile == TileType)
+			return ctx.SeeCrystals(tile, around, radius);
+		IReadOnlyList<TilePos> found = ctx.World.FindTiles(tile, around, radius);
+		return FrameX < 0 || tile != TileType ? found : found.Where(c => ctx.World.TileFrameX(c.X, c.Y) == FrameX).ToList();
+	}
+
+	/// <summary>The tile is still the one this job is after (its type, and its frame if <see cref="FrameX"/> is set).</summary>
+	private bool StillThere(BotContext ctx, TilePos t)
+	{
+		int tile = alt?.Tile ?? TileType;
+		return ctx.World.TileTypeAt(t.X, t.Y) == tile && (alt != null || FrameX < 0 || ctx.World.TileFrameX(t.X, t.Y) == FrameX);
+	}
 
 	/// <summary>
 	/// The nearest remembered life crystal cell (BotContext.KnownCrystals), with no radius cap, that mining would take on
