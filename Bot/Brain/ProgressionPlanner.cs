@@ -205,9 +205,12 @@ public sealed class ProgressionPlanner
 		stages.Add(new Wearing(Tiers(ids.IronTierGreaves, ids.SilverTierGreaves), "greaves"));
 		if (plan == Plans.Settle)
 			return stages;
-		stages.Add(new PrepFor(ids.EyeBoss, new LifeAtLeast(BossLife, "max life")));
+		// The bow and arrows before the crystals: the armoured nights go to the summon's lenses (NightPartsForTheSummon), and
+		// demon eyes, fliers, are shot, not reached with a sword. Seen in game (measured run U5): the bow came at d9 after
+		// max life 200; 46 hits taken from demon eyes on the night hunts, most of them last seen at full life, 1 lens of 6.
 		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.IronTierBow, 1, "iron-tier bow")));
 		stages.Add(new PrepFor(ids.EyeBoss, new HaveItem(ids.WoodenArrow, BossArrows, "arrows") { RefillBelow = BossArrows * 4 / 5 }));
+		stages.Add(new PrepFor(ids.EyeBoss, new LifeAtLeast(BossLife, "max life")));
 		stages.Add(new PrepFor(ids.EyeBoss, new ArenaBuilt("arena")));
 		stages.Add(new PrepFor(ids.EyeBoss, new HouseBuilt("heart lantern in the house", HeartLantern: true)));
 		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu"));
@@ -272,6 +275,15 @@ public sealed class ProgressionPlanner
 		}
 		return true;
 	}
+
+	/// <summary>
+	/// The heart lantern from a crystal to spare, not one hunted for on purpose: without one in the bag the house goes on
+	/// without it (a crystal mined later, on sight, still goes into it). It hangs in the house, not the arena where the boss is
+	/// fought. Seen in game (measured runs U2 and U4): the lantern's crystal was looked for from d5 +10h and d7 +13h to the
+	/// end of the run, the boss never summoned; and one crystal was held back from max life for it all along.
+	/// </summary>
+	private bool LanternFromASpareCrystal(BotContext ctx) =>
+		ctx.Inventory.Count(ctx.Ids.HeartLantern) > 0 || ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 || !LanternStillNeeded(ctx);
 
 	public static bool LifeCrystalUseful(BotContext ctx) => ctx.Ids.LifeCrystal > 0 && ctx.Combat.LifeMaxBase > 0 && ctx.Combat.LifeMaxBase < MaxCrystalLife;
 
@@ -519,7 +531,8 @@ public sealed class ProgressionPlanner
 			return Do($"looting the chest at {chest.TopLeft}", new LootChestSkill(chest.TopLeft));
 		// Likewise a life crystal: mined and used on sight, whatever stage the plan is at.
 		if (LifeCrystalUseful(ctx)) {
-			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > (LanternStillNeeded(ctx) ? 1 : 0))
+			// Life first; a crystal is kept for the heart lantern only once max life is in (see LanternFromASpareCrystal).
+			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > (LanternStillNeeded(ctx) && ctx.Combat.LifeMaxBase >= BossLife ? 1 : 0))
 				return Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase})", new UseItemSkill(ctx.Ids.LifeCrystal));
 			if (SeenLifeCrystal(ctx) is TilePos heart)
 				return Do($"mining the life crystal seen at {heart}",
@@ -643,7 +656,7 @@ public sealed class ProgressionPlanner
 			StationPlaced s => ResolveStation(s, claims, depth, ctx),
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Items, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
-			HouseBuilt hb => ResolveHouse(hb.HeartLantern, claims, depth, ctx),
+			HouseBuilt hb => ResolveHouse(hb.HeartLantern && LanternFromASpareCrystal(ctx), claims, depth, ctx),
 			ArenaBuilt => ResolveArena(claims, depth, ctx),
 			BossDefeated b => ResolveBoss(b, claims, depth, ctx),
 			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),

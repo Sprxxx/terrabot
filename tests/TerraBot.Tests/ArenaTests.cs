@@ -174,6 +174,36 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void HeartLantern_ComesFromASpareCrystal_NotAHuntForOne()
+	{
+		// Measured runs U2 and U4: the lantern's crystal was looked for from d5 +10h and d7 +13h to the end of the run, and
+		// the boss was never summoned. Without a crystal in the bag the house goes on without the lantern.
+		FakeGame g = EarlyGameTests.Field(60);
+		g.Items[FakeGame.DirtBlock] = 40;
+		g.Items[FakeGame.WoodWall] = 40;
+		g.Items[FakeGame.Door] = 1;
+		g.Items[FakeGame.Chair] = 1;
+		g.Items[FakeGame.Table] = 1;
+		g.Items[FakeGame.Torch] = 3;
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Boss);
+		Blueprint house = Blueprint.SmallHouse(FakeGame.Ids);
+		TilePos site = SiteFinder.Find(ctx, house, g.Grid.Markers['S']).Value;
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new BuildSkill(house, site), 60 * 120));
+		p.OnSkillFinished(new BuildSkill(house, site), SkillStatus.Succeeded, ctx);
+		var need = new HouseBuilt("heart lantern", HeartLantern: true);
+		ISkill without = p.ResolveForTest(need, ctx);
+		output.WriteLine($"no crystal: {p.Status} -> {without?.Describe() ?? "nothing to do"}");
+		Assert.Null(without);
+		Assert.Null(p.ResolveForTestStuck);
+		g.Items[FakeGame.LifeCrystal] = 1; // one turns up
+		ISkill with = p.ResolveForTest(need, ctx);
+		output.WriteLine($"a crystal: {p.Status} -> {with?.Describe()}");
+		Assert.NotNull(with);
+	}
+
+	[Fact]
 	public void HeartLantern_IsHungInTheBuiltHouse()
 	{
 		// The house first (as in the settle plan), then the boss prep adds the lantern under its roof.

@@ -1,3 +1,4 @@
+using System.Linq;
 using TerraBot.Bot.Building;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
@@ -163,6 +164,18 @@ public class BossPlannerTests
 		}
 		output.WriteLine($"{hunt.Describe()}; went from {startX} to {ctx.Node.X}");
 		Assert.True(System.Math.Abs(ctx.Node.X - startX) >= 60, $"stayed within {System.Math.Abs(ctx.Node.X - startX)} tiles of the house");
+	}
+
+	[Fact]
+	public void TheBowComesBeforeTheCrystals_SoTheNightHuntsCanShootDemonEyes()
+	{
+		// Measured run U5: the bow came at d9, after max life 200; the night hunts took 46 hits from demon eyes, most of them
+		// last seen at full life, and got 1 lens of 6.
+		var stages = ProgressionPlanner.StagesFor(ProgressionPlanner.Plans.Boss, FakeGame.Ids).ToList();
+		int bow = stages.FindIndex(n => n is PrepFor { Inner: HaveItem h } && h.Accepts.Contains(FakeGame.IronBow));
+		int life = stages.FindIndex(n => n is PrepFor { Inner: LifeAtLeast });
+		Assert.True(bow >= 0 && life >= 0);
+		Assert.True(bow < life, $"bow at {bow}, crystals at {life}");
 	}
 
 	[Fact]
