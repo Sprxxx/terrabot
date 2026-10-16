@@ -72,6 +72,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly Dictionary<int, TilePos> Stations = new();
 	/// <summary>How near (Chebyshev tiles) a station must be for a craft, like vanilla's AdjTiles box.</summary>
 	public int StationRange = 4;
+	/// <summary>How far (columns) trees are seen, like the game's 50-column scan; unlimited by default.</summary>
+	public int TreeSight = int.MaxValue;
 	public readonly List<(int id, float x, float y, int life)> Slimes = new();
 	public bool IsNight;
 	public int Crafts;
@@ -619,8 +621,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			seenStations = new Dictionary<int, TilePos>(Stations);
 		TilePos n = Sim.Node;
 		ctx.Seen = new Surroundings {
-			Trees = Trees.Keys.OrderBy(t => Math.Abs(t.X - n.X)).ToList(),
+			Trees = Trees.Keys.Where(t => Math.Abs(t.X - n.X) <= TreeSight).OrderBy(t => Math.Abs(t.X - n.X)).ToList(),
 			Stations = seenStations,
+			Origin = TreeSight < int.MaxValue ? n : null,
 		};
 		ctx.Drops = Drops.ToList();
 		ctx.Hostiles = Slimes.Select(s => new EntityInfo(s.id, 1, "Slime", s.x, s.y, 24, 24, 0, 0, s.life, 40, 7, SlimeAi)).ToList();

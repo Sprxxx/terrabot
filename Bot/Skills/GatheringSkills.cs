@@ -220,7 +220,7 @@ public sealed class GatherWoodSkill : ISkill
 	private readonly HashSet<TilePos> badTrees = new();
 	private readonly HashSet<int> ignoredDrops = new();
 	private int explores;
-	private int exploreDir = 1;
+	private TilePos? exploreFrom;
 
 	public int ItemType { get; }
 	public int Amount { get; }
@@ -272,6 +272,12 @@ public sealed class GatherWoodSkill : ISkill
 			SkillStatus s = sub.Tick(ctx);
 			if (s == SkillStatus.Running)
 				return SkillStatus.Running;
+			if (walkingTo is TilePos w) {
+				// Arrived (the tree is in sight now, or it is gone: the scan forgets it), or no way there.
+				if (s == SkillStatus.Failed)
+					badTrees.Add(w);
+				walkingTo = null;
+			}
 			if (s == SkillStatus.Failed && sub is ChopTreeSkill chop) {
 				badTrees.Add(chop.Base);
 				ctx.UnreachableTiles.Add(chop.Base);
@@ -297,6 +303,14 @@ public sealed class GatherWoodSkill : ISkill
 			sub = new ChopTreeSkill(tree);
 			State = "chopping";
 		}
+		else if (NearestKnownTree(ctx) is TilePos known) {
+			// Back to a tree seen earlier before exploring for new ones (Baritone and AltoClef go to remembered blocks first).
+			ctx.Log.Info($"GatherWood: no trees in sight; back to one seen at {known}");
+			var walkBack = new WalkToSkill(known) { Quiet = true, Tolerance = 4 };
+			walkingTo = known;
+			sub = walkBack;
+			State = $"walking to a tree seen at {known}";
+		}
 		else {
 			TilePos here = ctx.Node;
 			// Trees grow on the surface: from underground, up first (seen in game, measured run R1: "exploring" for trees at
@@ -310,14 +324,35 @@ public sealed class GatherWoodSkill : ISkill
 			}
 			if (++explores > MaxExplores)
 				return Fail(ctx, $"no reachable trees found after {MaxExplores} explorations");
-			var goal = new TilePos(here.X + exploreDir * ExploreStepTiles, here.Y - 10);
+			// Outward from where the search began, the two sides in turn and further each time: +40, -40, +80, -80...
+			// Seen in game (measured run U8): stepping 40 tiles alternately from where it stood went to and fro between
+			// the same two places (2320 and 2375) for 19 game hours.
+			TilePos from = exploreFrom ??= here;
+			int dir = explores % 2 == 1 ? 1 : -1;
+			var goal = new TilePos(from.X + dir * ExploreStepTiles * ((explores + 1) / 2), from.Y - 10);
 			ctx.Log.Info($"GatherWood: no trees in sight, exploring towards {goal}");
 			sub = new WalkToSkill(goal) { Quiet = true, Tolerance = 4 };
-			exploreDir = -exploreDir;
 			State = "exploring";
 		}
 		sub.Start(ctx);
 		return SkillStatus.Running;
+	}
+
+	private TilePos? walkingTo;
+
+	private TilePos? NearestKnownTree(BotContext ctx)
+	{
+		TilePos node = ctx.Node;
+		TilePos? best = null;
+		int bestDist = int.MaxValue;
+		foreach (TilePos t in ctx.KnownTrees) {
+			int d = Math.Abs(t.X - node.X) + Math.Abs(t.Y - node.Y);
+			if (d < bestDist && !badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t)) {
+				best = t;
+				bestDist = d;
+			}
+		}
+		return best;
 	}
 
 	private TilePos? NearestTree(BotContext ctx)

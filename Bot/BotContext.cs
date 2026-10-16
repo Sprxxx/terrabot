@@ -127,7 +127,31 @@ public sealed class BotContext
 	/// <summary>Items lying near the player this tick (nearest first).</summary>
 	public System.Collections.Generic.IReadOnlyList<DropInfo> Drops { get; set; } = Array.Empty<DropInfo>();
 	public CombatInfo Combat { get; set; } = new();
-	public Surroundings Seen { get; set; } = new();
+	public Surroundings Seen {
+		get => seen;
+		set {
+			seen = value;
+			RememberTrees(value);
+		}
+	}
+	private Surroundings seen = new();
+
+	/// <summary>
+	/// Trees seen anywhere (base trunk tiles), kept after they go out of sight, as a player remembers where the trees were.
+	/// Seen in game (measured run U8): out in the desert with 11 of 14 wood, the bot knew of no tree at all (only those on
+	/// screen) and explored to and fro for 19 game hours, though it had felled trees by its house all game.
+	/// </summary>
+	public System.Collections.Generic.HashSet<TilePos> KnownTrees { get; } = new();
+	/// <summary>A remembered tree this near a scan's origin would be in it if it still stood: it is forgotten.</summary>
+	public const int TreeForgetX = 40, TreeForgetY = 12;
+
+	private void RememberTrees(Surroundings s)
+	{
+		if (s.Origin is TilePos o)
+			KnownTrees.RemoveWhere(t => Math.Abs(t.X - o.X) <= TreeForgetX && Math.Abs(t.Y - o.Y) <= TreeForgetY && !System.Linq.Enumerable.Contains(s.Trees, t));
+		foreach (TilePos t in s.Trees)
+			KnownTrees.Add(t);
+	}
 	public IWorldInfo World { get; set; }
 	public IInventory Inventory { get; set; }
 	public ICrafter Crafter { get; set; }

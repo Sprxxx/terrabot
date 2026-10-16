@@ -59,6 +59,52 @@ public class EarlyGameTests
 		Assert.Equal(SkillStatus.Succeeded, RunSkill(game, ctx, new GatherWoodSkill(FakeGame.Wood, 5), 3000));
 	}
 
+	/// <summary>A flat field like <see cref="Field"/> but starting at column <paramref name="start"/>.</summary>
+	private static FakeGame FieldFrom(int width, int start, params int[] treeColumns)
+	{
+		var rows = Enumerable.Repeat(new string('.', width), 25).ToArray();
+		char[] feet = rows[24].ToCharArray();
+		feet[start] = 'S';
+		foreach (int x in treeColumns)
+			feet[x] = 'T';
+		rows[24] = new string(feet);
+		return new FakeGame(rows.Concat(Enumerable.Repeat(new string('#', width), 5)).ToArray());
+	}
+
+	[Fact]
+	public void GatherWood_WithNoTreeInSight_GoesBackToOneSeenEarlier()
+	{
+		// Seen in game (measured run U8): 250 tiles from the trees by the house, it knew of none and explored to and fro.
+		FakeGame game = FieldFrom(300, 200, 40);
+		game.TreeSight = 50;
+		BotContext ctx = game.CreateContext(output);
+		ctx.Seen = new Surroundings { Trees = new[] { new Core.Grid.TilePos(40, 24) } };
+		SkillStatus s = RunSkill(game, ctx, new GatherWoodSkill(FakeGame.Wood, 5), 12000);
+		output.WriteLine($"{s}, wood {game.Count(FakeGame.Wood)}, at {game.Sim.Node}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+	}
+
+	[Fact]
+	public void GatherWood_WithNoTreeKnown_ExploresFurtherOutEachTime()
+	{
+		// Trees 100 columns off and seen from 50: stepping 40 to and fro from where it stood never got there (U8).
+		FakeGame game = FieldFrom(400, 150, 250);
+		game.TreeSight = 50;
+		BotContext ctx = game.CreateContext(output);
+		SkillStatus s = RunSkill(game, ctx, new GatherWoodSkill(FakeGame.Wood, 5), 20000);
+		output.WriteLine($"{s}, wood {game.Count(FakeGame.Wood)}, at {game.Sim.Node}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+	}
+
+	[Fact]
+	public void KnownTrees_AreForgotten_WhenTheirPlaceIsInSightWithoutThem()
+	{
+		var ctx = new BotContext();
+		ctx.Seen = new Surroundings { Trees = new[] { new Core.Grid.TilePos(10, 20), new Core.Grid.TilePos(200, 20) }, Origin = new Core.Grid.TilePos(10, 20) };
+		ctx.Seen = new Surroundings { Trees = System.Array.Empty<Core.Grid.TilePos>(), Origin = new Core.Grid.TilePos(15, 22) };
+		Assert.Equal(new[] { new Core.Grid.TilePos(200, 20) }, ctx.KnownTrees);
+	}
+
 	[Fact]
 	public void GatherWood_NoAxe_Fails()
 	{
