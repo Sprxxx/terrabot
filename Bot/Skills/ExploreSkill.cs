@@ -82,6 +82,17 @@ public sealed class ExploreSkill : ISkill
 	/// </summary>
 	public int? DeepestRow { get; init; }
 	private int Deepest(BotContext ctx) => DeepestRow ?? ctx.DeepestRow;
+	/// <summary>
+	/// The rows what is looked for lies in (life crystals: BotContext.CrystalBandTop to CrystalBandBottom), if any: frontiers
+	/// and digs outside them cost <see cref="OutOfBandRowCost"/> a row more, a pull into the band, not a ban. Seen in game
+	/// (measured run U9): 25% of the 288 crystal legs were above row 375, the top of the crystal band.
+	/// </summary>
+	public (int Top, int Bottom)? Band { get; init; }
+	/// <summary>Per row outside <see cref="Band"/>: as much again as the downward pull per row (1.5), so above the band depth counts double.</summary>
+	public const float OutOfBandRowCost = 1.5f;
+
+	private float BandCost(int y) =>
+		Band is not (int top, int bottom) ? 0f : y < top ? (top - y) * OutOfBandRowCost : y > bottom ? (y - bottom) * OutOfBandRowCost : 0f;
 	public ExploreBias Bias { get; }
 	public int Legs => legs;
 	public string State { get; private set; } = "new";
@@ -299,6 +310,7 @@ public sealed class ExploreSkill : ISkill
 				score += SeenPenalty;
 			if (Math.Sign(o.X - n.X) != heading)
 				score += TurnPenalty;
+			score += BandCost(o.Y);
 			if (tooDeep)
 				score -= (n.Y - o.Y) * 1.5f; // higher is better
 			else if (Bias == ExploreBias.Down)
@@ -341,6 +353,7 @@ public sealed class ExploreSkill : ISkill
 					score += VisitedPenalty;
 				if (Math.Sign(x - n.X) != heading)
 					score += TurnPenalty;
+				score += BandCost(y);
 				if (Bias == ExploreBias.Down)
 					score -= (y - n.Y) * 1.5f; // deeper is better
 				else

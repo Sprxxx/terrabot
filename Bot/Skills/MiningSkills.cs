@@ -153,10 +153,26 @@ public sealed class MineSkill : ISkill
 		if (target is TilePos t)
 			return TickTarget(ctx, t);
 
+		// On the way back to where the crystal search left off, a crystal coming into sight is gone for at once.
+		if (sub != null && ReferenceEquals(sub, resumeWalk) && ctx.Tick % ExploreSkill.FoundCheckEvery == 0 && PickTarget(ctx) != null) {
+			sub.Stop(ctx);
+			sub = null;
+			resumeWalk = null;
+		}
 		if (sub != null) {
 			SkillStatus s = sub.Tick(ctx);
+			if (Valuable(ctx) && sub is ExploreSkill)
+				NoteCrystalSearch(ctx);
 			if (s == SkillStatus.Running)
 				return SkillStatus.Running;
+			if (ReferenceEquals(sub, resumeWalk)) {
+				// No way back there (not a death on the way): not that spot again; the search goes on from here.
+				if (s == SkillStatus.Failed && !string.IsNullOrEmpty(sub.FailureReason) && !sub.FailureReason.Contains("died")) {
+					ctx.CrystalSearch.RemoveAll(c => c.ChebyshevTo(resumeFrom) <= ExploreSkill.FrontierReach);
+					ctx.Log.Info($"Mine: no way back to {resumeFrom}, where the crystal search left off ({sub.FailureReason}); exploring from here");
+				}
+				resumeWalk = null;
+			}
 			sub.Stop(ctx);
 			sub = null;
 		}
@@ -184,6 +200,25 @@ public sealed class MineSkill : ISkill
 			mineTicks = 0;
 			arrivedOutOfReach = 0;
 			ctx.Log.Debug($"Mine: target {next}");
+			return SkillStatus.Running;
+		}
+		// A life crystal remembered, however far (BotContext.KnownCrystals): back for it before any new ground, and before the
+		// count of fruitless explorations (going for a crystal known is not one).
+		if (Valuable(ctx) && RememberedCrystal(ctx, TileType, ctx.Node, bad.Contains) is TilePos remembered) {
+			target = remembered;
+			mineTicks = 0;
+			arrivedOutOfReach = 0;
+			ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, but one remembered at {remembered} ({remembered.ChebyshevTo(ctx.Node)} tiles away); going back for it");
+			return SkillStatus.Running;
+		}
+		// A crystal search that got into the band before (BotContext.CrystalSearch): back there first, once a job, not looking
+		// again from the spawn and the rows above the band; not counted as an exploration.
+		if (Valuable(ctx) && !walkedBack && SearchToResume(ctx) is TilePos from) {
+			walkedBack = true;
+			resumeFrom = from;
+			resumeWalk = new WalkToSkill(new GoalNearTile(from, ExploreSkill.FrontierReach, ctx.Physics)) { Quiet = true };
+			ctx.Log.Info($"Mine: no {Label(ctx)} in sight; back to {from} ({from.ChebyshevTo(ctx.Node)} tiles away), where the crystal search left off in the crystal band, before exploring");
+			Begin(ctx, resumeWalk, $"back to {from}, where the crystal search left off");
 			return SkillStatus.Running;
 		}
 		// Counted on the context per item: a fight pauses the skill and the planner starts it afresh, and a count of its
@@ -223,9 +258,52 @@ public sealed class MineSkill : ISkill
 		// The first exploration goes the safer way (BotContext.SaferSide); later ones, in this job or the next, carry on the
 		// way the last one was going (it turns round itself when blocked). Alternating, each walked back over the one before.
 		int exploreDir = ctx.ExploreSide(ctx.Node);
-		bool deeper = Valuable(ctx) && ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin;
-		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, ExploreBias.Down, exploreDir) { DeepestRow = deeper ? ctx.DeepestRow + ValuableDepthMargin : null }, "exploring");
+		bool valuable = Valuable(ctx);
+		bool deeper = valuable && ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin;
+		Begin(ctx, new ExploreSkill(Label(ctx), c => PickTarget(c) != null, ExploreBias.Down, exploreDir) {
+			DeepestRow = deeper ? ctx.DeepestRow + ValuableDepthMargin : null,
+			Band = valuable && ctx.CrystalBandTop > 0 ? (ctx.CrystalBandTop, ctx.CrystalBandBottom) : null,
+		}, "exploring");
 		return SkillStatus.Running;
+	}
+
+	private bool walkedBack;
+	private WalkToSkill resumeWalk;
+	private TilePos resumeFrom;
+
+	/// <summary>Farther than one leg's reach from where the crystal search left off, it is walked back to first (nearer, the legs get there).</summary>
+	public const int ResumeBeyondTiles = ExploreSkill.MaxLegTiles;
+
+	/// <summary>
+	/// The exploration stood somewhere new in the crystal band: kept (BotContext.CrystalSearch), the oldest dropped past
+	/// BotContext.CrystalSearchKept.
+	/// </summary>
+	private static void NoteCrystalSearch(BotContext ctx)
+	{
+		if (ctx.LastExplore is not { } last || !ctx.InCrystalBand(last.At.Y))
+			return;
+		List<TilePos> kept = ctx.CrystalSearch;
+		if (kept.Count > 0 && kept[^1] == last.At)
+			return;
+		kept.Add(last.At);
+		if (kept.Count > BotContext.CrystalSearchKept)
+			kept.RemoveAt(0);
+	}
+
+	/// <summary>
+	/// Where to walk back to before exploring for a crystal: the deepest spot the crystal search stood at lately
+	/// (BotContext.CrystalSearch; the latest of equals) that is farther than <see cref="ResumeBeyondTiles"/>, not deeper than a
+	/// crystal is gone for, not off limits (a danger zone round a death there: an earlier spot) and not found unreachable.
+	/// Null if none.
+	/// </summary>
+	public static TilePos? SearchToResume(BotContext ctx)
+	{
+		int deepest = ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin ? ctx.DeepestRow + ValuableDepthMargin : ctx.DeepestRow;
+		TilePos? best = null;
+		foreach (TilePos c in ctx.CrystalSearch)
+			if ((best == null || c.Y >= best.Value.Y) && c.Y <= deepest && !ctx.OffLimits(c) && !ctx.UnreachableTiles.Contains(c))
+				best = c;
+		return best is TilePos b && b.ChebyshevTo(ctx.Node) > ResumeBeyondTiles ? best : null;
 	}
 
 	private SkillStatus TickTarget(BotContext ctx, TilePos t)
@@ -344,7 +422,7 @@ public sealed class MineSkill : ISkill
 	{
 		TilePos? best = null;
 		float bestDist = float.MaxValue;
-		foreach (TilePos c in ctx.World.FindTiles(tile, around, radius)) {
+		foreach (TilePos c in Find(ctx, tile, around, radius)) {
 			int d = c.ChebyshevTo(around);
 			if (d >= bestDist)
 				break; // nearest first: none further on can beat it
@@ -359,13 +437,54 @@ public sealed class MineSkill : ISkill
 		return best;
 	}
 
+	/// <summary>The tiles of the type the map shows round <paramref name="around"/>; life crystals among them are remembered (BotContext.SeeCrystals).</summary>
+	private IReadOnlyList<TilePos> Find(BotContext ctx, int tile, TilePos around, int radius) =>
+		Valuable(ctx) && tile == TileType ? ctx.SeeCrystals(tile, around, radius) : ctx.World.FindTiles(tile, around, radius);
+
+	/// <summary>
+	/// The nearest remembered life crystal cell (BotContext.KnownCrystals), with no radius cap, that mining would take on
+	/// (<see cref="WhyNotMine"/> for a valuable: the gear's depth for crystals, lava, biomes), not <paramref name="skip"/>ped.
+	/// Its give-ups lately (BotContext.MineFailures) count as distance, half a map lookup's reach (<see cref="MapSearchRadius"/>)
+	/// each, and at BotContext.MineFailuresToForgo it waits until they fade, as for crystals in sight. A remembered cell the map
+	/// no longer shows (mined) is forgotten. Seen in game (measured run U9): a crystal 325 rows from the respawn, beyond the
+	/// 200-tile map lookup, was found again 23 game hours later.
+	/// </summary>
+	public static TilePos? RememberedCrystal(BotContext ctx, int crystalTile, TilePos from, Func<TilePos, bool> skip = null)
+	{
+		if (ctx.KnownCrystals.Count == 0 || ctx.Moves.Blocks == null)
+			return null;
+		TilePos? best = null;
+		float bestDist = float.MaxValue;
+		List<TilePos> gone = null;
+		foreach (TilePos c in ctx.KnownCrystals.All) {
+			if (ctx.World.TileTypeAt(c.X, c.Y) != crystalTile) {
+				(gone ??= new List<TilePos>()).Add(c);
+				continue;
+			}
+			int d = c.ChebyshevTo(from);
+			if (d >= bestDist || skip != null && skip(c) || ctx.MineFailuresLately(c) >= BotContext.MineFailuresToForgo)
+				continue;
+			if (!ctx.World.CanMineTarget(c.X, c.Y) || WhyNotMine(ctx, ctx.Moves, c, valuable: true) != null)
+				continue;
+			float dist = d + ctx.MineFailureCost(c, MapSearchRadius);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = c;
+			}
+		}
+		if (gone != null)
+			foreach (TilePos c in gone)
+				ctx.KnownCrystals.Remove(c);
+		return best;
+	}
+
 	private TilePos? BestOf(BotContext ctx, int tileType)
 	{
 		TilePos node = ctx.Node;
 		MoveContext moves = ctx.Moves;
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
-		foreach (TilePos c in ctx.World.FindTiles(tileType, node, SearchRadius)) {
+		foreach (TilePos c in Find(ctx, tileType, node, SearchRadius)) {
 			if (bad.Contains(c) || !ctx.InMiningReach(c, node, SearchRadius) || !WouldMine(ctx, moves, c, Valuable(ctx)))
 				continue;
 			// Given up on lately, by this job or an earlier one: after the tiles not tried yet.

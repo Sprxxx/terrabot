@@ -233,6 +233,7 @@ public sealed class ProgressionPlanner
 		if (plan != null)
 			Plan = plan;
 		lastDeeperTick = long.MinValue / 2;
+		crystalNoTripAt = null;
 		travelDest = null;
 		failedTrips.Clear();
 		leaveTarget = null;
@@ -302,8 +303,12 @@ public sealed class ProgressionPlanner
 	/// times mining gave up on it lately counted as distance (BotContext.InMiningReach). Seen in game (audit of the 10-day
 	/// world_eye runs, 2026-10-16): a crystal mining had given up on was "seen" again at once, and the replan for it started a
 	/// fresh crystal job beside it, which went for the same crystal first.
+	/// With <paramref name="remembered"/>, else the nearest crystal remembered from before, however far (BotContext.KnownCrystals,
+	/// MineSkill.RememberedCrystal): for a job that wants a crystal anyway, not to break off other work. Seen in game (measured
+	/// run U9): killed 26 tiles from a crystal at (2013,607), the bot looked for crystals from the spawn, 325 rows up, for 23 game
+	/// hours (and 2 more deaths) before it came within the map lookup again.
 	/// </summary>
-	public static TilePos? SeenLifeCrystal(BotContext ctx)
+	public static TilePos? SeenLifeCrystal(BotContext ctx, bool remembered = false)
 	{
 		int heart = ctx.Knowledge?.SourceOf(ctx.Ids.LifeCrystal).TileType ?? -1;
 		if (heart <= 0)
@@ -311,7 +316,7 @@ public sealed class ProgressionPlanner
 		TilePos node = ctx.Node;
 		TilePos? best = null;
 		float bestDist = float.MaxValue;
-		foreach (TilePos c in ctx.World.FindTiles(heart, node, CrystalRadius)) {
+		foreach (TilePos c in ctx.SeeCrystals(heart, node, CrystalRadius)) {
 			int d = c.ChebyshevTo(node);
 			if (d >= bestDist)
 				break; // nearest first: none further on can beat it
@@ -336,7 +341,7 @@ public sealed class ProgressionPlanner
 			if (ctx.CrystalNotes.Add((c.X >> 1, c.Y >> 1, why)))
 				ctx.Log.Info($"Life crystal at {c} seen, left alone: {why}");
 		}
-		return best;
+		return best ?? (remembered ? MineSkill.RememberedCrystal(ctx, heart, node) : null);
 	}
 
 	/// <summary>Chests closer than this (tiles) that are seen and not looted yet are looted before anything else.</summary>
@@ -812,6 +817,10 @@ public sealed class ProgressionPlanner
 					target += BlockMargin;
 				if (LeaveOffLimits(ctx, name) is ISkill leave)
 					return leave;
+				// A crystal remembered from before, however far: back to it, not a trip to new ground or the spawn's (see
+				// SeenLifeCrystal).
+				if (item == ctx.Ids.LifeCrystal && SeenLifeCrystal(ctx, remembered: true) is TilePos known)
+					return Do($"mining the life crystal remembered at {known} ({known.ChebyshevTo(ctx.Node)} tiles away)", new MineSkill(item, src.TileType, target));
 				if (TravelForOre(ctx, item, name) is ISkill travel)
 					return travel;
 				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target) { Also = AltOres(item, ctx) });
@@ -1591,9 +1600,12 @@ public sealed class ProgressionPlanner
 			// no trip, and no recall potion drunk for one either (five were, in a minute, each followed by mining from the spawn).
 			// Instead: back to the spawn to look from there, and from there deeper (run 70: auto mode stopped, every job failing).
 			if (ChooseTravelDest(ctx, fails, failedTrips) is not TilePos chosen)
-				return NoTripPossible(ctx, name);
+				return NoTripPossible(ctx, item, name);
 			travelDest = chosen;
 			fresh = true;
+			// New ground for crystals: the search there starts afresh, not walked back from to where it was (MineSkill.SearchToResume).
+			if (item == ctx.Ids.LifeCrystal)
+				ctx.CrystalSearch.Clear();
 		}
 		TilePos dest = travelDest.Value;
 		// Far from the spawn, the trip starting there, with a recall potion: drink it, as a player would, rather than a long
@@ -1634,7 +1646,10 @@ public sealed class ProgressionPlanner
 	/// <summary>Farther than this (tiles) from the spawn with nowhere to travel: walk back to it first.</summary>
 	public const int NoTripBackTiles = 30;
 
-	private ISkill NoTripPossible(BotContext ctx, string name)
+	/// <summary>Where the last "nowhere to travel" for crystals looked on from the crystal band instead of the spawn.</summary>
+	private TilePos? crystalNoTripAt;
+
+	private ISkill NoTripPossible(BotContext ctx, int item, string name)
 	{
 		// Deeper each time (wherever the bot is: mining from the spawn wanders far before it fails), but a step at a time:
 		// iron and silver each ran out at once and the bonus went from 25 to 50 rows within seconds (world_eye run 72).
@@ -1643,6 +1658,18 @@ public sealed class ProgressionPlanner
 			ctx.DepthBonus += BotContext.DepthBonusStep;
 			ctx.ExploresWithoutOre.Clear();
 			ctx.Log.Info($"Auto: no more {name} within reach and nowhere to travel; going {ctx.DepthBonus} rows deeper than the gear alone allows (down to row {ctx.DeepestRow})");
+		}
+		// Crystals, in the crystal band or with a search there to go back to (MineSkill.SearchToResume): on from there, not back
+		// to the spawn and down through the rows above the band again. Unless the last time was here too (the search here got
+		// nowhere since): then the spawn, as before. Seen in game (measured run U9): "back to the spawn to look from there" 11
+		// times; 14 of 28 crystal explorations began within 5 tiles of the spawn, 25% of the 288 crystal legs above row 375.
+		if (item == ctx.Ids.LifeCrystal && (ctx.InCrystalBand(ctx.Node.Y) || MineSkill.SearchToResume(ctx) != null)) {
+			bool again = crystalNoTripAt is TilePos was && was.ChebyshevTo(ctx.Node) <= ExploreSkill.MaxLegTiles;
+			crystalNoTripAt = ctx.Node;
+			if (!again) {
+				ctx.Log.Info($"Auto: no more {name} found around here and nowhere to travel; looking on in the crystal band (from {MineSkill.SearchToResume(ctx)?.ToString() ?? $"here, row {ctx.Node.Y}"}), not from the spawn");
+				return null;
+			}
 		}
 		if (ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > NoTripBackTiles) {
 			if (ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0 && spawn.ChebyshevTo(ctx.Node) > RecallDistance)

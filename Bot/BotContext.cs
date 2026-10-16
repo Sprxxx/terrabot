@@ -173,6 +173,32 @@ public sealed class BotContext
 	public int CavernY { get; set; }
 	/// <summary>Last row of the surface layer (Main.worldSurface); 0 = unknown.</summary>
 	public int SurfaceY { get; set; }
+	/// <summary>Rows in the world (Main.maxTilesY); 0 = unknown.</summary>
+	public int WorldHeight { get; set; }
+
+	/// <summary>
+	/// The rows life crystals are put in (vanilla WorldGen "Life Crystals" pass, tML 2026.08): each starts at a random row from
+	/// (2·worldSurface + rockLayer)/3 down to maxTilesY − 300 and sits on the first solid tile there or below. Not remix worlds
+	/// (worldSurface to maxTilesY − 400). Top 0 = unknown; bottom int.MaxValue = unknown. In measured run U9's world (surface
+	/// 337, caverns 451, 1200 rows) rows 375 to 900.
+	/// </summary>
+	public int CrystalBandTop => SurfaceY > 0 && CavernY > 0 ? (2 * SurfaceY + CavernY) / 3 : 0;
+	public int CrystalBandBottom => WorldHeight > CrystalBandFloorRows ? WorldHeight - CrystalBandFloorRows : int.MaxValue;
+	/// <summary>No crystal's search row starts lower than this many rows above the world's bottom (the underworld and the rows over it).</summary>
+	public const int CrystalBandFloorRows = 300;
+	public bool InCrystalBand(int row) => CrystalBandTop > 0 && row >= CrystalBandTop && row <= CrystalBandBottom;
+
+	/// <summary>
+	/// Where the crystal explorations stood in the crystal band lately (leg by leg, oldest first, at most
+	/// <see cref="CrystalSearchKept"/>): a new crystal job walks back to the deepest of them it may go to before exploring
+	/// (MineSkill), instead of looking again from the spawn and through the rows above the band. Forgotten when a trip to new
+	/// ground starts. Seen in game (measured run U9): 14 of 28 crystal explorations began within 5 tiles of the spawn (after
+	/// deaths, recalls and 11 "back to the spawn to look from there"), and 25% of the 288 crystal legs were above row 375, the
+	/// top of the band: the shaft dug again from the spawn each time, the cell at (2090,300) a leg target 11 times.
+	/// </summary>
+	public System.Collections.Generic.List<TilePos> CrystalSearch { get; } = new();
+	/// <summary>The legs of one crystal job's explorations (<see cref="Skills.ExploreSkill.MaxLegs"/> × <see cref="Skills.MineSkill.MaxExplores"/>).</summary>
+	public const int CrystalSearchKept = Skills.ExploreSkill.MaxLegs * Skills.MineSkill.MaxExplores;
 	/// <summary>Where the player respawns (feet tile): the bed if set, else the world spawn. Null if unknown.</summary>
 	public TilePos? SpawnTile { get; set; }
 	/// <summary>Folder for debug dumps (the region of a search that found no path); null = none.</summary>
@@ -282,6 +308,32 @@ public sealed class BotContext
 
 	/// <summary>Life crystals and reasons already logged (each skip of a crystal is said once).</summary>
 	public System.Collections.Generic.HashSet<(int, int, string)> CrystalNotes { get; } = new();
+
+	/// <summary>
+	/// Life crystal cells the map has shown, kept all game wherever the bot goes, as Baritone caches the ore positions it has
+	/// seen and AltoClef's block tracker the blocks: filled by every crystal lookup (<see cref="SeeCrystals"/>), a cell dropped
+	/// when a lookup over it no longer shows it (mined). Seen in game (measured run U9): a crystal found at (2013,607) at d9
+	/// +11.0h was lost when skeletons killed the bot 26 tiles from it; from the spawn, 325 rows up, it was beyond mining's
+	/// 200-tile map lookup and the planner's 25, and only came back into range at d10 +11.5h, 23 game hours and 2 deaths later.
+	/// </summary>
+	public PlaceMemory KnownCrystals { get; } = new();
+
+	/// <summary>
+	/// The cells of <paramref name="crystalTile"/> the map shows within <paramref name="radius"/> of <paramref name="around"/>
+	/// (<see cref="IWorldInfo.FindTiles"/>: revealed cells only, nearest first), remembered in <see cref="KnownCrystals"/>.
+	/// Remembered cells in that square it does not show any more are gone (a revealed cell stays revealed) and are forgotten.
+	/// </summary>
+	public System.Collections.Generic.IReadOnlyList<TilePos> SeeCrystals(int crystalTile, TilePos around, int radius)
+	{
+		System.Collections.Generic.IReadOnlyList<TilePos> found = World.FindTiles(crystalTile, around, radius);
+		if (KnownCrystals.Count > 0)
+			foreach (TilePos c in KnownCrystals.Within(around.X, around.Y, radius, radius))
+				if (!System.Linq.Enumerable.Contains(found, c))
+					KnownCrystals.Remove(c);
+		foreach (TilePos c in found)
+			KnownCrystals.AddOnce(c);
+		return found;
+	}
 
 	public bool OffLimits(TilePos t) => InDangerZone(t) || BiomeOffLimits(t);
 
