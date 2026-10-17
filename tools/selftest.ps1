@@ -42,7 +42,10 @@ param(
 	[switch]$NoJourney,
 	# Other mods to load beside TerraBot, by internal name (e.g. UpgradedResearch): the .tmod from your Mods folder, else the
 	# newest one in the Steam workshop folder, with your saved settings for it (ModConfigs\<name>_*.json). Default: none.
-	[string[]]$Mods = @()
+	[string[]]$Mods = @(),
+	# The planner's scheduler (ProgressionPlanner.Schedulers): restart (stages from the top every pass) or operation (a continuing
+	# job owns the bot). Default: the build's own (operation).
+	[string]$Scheduler = ""
 )
 $ErrorActionPreference = "Stop"
 
@@ -124,6 +127,7 @@ if ($XRay) { $tmlArgs += @("-terrabotxray", "1") }
 if ($Checkpoints) { $tmlArgs += @("-terrabotcheckpoints", "1") }
 if ($BudgetDays -gt 0) { $tmlArgs += @("-terrabotdays", ([string]$BudgetDays).Replace(",", ".")) }
 if ($NoJourney) { $tmlArgs += @("-terrabotnojourney", "1") }
+if ($Scheduler) { $tmlArgs += @("-terrabotscheduler", $Scheduler) }
 Write-Host "Launching tModLoader:  $($tmlArgs -join ' ')"
 $started = Get-Date
 $proc = Start-Process -FilePath (Join-Path $TmlDir "dotnet\dotnet.exe") -ArgumentList $tmlArgs -WorkingDirectory $TmlDir -PassThru

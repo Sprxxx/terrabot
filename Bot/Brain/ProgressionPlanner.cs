@@ -20,12 +20,6 @@ public sealed record HaveItem(IReadOnlyList<int> Accepts, int Count, string Labe
 	/// last wood was gone and the plan sent the bot looking for trees in a world without any.
 	/// </summary>
 	public int RefillBelow { get; init; }
-	/// <summary>
-	/// On the way down to the Underworld (the Wall's hellevator begun, no death since), met at this many: the shaft is not left for
-	/// a refill the fight does not need (0: no such rule). Seen in game (world_wof M12e): at row 852 of the shaft, the arrows shot
-	/// at cave bats under the 800 refill, "need 2 more Wood (gathering to 9)", back up the 570 rows for the wood.
-	/// </summary>
-	public int OnTheWayDownAtLeast { get; init; }
 }
 
 /// <summary>A crafting station of this tile type is placed (and remembered).</summary>
@@ -136,7 +130,7 @@ public sealed record FromBag(HaveItem Inner) : Need(Inner.Label);
 public sealed record BeforeTheUnderworld(Need Inner) : Need(Inner.Label);
 
 /// <summary>
-/// <see cref="Inner"/> worked on for <see cref="MaxTicks"/> at most, then let go until the next death (logged): a comfort the plan is
+/// <see cref="Inner"/> worked on for <see cref="MaxTicks"/> at most, then let go for a game day (logged): a comfort the plan is
 /// better with but goes on without, as more max life before a boss when the world's crystals near home are gone.
 /// </summary>
 public sealed record BestEffort(Need Inner, int MaxTicks) : Need(Inner.Label);
@@ -346,6 +340,14 @@ public sealed partial class ProgressionPlanner
 	/// <summary>Stations the bot has seen (tile type -> top-left tile), kept while out of sight.</summary>
 	public Dictionary<int, TilePos> KnownStations { get; } = new();
 	public string Plan { get; private set; } = Plans.Settle;
+	/// <summary>
+	/// How long-running work is scheduled (docs DESCENT_DIAGNOSIS.md): <see cref="Schedulers.Restart"/>, every pass walks the
+	/// plan's stages from the top, whatever was being done; <see cref="Schedulers.Operation"/>, a continuing job (the Wall's
+	/// descent) owns the bot until it is done, blocked or a death, with only its remaining demand resupplied, and optional work
+	/// (chests, crystals in sight) deferred. Survival reflexes preempt either. Self-test: selftest.ps1 -Scheduler.
+	/// </summary>
+	public enum Schedulers { Restart, Operation }
+	public Schedulers Scheduler { get; set; } = Schedulers.Operation;
 	public string Status { get; private set; } = "";
 	public bool Complete { get; private set; }
 	/// <summary>Set when a stage cannot be resolved (no recipe, nothing places the station...).</summary>
@@ -522,42 +524,34 @@ public sealed partial class ProgressionPlanner
 		yield return new BossDefeated(boss, ids.BloodySpine, new[] { ids.Creeper }, "Brain of Cthulhu") { NightOnly = false, InEvilBiome = true };
 	}
 
-	/// <summary>
-	/// Per best-effort need (its label): when work on it began, and the death count it was given up at (-1: not given up). A need
-	/// let go stays let go until the bot dies again: what comes after it (the descent, the bridge, the fight) is then tried without
-	/// it, and only a death says it was wanted after all. Seen in game (world_wof M12d, Peppe): let go for a fixed game day, it
-	/// came back 13 game hours into the next stages, the hellevator just begun (day 3 +7h51), and took the plan back to a
-	/// fruitless crystal search for another day.
-	/// </summary>
-	private readonly Dictionary<string, (long Began, int GaveUpAtDeaths)> bestEffort = new();
+	/// <summary>How long a <see cref="BestEffort"/> need given up on is left alone (a game day).</summary>
+	public const int BestEffortRetryTicks = 24 * 3600;
+	/// <summary>Per best-effort need (its label): when work on it began, and when it was last given up on.</summary>
+	private readonly Dictionary<string, (long Began, long GaveUp)> bestEffort = new();
 
 	private ISkill ResolveBestEffort(BestEffort be, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
-		var (began, gaveUpAt) = bestEffort.GetValueOrDefault(be.Label, (long.MinValue, -1));
-		if (gaveUpAt >= 0) {
-			if (ctx.Deaths <= gaveUpAt)
-				return null;
-			ctx.Log.Info($"Auto: {be.Label}: a death since it was let go; worked on again");
-			(began, gaveUpAt) = (long.MinValue, -1);
-		}
+		var (began, gaveUp) = bestEffort.GetValueOrDefault(be.Label, (long.MinValue, long.MinValue / 2));
+		if (ctx.Tick - gaveUp < BestEffortRetryTicks && ctx.Tick >= gaveUp)
+			return null;
 		ISkill s = Resolve(be.Inner, claims, depth, ctx);
 		if (s == null || stuck != null) {
 			bestEffort.Remove(be.Label); // met (or stuck: the plan's own trouble, left to it)
 			if (stuck != null) {
 				ctx.Log.Info($"Auto: {be.Label} is not to be had now ({stuck}); the plan goes on without it");
 				stuck = null;
-				bestEffort[be.Label] = (long.MinValue, ctx.Deaths);
+				bestEffort[be.Label] = (long.MinValue, ctx.Tick);
 			}
 			return null;
 		}
 		if (began == long.MinValue)
 			began = ctx.Tick;
 		if (ctx.Tick - began > be.MaxTicks) {
-			ctx.Log.Info($"Auto: {be.Label}: {be.MaxTicks / 3600} game hours on it, not met; the plan goes on without it until a death");
-			bestEffort[be.Label] = (long.MinValue, ctx.Deaths);
+			ctx.Log.Info($"Auto: {be.Label}: {be.MaxTicks / 3600} game hours on it, not met; the plan goes on without it for a day");
+			bestEffort[be.Label] = (long.MinValue, ctx.Tick);
 			return null;
 		}
-		bestEffort[be.Label] = (began, -1);
+		bestEffort[be.Label] = (began, gaveUp);
 		return s;
 	}
 
@@ -1089,6 +1083,20 @@ public sealed partial class ProgressionPlanner
 			if (Resolve(up, new Dictionary<int, int>(), 0, ctx) is ISkill fight)
 				return fight;
 		}
+		// The descent owns the bot (Schedulers.Operation): its own demand and stages, no optional loot, no stages from the top.
+		if (WallOfFleshPlan(ctx.Ids) && DescentOwns(ctx)) {
+			costs.Clear();
+			costEvaluations = 0;
+			stuck = null;
+			ISkill owned = NextInDescent(StagesFor(Plan, ctx.Ids), ctx);
+			if (owned != null || stuck != null) {
+				if (stuck != null) {
+					Status = $"stuck in the descent: {stuck}";
+					Complete = false;
+				}
+				return owned;
+			}
+		}
 		if (recallNext) {
 			recallNext = false;
 			if (ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
@@ -1123,15 +1131,12 @@ public sealed partial class ProgressionPlanner
 		stuck = null;
 		var claims = new Dictionary<int, int>();
 		IReadOnlyList<Need> stages = StagesFor(Plan, ctx.Ids);
-		int errandFrom = WayDownErrandFrom(stages, ctx);
 		for (int i = 0; i < stages.Count; i++) {
 			Need stage = stages[i];
 			if (SkeletronStage(stage))
 				SkeletronPrepMet = true; // every stage before met
 			if (stage is PrepFor { Inner: TownNpcAlive })
 				WofPrepMet = true; // S1 met: on to the Guide, the shaft and the bridge
-			if (i < errandFrom && !ForTheWayDown(stage))
-				continue;
 			nightOnlyByDay = false;
 			ISkill skill = Resolve(stage, claims, 0, ctx);
 			if (stuck != null) {
@@ -1456,8 +1461,7 @@ public sealed partial class ProgressionPlanner
 		int available = ctx.Inventory.CountAny(h.Accepts) - claimed;
 		if (h.RefillBelow > 0 && available >= h.Count)
 			stocked.Add(StockKey(h));
-		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(StockKey(h))
-			|| h.OnTheWayDownAtLeast > 0 && available >= h.OnTheWayDownAtLeast && OnTheWayDown(ctx)) {
+		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(StockKey(h))) {
 			claims[h.Accepts[0]] = claimed + Math.Min(h.Count, available);
 			return null;
 		}

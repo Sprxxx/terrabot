@@ -33,6 +33,8 @@ public sealed class SelfTestSystem : ModSystem
 	public const string DaysFlag = "-terrabotdays";
 	/// <summary>Real-world runs on a Journey character: research and duplication off (the Classic behaviour), selftest.ps1 -NoJourney.</summary>
 	public const string NoJourneyFlag = "-terrabotnojourney";
+	/// <summary>The planner's scheduler for the run (restart or operation; ProgressionPlanner.Schedulers), selftest.ps1 -Scheduler.</summary>
+	public const string SchedulerFlag = "-terrabotscheduler";
 	/// <summary>
 	/// Milestones a checkpoint is saved at: the late stages can then be measured from there in a few minutes instead of a
 	/// whole 10-day run from day 1 (user, 2026-10-16: "do we REALLY have to start from the beginning every time?").
@@ -429,6 +431,10 @@ public sealed class SelfTestSystem : ModSystem
 				else if (s.Mode == "auto") {
 					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
 					bot.Brain.Planner.BridgeLength = s.BridgeLength > 0 ? s.BridgeLength : Bot.Brain.ProgressionPlanner.DefaultBridgeLength;
+					if (Program.LaunchParameters.TryGetValue(SchedulerFlag, out string sched)
+						&& System.Enum.TryParse(sched, true, out Bot.Brain.ProgressionPlanner.Schedulers chosen))
+						bot.Brain.Planner.Scheduler = chosen;
+					Mod.Logger.Info($"SELFTEST {s.Name}: scheduler {bot.Brain.Planner.Scheduler}");
 					// Resumed away from the spawn: the stations in the house there, as the run that saved the checkpoint knew them
 					// (the planner's memory is not saved with the world). Else the plan's first stages made a work bench, a furnace
 					// and an anvil anew where the checkpoint was saved, 1,225 tiles from the house for the Skeletron runs.

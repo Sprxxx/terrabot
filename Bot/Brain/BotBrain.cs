@@ -796,7 +796,9 @@ public sealed class BotBrain
 			// On a walk too (a trip, to a station): seen in game, the bot ran past a life crystal on its way (user report,
 			// 2026-10-14). Not during a reflex (a flight, a fight).
 			bool onAWalk = Override == null && Work is WalkToSkill;
-			if ((Current is MineSkill or ExploreSkill or HuntSkill || onAWalk) && ProgressionPlanner.NextChest(ctx) is ChestInfo seen)
+			// Optional loot waits while an operation owns the bot (the Wall's descent, ProgressionPlanner.Schedulers.Operation).
+			if (Planner.DescentOwns(ctx)) { }
+			else if ((Current is MineSkill or ExploreSkill or HuntSkill || onAWalk) && ProgressionPlanner.NextChest(ctx) is ChestInfo seen)
 				RequestReplan($"a chest at {seen.TopLeft} came into sight");
 			// A life crystal: whatever the work (building, gathering, crafting, going home...), only not during a reflex.
 			else if (Override == null && Work != null && !(Work is MineSkill m && m.ItemType == ctx.Ids.LifeCrystal)) {

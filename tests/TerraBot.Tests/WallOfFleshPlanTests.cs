@@ -457,15 +457,9 @@ public class WallOfFleshPlanTests
 		Assert.Null(p.ResolveForTest(need, ctx));
 		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("max life for the wall") && l.Contains("not met; the plan goes on without it"));
 		ctx.Tick += 100;
-		Assert.Null(p.ResolveForTest(need, ctx)); // let go
-		// world_wof M12d: let go for a fixed day, it came back 13 game hours into the descent's stages (the hellevator begun)
-		// and sent the bot crystal hunting again. It stays let go however long the stages after it take...
-		ctx.Tick += 3 * 24 * 3600;
-		Assert.Null(p.ResolveForTest(need, ctx));
-		// ...until a death says it was wanted after all.
-		ctx.Deaths++;
-		Assert.NotNull(p.ResolveForTest(need, ctx));
-		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("a death since it was let go"));
+		Assert.Null(p.ResolveForTest(need, ctx)); // let go for a day
+		ctx.Tick += ProgressionPlanner.BestEffortRetryTicks;
+		Assert.NotNull(p.ResolveForTest(need, ctx)); // and taken up again
 	}
 
 	/// <summary>
@@ -509,9 +503,45 @@ public class WallOfFleshPlanTests
 		g.LifeMax = 100;
 		g.Refresh(ctx);
 		Assert.IsType<HellevatorSkill>(Next(p, ctx));
-		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("on the way down to the Underworld"));
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("Operation descent start"));
 		ctx.Deaths++;
 		g.Refresh(ctx);
 		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
+	}
+
+	/// <summary>
+	/// The baseline (Schedulers.Restart, the experiment's A): every pass walks the stages from the top, so a surface stage unmet
+	/// during the descent takes the bot off the shaft, as in world_wof M12d-M12f.
+	/// </summary>
+	[Fact]
+	public void TheRestartScheduler_LeavesTheDescent_ForASurfaceStage()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		p.Scheduler = ProgressionPlanner.Schedulers.Restart;
+		Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		g.LifeMax = 100;
+		g.Refresh(ctx);
+		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
+	}
+
+	/// <summary>
+	/// The operation's escape: a route genuinely blocked (no ground on the bridge's row under any shaft), the descent fails
+	/// DescentMaxFailures times in a row and hands the bot back to the plan, saying why, instead of retrying forever.
+	/// </summary>
+	[Fact]
+	public void TheDescent_BlockedThreeTimes_EndsSayingWhy()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		for (int x = TowerFrom; x <= TowerTo; x++)
+			g.Grid.Set(x, Row, CellKind.Empty);
+		for (int i = 0; i < ProgressionPlanner.DescentMaxFailures; i++) {
+			g.Refresh(ctx);
+			var shaft = Assert.IsType<HellevatorSkill>(Next(p, ctx));
+			Assert.True(p.DescentOwns(ctx));
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, shaft, 40000));
+			p.OnSkillFinished(shaft, SkillStatus.Failed, ctx);
+		}
+		Assert.False(p.DescentOwns(ctx));
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("Operation descent") && l.Contains("blocked: 3 hellevator failures"));
 	}
 }

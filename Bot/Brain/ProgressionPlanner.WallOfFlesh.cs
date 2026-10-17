@@ -15,8 +15,8 @@ public sealed partial class ProgressionPlanner
 	/// <summary>Healing potions into the fight (spec S1: 10, from the bag).</summary>
 	public const int WofPotions = 10;
 	/// <summary>
-	/// Arrows enough for the fight, the floor on the way down (<see cref="HaveItem.OnTheWayDownAtLeast"/>): the two Classic wins of
-	/// fight_wof_150 shot 496 and 512 (2148 carried, 1652 and 1636 left), the Unholy arrows among them.
+	/// Arrows enough for the fight, the descent's remaining demand (<see cref="DescentDemand"/>): the two Classic wins of fight_wof_150
+	/// shot 496 and 512 (2148 carried, 1652 and 1636 left), the Unholy arrows among them.
 	/// </summary>
 	public const int WofFightArrows = 600;
 	/// <summary>Longest the Wall's plan works on max life past 200 (BestEffort): a game day.</summary>
@@ -95,37 +95,74 @@ public sealed partial class ProgressionPlanner
 
 	private int? shaftX;
 	private int bridgeDir;
-	/// <summary>The death count the way down began at (the hellevator given), -1 before: on the way down until the next death.</summary>
-	private int wayDownDeaths = -1;
-	/// <summary>The hellevator was begun since the last death (down the shaft, or the bridge's work, until a death sends the bot home).</summary>
-	private bool OnTheWayDown(BotContext ctx) => wayDownDeaths >= 0 && wayDownDeaths == ctx.Deaths;
-	private int wayDownNoted = -1;
+	/// <summary>The descent to the Underworld as an operation (<see cref="Schedulers.Operation"/>), null when none is under way.</summary>
+	private Operation descent;
+	/// <summary>Hellevator failures in a row (not deaths) after which the descent is blocked and handed back to the plan.</summary>
+	public const int DescentMaxFailures = 3;
 
 	/// <summary>
-	/// On the way down (<see cref="OnTheWayDown"/>), the errand owns the bot: the stages before the Underworld's are skipped but for
-	/// what the errand itself takes (<see cref="ForTheWayDown"/>); the index of the Underworld's stage then, else -1. The surface's
-	/// work (a stock topped up, an NPC room, max life) waits for the next time the bot is home, after a death. Seen in game
-	/// (world_wof M12d-M12f, Peppe): the hellevator, once begun, left for "need 3 more Wood (gathering to 8)", "need 4 more Wood
-	/// (gathering to 27)", "building NPC room 1", the crystal search: each time back up hundreds of rows, and down again.
+	/// The descent's remaining demand: what the unfinished work and the fight after it take, resupplied only below it (the
+	/// departure supplies are the stages' full counts, met before the shaft was begun). The fight's arrows
+	/// (<see cref="WofFightArrows"/>) and the bridge's blocks (<see cref="BridgeBlocks"/>, its own count of what is left).
 	/// </summary>
-	private int WayDownErrandFrom(IReadOnlyList<Need> stages, BotContext ctx)
+	private IEnumerable<Need> DescentDemand(GameIds ids)
 	{
-		if (!OnTheWayDown(ctx))
-			return -1;
-		for (int i = 0; i < stages.Count; i++)
-			if (stages[i] is PrepFor { Inner: UnderworldReached }) {
-				if (wayDownNoted != ctx.Deaths) {
-					wayDownNoted = ctx.Deaths;
-					ctx.Log.Info("Auto: on the way down to the Underworld: the surface's work waits until a death sends the bot home");
-				}
-				return i;
-			}
-		return -1;
+		yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofFightArrows, "arrows for the fight");
+		yield return new BridgeBlocks("bridge blocks");
 	}
 
-	/// <summary>What the way down takes, and so is still worked on during it: the bridge's blocks, the fight's arrows (their own floor).</summary>
-	private static bool ForTheWayDown(Need stage) =>
-		stage is PrepFor { Inner: BridgeBlocks } or PrepFor { Inner: HaveItem { OnTheWayDownAtLeast: > 0 } };
+	/// <summary>The descent owns the bot now: begun (the hellevator given) under the operation scheduler, no death since, not over.</summary>
+	public bool DescentOwns(BotContext ctx)
+	{
+		if (descent == null)
+			return false;
+		if (ctx.Deaths != descent.StartedDeaths) {
+			EndDescent(ctx, "interrupted by a death; the plan's stages from the top again (the surface's work comes first at home)");
+			return false;
+		}
+		if (bridgeKnown) {
+			EndDescent(ctx, "done: on the hellbridge's row in the Underworld");
+			return false;
+		}
+		return true;
+	}
+
+	private void EndDescent(BotContext ctx, string why)
+	{
+		ctx.Log.Info($"Operation {descent.Name} ({descent.Identity}) ended after {(ctx.Tick - descent.StartedTick) / 3600.0:0.0} game hours: {why}");
+		descent = null;
+	}
+
+	/// <summary>
+	/// The plan's pass while the descent owns the bot: its remaining demand first (a resupply only when the rest of the work is
+	/// not feasible with what is carried), then the stages from the Underworld's on; the stages before it (the departure
+	/// supplies, the surface's work: max life, stocks, NPC rooms) are not looked at again until the operation ends.
+	/// </summary>
+	private ISkill NextInDescent(IReadOnlyList<Need> stages, BotContext ctx)
+	{
+		var claims = new Dictionary<int, int>();
+		foreach (Need demand in DescentDemand(ctx.Ids)) {
+			ISkill s = Resolve(demand, claims, 0, ctx);
+			if (stuck != null)
+				return null;
+			if (s != null) {
+				ctx.Log.Info($"Operation {descent.Name}: resupply, {demand.Label} short of the remaining demand ({Status})");
+				return s;
+			}
+		}
+		int from = -1;
+		for (int i = 0; i < stages.Count && from < 0; i++)
+			if (stages[i] is PrepFor { Inner: UnderworldReached })
+				from = i;
+		for (int i = Math.Max(0, from); i < stages.Count; i++) {
+			ISkill s = Resolve(stages[i], claims, 0, ctx);
+			if (stuck != null)
+				return null;
+			if (s != null)
+				return s;
+		}
+		return null;
+	}
 	/// <summary>
 	/// The hellbridge: its row, the column it is begun from (where the bot came down), its summon end (<see cref="bridgeTo"/>, the
 	/// far end the doll is thrown off, the Wall's side) and its flight end (<see cref="bridgeBack"/>, the far side of the shaft).
@@ -170,7 +207,7 @@ public sealed partial class ProgressionPlanner
 	{
 		WofPrepMet = false;
 		shaftX = null;
-		wayDownDeaths = -1;
+		descent = null;
 		bridgeDir = 0;
 		bridgeKnown = hellbridgeDone = thrownByPlan = unplannedLogged = lootDone = huntOn = false;
 		bridgeFailEnd = int.MinValue;
@@ -214,12 +251,12 @@ public sealed partial class ProgressionPlanner
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new FromBag(new HaveItem(ids.EvilPickaxe, 1, "evil pickaxe"))));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, WofArrows, "unholy arrows")));
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new HaveItem(ids.UnholyArrow, WofUnholyArrows, "unholy arrows for the wall")));
-		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofArrows, "arrows") { RefillBelow = WofArrows * 4 / 5, OnTheWayDownAtLeast = WofFightArrows });
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofArrows, "arrows") { RefillBelow = WofArrows * 4 / 5 });
 		// The most life crystals give (400), not the earlier bosses' 200: self-test fight_wof_150 on Classic (Peppe, the Wall at 8000),
 		// at 200 life the bot died to an eye laser with the Wall at 1961, its damage 40.1 a second (enough), 19 hits for 336.
 		// Surface prep (BeforeTheUnderworld): a run resumed down there, or a bridge built, is not sent back up for crystals; a death
 		// there respawns it at the spawn, and the crystals come then. The earlier bosses' 200 is a must; the rest up to 400 for a
-		// game day at most, then not again until a death (BestEffort): fight_wof_150 on Classic won 2 of 3 at 400, 0 of 1 at 200 and at 300 (the Wall at 331 and
+		// game day at most (BestEffort): fight_wof_150 on Classic won 2 of 3 at 400, 0 of 1 at 200 and at 300 (the Wall at 331 and
 		// 332 when the bot died), but world_wof M12c found no crystal near home in three game days and the Wall was never reached.
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new LifeAtLeast(BossLife, "max life")));
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new BestEffort(new LifeAtLeast(MaxCrystalLife, "max life for the wall"), WofLifeTicks)));
@@ -364,7 +401,10 @@ public sealed partial class ProgressionPlanner
 			shaftX = from + BridgeDirection(ctx, from) * ShaftOffsetTiles;
 			ctx.Log.Info($"Auto: the hellevator goes down at x {shaftX} ({ShaftOffsetTiles} tiles {(bridgeDir > 0 ? "east" : "west")} of the spawn), to row {stand}");
 		}
-		wayDownDeaths = ctx.Deaths;
+		if (Scheduler == Schedulers.Operation && descent == null && !bridgeKnown) {
+			descent = new Operation("descent", $"the hellevator at x {shaftX}", ctx.Deaths, ctx.Tick);
+			ctx.Log.Info($"Operation {descent.Name} start: {descent.Identity} to row {stand}; owns the bot until on the row, blocked, or a death");
+		}
 		return Do(bridgeKnown ? $"back down the hellevator at x {shaftX} to the hellbridge on row {row}" : $"down a hellevator at x {shaftX} to row {stand} in the Underworld",
 			new HellevatorSkill(shaftX.Value, stand));
 	}
@@ -581,6 +621,14 @@ public sealed partial class ProgressionPlanner
 			else if (status == SkillStatus.Failed && shaft.FailureReason.StartsWith("no way down") && shaftX is int x) {
 				shaftX = x + (bridgeDir != 0 ? bridgeDir : 1) * ShaftShiftTiles;
 				ctx.Log.Info($"Auto: no ground on row {shaft.StandRow + 1} under the shaft at x {x}; the hellevator moves to x {shaftX}");
+				if (descent != null)
+					ctx.Log.Info($"Operation {descent.Name}: target moved from x {x} to x {shaftX} ({shaft.FailureReason})");
+			}
+			if (descent != null && status == SkillStatus.Succeeded)
+				descent.Failures = 0;
+			else if (descent != null && status == SkillStatus.Failed && shaft.FailureReason != "died" && ++descent.Failures >= DescentMaxFailures) {
+				descent.Blocker = shaft.FailureReason;
+				EndDescent(ctx, $"blocked: {descent.Failures} hellevator failures in a row, the last '{shaft.FailureReason}'; the plan's stages from the top again");
 			}
 		}
 		if (skill is HellbridgeSkill hb) {
