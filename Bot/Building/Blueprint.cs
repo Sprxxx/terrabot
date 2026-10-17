@@ -51,6 +51,13 @@ public sealed class Blueprint
 	public bool IsBridge { get; init; }
 	/// <summary>Reserve only the block and item cells while building, so walking may dig through open cells that are mined anyway.</summary>
 	public bool ReserveBlocksOnly { get; init; }
+	/// <summary>
+	/// The plan's blocks are not reserved but rebuilt (<see cref="BotContext.Rebuilt"/>): a walk may mine one at the cost of
+	/// placing it again, and place one where the plan has one. An arena's floor bridged over a dip is a roof over the dip:
+	/// seen in game (measured run U23), the walk from the house came up the dip under it, and with the floor off limits found
+	/// "no path ... (start h 3, rows 251..374)" to the cells above it, and the site was given up. A house's frame stays reserved.
+	/// </summary>
+	public bool RebuildBlocks { get; init; }
 	/// <summary>Sites needing more edits than this are not considered (<see cref="SiteFinder"/>).</summary>
 	public int MaxEdits { get; init; } = SiteFinder.MaxEdits;
 	/// <summary>How far (columns) <see cref="SiteFinder"/> looks for a site.</summary>
@@ -163,7 +170,7 @@ public sealed class Blueprint
 			if (x < mid - 2 || x > mid + 2)
 				items.Add(new PlanItem(ids.Torch, x, top, 1, 1));
 		return new Blueprint("boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
-			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, MaxEdits = 600, SearchRadius = searchRadius,
+			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, RebuildBlocks = true, MaxEdits = 600, SearchRadius = searchRadius,
 		};
 	}
 

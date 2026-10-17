@@ -239,6 +239,134 @@ public class ArenaTests
 		Assert.False(p.ArenaOnOpenGround);
 	}
 
+	/// <summary>
+	/// A house on a hilltop, as in measured runs U14 and U23: its roof at row 30 and floor at 35, the hill x 175-225, the
+	/// ground round it at row 52, 17 rows lower (U23: roof 263, floor 268, the ground round it at 283-285).
+	/// </summary>
+	private static FakeGame HouseOnAHill(out TilePos house, out (TilePos, TilePos) keepOut)
+	{
+		const int width = 420, plain = 52, hillTop = 35;
+		var rows = new string[plain + 8];
+		for (int y = 0; y < rows.Length; y++) {
+			char[] r = new string(y >= plain ? '#' : '.', width).ToCharArray();
+			if (y >= hillTop)
+				for (int x = 175; x <= 225; x++)
+					r[x] = '#';
+			rows[y] = new string(r);
+		}
+		char[] feet = rows[hillTop - 1].ToCharArray();
+		feet[195] = 'S';
+		rows[hillTop - 1] = new string(feet);
+		house = new TilePos(190, hillTop - 5);
+		int gap = ProgressionPlanner.ArenaHouseGap;
+		keepOut = (new TilePos(house.X - gap, house.Y - gap), new TilePos(house.X + 11 + gap, house.Y + 5 + gap));
+		return new FakeGame(rows);
+	}
+
+	[Fact]
+	public void SiteFinder_Arena_HouseOnAHill_FindsTheGroundRoundTheHill()
+	{
+		// Measured runs U14 and U23: the house on a hilltop (roof 263), the ground looked for in rows 248..278 round the roof
+		// only: "no ground under the middle 128, over the house 33" within 80, 215 and 105 within 160, and the one site left
+		// was on the corruption's edge. A player builds the arena on the ground below the hill.
+		FakeGame g = HouseOnAHill(out TilePos house, out var keepOut);
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		TilePos? site = SiteFinder.Find(ctx, bp, house, keepOut: new[] { keepOut });
+		string why = SiteFinder.Explain(ctx, bp, house, new[] { keepOut });
+		output.WriteLine($"site {site}; {why}");
+		Assert.NotNull(site);
+		Assert.Equal(52, site.Value.Y + bp.Height - 1); // the floor on the ground round the hill
+		Assert.DoesNotContain("no ground under the middle", why);
+	}
+
+	/// <summary>The arena's middle, where the fight stands, on the evil biome's ground or in the Corruption zone (SiteFinder.InEvilBiome).</summary>
+	private static bool Evil(BotContext ctx, TilePos site)
+	{
+		var mid = new TilePos(site.X + Blueprint.ArenaWidth / 2, site.Y + Blueprint.ArenaClearance - 1);
+		return ctx.InEvilBiome(mid) || ctx.CorruptionAround(mid) >= BotContext.CorruptionZoneTiles;
+	}
+
+	[Fact]
+	public void SiteFinder_Arena_OnTheEvilBiome_CostsMoreThanAFartherSiteOffIt()
+	{
+		// Measured runs U14 and U23: the site (1896,241) on the corruption's edge, 186 and 196 edits, was still not built after
+		// 91,800 ticks each (at least 468 ticks an edit; 47 off the evil biome, runs U2, U10, U20), fights pausing the build;
+		// and the Eye fought there comes with the zone's eaters of souls.
+		FakeGame g = EarlyGameTests.FieldFrom(520, 210);
+		for (int x = 0; x <= 200; x++)
+			for (int y = 25; y < 30; y++)
+				g.TileTypes[new TilePos(x, y)] = y == 25 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		for (int x = 230; x <= 300; x++)
+			g.Grid.Set(x, 24, CellKind.Water); // a pond east of the house: the nearest sites off the corruption are past it
+		BotContext ctx = g.CreateContext(output);
+		Blueprint far = Blueprint.Arena(FakeGame.Ids, searchRadius: Blueprint.ArenaFarSearchRadius);
+		var anchor = new TilePos(210, 24);
+		TilePos? site = SiteFinder.Find(ctx, far, anchor);
+		output.WriteLine($"site {site}; {SiteFinder.Explain(ctx, far, anchor)}");
+		Assert.NotNull(site);
+		Assert.False(Evil(ctx, site.Value), $"the site {site} is in the evil biome");
+		Assert.True(site.Value.X > 300, "past the pond");
+		// Built there anyway where nothing else will do: a cost, not a ban.
+		var west = new TilePos(40, 25 - far.Height + 1);
+		Assert.True(Evil(ctx, west));
+		Assert.Equal(west, SiteFinder.Find(ctx, Blueprint.Arena(FakeGame.Ids, searchRadius: 10), new TilePos(88, 24)));
+	}
+
+	[Fact]
+	public void BuildSkill_Arena_UnderItsOwnFloor_TakesABlockOutToGetOnTop_AndPutsItBack()
+	{
+		// Measured run U23: the arena floor bridged over a dip at (1953..1991, 248); the walk from the house came up the dip
+		// under it to (1950,251), and with the floor off limits found "no path ... no node closer than the start in 6000 (start
+		// h 3, rows 251..374)" to a cell above it three times over, and the site was given up. Here the dip's walls cannot be
+		// dug, so the only way up is through the floor; a player takes a block of it out and puts it back.
+		const int floor = 40;
+		var rows = new string[60];
+		for (int y = 0; y < rows.Length; y++) {
+			char[] r = new string(y < floor ? '.' : y == floor ? '#' : '@', 160).ToCharArray();
+			if (y > floor && y <= floor + 5)
+				for (int x = 60; x <= 100; x++)
+					r[x] = '.'; // the dip under the floor
+			if (y == floor - 2)
+				r[90] = '#'; // a bump to mine in the open air
+			if (y == floor + 5)
+				r[80] = 'S';
+			rows[y] = new string(r);
+		}
+		var g = new FakeGame(rows);
+		GiveArenaKit(g);
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		var site = new TilePos(20, floor - bp.Height + 1);
+		var build = new BuildSkill(bp, site);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, build, 60 * 60 * 3);
+		output.WriteLine($"{s} after {g.Sim.Ticks} ticks at {ctx.Node}; placed {g.Sim.Placed}, broken {g.Sim.Broken}; {build.FailureReason}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(ProgressionPlanner.ArenaReady(ctx, bp, site)); // the block taken out is back
+		Assert.Null(ctx.Reserved);
+	}
+
+	[Fact]
+	public void ArenaPlan_TheFloorIsProtected_OnlyOnceTheArenaIsReady()
+	{
+		// Measured run U23: the floor was off limits to path moves from the moment the site was picked, and shut the walk in
+		// under the part of it bridged over a dip. Once the arena is ready it is kept, as the house is.
+		FakeGame g = RoughField();
+		GiveArenaKit(g);
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Arena);
+		var build = Assert.IsType<BuildSkill>(p.ResolveForTest(new ArenaBuilt("arena"), ctx));
+		TilePos site = p.ArenaSite.Value;
+		var floorCell = new TilePos(site.X + 10, site.Y + Blueprint.ArenaClearance);
+		p.Next(ctx);
+		Assert.DoesNotContain(floorCell, ctx.Protected);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, build, 60 * 60 * 6));
+		p.OnSkillFinished(build, SkillStatus.Succeeded, ctx);
+		p.Next(ctx);
+		Assert.Contains(floorCell, ctx.Protected);
+	}
+
 	[Fact]
 	public void ArenaPlan_NoSiteAnywhere_TheBossIsFoughtOnOpenGround()
 	{

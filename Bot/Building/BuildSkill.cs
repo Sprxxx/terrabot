@@ -10,9 +10,9 @@ namespace TerraBot.Bot.Building;
 
 /// <summary>
 /// Picks where a blueprint goes: the spot within <see cref="SearchRadius"/> columns whose floor row is the ground
-/// under the plan's middle and that needs the fewest edits (blocks to place, tiles to mine). Sites with
-/// unbreakable or liquid cells, trees, furniture or platforms in the room, or more than <see cref="MaxEdits"/>
-/// edits are skipped.
+/// under the plan's middle and that costs least (<see cref="Score"/>: the edits, blocks to place and tiles to mine, dearer
+/// in the evil biome, and the walk). Sites with unbreakable or liquid cells, trees, furniture or platforms in the room, or
+/// more than <see cref="MaxEdits"/> edits are skipped.
 /// </summary>
 public static class SiteFinder
 {
@@ -28,12 +28,13 @@ public static class SiteFinder
 		IReadOnlyList<(TilePos Min, TilePos Max)> keepOut = null)
 	{
 		TilePos? best = null;
-		int bestScore = int.MaxValue;
+		long bestScore = long.MaxValue;
+		Func<int, int?> groundAt = Ground(ctx.Grid, bp, around);
 		// An arena's middle within the radius, either side alike: by its left edge, a 96-wide arena could never go left of the
 		// house within 80 tiles (seen in game, measured run S12: "over the house" for 92 of 161 sites, none on the left tried).
 		for (int x0 = around.X - bp.SearchRadius - Shift(bp); x0 <= around.X + bp.SearchRadius - Shift(bp); x0++) {
 			int mid = x0 + bp.Width / 2;
-			int? ground = GroundAt(ctx.Grid, mid, around.Y);
+			int? ground = groundAt(mid);
 			if (ground == null)
 				continue;
 			var origin = new TilePos(x0, ground.Value - (bp.Height - 1));
@@ -45,13 +46,49 @@ public static class SiteFinder
 			int edits = Edits(ctx, bp, origin);
 			if (edits < 0 || edits > bp.MaxEdits)
 				continue;
-			int score = edits * 10 + Math.Abs(x0 + Shift(bp) - around.X);
+			long score = Score(ctx, bp, origin, edits, around);
 			if (score < bestScore) {
 				bestScore = score;
 				best = origin;
 			}
 		}
 		return best;
+	}
+
+	/// <summary>
+	/// A site's cost: its build steps (edits and items to place) at <see cref="StepScore"/> each, times
+	/// <see cref="EvilStepFactor"/> in the evil biome, plus the columns from <paramref name="around"/> to its middle.
+	/// </summary>
+	public static long Score(BotContext ctx, Blueprint bp, TilePos origin, int edits, TilePos around)
+	{
+		long steps = edits + bp.Items.Count;
+		if (!bp.IsHouse && InEvilBiome(ctx, bp, origin))
+			steps *= EvilStepFactor;
+		return steps * StepScore + Math.Abs(origin.X + Shift(bp) - around.X);
+	}
+
+	/// <summary>
+	/// A build step's cost in columns walked: an edit took about 47 ticks in the arena builds off the evil biome (measured runs
+	/// U2, U10 and U20: 949 edits in 45,000 ticks) and a column walked is a 5-tick Walk step, so a step is worth about 10.
+	/// </summary>
+	public const int StepScore = 10;
+
+	/// <summary>
+	/// How much more a build step costs in the evil biome. Seen in game (measured runs U14 and U23, the same site (1896,241) on
+	/// the corruption's edge): 186 and 196 edits, 91,800 ticks each and not done ("pausing Build to fight", corrupt thorns,
+	/// the walk under the floor), at least 468 ticks an edit against 47 off it. The Eye fight there has the zone's spawns too
+	/// (vanilla NPC.SpawnNPC in ZoneCorrupt/ZoneCrimson: spawnRate x0.65, maxSpawns x1.3): eaters of souls with the boss.
+	/// </summary>
+	public const int EvilStepFactor = 10;
+
+	/// <summary>
+	/// Is the arena's middle, where the bot stands to fight, on the evil biome's ground (<see cref="BotContext.InEvilBiome"/>)
+	/// or in the game's Corruption zone (<see cref="BotContext.CorruptionAround"/>, its spawns)?
+	/// </summary>
+	public static bool InEvilBiome(BotContext ctx, Blueprint bp, TilePos origin)
+	{
+		var mid = new TilePos(origin.X + bp.Width / 2, origin.Y + bp.StandRow);
+		return ctx.InEvilBiome(mid) || ctx.CorruptionAround(mid) >= BotContext.CorruptionZoneTiles;
 	}
 
 	/// <summary>Arenas are searched by their middle (see <see cref="Find"/>); houses, small, by their left edge as before.</summary>
@@ -64,6 +101,56 @@ public static class SiteFinder
 			if (g.Get(x, gy).IsBlock() && !g.Get(x, gy - 1).IsBlock())
 				return gy;
 		return null;
+	}
+
+	/// <summary>
+	/// The ground row under each column a site's middle may be over. A house, small and by the spawn: within
+	/// <see cref="GroundScan"/> rows of <paramref name="around"/>. An arena: the ground's surface followed out from
+	/// <paramref name="around"/> column by column, as a player walks it, up a hill to its top and down a slope or a cliff to its
+	/// foot, at most as far up or down as the search goes sideways (<see cref="Blueprint.SearchRadius"/>). Seen in game
+	/// (measured runs U14 and U23): with the house on a hilltop (roof row 263, floor 268) and the ground round it at rows
+	/// 283-285, the rows 248..278 round the roof had "no ground under the middle" for 128 of 161 sites within 80 and 215 of
+	/// 321 within 160; the only site left was on the corruption's edge, and the arena was never built.
+	/// </summary>
+	private static Func<int, int?> Ground(ITileGrid g, Blueprint bp, TilePos around)
+	{
+		if (bp.IsHouse)
+			return x => GroundAt(g, x, around.Y);
+		int reach = bp.SearchRadius;
+		var rows = new Dictionary<int, int?>();
+		int? here = Follow(g, around.X, around.Y, around.Y, reach);
+		rows[around.X] = here;
+		foreach (int dir in new[] { -1, 1 }) {
+			int from = here ?? around.Y;
+			for (int x = around.X + dir; Math.Abs(x - around.X) <= reach; x += dir) {
+				int? gy = Follow(g, x, from, around.Y, reach);
+				rows[x] = gy;
+				if (gy is int r)
+					from = r;
+			}
+		}
+		return x => rows.TryGetValue(x, out int? r) ? r : null;
+	}
+
+	/// <summary>
+	/// The ground's surface in column <paramref name="x"/> next to a column whose ground is at row <paramref name="from"/>: up
+	/// through the solid to its top, or down through the open to the first block; null past <paramref name="reach"/> rows from
+	/// <paramref name="anchorY"/>.
+	/// </summary>
+	private static int? Follow(ITileGrid g, int x, int from, int anchorY, int reach)
+	{
+		int gy = from;
+		if (g.Get(x, gy).IsBlock()) {
+			while (g.Get(x, gy - 1).IsBlock())
+				if (anchorY - --gy > reach)
+					return null;
+		}
+		else {
+			while (!g.Get(x, gy).IsBlock())
+				if (++gy - anchorY > reach)
+					return null;
+		}
+		return gy;
 	}
 
 	/// <summary>
@@ -88,8 +175,9 @@ public static class SiteFinder
 		}
 		int fewest = int.MaxValue;
 		TilePos fewestAt = default;
+		Func<int, int?> groundAt = Ground(ctx.Grid, bp, around);
 		for (int x0 = around.X - bp.SearchRadius - Shift(bp); x0 <= around.X + bp.SearchRadius - Shift(bp); x0++) {
-			int? ground = GroundAt(ctx.Grid, x0 + bp.Width / 2, around.Y);
+			int? ground = groundAt(x0 + bp.Width / 2);
 			if (ground == null) {
 				Count("no ground under the middle");
 				continue;
@@ -109,7 +197,7 @@ public static class SiteFinder
 				Count(reason, cell);
 				continue;
 			}
-			Count(edits > bp.MaxEdits ? "too many edits" : "fine");
+			Count(edits > bp.MaxEdits ? "too many edits" : !bp.IsHouse && InEvilBiome(ctx, bp, origin) ? "fine, in the evil biome" : "fine");
 			if (edits < fewest) {
 				fewest = edits;
 				fewestAt = origin;
@@ -200,7 +288,8 @@ public static class SiteFinder
 /// <item>run the game's housing check on the room (houses).</item>
 /// </list>
 /// While it runs, every cell of the plan is reserved (<see cref="BotContext.Reserved"/>), so walking there never
-/// digs through the frame or pillars up inside the room. An action that has no effect after
+/// digs through the frame or pillars up inside the room; an arena's floor blocks are rebuilt instead
+/// (<see cref="Blueprint.RebuildBlocks"/>: a walk may take one out at the cost of putting it back). An action that has no effect after
 /// <see cref="MaxTicksPerAction"/> ticks in range, or whose spot cannot be reached, counts as a failure; three
 /// on the same cell fail the skill.
 /// </summary>
@@ -219,6 +308,7 @@ public sealed class BuildSkill : ISkill
 	private readonly Blueprint bp;
 	private readonly Dictionary<TilePos, int> failures = new();
 	private HashSet<TilePos> reserved;
+	private HashSet<TilePos> rebuilt;
 	private WalkToSkill walk;
 	private ChopTreeSkill chop;
 	private Action? current;
@@ -242,14 +332,18 @@ public sealed class BuildSkill : ISkill
 	public void Start(BotContext ctx)
 	{
 		reserved = new HashSet<TilePos>();
+		rebuilt = bp.RebuildBlocks ? new HashSet<TilePos>() : null;
 		for (int y = 0; y < bp.Height; y++)
 			for (int x = 0; x < bp.Width; x++) {
 				PlanCell c = bp.At(x, y);
 				bool itemCell = bp.Items.Any(it => it.Covers(x, y));
-				if (c != PlanCell.None && (!bp.ReserveBlocksOnly || c == PlanCell.Block || itemCell))
+				if (rebuilt != null && c == PlanCell.Block && !itemCell)
+					rebuilt.Add(new TilePos(Origin.X + x, Origin.Y + y));
+				else if (c != PlanCell.None && (!bp.ReserveBlocksOnly || c == PlanCell.Block || itemCell))
 					reserved.Add(new TilePos(Origin.X + x, Origin.Y + y));
 			}
 		ctx.Reserved = reserved;
+		ctx.Rebuilt = rebuilt;
 		ctx.Log.Info($"Build start: {bp.Name} at {Origin} ({bp.Width}x{bp.Height})");
 	}
 
@@ -261,6 +355,8 @@ public sealed class BuildSkill : ISkill
 		chop = null;
 		if (ReferenceEquals(ctx.Reserved, reserved))
 			ctx.Reserved = null;
+		if (rebuilt != null && ReferenceEquals(ctx.Rebuilt, rebuilt))
+			ctx.Rebuilt = null;
 	}
 
 	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
