@@ -484,6 +484,8 @@ public sealed class BotBrain
 
 	/// <summary>Torches in the dark, so a watcher can see (auto mode).</summary>
 	public LightKeeper Light { get; } = new();
+	/// <summary>Falls that would hurt are stopped here, after whatever skill has the keys (one owner for them all).</summary>
+	public FallArrest Falls { get; } = new();
 	private int deathsSeen;
 	private int lastBreath;
 	private bool wasNight;
@@ -506,6 +508,15 @@ public sealed class BotBrain
 		|| fightBackFight != null && ReferenceEquals(Current, fightBackFight) && ctx.Tick - ctx.LastEnemyHitTick < FightBackHoldTicks;
 
 	public void Tick(BotContext ctx)
+	{
+		// While the bot has the keys (auto mode, or a skill running): never a fall that hurts, whatever the skill did with them.
+		bool driving = Auto || Current != null;
+		TickSkills(ctx);
+		if (driving || Current != null)
+			Falls.Tick(ctx);
+	}
+
+	private void TickSkills(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
 		// After a death the bot is back at the spawn: whatever it was doing (a retreat, a walk) is stale. A boss fight
@@ -760,7 +771,8 @@ public sealed class BotBrain
 	}
 
 	public string Describe() =>
-		Current != null ? (Auto ? "auto: " : "") + Current.Describe()
+		Falls.Active ? (Auto ? "auto: " : "") + "fall: " + Falls.State + (Current != null ? " (" + Current.Describe() + ")" : "")
+		: Current != null ? (Auto ? "auto: " : "") + Current.Describe()
 		: Target != null ? $"target {Target.Value} (idle)"
 		: Auto ? "auto: " + Planner.Status
 		: LastResult.Length > 0 ? $"idle - last: {LastResult}"
