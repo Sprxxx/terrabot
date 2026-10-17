@@ -43,7 +43,7 @@ public class WallOfFleshPlanTests
 		foreach (int item in new[] { FakeGame.WoodenSword, FakeGame.IronBroadsword, FakeGame.IronBow })
 			g.Items[item] = 1;
 		g.Equipped.UnionWith(new[] { FakeGame.IronHelmet, FakeGame.IronChainmail, FakeGame.IronGreaves });
-		g.LifeMax = ProgressionPlanner.BossLife;
+		g.LifeMax = ProgressionPlanner.MaxCrystalLife; // the Wall wants the most crystals give (400)
 		g.BossesDefeated.Add(FakeGame.EyeNpc);
 		if (guide)
 			g.AliveTownNpcs.Add(FakeGame.GuideNpc);

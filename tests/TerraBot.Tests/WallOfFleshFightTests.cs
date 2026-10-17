@@ -132,6 +132,21 @@ public class WallOfFleshFightTests
 		Assert.Contains("Hungry", fight.State);
 	}
 
+	/// <summary>
+	/// Self-test fight_wof_150 on Classic (twice): from the Wall's 465 life on, "shooting the Leech by us", its life stuck at 263 and
+	/// 242, and the bot killed by the last bursts. Nearly down, the Wall is shot before the servants by us.
+	/// </summary>
+	[Fact]
+	public void TheWallNearlyDown_IsShotBeforeAHungryNear()
+	{
+		var hungry = new EntityInfo(9, WallOfFleshPattern.Hungry, "The Hungry", PlayerCX + 6 * 16f, PlayerCY - 40f, 30, 30, -2f, 0f, 240, 240, 30, WallOfFleshPattern.HungryAiStyle);
+		var (_, ctx, fight) = Setup(Wall(50f, life: 300).Append(hungry).ToArray());
+		fight.Tick(ctx);
+		output.WriteLine($"{fight.State}: target {fight.TargetId}");
+		Assert.NotEqual(9, fight.TargetId);
+		Assert.DoesNotContain("Hungry", fight.State);
+	}
+
 	[Fact]
 	public void ALaserComingAtUs_IsDodged_NeverTowardTheWall()
 	{

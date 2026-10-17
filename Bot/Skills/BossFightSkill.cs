@@ -220,8 +220,11 @@ public sealed class BossFightSkill : ISkill
 	/// a quarter of its life an eye fires 7 lasers of 26 a burst (NPC.cs:26616-26697), with The Hungry and the leeches on top, and
 	/// a 60-second sickness (Item.cs:5995-6009) waited out at 45 % is a minute at 90 life. Seen in game (fight_wof_unholy,
 	/// m12_synthetic_classic): healed at 89/200, then worn down to 18 and killed by a 23-damage laser before the sickness ended.
+	/// And at 0.7 the sickness is left unused for most of the fight: fight_wof_150 on Classic at 400 life, one heal in 241 seconds
+	/// (at 264/400), life at 311-400 until the last burst killed it with the Wall at 241/8000; a heal each minute keeps the bursts'
+	/// life in hand (the plan's 10 potions are more than the fight's four minutes take).
 	/// </summary>
-	public const float WallHealBelow = 0.7f;
+	public const float WallHealBelow = 0.85f;
 	/// <summary>Wall of Flesh: a Heart lying this near ahead (tiles, the way the bot runs from the Wall) is walked to: 20 life each (Player.cs:34213).</summary>
 	public const int HeartAheadTiles = 10;
 	/// <summary>Wall of Flesh: servants (a Hungry, a leech) this near (tiles) are shot before the eyes (spec section 6: 12).</summary>
@@ -1309,6 +1312,9 @@ public sealed class BossFightSkill : ISkill
 	private static bool TongueRisk(BotContext ctx) =>
 		ctx.UnderworldRow > 0 && ctx.Body.Y - 2f * PlayerPhysics.ApexRise(ctx.Physics, ctx.Physics.JumpHeight) < ctx.UnderworldRow * 16f;
 
+	/// <summary>The Wall's share of life below which it is shot before its servants (<see cref="WallOfFleshShot"/>).</summary>
+	public const float WallFinishShare = 0.1f;
+
 	/// <summary>
 	/// The Wall's shot (spec section 6's order): a Hungry, Hungry II or leech within <see cref="WallServantTiles"/> (nearest first),
 	/// else an eye with a clear arc (the upper one first: over the bridge it is the one with a line to us), else the mouth. The lead
@@ -1339,10 +1345,15 @@ public sealed class BossFightSkill : ISkill
 			}
 			return false;
 		}
-		foreach (EntityInfo e in ctx.Hostiles.Where(h => (h.Type is WallOfFleshPattern.Hungry or WallOfFleshPattern.HungryII || WallOfFleshPattern.IsLeech(h.Type))
-				&& h.DistanceTo(cx, cy) <= WallServantTiles * 16f).OrderBy(h => h.DistanceTo(cx, cy)))
-			if (Try(e, $"the {e.Name} by us", out AimSolution s))
-				return (s, true);
+		// The Wall nearly down: it first, the servants by us after (its death ends theirs: The Hungry die with it, NPC.cs AI_022's
+		// owner check). Seen in game (fight_wof_150 on Classic, twice): "shooting the Leech by us" from the Wall's 465 life on, its
+		// life stuck at 263 then 242, and the bot killed by the last bursts of lasers and leeches.
+		bool finishing = ctx.Hostiles.FirstOrDefault(h => h.Type == BossType) is EntityInfo wall && wall.LifeMax > 0 && wall.Life <= wall.LifeMax * WallFinishShare;
+		if (!finishing)
+			foreach (EntityInfo e in ctx.Hostiles.Where(h => (h.Type is WallOfFleshPattern.Hungry or WallOfFleshPattern.HungryII || WallOfFleshPattern.IsLeech(h.Type))
+					&& h.DistanceTo(cx, cy) <= WallServantTiles * 16f).OrderBy(h => h.DistanceTo(cx, cy)))
+				if (Try(e, $"the {e.Name} by us", out AimSolution s))
+					return (s, true);
 		foreach (EntityInfo eye in ctx.Hostiles.Where(h => h.Type == WallOfFleshPattern.Eye).OrderByDescending(h => WallOfFleshPattern.UpperEye(h)))
 			if (Try(eye, WallOfFleshPattern.UpperEye(eye) ? "the upper eye" : "the lower eye", out AimSolution s))
 				return (s, true);

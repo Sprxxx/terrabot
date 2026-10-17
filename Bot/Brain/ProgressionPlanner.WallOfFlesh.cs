@@ -176,7 +176,9 @@ public sealed partial class ProgressionPlanner
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, WofArrows, "unholy arrows")));
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new HaveItem(ids.UnholyArrow, WofUnholyArrows, "unholy arrows for the wall")));
 		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofArrows, "arrows") { RefillBelow = WofArrows * 4 / 5 });
-		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));
+		// The most life crystals give (400), not the earlier bosses' 200: self-test fight_wof_150 on Classic (Peppe, the Wall at 8000),
+		// at 200 life the bot died to an eye laser with the Wall at 1961, its damage 40.1 a second (enough), 19 hits for 336.
+		yield return new PrepFor(boss, new LifeAtLeast(MaxCrystalLife, "max life"));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(Tiers(ids.HealingPotion, ids.LesserHealingPotion), WofPotions, "healing potions")));
 		yield return new PrepFor(boss, new BridgeBlocks("bridge blocks"));
 		yield return new PrepFor(boss, new TownNpcAlive(ids.Guide, "the Guide"));

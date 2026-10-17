@@ -1118,7 +1118,7 @@ public sealed class Scenario
 				NoFarReach = true,
 				Mode = "wof",
 				EnemyType = Terraria.ID.NPCID.Guide,
-				MaxLife = 200,
+				MaxLife = 400, // the plan's life before the Wall (ProgressionPlanner.WallOfFlesh: MaxCrystalLife)
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				Inventory = WofKit(Bot.Brain.ProgressionPlanner.WofUnholyArrows),
 				TimeoutTicks = 60 * 60 * 15,
