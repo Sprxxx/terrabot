@@ -87,7 +87,7 @@ public static class SiteFinder
 		private readonly int?[] top;
 
 		public static RaisedFloors For(BotContext ctx, Blueprint bp, TilePos around) =>
-			!bp.IsHouse && bp.InEvilBiome ? new RaisedFloors(ctx, bp, around) : null;
+			!bp.IsHouse && bp.RaisedFloor ? new RaisedFloors(ctx, bp, around) : null;
 
 		private RaisedFloors(BotContext ctx, Blueprint bp, TilePos around)
 		{
@@ -176,6 +176,7 @@ public static class SiteFinder
 			steps *= EvilStepFactor;
 		if (!bp.IsHouse && bp.InEvilBiome)
 			steps += ZoneShortfall(ctx, bp, origin);
+		steps += SkyBlocks(ctx, bp, origin) * 2;
 		return steps * StepScore + Math.Abs(origin.X + Shift(bp) - around.X);
 	}
 
@@ -205,6 +206,22 @@ public static class SiteFinder
 
 	/// <summary>Where a player stands in the arena's middle (the fight's centre, and where the zone is counted).</summary>
 	public static TilePos Middle(Blueprint bp, TilePos origin) => new(origin.X + bp.Width / 2, origin.Y + bp.StandRow);
+
+	/// <summary>
+	/// Blocks over the plan, in the rows up to <see cref="Blueprint.SkyRows"/> over its floor (0 when it wants none): a site
+	/// pays two build steps for each (<see cref="Score"/>), as <see cref="Edits"/> counts a block to mine in the plan's open air.
+	/// A cost, not a ban: under the Dungeon's porch roof (rows 182-186 over its floor at 201, docs M11_SPEC.md section 0) the
+	/// head hovers inside the bricks, where arrows stop and it does not.
+	/// </summary>
+	public static int SkyBlocks(BotContext ctx, Blueprint bp, TilePos origin)
+	{
+		int floor = origin.Y + bp.Height - 1, n = 0;
+		for (int x = origin.X; bp.SkyRows > 0 && x < origin.X + bp.Width; x++)
+			for (int y = floor - bp.SkyRows; y < origin.Y; y++)
+				if (ctx.Grid.Get(x, y).IsBlock())
+					n++;
+		return n;
+	}
 
 	/// <summary>
 	/// <see cref="BotContext.CorruptionAround"/> round <paramref name="t"/> once the plan at <paramref name="origin"/> is built:
@@ -410,6 +427,11 @@ public static class SiteFinder
 				cell = new TilePos(wx, wy);
 				if (k.IsLiquid()) {
 					reason = "liquid";
+					return -1;
+				}
+				// Where the body would be in the Dungeon before Skeletron is beaten: every spawn there is a Guardian (BotContext.InGuardianZone).
+				if (c != PlanCell.Block && ctx.InGuardianZone(wx, wy)) {
+					reason = "the Dungeon Guardian's ground";
 					return -1;
 				}
 				if (ctx.World.IsTreeTrunk(wx, wy)) {

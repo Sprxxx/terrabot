@@ -41,7 +41,20 @@ public sealed record HouseBuilt(string Label, bool HeartLantern = false) : Need(
 /// (the Eater of Worlds': Worm Food works only in the zone, Player.cs:43462, and the worm dives and despawns once no player
 /// is in it, NPC.cs:55436-55481; docs M10_SPEC.md G9).
 /// </summary>
-public sealed record ArenaBuilt(string Label, bool InEvilBiome = false) : Need(Label);
+public sealed record ArenaBuilt(string Label, bool InEvilBiome = false) : Need(Label)
+{
+	/// <summary>
+	/// Skeletron's arena: by the Dungeon's entrance, on the side of the Old Man the entrance opens to, with the sky open over it
+	/// (<see cref="Building.Blueprint.SkyRows"/>), raised over the lake there if need be (docs M11_SPEC.md section 3d, S4).
+	/// </summary>
+	public bool AtDungeon { get; init; }
+}
+
+/// <summary>
+/// The Dungeon found: its Old Man seen, and where he is remembered (docs M11_SPEC.md section 1c, S2). Looked for along the
+/// surface, on the side of the world the snow is on (or away from the jungle), as world generation puts them (WorldGen.cs:8209-8259).
+/// </summary>
+public sealed record DungeonFound(string Label) : Need(Label);
 
 /// <summary>The item is worn (armour).</summary>
 /// <summary>
@@ -71,6 +84,11 @@ public sealed record BossDefeated(int Npc, int SummonItem, int[] Minions, string
 	/// it the worm dives and despawns (NPC.cs:55436). The arena is used only if it lies in the zone.
 	/// </summary>
 	public bool InEvilBiome { get; init; }
+	/// <summary>
+	/// Summoned by the Old Man's "Curse" chat button, there only at night (Main.cs:51819-51825), and fought by the Dungeon:
+	/// Skeletron (docs M11_SPEC.md section 2, S5-S7). <see cref="SummonItem"/> is 0.
+	/// </summary>
+	public bool ByOldMan { get; init; }
 }
 
 /// <summary>Preparation for a boss (life, bow, arrows): moot once that boss is defeated.</summary>
@@ -164,7 +182,12 @@ public sealed class ProgressionPlanner
 		/// 10, docs M10_SPEC.md: the Worm Food path).
 		/// </summary>
 		public const string EvilBoss = "evilboss";
-		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss, EvilBoss };
+		/// <summary>
+		/// Boss (the Eye first, if not done), then Skeletron, summoned at the Old Man by the Dungeon (Milestone 11, docs
+		/// M11_SPEC.md section 6). Not after the Eater of Worlds: nothing in Skeletron's chain needs it.
+		/// </summary>
+		public const string Skeletron = "skeletron";
+		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss, EvilBoss, Skeletron };
 	}
 
 	/// <summary>Worm Food: 30 Vile Powder + 15 Rotten Chunk at a Demon Altar (Recipe.cs:14407-14413).</summary>
@@ -206,6 +229,8 @@ public sealed class ProgressionPlanner
 		public readonly List<TilePos> BadSites = new(), BadCells = new();
 		public int Failures;
 		public bool OnOpenGround;
+		/// <summary>The arena's width (Skeletron's is wider, Blueprint.DungeonArenaWidth, when a site that long is found).</summary>
+		public int Width = Blueprint.ArenaWidth;
 
 		public void ForgetGivenUp()
 		{
@@ -222,7 +247,7 @@ public sealed class ProgressionPlanner
 		}
 	}
 
-	private readonly ArenaSlot eyeArena = new(), evilArena = new();
+	private readonly ArenaSlot eyeArena = new(), evilArena = new(), dungeonArena = new() { Width = Blueprint.DungeonArenaWidth };
 
 	/// <summary>Top-left tile of the boss arena by the house, being built or already built.</summary>
 	public TilePos? ArenaSite { get => eyeArena.Site; private set => eyeArena.Site = value; }
@@ -297,7 +322,39 @@ public sealed class ProgressionPlanner
 		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu") { NightOnly = true });
 		if (plan == Plans.EvilBoss)
 			stages.AddRange(EvilBossStages(ids));
+		if (plan == Plans.Skeletron)
+			stages.AddRange(SkeletronStages(ids));
 		return stages;
+	}
+
+	/// <summary>Arrows into the Skeletron fight, wooden and unholy together (spec S1: 500, or 350 unholy; about 310-450 at 60 % hits).</summary>
+	public const int SkeletronArrows = BossArrows;
+	/// <summary>Healing potions into the Skeletron fight (spec S1: at least 5; at most 3 drunk in a 2-3 minute fight, 60 s sickness).</summary>
+	public const int SkeletronPotions = 5;
+
+	/// <summary>
+	/// After the Eye: Skeletron (docs M11_SPEC.md section 6), in the spec's order.
+	/// <list type="number">
+	/// <item>S1: a bow (the Demon Bow when there is one), unholy arrows from the bag, 500 arrows in all (refilled below 4/5),
+	/// max life 200, healing potions and a recall potion from the bag (the dawn and Guardian escape);</item>
+	/// <item>S2: the Dungeon found (<see cref="DungeonFound"/>: the Old Man seen);</item>
+	/// <item>S4: an arena by it (<see cref="ArenaBuilt.AtDungeon"/>);</item>
+	/// <item>S5-S7: wait there for night, summon at the Old Man, fight (<see cref="BossDefeated.ByOldMan"/>).</item>
+	/// </list>
+	/// The Dungeon Guardian's ground (S3) is a rule of the paths (BotContext.GuardianGround) while Skeletron is up to be beaten.
+	/// </summary>
+	private static IEnumerable<Need> SkeletronStages(GameIds ids)
+	{
+		int boss = ids.SkeletronHead;
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.DemonBow), 1, "bow"));
+		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, UnholyArrows, "unholy arrows")));
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), SkeletronArrows, "arrows") { RefillBelow = SkeletronArrows * 4 / 5 });
+		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));
+		yield return new PrepFor(boss, new FromBag(new HaveItem(Tiers(ids.HealingPotion, ids.LesserHealingPotion), SkeletronPotions, "healing potions")));
+		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.RecallPotion, 1, "recall potion")));
+		yield return new PrepFor(boss, new DungeonFound("the Dungeon"));
+		yield return new PrepFor(boss, new ArenaBuilt(DungeonArenaLabel) { AtDungeon = true });
+		yield return new BossDefeated(boss, 0, new[] { ids.SkeletronHand }, "Skeletron") { NightOnly = true, ByOldMan = true };
 	}
 
 	/// <summary>
@@ -374,6 +431,17 @@ public sealed class ProgressionPlanner
 		HouseSite = null;
 		eyeArena.Reset();
 		evilArena.Reset();
+		dungeonArena.Reset();
+		dungeonArena.Width = Blueprint.DungeonArenaWidth;
+		oldManAt = null;
+		dungeonBricksAt = null;
+		OldManMet = false;
+		SkeletronPrepMet = false;
+		dungeonSideForced = null;
+		dungeonSide = null;
+		dungeonSideAt = long.MinValue / 2;
+		dungeonSideFlips = 0;
+		dungeonHopFailedAt = long.MinValue / 2;
 		searchedFor.Clear();
 		badSites.Clear();
 		badBridges.Clear();
@@ -642,8 +710,12 @@ public sealed class ProgressionPlanner
 			}
 			return;
 		}
+		if (skill is TravelUntilSkill { Seen: false } hop && status == SkillStatus.Failed && !string.IsNullOrEmpty(hop.FailureReason) && ctx.Combat.Life > 0) {
+			dungeonHopFailedAt = ctx.Tick;
+			ctx.Log.Info($"Auto: the walk to {hop.Walk.Target} looking for {hop.What} failed ({hop.FailureReason}); exploring that way for a while instead");
+		}
 		if (skill is BuildSkill arena && !arena.Blueprint.IsHouse) {
-			ArenaSlot slot = arena.Blueprint.InEvilBiome ? evilArena : eyeArena;
+			ArenaSlot slot = arena.Blueprint.AtDungeon ? dungeonArena : arena.Blueprint.InEvilBiome ? evilArena : eyeArena;
 			if (status == SkillStatus.Succeeded)
 				slot.Failures = 0;
 			else if (status == SkillStatus.Failed && ++slot.Failures >= MaxBuildFailuresPerSite) {
@@ -680,6 +752,8 @@ public sealed class ProgressionPlanner
 		badSites.Clear();
 		eyeArena.ForgetGivenUp();
 		evilArena.ForgetGivenUp();
+		dungeonArena.ForgetGivenUp();
+		dungeonArena.Width = Blueprint.DungeonArenaWidth;
 		badBridges.Clear();
 		bridgeFailures = 0;
 		siteFailures = 0;
@@ -699,7 +773,7 @@ public sealed class ProgressionPlanner
 		GameIds ids = ctx.Ids;
 		// Settled first (a house to come back to): before it, the hunt's fights took the bot off, and the stations and house
 		// went up where the arena should (boss_auto, which starts armoured at night with the house kit in the bag).
-		if (Plan != Plans.Boss && Plan != Plans.EvilBoss || !ctx.IsNight || ctx.Combat.Defense < NightOutDefense || ids.SuspiciousEye <= 0 || ctx.World == null
+		if (Plan != Plans.Boss && Plan != Plans.EvilBoss && Plan != Plans.Skeletron || !ctx.IsNight || ctx.Combat.Defense < NightOutDefense || ids.SuspiciousEye <= 0 || ctx.World == null
 			|| HomeInside(ctx) == null
 			|| ctx.World.BossDefeated(ids.EyeBoss) || ctx.Inventory.Count(ids.SuspiciousEye) > 0
 			|| ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + NightMineRows)
@@ -747,6 +821,7 @@ public sealed class ProgressionPlanner
 		// An errand in the evil biome is this pass's to choose again (ResolveItem, ResolveBoss): anything else, it is over.
 		ctx.EvilErrand = false;
 		RememberStations(ctx);
+		NoteDungeon(ctx);
 		ProtectBuilt(ctx);
 		// A boss up comes before everything (a chest or a crystal in sight, the night's hunt): its fight is the job until it is
 		// over, and a reflex (surfacing for breath) goes back to it. Seen in game (measured run M10j): the worm out of view
@@ -783,6 +858,8 @@ public sealed class ProgressionPlanner
 		stuck = null;
 		var claims = new Dictionary<int, int>();
 		foreach (Need stage in StagesFor(Plan, ctx.Ids)) {
+			if (SkeletronStage(stage))
+				SkeletronPrepMet = true; // every stage before met
 			ISkill skill = Resolve(stage, claims, 0, ctx);
 			if (stuck != null) {
 				Status = $"stuck on {stage.Label}: {stuck}";
@@ -799,6 +876,7 @@ public sealed class ProgressionPlanner
 			Plans.Arena => ArenaOnOpenGround ? "no arena site: the boss is fought on open ground" : $"the arena at {ArenaSite} is ready",
 			Plans.Boss => "the Eye of Cthulhu is defeated",
 			Plans.EvilBoss => "the Eater of Worlds is defeated",
+			Plans.Skeletron => "Skeletron is defeated",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
 		Complete = true;
@@ -897,7 +975,9 @@ public sealed class ProgressionPlanner
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Items, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
 			HouseBuilt hb => ResolveHouse(hb.HeartLantern && LanternFromASpareCrystal(ctx), claims, depth, ctx),
+			ArenaBuilt { AtDungeon: true } ad => ResolveDungeonArena(ad, claims, depth, ctx),
 			ArenaBuilt ab => ResolveArena(ab, claims, depth, ctx),
+			DungeonFound => ResolveDungeon(ctx, "for Skeletron"),
 			BossDefeated b => ResolveBoss(b, claims, depth, ctx),
 			// The prep for a boss is moot once it is down, and while it is up: the fight is on.
 			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) || BossUp(ctx, pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
@@ -1316,7 +1396,12 @@ public sealed class ProgressionPlanner
 					+ $" (the zone wants {BotContext.CorruptionZoneTiles}, {SiteFinder.ZoneMargin} over it for the kiting: {SiteFinder.ZoneShortfall(ctx, bp, chosen)} short)" : "")
 				+ (inEvil != evil ? $", {(evil ? "off" : "in")} the evil biome: each step costs {SiteFinder.EvilStepFactor}x" : "") + ")");
 		}
-		TilePos site = slot.Site.Value;
+		return BuildArena(slot.Site.Value, bp, name, claims, depth, ctx);
+	}
+
+	/// <summary>An arena's site chosen: what it still needs (blocks for the floor, the torches and campfire), then its build.</summary>
+	private ISkill BuildArena(TilePos site, Blueprint bp, string name, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
 		int blocks = 0;
 		for (int x = 0; x < bp.Width; x++)
 			for (int y = 0; y < bp.Height; y++)
@@ -1352,7 +1437,7 @@ public sealed class ProgressionPlanner
 		return ArenaReady(ctx, bp, s) && ctx.CorruptionAround(Middle(bp, s)) >= BotContext.CorruptionZoneTiles ? s : null;
 	}
 
-	private (TilePos?, TilePos?, bool, TilePos?, bool, int) protectedFor = (null, null, false, null, false, 0);
+	private (TilePos?, TilePos?, bool, TilePos?, bool, int, TilePos?, bool) protectedFor = (null, null, false, null, false, 0, null, false);
 
 	/// <summary>
 	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house,
@@ -1363,10 +1448,11 @@ public sealed class ProgressionPlanner
 	/// </summary>
 	private void ProtectBuilt(BotContext ctx)
 	{
-		Blueprint arena = Blueprint.Arena(ctx.Ids);
+		Blueprint arena = Blueprint.Arena(ctx.Ids), dungeon = DungeonArenaPlan(ctx.Ids, dungeonArena.Width);
 		bool eyeReady = eyeArena.Site is TilePos ready && ArenaReady(ctx, arena, ready);
 		bool evilReady = evilArena.Site is TilePos evilSite && ArenaReady(ctx, arena, evilSite);
-		var key = (HouseSite, eyeArena.Site, eyeReady, evilArena.Site, evilReady, Bridges.Count);
+		bool dungeonReady = dungeonArena.Site is TilePos dungeonSite && ArenaReady(ctx, dungeon, dungeonSite);
+		var key = (HouseSite, eyeArena.Site, eyeReady, evilArena.Site, evilReady, Bridges.Count, dungeonArena.Site, dungeonReady);
 		if (protectedFor == key && ctx.Protected != null)
 			return;
 		protectedFor = key;
@@ -1384,6 +1470,11 @@ public sealed class ProgressionPlanner
 					for (int y = 0; y < arena.Height; y++)
 						if (arena.At(x, y) == PlanCell.Block)
 							cells.Add(new TilePos(a.X + x, a.Y + y));
+		if (dungeonReady && dungeonArena.Site is TilePos d)
+			for (int x = 0; x < dungeon.Width; x++)
+				for (int y = 0; y < dungeon.Height; y++)
+					if (dungeon.At(x, y) == PlanCell.Block)
+						cells.Add(new TilePos(d.X + x, d.Y + y));
 		foreach (ChasmOpening o in Bridges)
 			for (int x = o.X0; x <= o.X1; x++)
 				cells.Add(new TilePos(x, o.Row));
@@ -1411,11 +1502,14 @@ public sealed class ProgressionPlanner
 	/// <summary>The Eater of Worlds' arena in the corruption (<see cref="EvilArenaSite"/>), as <see cref="ArenaBounds"/>.</summary>
 	public (int MinX, int MaxX, int StandY)? EvilArenaBounds(BotContext ctx) => Bounds(ctx, evilArena.Site);
 
-	private static (int MinX, int MaxX, int StandY)? Bounds(BotContext ctx, TilePos? site)
+	/// <summary>Skeletron's arena by the Dungeon (<see cref="DungeonArenaSite"/>), as <see cref="ArenaBounds"/>.</summary>
+	public (int MinX, int MaxX, int StandY)? DungeonArenaBounds(BotContext ctx) => Bounds(ctx, dungeonArena.Site, dungeonArena.Width);
+
+	private static (int MinX, int MaxX, int StandY)? Bounds(BotContext ctx, TilePos? site, int width = Blueprint.ArenaWidth)
 	{
 		if (site is not TilePos s)
 			return null;
-		Blueprint bp = Blueprint.Arena(ctx.Ids);
+		Blueprint bp = Blueprint.Arena(ctx.Ids, width);
 		return (s.X + 1, s.X + bp.Width - 2, s.Y + bp.StandRow); // inside the end posts
 	}
 
@@ -1447,6 +1541,8 @@ public sealed class ProgressionPlanner
 		if (ctx.World.BossDefeated(b.Npc))
 			return null;
 		bool bossHere = BossUp(ctx, b.Npc);
+		if (b.ByOldMan)
+			return ResolveSkeletron(b, bossHere, claims, depth, ctx);
 		if (!bossHere) {
 			ISkill sub = Resolve(new HaveItem(b.SummonItem, 1, ctx.Knowledge.ItemName(b.SummonItem)), claims, depth + 1, ctx);
 			if (sub != null || stuck != null)
@@ -1501,6 +1597,363 @@ public sealed class ProgressionPlanner
 	/// <summary>The plan's boss that is up and not yet defeated, if any (<see cref="BossUp"/>).</summary>
 	private BossDefeated BossUpInThePlan(BotContext ctx) => ctx.World == null ? null
 		: StagesFor(Plan, ctx.Ids).OfType<BossDefeated>().FirstOrDefault(b => !ctx.World.BossDefeated(b.Npc) && BossUp(ctx, b.Npc));
+
+	// ---------- the Dungeon and Skeletron (Milestone 11, docs M11_SPEC.md) ----------
+
+	/// <summary>Skeletron's arena stage (<see cref="ArenaBuilt.AtDungeon"/>).</summary>
+	public const string DungeonArenaLabel = "dungeon arena";
+	/// <summary>
+	/// The Dungeon's bricks are seen from this far (tiles): its entrance towers some 30 rows over the ground round it (the M11
+	/// world's to row 169 over snow at 202-225, docs M11_SPEC.md section 1c), on screen from about 60 tiles.
+	/// </summary>
+	public const int DungeonSightTiles = 60;
+	/// <summary>Each walk along the surface looking for the Dungeon goes this far (a trip's length, <see cref="TravelTiles"/>).</summary>
+	public const int DungeonHopTiles = TravelTiles;
+	/// <summary>After a walk looking for the Dungeon failed, the surface that way is explored instead for this long (a game hour).</summary>
+	public const int DungeonHopRetryTicks = 3600;
+	/// <summary>
+	/// How far (columns) each side of the spawn the surface is looked at for the snow and the jungle: the snow's middle lies at
+	/// 25-40 % or 60-75 % of the world's width and the jungle's at 15-30 % or 70-85 % (WorldGen.cs:8224-8259), so from the
+	/// spawn in the middle at most 35 % of the width, 2,940 of a large world's 8,400; the snow is 90-170 tiles wide each way
+	/// (WorldGen.cs:8260-8283), so 2,400 reaches it in every size.
+	/// </summary>
+	public const int DungeonScanTiles = 2400;
+	/// <summary>The side the surface's look found is kept this long (a game hour: the map fills in on the way).</summary>
+	public const int DungeonSideRecheckTicks = 3600;
+	/// <summary>The night's length (Main.nightLength, Main.cs:1468): Main.time at night is this less <see cref="BotContext.NightTicksLeft"/>.</summary>
+	public const int NightLengthTicks = 32400;
+	/// <summary>
+	/// Summon Skeletron only until this Main.time of the night (10:30 PM): 6 minutes before dawn, when it turns to 1000 damage
+	/// (NPC.cs:22206-22210), against a fight of 2-3 minutes with the Demon Bow and about 6 with the iron bow (docs M11_SPEC.md
+	/// section 3e).
+	/// </summary>
+	public const int SummonByTime = 10800;
+	/// <summary>Without a recall potion to escape dawn with, an hour and a half earlier (spec S1): the margin is the only escape.</summary>
+	public const int SummonByTimeNoRecall = 5400;
+	/// <summary>Walk to within this many tiles of the Old Man's feet for chat range (ChatButtonSkill: 80 px either side of our centre).</summary>
+	public const int ChatWalkTiles = 2;
+	/// <summary>
+	/// With the Old Man not in view this near where he was, he is gone (summoned tonight, or killed): well inside the 50 tiles
+	/// town NPCs are seen from (TerraBotPlayer.PerceptionRadiusPx). He comes back only by day (Main.cs:83484-83490, the daytime
+	/// branch of UpdateTime): one summon a night.
+	/// </summary>
+	public const int OldManGoneTiles = 30;
+	/// <summary>
+	/// Skeletron's arena's near end within this many columns of the Old Man (spec S5: wait within about 20 tiles of him): the
+	/// summon is at him, under his porch's roof, and the hands' first attack comes 150 ticks after the head spawns (the right
+	/// hand's timer starts at 150, NPC.cs:22188), in which the player runs 150 × 3 px = 28 tiles; 20 leaves the jump over the
+	/// arena's end post and a start.
+	/// </summary>
+	public const int DungeonArenaNearTiles = 20;
+	/// <summary>With no site that near, as far as the spec's 60 tiles from the Old Man (docs M11_SPEC.md S4).</summary>
+	public const int DungeonArenaFarTiles = 60;
+	/// <summary>Columns of the arena's end by the Old Man where the bot waits for night (the arena's own centre tolerance, both ways).</summary>
+	public const int WaitSpanTiles = 2 * ArenaCentreTolerance;
+
+	private TilePos? oldManAt, dungeonBricksAt;
+	private int? dungeonSide, dungeonSideForced;
+	private string dungeonSideWhy = "";
+	private long dungeonSideAt = long.MinValue / 2;
+	private int dungeonSideFlips;
+	private long dungeonHopFailedAt = long.MinValue / 2;
+
+	/// <summary>Where the Old Man was last seen (feet tile): the Dungeon's entrance, his home (docs M11_SPEC.md section 1c).</summary>
+	public TilePos? OldManAt => oldManAt;
+	/// <summary>The Dungeon as found: the Old Man, else a dungeon brick seen on the surface.</summary>
+	public TilePos? DungeonFoundAt => oldManAt ?? dungeonBricksAt;
+	/// <summary>The bot has been in the Old Man's chat range.</summary>
+	public bool OldManMet { get; private set; }
+	/// <summary>Skeletron's preparation (spec S1) was met: the plan got to the Dungeon's stages.</summary>
+	public bool SkeletronPrepMet { get; private set; }
+	/// <summary>Top-left tile of Skeletron's arena by the Dungeon, being built or built.</summary>
+	public TilePos? DungeonArenaSite => dungeonArena.Site;
+	/// <summary>No arena site by the Dungeon: Skeletron is fought on the open ground there.</summary>
+	public bool DungeonArenaOnOpenGround => dungeonArena.OnOpenGround;
+	/// <summary>Skeletron's arena as planned (its width, <see cref="Blueprint.DungeonArenaWidth"/> or the standard one).</summary>
+	public Blueprint DungeonArenaBlueprint(GameIds ids) => DungeonArenaPlan(ids, dungeonArena.Width);
+
+	private static Blueprint DungeonArenaPlan(GameIds ids, int width, int radius = Blueprint.ArenaSearchRadius) =>
+		Blueprint.Arena(ids, width, radius, atDungeon: true);
+
+	private static bool SkeletronStage(Need stage) =>
+		stage is PrepFor { Inner: DungeonFound or ArenaBuilt { AtDungeon: true } } || stage is BossDefeated { ByOldMan: true };
+
+	/// <summary>The Old Man, if in view (a town NPC, drawn with his name).</summary>
+	public static EntityInfo? OldManInView(BotContext ctx)
+	{
+		if (ctx.Ids.OldMan <= 0)
+			return null;
+		foreach (EntityInfo n in ctx.TownNpcs)
+			if (n.Type == ctx.Ids.OldMan)
+				return n;
+		return null;
+	}
+
+	/// <summary>
+	/// The nearest dungeon brick the map shows within <see cref="DungeonSightTiles"/> on or above the surface row: the Dungeon's
+	/// entrance (its bricks below the surface are the Dungeon proper, docs M11_SPEC.md section 1b).
+	/// </summary>
+	public static TilePos? SeenDungeonBricks(BotContext ctx)
+	{
+		if (ctx.World == null)
+			return null;
+		TilePos? best = null;
+		foreach (int tile in ctx.Ids.DungeonBrickTiles)
+			foreach (TilePos c in ctx.World.FindTiles(tile, ctx.Node, DungeonSightTiles))
+				if (ctx.SurfaceY <= 0 || c.Y <= ctx.SurfaceY) {
+					if (best == null || c.ChebyshevTo(ctx.Node) < best.Value.ChebyshevTo(ctx.Node))
+						best = c;
+					break; // nearest first
+				}
+		return best;
+	}
+
+	private static bool DungeonInView(BotContext ctx) => OldManInView(ctx) != null || SeenDungeonBricks(ctx) != null;
+
+	/// <summary>What the bot sees of the Dungeon this pass: the Old Man (remembered where he was), or its bricks.</summary>
+	private void NoteDungeon(BotContext ctx)
+	{
+		if (Plan != Plans.Skeletron || ctx.Ids.OldMan <= 0 || ctx.World == null || ctx.World.BossDefeated(ctx.Ids.SkeletronHead))
+			return;
+		if (OldManInView(ctx) is EntityInfo om) {
+			if (oldManAt == null)
+				ctx.Log.Info($"Auto: the Old Man at {om.FeetTile}: the Dungeon is found ({om.FeetTile.ChebyshevTo(ctx.Node)} tiles away, us at {ctx.Node})");
+			oldManAt = om.FeetTile;
+			if (!OldManMet && ChatButtonSkill.InChatRange(ctx, om)) {
+				OldManMet = true;
+				ctx.Log.Info($"Auto: met the Old Man at {om.FeetTile}");
+			}
+		}
+		else if (oldManAt == null && dungeonBricksAt == null && SeenDungeonBricks(ctx) is TilePos b) {
+			dungeonBricksAt = b;
+			ctx.Log.Info($"Auto: the Dungeon's bricks seen at {b} ({b.ChebyshevTo(ctx.Node)} tiles away, us at {ctx.Node})");
+		}
+	}
+
+	private static string Way(int side) => side < 0 ? "west" : "east";
+
+	/// <summary>
+	/// Which way the Dungeon is (-1 west, 1 east), as a player without the map would judge it (docs M11_SPEC.md section 1c):
+	/// toward it, once seen; else toward the snow seen on the surface, which world generation puts on the Dungeon's side; else
+	/// away from the jungle, which it puts on the other (WorldGen.cs:8209-8259); else west, a coin flip (the spec's order), and
+	/// the other way once the world's edge is reached with no Dungeon. The surface's look is kept a game hour.
+	/// </summary>
+	public int DungeonSide(BotContext ctx, out string because)
+	{
+		if (DungeonFoundAt is TilePos d && d.X != ctx.Node.X) {
+			because = $"the Dungeon seen at {d}";
+			return Math.Sign(d.X - ctx.Node.X);
+		}
+		if (dungeonSideForced is int forced) {
+			because = $"the world's edge reached {Way(-forced)} with no Dungeon";
+			return forced;
+		}
+		if (dungeonSide is int kept && ctx.Tick - dungeonSideAt < DungeonSideRecheckTicks) {
+			because = dungeonSideWhy;
+			return kept;
+		}
+		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
+		var snow = new int[2];
+		var jungle = new int[2];
+		foreach (int dir in new[] { -1, 1 })
+			for (int dx = RouteSampleTiles; dx <= DungeonScanTiles; dx += RouteSampleTiles) {
+				if (SurfaceAt(ctx.Grid, originX + dir * dx) is not TilePos c)
+					continue; // nowhere to stand (off the world, or open to the bottom)
+				int x = c.X, y = c.Y + 1;
+				if (ctx.World == null || !ctx.World.IsRevealed(x, y))
+					continue;
+				int type = ctx.World.TileTypeAt(x, y);
+				if (Array.IndexOf(ctx.Ids.SnowTiles, type) >= 0)
+					snow[dir < 0 ? 0 : 1]++;
+				else if (Array.IndexOf(ctx.Ids.JungleTiles, type) >= 0)
+					jungle[dir < 0 ? 0 : 1]++;
+			}
+		int side;
+		if (snow[0] > 0 != snow[1] > 0) {
+			side = snow[0] > 0 ? -1 : 1;
+			because = $"the snow seen {Way(side)} ({snow[0] + snow[1]} surface spots): the Dungeon is on the snow's side";
+		}
+		else if (jungle[0] > 0 != jungle[1] > 0) {
+			side = jungle[0] > 0 ? 1 : -1;
+			because = $"the jungle seen {Way(-side)} ({jungle[0] + jungle[1]} surface spots): the Dungeon is on the other side";
+		}
+		else {
+			side = -1;
+			because = "no snow nor jungle seen: west first";
+		}
+		if (dungeonSide != side)
+			ctx.Log.Info($"Auto: the Dungeon is looked for {Way(side)}: {because}");
+		dungeonSide = side;
+		dungeonSideWhy = because;
+		dungeonSideAt = ctx.Tick;
+		return side;
+	}
+
+	/// <summary>
+	/// <see cref="DungeonFound"/>: the Old Man seen, or (spec S2): to the bricks seen and round them for him; else along the
+	/// surface toward <see cref="DungeonSide"/>, <see cref="DungeonHopTiles"/> at a time, each walk ending as soon as the
+	/// Dungeon shows (<see cref="TravelUntilSkill"/>). By day only: at night the bot digs in until morning (spec S2), as for
+	/// the night's shelter. Null once he has been seen.
+	/// </summary>
+	private ISkill ResolveDungeon(BotContext ctx, string why)
+	{
+		if (oldManAt != null)
+			return null;
+		if (ctx.IsNight && ctx.Tick - lastShelterEnd >= ShelterCooldownTicks)
+			return Do($"night: sheltering until morning on the way to the Dungeon {why} (the walk is by day)", new ShelterSkill());
+		TilePos node = ctx.Node;
+		if (dungeonBricksAt is TilePos b) {
+			if (b.ChebyshevTo(node) > DungeonSightTiles / 2)
+				return Do($"walking to the Dungeon's bricks seen at {b} ({b.ChebyshevTo(node)} tiles away) {why}",
+					new TravelUntilSkill("the Old Man", new WalkToSkill(new Core.Pathfinding.GoalNearTile(b, TravelArrivedTiles, ctx.Physics)) { Quiet = true, Travel = true },
+						c => OldManInView(c) != null));
+			int toward = Math.Sign(b.X - node.X);
+			return Do($"looking round the Dungeon's bricks at {b} for the Old Man {why}",
+				new ExploreSkill("the Old Man", c => OldManInView(c) != null, ExploreBias.Sideways, toward != 0 ? toward : -1) { JobKey = "Explore old man" });
+		}
+		int side = DungeonSide(ctx, out string because);
+		if (ctx.Tick - dungeonHopFailedAt < DungeonHopRetryTicks)
+			return Do($"exploring {Way(side)} for the Dungeon {why} ({because}; the walk that way failed)",
+				new ExploreSkill("the Dungeon", DungeonInView, ExploreBias.Sideways, side) { JobKey = $"Explore dungeon {side}" });
+		if (SurfaceAt(ctx.Grid, node.X + side * DungeonHopTiles) is not TilePos dest) {
+			// The world's edge that way, and no Dungeon: the other way (the spec's "west" was a coin flip).
+			if (++dungeonSideFlips > 1) {
+				stuck = $"no Dungeon found either way along the surface (at {node})";
+				return null;
+			}
+			dungeonSideForced = -side;
+			ctx.Log.Info($"Auto: the world's edge {Way(side)} of {node} and no Dungeon: looking {Way(-side)} instead");
+			return ResolveDungeon(ctx, why);
+		}
+		return Do($"looking for the Dungeon {why}: along the surface {Way(side)} to {dest} ({because})",
+			new TravelUntilSkill("the Dungeon", new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, TravelArrivedTiles, ctx.Physics)) { Quiet = true, Travel = true },
+				DungeonInView));
+	}
+
+	/// <summary>The side of the Old Man the Dungeon's entrance opens to: toward the world's middle, where the spawn is (WorldGen.DungeonEnt, WorldGen.cs:32549).</summary>
+	private static int EntranceSide(BotContext ctx, TilePos home)
+	{
+		int s = Math.Sign((ctx.SpawnTile?.X ?? ctx.Node.X) - home.X);
+		return s != 0 ? s : 1;
+	}
+
+	/// <summary>
+	/// Skeletron's arena (spec S4): a site by the Old Man on the side his entrance opens to (the Dungeon's halls are on the other:
+	/// WorldGen.DungeonEnt carves the doorway and clears the ground on the side facing the world's middle, WorldGen.cs:32027,
+	/// 32549), its near end at him, the floor raised over the lake there if need be (<see cref="Blueprint.RaisedFloor"/>), the sky
+	/// over it open (<see cref="Blueprint.SkyRows"/>), and not in the Guardian's ground (SiteFinder). <see cref="Blueprint.DungeonArenaWidth"/>
+	/// wide, else the standard width; near, then farther out; with none, open ground.
+	/// </summary>
+	private bool FindDungeonArenaSite(BotContext ctx, TilePos home)
+	{
+		ArenaSlot slot = dungeonArena;
+		int side = EntranceSide(ctx, home);
+		var keepOut = new List<(TilePos, TilePos)> {
+			side > 0 ? (new TilePos(int.MinValue / 4, int.MinValue / 4), new TilePos(home.X - 1, int.MaxValue / 4))
+				: (new TilePos(home.X + 1, int.MinValue / 4), new TilePos(int.MaxValue / 4, int.MaxValue / 4)),
+		};
+		foreach (TilePos c in slot.BadCells)
+			keepOut.Add((c, c));
+		foreach (int width in new[] { Blueprint.DungeonArenaWidth, Blueprint.ArenaWidth })
+			foreach (int near in new[] { DungeonArenaNearTiles, DungeonArenaFarTiles }) {
+				// The near end from the Old Man's column to `near` columns out on the entrance's side: the search looks at the
+				// middles within half that of the middle of those sites.
+				int radius = near / 2;
+				Blueprint bp = DungeonArenaPlan(ctx.Ids, width, radius);
+				var anchor = new TilePos(home.X + side * (width / 2 + radius), home.Y);
+				if (SiteFinder.Find(ctx, bp, anchor, slot.BadSites, keepOut) is TilePos site) {
+					slot.Site = site;
+					slot.Width = width;
+					ctx.Log.Info($"Auto: arena site by the Dungeon {site}: x {site.X}-{site.X + width - 1}, floor row {site.Y + bp.Height - 1}, "
+						+ $"{SiteFinder.Edits(ctx, bp, site)} edits, {SiteFinder.SkyBlocks(ctx, bp, site)} blocks in the {bp.SkyRows} rows of sky over the floor; the Old Man at {home}");
+					return true;
+				}
+				ctx.Log.Info($"Auto: no {width}-wide arena site within {radius} of {anchor} by the Dungeon: {SiteFinder.Explain(ctx, bp, anchor, keepOut, slot.BadSites)}");
+			}
+		slot.OnOpenGround = true;
+		ctx.Log.Info($"Auto: no arena site by the Dungeon (the Old Man at {home}): Skeletron will be fought on the open ground there");
+		return false;
+	}
+
+	/// <summary><see cref="ArenaBuilt.AtDungeon"/>: Skeletron's arena ready, or its site (<see cref="FindDungeonArenaSite"/>) and build.</summary>
+	private ISkill ResolveDungeonArena(ArenaBuilt need, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		if (oldManAt is not TilePos home)
+			return ResolveDungeon(ctx, "for Skeletron's arena");
+		ArenaSlot slot = dungeonArena;
+		if (slot.Site is TilePos done && ArenaReady(ctx, DungeonArenaPlan(ctx.Ids, slot.Width), done))
+			return null;
+		if (slot.Site == null && (slot.OnOpenGround || !FindDungeonArenaSite(ctx, home)))
+			return null;
+		if (ArenaReady(ctx, DungeonArenaPlan(ctx.Ids, slot.Width), slot.Site.Value))
+			return null; // built before (a saved world): found as the site with nothing to do
+		return BuildArena(slot.Site.Value, DungeonArenaPlan(ctx.Ids, slot.Width), "arena by the Dungeon", claims, depth, ctx);
+	}
+
+	/// <summary>The fight, summoned at the Old Man's chat button (<see cref="ChatButtonSkill"/>) unless the head is up already.</summary>
+	private static BossFightSkill SkeletronFight(BossDefeated b, (int, int, int)? arena, BotContext ctx)
+	{
+		int oldMan = ctx.Ids.OldMan;
+		return new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena, Summon = () => new ChatButtonSkill(oldMan, "Old Man") };
+	}
+
+	/// <summary>
+	/// Skeletron (spec S5-S7): with the head up, the fight; else by day to the arena's end by the Old Man, rest, and wait for night
+	/// there; at night, while it is early enough (<see cref="SummonByTime"/>, <see cref="SummonByTimeNoRecall"/> without a recall
+	/// potion) and the Old Man is there (one summon a night), rest to <see cref="SummonLifeFraction"/>, walk up to him into chat
+	/// range, and the fight, whose summon is his "Curse" button. The fight walks back onto the arena from his porch itself
+	/// (BossFightSkill.BackToArena), out from under the porch's roof.
+	/// </summary>
+	private ISkill ResolveSkeletron(BossDefeated b, bool bossHere, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		var arena = DungeonArenaBounds(ctx);
+		if (bossHere)
+			return Do($"fighting {b.Label}{(arena != null ? " on the arena by the Dungeon" : " by the Dungeon")}", SkeletronFight(b, arena, ctx));
+		if (oldManAt is not TilePos home)
+			return ResolveDungeon(ctx, $"to summon {b.Label}");
+		TilePos node = ctx.Node;
+		bool atWait;
+		WalkToSkill toWait;
+		if (arena is (int x0, int x1, int y)) {
+			bool nearWest = Math.Abs(x0 - home.X) <= Math.Abs(x1 - home.X);
+			int from = nearWest ? x0 : x1 - WaitSpanTiles, to = nearWest ? x0 + WaitSpanTiles : x1;
+			atWait = node.Y == y && node.X >= from && node.X <= to;
+			toWait = new WalkToSkill(new Core.Pathfinding.GoalStandOnRow(y, from, to, ctx.Physics)) { Quiet = true };
+		}
+		else {
+			atWait = home.ChebyshevTo(node) <= 2 * ArenaCentreTolerance;
+			toWait = new WalkToSkill(new Core.Pathfinding.GoalNearTile(home, ArenaCentreTolerance, ctx.Physics)) { Quiet = true };
+		}
+		bool rest = ctx.Combat.LifeFraction < SummonLifeFraction && ctx.Tick - lastRestEnd > MaxRestTicks;
+		WaitSkill Rest() => new("life", c => c.Combat.LifeFraction >= SummonLifeFraction, MaxRestTicks);
+		if (!ctx.IsNight) {
+			if (!atWait)
+				return Do($"to the arena's end by the Old Man at {home} to wait for night ({b.Label})", toWait);
+			if (rest)
+				return Do($"resting to {SummonLifeFraction:P0} life by the Dungeon before night ({ctx.Combat.Life}/{ctx.Combat.LifeMax})", Rest());
+			return Do($"waiting by the Dungeon for night to summon {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
+		}
+		int byTime = ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0 ? SummonByTime : SummonByTimeNoRecall;
+		int time = NightLengthTicks - ctx.NightTicksLeft;
+		if (time > byTime) {
+			if (!atWait)
+				return Do($"too late tonight for {b.Label} (night time {time} > {byTime}); to the arena's end by the Old Man to wait for the next night", toWait);
+			return Do($"too late tonight for {b.Label} (night time {time} > {byTime}{(byTime == SummonByTimeNoRecall ? ", no recall potion" : "")}); waiting for the next night",
+				new WaitSkill("next night", c => c.IsNight && NightLengthTicks - c.NightTicksLeft <= byTime, NightWaitTicks + NightLengthTicks));
+		}
+		if (OldManInView(ctx) is not EntityInfo om) {
+			if (home.ChebyshevTo(node) > OldManGoneTiles)
+				return Do($"to the Old Man's home at {home} to summon {b.Label}", new WalkToSkill(new Core.Pathfinding.GoalNearTile(home, ArenaCentreTolerance, ctx.Physics)) { Quiet = true });
+			return Do($"no Old Man by the Dungeon tonight (summoned already, or gone): he is back by day; waiting for the morning",
+				new WaitSkill("day", c => !c.IsNight, NightLengthTicks + 600));
+		}
+		if (rest)
+			return Do($"resting to {SummonLifeFraction:P0} life before summoning {b.Label} ({ctx.Combat.Life}/{ctx.Combat.LifeMax})", Rest());
+		if (!ChatButtonSkill.InChatRange(ctx, om))
+			return Do($"walking up to the Old Man at {om.FeetTile} to summon {b.Label}",
+				new WalkToSkill(new Core.Pathfinding.GoalNearTile(om.FeetTile, ChatWalkTiles, ctx.Physics)) { Quiet = true });
+		return Do($"summoning {b.Label} at the Old Man's chat button (night time {time}, by {byTime})", SkeletronFight(b, arena, ctx));
+	}
 
 	// ---------- the evil biome (Milestone 10: the Eater of Worlds by Worm Food, docs M10_SPEC.md) ----------
 

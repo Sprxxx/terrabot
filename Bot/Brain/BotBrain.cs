@@ -292,6 +292,37 @@ public sealed class BotBrain
 		return true;
 	}
 
+	/// <summary>A Dungeon Guardian seen is left out of every fight this long (a game hour): it cannot be hurt but 1 a hit.</summary>
+	public const int GuardianIgnoreTicks = 3600;
+	private readonly HashSet<int> guardiansSeen = new();
+
+	/// <summary>
+	/// A Dungeon Guardian in sight (docs M11_SPEC.md section 4): it cannot be fought (9999 defence and life, so every hit does 1,
+	/// NPC.cs:321, 4796-4810) nor outrun (8 px/tick through blocks, 1000 contact damage, NPC.cs:22462-22475). A recall potion at
+	/// once, as a player drinks one; never a fight with it (it is left out of them, <see cref="BotContext.IgnoreEvenClose"/>). In
+	/// a boss fight the fight's own escape drinks it (BossFightSkill). With no potion there is nothing to do but go on.
+	/// </summary>
+	private void GuardianReflex(BotContext ctx)
+	{
+		int guardian = ctx.Ids.DungeonGuardian;
+		if (guardian <= 0)
+			return;
+		foreach (EntityInfo e in ctx.Hostiles) {
+			if (e.Type != guardian)
+				continue;
+			ctx.IgnoreEvenClose(e.Id, GuardianIgnoreTicks);
+			if (Current is UseItemSkill u && u.ItemType == ctx.Ids.RecallPotion || Current is BossFightSkill)
+				return;
+			bool recall = ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0;
+			if (guardiansSeen.Add(e.Id) || recall)
+				ctx.Log.Warn($"Danger: a Dungeon Guardian at {e.FeetTile}, us at {ctx.Node}: {(recall ? "drinking a recall potion" : "no recall potion to escape it with")}"
+					+ (Current != null ? $" (was {Current.Name})" : ""));
+			if (recall)
+				BeginOverride(new UseItemSkill(ctx.Ids.RecallPotion), ctx);
+			return;
+		}
+	}
+
 	/// <summary>Where a blast out was last looked for: not again from the same node (each look plans several walks).</summary>
 	private TilePos? blastLookedAt;
 
@@ -607,6 +638,8 @@ public sealed class BotBrain
 			ctx.Explored.Add(ctx.Node);
 			BeginOverride(new SurfaceSkill(), ctx);
 		}
+		if (Auto)
+			GuardianReflex(ctx);
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
 		// A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place: home if it is near, else fight on.
@@ -632,6 +665,9 @@ public sealed class BotBrain
 		bool night = ctx.IsNight;
 		if (Auto && night && !wasNight && Work is WalkToSkill or MineSkill or ExploreSkill or GatherWoodSkill
 			&& (ctx.Combat.Defense < ProgressionPlanner.NightOutDefense || Planner.NightHuntDue(ctx)))
+			RequestReplan("nightfall");
+		// The walk looking for the Dungeon is by day (docs M11_SPEC.md S2): at nightfall the planner digs in instead.
+		else if (Auto && night && !wasNight && (Work is TravelUntilSkill || Work is ExploreSkill { JobKey: string dk } && dk.StartsWith("Explore dungeon")))
 			RequestReplan("nightfall");
 		wasNight = night;
 		if (Auto && ctx.Tick % HabitEvery == 0)
