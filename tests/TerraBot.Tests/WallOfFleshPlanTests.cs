@@ -307,6 +307,20 @@ public class WallOfFleshPlanTests
 		Assert.Contains($"summoning the Wall of Flesh: a Guide Voodoo Doll into the lava off the hellbridge at x {sx}", p.Status);
 	}
 
+	/// <summary>world_wof E33 (2026-10-18): the shaft's route was not in the save the run ended with; it is saved with the player and outlives a reset.</summary>
+	[Fact]
+	public void TheShaftsMemory_RoundTrips_AndOutlivesAReset()
+	{
+		var p = new ProgressionPlanner();
+		p.RestoreShaftMemory("2117;585:2091;704:2097");
+		Assert.Equal(2117, p.ShaftX);
+		Assert.Equal("2117;585:2091;704:2097", p.ShaftMemory);
+		p.Reset(ProgressionPlanner.Plans.WallOfFlesh);
+		Assert.Equal("2117;585:2091;704:2097", p.ShaftMemory);
+		var fresh = new ProgressionPlanner();
+		Assert.Equal("", fresh.ShaftMemory);
+	}
+
 	/// <summary>world_wof E29 (2026-10-18): a block over the deck past the stand (a lip) stopped the thrown doll on the deck, 70 throws.</summary>
 	[Fact]
 	public void ABlockInTheDollsFlight_IsOpenedBeforeTheThrow()

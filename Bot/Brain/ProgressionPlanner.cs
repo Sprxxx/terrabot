@@ -392,6 +392,8 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	public void AdoptErrand(Errands.Errand e)
 	{
 		if (e is Errands.WallOfFleshErrand a) {
+			if (a.ShaftRoute.Count == 0 && shaftRoute.Count > 0 && shaftX == a.ShaftX)
+				a.UseRoute(shaftRoute); // an errand saved without the route (E33): the one remembered for this shaft
 			shaftX = a.ShaftX;
 			if (a.ShaftRoute.Count > 0)
 				{ shaftRoute.Clear(); shaftRoute.AddRange(a.ShaftRoute); } // the next errand at this shaft goes down the same dug way
@@ -412,6 +414,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				blockedShafts.Add(a.ShaftX);
 				shaftX = null;
 				shaftRoute.Clear();
+				savedShaft = null;
 			}
 			else if (a.Landed is TilePos landed && !bridgeKnown)
 				KnowBridge(ctx, landed, a.StandRow + 1);

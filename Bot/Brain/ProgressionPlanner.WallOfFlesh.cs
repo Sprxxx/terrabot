@@ -213,6 +213,36 @@ public sealed partial class ProgressionPlanner
 	/// <summary>The shaft's route as dug (HellevatorSkill.Route), kept across errands at the same shaft.</summary>
 	private readonly List<(int Row, int Col)> shaftRoute = new();
 
+	/// <summary>
+	/// The shaft's column and route as a string for the player's save ("x;row:col;row:col"), and back: an errand saved without them
+	/// (a new one, or one ended when auto mode stopped) still finds the dug way. Seen in game (world_wof E33, 2026-10-18): the route
+	/// recorded on the trip down was not in the save the run ended with.
+	/// </summary>
+	public string ShaftMemory => shaftX is int x ? x + ";" + string.Join(";", shaftRoute.Select(r => $"{r.Row}:{r.Col}")) : "";
+
+	/// <summary>The shaft memory from the save, put back after each reset (auto mode on resets the plan).</summary>
+	private string savedShaft;
+
+	public void RestoreShaftMemory(string memory)
+	{
+		savedShaft = memory;
+		ApplyShaftMemory(memory);
+	}
+
+	private void ApplyShaftMemory(string memory)
+	{
+		string[] parts = (memory ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries);
+		if (parts.Length == 0 || !int.TryParse(parts[0], out int x))
+			return;
+		shaftX = x;
+		shaftRoute.Clear();
+		foreach (string p in parts.Skip(1)) {
+			string[] rc = p.Split(':');
+			if (rc.Length == 2 && int.TryParse(rc[0], out int r) && int.TryParse(rc[1], out int c))
+				shaftRoute.Add((r, c));
+		}
+	}
+
 	/// <summary>How far the hellbridge is built (0-1), as the tiles show it now.</summary>
 	public double HellbridgeProgress(BotContext ctx)
 	{
@@ -260,6 +290,8 @@ public sealed partial class ProgressionPlanner
 		WofPrepMet = false;
 		shaftX = null;
 		shaftRoute.Clear();
+		if (savedShaft != null)
+			ApplyShaftMemory(savedShaft);
 		descent = null;
 		bridgeDir = 0;
 		toEndKnown = backEndKnown = int.MinValue;
@@ -429,6 +461,11 @@ public sealed partial class ProgressionPlanner
 		// The game moves a town NPC in only where a valid room is free (WorldGen.SpawnTownNPC). With none (a homeless NPC took the dead
 		// one's room) the wait never ends: a room first. Seen in game (world_wof E32, 2026-10-18): "waiting for the Guide" for over two
 		// game days, the Nurse and the Zoologist homeless before the summon took him.
+		// The house first if the planner does not know it (a run resumed down there: the house stage never ran): found as it stands.
+		if (HouseSite == null && Resolve(new HouseBuilt("house"), new Dictionary<int, int>(), 1, ctx) is ISkill house) {
+			Status = $"{need.Label} not alive: the house first, for a room he can move into; {Status}";
+			return house;
+		}
 		if (HouseSite != null && Survey(ctx).Empty == 0 && ResolveNpcHousing(new Dictionary<int, int>(), 0, ctx) is ISkill room) {
 			Status = $"{need.Label} cannot move back in: no free room; {Status}";
 			return room;
@@ -723,6 +760,14 @@ public sealed partial class ProgressionPlanner
 			return null;
 		int[] all = Tiers(arrow, ctx.Ids.UnholyArrow);
 		int have = ctx.Inventory.CountAny(all);
+		// Under the fight's least, no summon: the arrows got whatever it takes (stone mined if the bag has none). Seen in game
+		// (world_wof E33, 2026-10-18): summoned with 456 (the walk's refill line is 400, the bag's stone was spent), "out of arrows"
+		// with the Wall at 3999/8000, and the bot killed.
+		if (have < WofFightArrowsMin) {
+			ISkill get = Resolve(new HaveItem(all, WofFightArrowsMin, "arrows for the fight (none summoned with fewer)"), new Dictionary<int, int>(), 1, ctx);
+			if (get != null)
+				return get;
+		}
 		int crafts = r.Ingredients.Min(i => ctx.Inventory.CountAny(i.Accepts) / Math.Max(1, i.Stack));
 		int target = Math.Min(WofFightArrows, have + crafts * r.ResultStack);
 		if (crafts <= 0 || target <= have)

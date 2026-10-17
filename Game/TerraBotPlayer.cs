@@ -103,6 +103,9 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// </summary>
 	public override void SaveData(Terraria.ModLoader.IO.TagCompound tag)
 	{
+		// The shaft's column and route, whatever errand is up (ProgressionPlanner.ShaftMemory).
+		if (Brain.Planner.ShaftMemory is { Length: > 0 } shaft)
+			tag["shaft"] = shaft;
 		if (Brain.Errand is not Bot.Errands.Errand e)
 			return;
 		var lines = new List<string>();
@@ -114,6 +117,8 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	public override void LoadData(Terraria.ModLoader.IO.TagCompound tag)
 	{
+		if (tag.ContainsKey("shaft"))
+			Brain.Planner.RestoreShaftMemory(tag.GetString("shaft"));
 		if (!tag.ContainsKey("errandId"))
 			return;
 		string id = tag.GetString("errandId");
