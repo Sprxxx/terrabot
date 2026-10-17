@@ -34,7 +34,7 @@ public class FightSkillTests
 	/// <summary>The context of the last <see cref="Fight"/>.</summary>
 	private BotContext lastCtx;
 
-	private (SkillStatus status, FightSkill skill, int enemyLife) Fight(ArrayTileGrid g, TilePos enemyStartsAt, int facing = 1, bool walker = false, int maxTicks = 3000, bool fleeing = false, bool unhittable = false)
+	private (SkillStatus status, FightSkill skill, int enemyLife) Fight(ArrayTileGrid g, TilePos enemyStartsAt, int facing = 1, bool walker = false, int maxTicks = 3000, bool fleeing = false, bool unhittable = false, bool withBow = false)
 	{
 		PhysicsParams p = PhysicsParams.Default;
 		var sim = new SimWorld(g, p, g.Markers['S']);
@@ -45,6 +45,12 @@ public class FightSkillTests
 			Log = new Log(output),
 			Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword", Facing = facing },
 		};
+		if (withBow) { // a bow whose arrow falls short of 30 tiles
+			ctx.Combat.HasRanged = true;
+			ctx.Combat.RangedName = "test bow";
+			ctx.Combat.AmmoCount = 100;
+			ctx.Combat.Projectile = new Core.Physics.ProjectileModel(3f, 2, 0.3f, 16f);
+		}
 		lastCtx = ctx;
 		var skill = new FightSkill();
 		ctx.Body = sim.State;
@@ -595,6 +601,36 @@ public class FightSkillTests
 		output.WriteLine($"{st} after {t} ticks: {skill.Describe()}");
 		Assert.Equal(SkillStatus.Succeeded, st);
 		Assert.True(t <= 60 + FightSkill.CalmTicks + 2, $"the fight went on {t - 60} ticks after the near one was gone");
+	}
+
+	[Fact]
+	public void Defending_AGroundEnemyFarOff_IsNotChased()
+	{
+		// Measured run U23: in a slime rain the fight chased slimes up to 38 tiles off (a bow's reach) one after another,
+		// "walking to the WorkBenches" unchanged for 6 game hours. Here a slime sits 30 tiles off behind a low wall (out of
+		// sight, beyond the 25-tile engage distance); the bot has a sword and a bow.
+		FakeGame g = EarlyGameTests.Field(80);
+		for (int y = 22; y <= 24; y++)
+			g.Grid.Set(20, y, CellKind.Solid);
+		g.AddSlime(7, 33, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var skill = new FightSkill();
+		g.Refresh(ctx);
+		ctx.Combat.HasRanged = true;
+		skill.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		int t = 0, farthest = ctx.Node.X;
+		for (; t < 60 * 30 && st == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			ctx.Combat.HasRanged = true;
+			st = skill.Tick(ctx);
+			g.Step(ctx);
+			farthest = Math.Max(farthest, ctx.Node.X);
+		}
+		output.WriteLine($"{st} after {t} ticks: {skill.Describe()}, walked to x {farthest}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.True(farthest < 10, $"walked to x {farthest}");
 	}
 
 	[Fact]

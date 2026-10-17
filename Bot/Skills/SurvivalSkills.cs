@@ -146,7 +146,7 @@ public sealed class HuntSkill : ISkill
 				Begin(ctx, new WalkToSkill(new Core.Pathfinding.GoalNearTile(open, Tolerance, ctx.Physics)) { Quiet = true }, ToOpenGround);
 				return SkillStatus.Running;
 			}
-			Begin(ctx, new FightSkill { Leash = FightSkill.LeashRadius }, "fighting"); // hunting: the prey is the point
+			Begin(ctx, new FightSkill { Leash = FightSkill.LeashRadius, ChaseWithin = float.MaxValue }, "fighting"); // hunting: the prey is the point
 			return SkillStatus.Running;
 		}
 		if (waitTicks-- > 0) {

@@ -31,6 +31,15 @@ public sealed class FightSkill : ISkill
 	/// from the bot, chasing one slime put the other one (15 tiles off at the start) beyond the leash.
 	/// </summary>
 	public float Leash { get; init; } = DefendLeashTiles * 16f;
+	/// <summary>
+	/// How far off (px) a ground enemy is walked to: defending (the brain's danger response), the fight's engage distance
+	/// (<see cref="EngageRadius"/>) even with a bow (whose reach, <see cref="RangedRange"/>, made it 40 tiles), or what just bit
+	/// the bot; one farther off is shot from here if the arrow reaches it, else left to come or go. Hunting (for its drops)
+	/// goes to it wherever it is. Seen in game (measured run U23, world_eye): in a slime rain, "walking to the WorkBenches to
+	/// craft Wooden Arrow" unchanged for 6 game hours, the fight chasing slimes up to 38 tiles off ("Fight Blue Slime (25.9
+	/// tiles) [chasing]", "Fight Green Slime (37.8 tiles) [out of range]"), 27 kills and new ones falling all the while.
+	/// </summary>
+	public float ChaseWithin { get; init; } = EngageRadius;
 	public const float DefendLeashTiles = 24f;
 	public const int CalmTicks = 90;
 	public const float HealBelow = 0.4f;
@@ -321,6 +330,10 @@ public sealed class FightSkill : ISkill
 		return (flier || !k.HasWeapon || t.DistanceTo(cx, cy) > MeleePreferredWithin) && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY);
 	}
 
+	/// <summary>A shot from here would reach it (<see cref="UseRanged"/>, and the arrow's arc gets there).</summary>
+	private bool ShotReaches(BotContext ctx, EntityInfo t, float cx, float cy) =>
+		UseRanged(ctx, t, cx, cy) && Ballistics.Lead(cx, cy, t.CenterX, t.CenterY, t.VX, t.VY, ctx.Combat.Projectile).Hits;
+
 	private void Shoot(BotContext ctx, EntityInfo t, float cx, float cy)
 	{
 		approach?.Stop(ctx);
@@ -401,10 +414,14 @@ public sealed class FightSkill : ISkill
 		float best = float.MaxValue;
 		foreach (EntityInfo e in ctx.Hostiles) {
 			float d = e.DistanceTo(cx, cy);
-			if (d <= engage)
+			// A ground enemy is engaged (walked to) only within ChaseWithin; farther off it is shot at if the arrow reaches.
+			bool flies = FlyingAiStyles.Contains(e.AiStyle);
+			float engageIt = flies ? engage : Math.Min(engage, ChaseWithin);
+			if (d <= engageIt)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
-			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
+			bool candidate = (d <= engageIt || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash) || !flies && d <= engage && ShotReaches(ctx, e, cx, cy))
+				&& !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
 				&& NotTooDeep(ctx, e, d)
 				&& (FlyingAiStyles.Contains(e.AiStyle) ? FlierThreat(ctx, e, d, cx, cy) // a flier: only one that is a threat
 					: !ctx.WaitedOut(e.Id) || d <= ThreatTiles * 16f || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) // not waited for again
