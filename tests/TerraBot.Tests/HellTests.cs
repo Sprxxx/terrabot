@@ -82,6 +82,39 @@ public class HellTests
 	}
 
 	/// <summary>
+	/// world_wof E1 (2026-10-17): 46 columns off the shaft at row 404 after a cave, the old rule went "up to row 292" to come down
+	/// the shaft again (X1A and X2A climbed 600 rows). Deep and near, the way is over to the shaft's line at this depth, never up.
+	/// </summary>
+	[Fact]
+	public void TheHellevator_DeepAndNearItsShaft_GoesOverAtThatDepth_NotUp()
+	{
+		const int off = 86, cave = 30; // deep (over TravelFromSurfaceRows under the surface) and 49 rows over the stand row: an approach, not the last leg
+		FakeGame g = Hell();
+		for (int x = off - 3; x <= off + 3; x++)
+			for (int y = cave - 3; y <= cave; y++)
+				g.Grid.Set(x, y, CellKind.Empty);
+		var pp = Core.Physics.PhysicsParams.Default;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(off, pp), Y = Core.Pathfinding.Body.StandingTop(cave, pp), ReleaseJump = true };
+		BotContext ctx = Context(g);
+		ctx.SurfaceY = SurfaceFeet;
+		var shaft = new HellevatorSkill(ShaftX, BridgeRow - 1);
+		int highest = int.MaxValue;
+		shaft.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		for (int t = 0; t < 30000 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = shaft.Tick(ctx);
+			g.Step(ctx);
+			highest = System.Math.Min(highest, g.Sim.Node.Y);
+		}
+		output.WriteLine($"{s}: {shaft.FailureReason} at {g.Sim.Node}, highest row {highest}, broken {g.Sim.Broken}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.InRange(g.Sim.Node.X, TowerFrom - 1, TowerTo);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("over to the shaft's line at row"));
+		Assert.True(highest >= cave - 8, $"it went up to row {highest}: the way over is at this depth");
+	}
+
+	/// <summary>
 	/// world_wof M12d (Peppe): the hellevator at x 2155 taken up again from a cave 570 columns off, its legs "no path" three times
 	/// ("no way down"), and the planner moved the shaft away, again and again, to x 3127. From far off the bot goes to the shaft's
 	/// top first, along the surface, and digs from there.

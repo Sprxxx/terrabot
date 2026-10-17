@@ -403,21 +403,8 @@ public sealed partial class ProgressionPlanner
 			return null;
 		}
 		ctx.DepthErrand = true;
-		// The access errand (docs ERRAND_DESIGN.md, migration step 3): it chooses the column from the known terrain near the preferred
-		// offset, owns the bot to the row through deaths, and ends blocked with the reason; a blocked column is left out next time.
-		if (Scheduler == Schedulers.Errands) {
-			if (blockedShafts.Count >= MaxBlockedShafts) {
-				stuck = $"no way to the Underworld: access errands blocked at x {string.Join(", ", blockedShafts)}";
-				return null;
-			}
-			int fromX = ctx.SpawnTile?.X ?? n.X;
-			int preferred = shaftX ?? fromX + BridgeDirection(ctx, fromX) * ShaftOffsetTiles;
-			var access = new Errands.AccessErrand(preferred, stand, ctx.Ids);
-			foreach (int blockedX in blockedShafts)
-				access.Exclude(blockedX);
-			Proposed = access;
-			return null;
-		}
+		if (Scheduler == Schedulers.Errands && !ErrandAsking)
+			return ProposeWallOfFlesh(ctx, Errands.WallOfFleshErrand.PreparePhase);
 		if (shaftX == null) {
 			int from = ctx.SpawnTile?.X ?? n.X;
 			shaftX = from + BridgeDirection(ctx, from) * ShaftOffsetTiles;
@@ -468,11 +455,42 @@ public sealed partial class ProgressionPlanner
 		return (to, back);
 	}
 
+	/// <summary>
+	/// The Wall of Flesh expedition as one errand (docs ERRAND_DESIGN.md, migration steps 3 and 6; Schedulers.Errands): proposed from
+	/// whichever of its stages the plan reaches unmet, starting at the phase the world is at. It chooses the shaft's column from the
+	/// known terrain near the preferred offset, owns the bot through deaths to the Wall's loot, and ends blocked with the reason: a
+	/// column blocked on the way down is left out next time (MaxBlockedShafts of them: the plan is stuck), the same block twice in a
+	/// later phase too.
+	/// </summary>
+	private ISkill ProposeWallOfFlesh(BotContext ctx, string phase)
+	{
+		if (Proposed != null)
+			return null;
+		if (blockedShafts.Count >= MaxBlockedShafts) {
+			stuck = $"no way to the Underworld: the shaft blocked at x {string.Join(", ", blockedShafts)}";
+			return null;
+		}
+		if (BlockedTwice(Errands.WallOfFleshErrand.ErrandId) && LastOutcome(Errands.WallOfFleshErrand.ErrandId) is Errands.Outcome last) {
+			stuck = $"the Wall of Flesh errand blocked twice: {last}";
+			return null;
+		}
+		int row = BridgeRowFor(ctx), stand = row - 1;
+		int fromX = ctx.SpawnTile?.X ?? ctx.Node.X;
+		int preferred = shaftX ?? fromX + BridgeDirection(ctx, fromX) * ShaftOffsetTiles;
+		var errand = new Errands.WallOfFleshErrand(preferred, stand, ctx.Ids, phase);
+		foreach (int blockedX in blockedShafts)
+			errand.Exclude(blockedX);
+		Proposed = errand;
+		return null;
+	}
+
 	/// <summary>S4: the hellbridge built to its far end (latched: the fight's loot box may take a cell out later).</summary>
 	private ISkill ResolveHellbridge(BotContext ctx)
 	{
 		if (hellbridgeDone)
 			return null;
+		if (Scheduler == Schedulers.Errands && Plan != Plans.Hellbridge && !ErrandAsking)
+			return ProposeWallOfFlesh(ctx, bridgeKnown ? Errands.WallOfFleshErrand.BridgePhase : Errands.WallOfFleshErrand.DescendPhase);
 		if (!bridgeKnown)
 			return ResolveUnderworld(ctx);
 		ctx.DepthErrand = true;
@@ -513,7 +531,10 @@ public sealed partial class ProgressionPlanner
 			// Down there already (more blocks to get on the way): the gear's depth limit does not hold on the errand.
 			ctx.DepthErrand = true;
 		}
-		return Resolve(new HaveItem(BridgeBlockItems(ctx.Ids), left + BridgeBlockMargin, need.Label), claims, depth + 1, ctx);
+		int count = left + BridgeBlockMargin;
+		if (need.Batch > 0 && left > 0)
+			count = Math.Min(count, need.Batch);
+		return Resolve(new HaveItem(BridgeBlockItems(ctx.Ids), count, need.Label), claims, depth + 1, ctx);
 	}
 
 	/// <summary>The fight's arena: the bridge's columns and the feet row on it.</summary>
@@ -536,6 +557,8 @@ public sealed partial class ProgressionPlanner
 	/// </summary>
 	private ISkill ResolveWallOfFlesh(BossDefeated b, bool bossHere, BotContext ctx)
 	{
+		if (Scheduler == Schedulers.Errands && Plan == Plans.WallOfFlesh && !ErrandAsking && !bossHere)
+			return ProposeWallOfFlesh(ctx, hellbridgeDone ? Errands.WallOfFleshErrand.FightPhase : bridgeKnown ? Errands.WallOfFleshErrand.BridgePhase : Errands.WallOfFleshErrand.DescendPhase);
 		ctx.DepthErrand = true;
 		GameIds ids = ctx.Ids;
 		if (bossHere) {
@@ -623,6 +646,8 @@ public sealed partial class ProgressionPlanner
 	{
 		if (lootDone || ctx.World == null || !ctx.World.BossDefeated(need.Npc))
 			return null;
+		if (Scheduler == Schedulers.Errands && Plan == Plans.WallOfFlesh && !ErrandAsking)
+			return ProposeWallOfFlesh(ctx, Errands.WallOfFleshErrand.LootPhase);
 		if (wofDiedAt is not (float X, float Y) at) {
 			lootDone = true;
 			return null;

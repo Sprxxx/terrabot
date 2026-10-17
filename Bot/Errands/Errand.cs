@@ -187,7 +187,7 @@ public static class ErrandFactory
 	public static Errand Create(string id, IReadOnlyDictionary<string, string> state, GameIds ids)
 	{
 		Errand e = id switch {
-			AccessErrand.ErrandId => AccessErrand.FromState(state, ids),
+			WallOfFleshErrand.ErrandId => WallOfFleshErrand.FromState(state, ids),
 			_ => null,
 		};
 		e?.Load(state);

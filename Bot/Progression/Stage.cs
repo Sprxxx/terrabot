@@ -24,8 +24,8 @@ public static class StageTable
 	/// bridge; the shaft's own cells and the ash give the rest), torches for the shaft. Kept back: the healing potions and a recall
 	/// potion. Comes after the evil boss and Skeletron, as a player's guide orders them (the pickaxe and the arrows come from them).
 	/// </summary>
-	public static readonly StageRow UnderworldAccess = new(
-		"access:underworld",
+	public static readonly StageRow WallOfFlesh = new(
+		"boss:WallOfFlesh",
 		new[] { "boss:evil", "boss:Skeletron" },
 		ids => new Need[] {
 			new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), ProgressionPlanner.WofFightArrows, "arrows for the fight"),
@@ -41,7 +41,7 @@ public static class StageTable
 	/// <summary>Torches packed for the shaft: one every LightKeeper.PlaceEvery rows or so of some 760 (a measured estimate).</summary>
 	public const int ShaftTorches = 40;
 
-	public static IReadOnlyList<StageRow> Rows { get; } = new[] { UnderworldAccess };
+	public static IReadOnlyList<StageRow> Rows { get; } = new[] { WallOfFlesh };
 
 	private static int[] Tiers(params int[] items)
 	{

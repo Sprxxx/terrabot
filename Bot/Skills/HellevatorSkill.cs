@@ -57,9 +57,19 @@ public sealed class HellevatorSkill : ISkill
 	/// "no way down", and the planner moved the shaft east by 81 columns, again and again, to x 3127.
 	/// </summary>
 	public const int ApproachTiles = SeekTiles;
+	/// <summary>
+	/// Deep down and within this many columns of the shaft, the way to it is over at this depth (the paths dig); farther off it is
+	/// up to the surface and along (a walk through hundreds of columns of rock is past the search's reach: world_wof M12d, 570 columns).
+	/// </summary>
+	public const int SidewaysTiles = 100;
 
 	private WalkToSkill leg, approach, align;
 	private int failedApproaches;
+	/// <summary>
+	/// Deep down and off the shaft's line with no way over to it: the shaft goes on down from the column the body is on, and the
+	/// approach is not tried again in this life (the errand adopts the column, WallOfFleshErrand.Rules).
+	/// </summary>
+	private bool approachGivenUp;
 	/// <summary>The column the straight dig is on (the body's left one): the shaft's, or where a step round lava or a leg put it.</summary>
 	private int col = int.MinValue;
 	private int alignTries, openTicks, lastLedgeY = int.MinValue, lastLoggedY = int.MinValue;
@@ -88,6 +98,8 @@ public sealed class HellevatorSkill : ISkill
 	private int startY = int.MinValue;
 
 	public int ShaftX { get; }
+	/// <summary>The column the straight dig is on now (int.MinValue before it began): the shaft's, or where the dig went on from.</summary>
+	public int Column => col;
 	/// <summary>The feet row to end on: the hellbridge's block row less one.</summary>
 	public int StandRow { get; }
 	public string State { get; private set; } = "new";
@@ -183,7 +195,7 @@ public sealed class HellevatorSkill : ISkill
 			ctx.Log.Info($"Hellevator: down at {n} already, {Math.Abs(n.X - ShaftX)} columns from the shaft; onto row {StandRow} within {SeekTiles} of here");
 		}
 		// Once begun, the walk to the shaft's top goes on to it (seen in game, S1: given up 40 columns off, the shaft was dug at 2115).
-		if (leg == null && !forceFinal && (approach != null || Math.Abs(n.X - ShaftX) > ApproachTiles))
+		if (leg == null && !forceFinal && !approachGivenUp && (approach != null || Math.Abs(n.X - ShaftX) > ApproachTiles))
 			return Approach(ctx, n);
 		// The straight drop, down to the last leg's rows (the ceiling and the open band over the lava are the last leg's).
 		if (leg == null && !forceFinal && !legNext && StandRow - n.Y > FinalLegRows && Straight(ctx, n) is SkillStatus dug)
@@ -364,9 +376,22 @@ public sealed class HellevatorSkill : ISkill
 	/// </summary>
 	private SkillStatus Approach(BotContext ctx, TilePos n)
 	{
+		// Deep down: over to the shaft's line at this depth or lower (the paths dig), never up to the surface to come down again; with
+		// no way over (a cave between), the shaft goes on down from the column the body is on (approachGivenUp), as a player digs
+		// down where they stand. Seen in game (world_wof E1, 2026-10-17): 46 columns off the shaft at row 404 the old rule went "up
+		// to row 292", and the errand's watchdog blocked it; X1A and X2A climbed 600 rows to come down the same shaft again.
+		int surface = Brain.ProgressionPlanner.SurfaceRow(ctx);
+		bool deep = surface > 0 && n.Y > surface + Brain.ProgressionPlanner.TravelFromSurfaceRows;
+		bool sideways = deep && Math.Abs(n.X - ShaftX) <= SidewaysTiles;
 		if (approach == null) {
-			int surface = Brain.ProgressionPlanner.SurfaceRow(ctx);
-			if (surface > 0 && n.Y > surface + Brain.ProgressionPlanner.TravelFromSurfaceRows) {
+			if (sideways) {
+				int shaftX = ShaftX, row = n.Y;
+				approach = new WalkToSkill(new GoalRow(row, shaftX, ctx.Physics) { Below = true, Accept = t => Math.Abs(t.X - shaftX) <= Slack }) { Quiet = true, Underground = true };
+				State = $"over to the shaft's line at row {row} or below, {Math.Abs(n.X - ShaftX)} columns off";
+			}
+			else if (deep) {
+				// Far off and deep: up to near the surface's height first (a walk to one far tile from the caves wanders them,
+				// ProgressionPlanner.ExitWalk), then to the shaft's top.
 				int row = surface + Brain.ProgressionPlanner.TravelFromSurfaceRows - 3;
 				approach = new WalkToSkill(new GoalRow(row, n.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true };
 				State = $"up to row {row}, {Math.Abs(n.X - ShaftX)} columns from the shaft";
@@ -385,6 +410,12 @@ public sealed class HellevatorSkill : ISkill
 		string why = approach.FailureReason;
 		approach.Stop(ctx);
 		approach = null;
+		if (s == SkillStatus.Failed && sideways) {
+			approachGivenUp = true;
+			col = ctx.Node.X;
+			ctx.Log.Info($"Hellevator: no way over to the shaft's line from {ctx.Node} ({why}); the shaft goes on down from column {col}");
+			return SkillStatus.Running;
+		}
 		if (s == SkillStatus.Failed && ++failedApproaches >= MaxFailedLegs)
 			return Fail(ctx, $"no way to the shaft at x {ShaftX} from {ctx.Node} ({failedApproaches} walks failed{(string.IsNullOrEmpty(why) ? "" : ": " + why)})");
 		if (s == SkillStatus.Succeeded)

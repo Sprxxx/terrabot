@@ -106,7 +106,14 @@ public sealed record UnderworldReached(string Label) : Need(Label);
 public sealed record HellbridgeBuilt(string Label) : Need(Label);
 
 /// <summary>Blocks for what is left of the hellbridge to build, and a margin (docs M12_SPEC.md S1: L + 100).</summary>
-public sealed record BridgeBlocks(string Label) : Need(Label);
+public sealed record BridgeBlocks(string Label) : Need(Label)
+{
+	/// <summary>
+	/// At most this many blocks asked for at a time (0: all the bridge still takes): the expedition errand gets the Underworld's ash
+	/// a stretch at a time while it builds, not 3,900 blocks before the first one is laid (WallOfFleshErrand).
+	/// </summary>
+	public int Batch { get; init; }
+}
 
 /// <summary>The boss's loot picked up where it died (the Wall of Flesh's brick box, docs M12_SPEC.md S8): moot until it is defeated.</summary>
 public sealed record BossLoot(int Npc, string Label) : Need(Label);
@@ -379,24 +386,54 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// <summary>The brain runs the errand: the planner's memory follows it (the shaft's column for the bridge), and its status line too.</summary>
 	public void AdoptErrand(Errands.Errand e)
 	{
-		if (e is Errands.AccessErrand a)
+		if (e is Errands.WallOfFleshErrand a)
 			shaftX = a.ShaftX;
 		Status = $"errand {e.Id}: {e.Status}";
 		Complete = false;
 	}
 
-	/// <summary>The errand is over: its outcome recorded; a blocked access errand's column is not chosen again.</summary>
+	/// <summary>
+	/// The errand is over: its outcome recorded; a Wall of Flesh errand blocked on the way down leaves its column out of the next
+	/// one's choice, and one blocked later (the bridge, the fight) twice with the same reason leaves the plan stuck on it.
+	/// </summary>
 	public void OnErrandEnded(Errands.Errand e, Errands.Outcome outcome, BotContext ctx)
 	{
 		ErrandOutcomes.Add((e.Id, e.Identity, outcome, ctx.Tick));
-		if (e is Errands.AccessErrand a) {
-			if (outcome.Kind == Errands.OutcomeKind.Blocked) {
+		if (e is Errands.WallOfFleshErrand a) {
+			if (outcome.Kind == Errands.OutcomeKind.Blocked && a.Phase == Errands.WallOfFleshErrand.DescendPhase) {
 				blockedShafts.Add(a.ShaftX);
 				shaftX = null;
 			}
-			else if (outcome.Kind == Errands.OutcomeKind.Done && !bridgeKnown && a.Landed is TilePos landed)
+			else if (a.Landed is TilePos landed && !bridgeKnown)
 				KnowBridge(ctx, landed, a.StandRow + 1);
 		}
+	}
+
+	/// <summary>The last outcome recorded for an errand id, if any.</summary>
+	private Errands.Outcome? LastOutcome(string id)
+	{
+		for (int i = ErrandOutcomes.Count - 1; i >= 0; i--)
+			if (ErrandOutcomes[i].Id == id)
+				return ErrandOutcomes[i].Outcome;
+		return null;
+	}
+
+	/// <summary>The same blocked outcome recorded twice in a row for the id: no sense in a third try without a change.</summary>
+	private bool BlockedTwice(string id)
+	{
+		int n = 0;
+		string reason = null;
+		for (int i = ErrandOutcomes.Count - 1; i >= 0 && n < 2; i--) {
+			if (ErrandOutcomes[i].Id != id)
+				continue;
+			if (ErrandOutcomes[i].Outcome.Kind != Errands.OutcomeKind.Blocked)
+				return false;
+			if (reason != null && ErrandOutcomes[i].Outcome.Reason != reason)
+				return false;
+			reason = ErrandOutcomes[i].Outcome.Reason;
+			n++;
+		}
+		return n == 2;
 	}
 
 	/// <summary>
@@ -411,18 +448,27 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		stuck = null;
 		blocked = null;
 		var claims = new Dictionary<int, int>();
-		foreach (Need n in needs) {
-			ISkill s = Resolve(n, claims, 0, ctx);
-			if (stuck != null) {
-				blocked = $"{n.Label}: {stuck}";
-				stuck = null;
-				return null;
+		ErrandAsking = true;
+		try {
+			foreach (Need n in needs) {
+				ISkill s = Resolve(n, claims, 0, ctx);
+				if (stuck != null) {
+					blocked = $"{n.Label}: {stuck}";
+					stuck = null;
+					return null;
+				}
+				if (s != null)
+					return s;
 			}
-			if (s != null)
-				return s;
+			return null;
 		}
-		return null;
+		finally {
+			ErrandAsking = false;
+		}
 	}
+
+	/// <summary>Set while an errand's needs are resolved: the resolvers answer with skills, never with a proposal of the errand itself.</summary>
+	public bool ErrandAsking { get; private set; }
 
 	public static IReadOnlyList<Need> StagesFor(string plan, GameIds ids)
 	{
