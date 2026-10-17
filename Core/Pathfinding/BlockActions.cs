@@ -9,6 +9,9 @@ namespace TerraBot.Core.Pathfinding;
 /// </summary>
 public interface IBlockActions
 {
+	/// <summary>An axe on the hotbar, ready to swing (vanilla chops a tree with an axe only; a pickaxe does nothing to it).</summary>
+	bool HasAxe => true;
+
 	/// <summary>Ticks to mine the (solid) cell with the best usable pickaxe; +∞ if it cannot or must not be mined.</summary>
 	float BreakTicks(int x, int y);
 

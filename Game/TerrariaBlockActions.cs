@@ -251,9 +251,38 @@ public sealed class TerrariaBlockActions : IBlockActions
 		&& it.useAmmo == 0 && it.mana == 0 && !it.channel && it.CountsAsClass(DamageClass.Melee)
 		&& (it.useStyle == ItemUseStyleID.Swing || it.useStyle == ItemUseStyleID.Rapier);
 
+	public bool HasAxe => AxeSlot >= 0;
+
+	/// <summary>
+	/// A tool of the kind asked for (<see cref="Kinds"/>: "axe", "pickaxe"...) brought onto the hotbar from the bag at once, like a
+	/// player dragging it there when a job wants it: a skill asks for the axe with a tree in the hellbridge's way (E11 and E16,
+	/// 2026-10-17: "could not mine (3967,1037)", tile 634, three tries twice, the errand blocked). The slot it is in, or -1 with none
+	/// carried or no hotbar slot for it; only between swings and with an empty cursor. <paramref name="moved"/> says what moved.
+	/// </summary>
+	public int BringToHotbar(Player p, string what, out string moved)
+	{
+		moved = null;
+		if (p.itemAnimation != 0 || !Main.mouseItem.IsAir)
+			return -1;
+		var kind = Array.Find(Kinds, k => k.what == what);
+		if (kind.score == null)
+			return -1;
+		int invBest = BestSlot(p, kind.score, HotbarSlots, MainInventorySlots);
+		if (invBest < 0)
+			return -1;
+		int to = HotbarSlotFor(p);
+		if (to < 0)
+			return -1;
+		moved = $"Hotbar: brought the {what} {p.inventory[invBest].Name} from inventory slot {invBest + 1} to hotbar slot {to + 1} for the job{(p.inventory[to].IsAir ? "" : $" (swapped out {p.inventory[to].Name})")}";
+		Utils.Swap(ref p.inventory[invBest], ref p.inventory[to]);
+		Refresh(p);
+		return to;
+	}
+
 	public string Describe() =>
 		(WeaponSlot >= 0 ? $"weapon {WeaponName} (slot {WeaponSlot + 1}) | " : "no weapon | ")
 		+ (PickSlot >= 0 ? $"pick {PickPower} (slot {PickSlot + 1}, {HitTicks:0}t/hit)" : "no pickaxe in hotbar")
+		+ (AxeSlot >= 0 ? $" | axe {AxePower} (slot {AxeSlot + 1})" : " | no axe in hotbar")
 		+ " | " + (BlockSlot >= 0 ? $"{BlockCount} {BlockName} (slot {BlockSlot + 1})" : "no blocks in hotbar")
 		+ (NoBuilding ? " | NO BUILDING here" : "");
 

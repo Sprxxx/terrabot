@@ -430,7 +430,8 @@ public sealed class HellbridgeSkill : ISkill
 			actionTicks = 0;
 			if (f == 1)
 				ctx.Log.Info($"Hellbridge: {(place ? "placing at" : "mining")} {cell} did nothing in {ActionTicks} ticks: the cell reads {ctx.Grid.Get(cell.X, cell.Y)}, "
-					+ $"tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}, us at {ctx.Node} ({ctx.Body.X:0},{ctx.Body.Y:0} px), {ctx.Blocks?.BlockCount ?? 0} blocks on the hotbar");
+					+ $"tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}, us at {ctx.Node} ({ctx.Body.X:0},{ctx.Body.Y:0} px), {ctx.Blocks?.BlockCount ?? 0} blocks on the hotbar"
+					+ (!place && ctx.World?.IsTreeTrunk(cell.X, cell.Y) == true ? $", a tree: the axe{(ctx.Blocks?.HasAxe == true ? "" : " (none on the hotbar)")}" : ""));
 			// A chest (a ruined house's) in the deck's cell: the game keeps it while it holds items (WorldGen.KillTile: Chest.DestroyChest
 			// refuses one with items), and the bot has a skill for that, so the errand loots it and the bridge comes back to a cell it
 			// can mine. Seen in game (world_wof E10, 2026-10-17): "could not mine (3198,1042) (3 tries)", tile 21, three times in a row

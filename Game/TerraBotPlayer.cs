@@ -596,7 +596,7 @@ public sealed class TerraBotPlayer : ModPlayer
 				ToolRequest.Pickaxe => Blocks.PickSlot,
 				ToolRequest.Block => Blocks.BlockSlot,
 				ToolRequest.Weapon => Blocks.WeaponSlot,
-				ToolRequest.Axe => Blocks.AxeSlot,
+				ToolRequest.Axe => Blocks.AxeSlot >= 0 ? Blocks.AxeSlot : AxeFromTheBag(),
 				ToolRequest.Ranged => Blocks.RangedSlot,
 				ToolRequest.Item => ItemSlotForUse(o.ToolItem),
 				_ => -1,
@@ -625,6 +625,15 @@ public sealed class TerraBotPlayer : ModPlayer
 		// again the next.
 		Player.controlThrow = o.Throw && o.ThrowItem > 0 && HoldOneToThrow(o.ThrowItem);
 		LastOutput = o;
+	}
+
+	/// <summary>A skill asks for the axe with none on the hotbar: brought from the bag at once (TerrariaBlockActions.BringToHotbar); -1 with none.</summary>
+	private int AxeFromTheBag()
+	{
+		int slot = Blocks.BringToHotbar(Player, "axe", out string moved);
+		if (moved != null)
+			Context.Log.Info(moved);
+		return slot;
 	}
 
 	/// <summary>
