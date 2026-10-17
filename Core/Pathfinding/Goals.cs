@@ -69,6 +69,32 @@ public sealed class GoalStandOnRow : IGoal
 	public override string ToString() => $"OnRow{Row}[{MinX}..{MaxX}]";
 }
 
+/// <summary>
+/// <see cref="Inner"/> as a walk must meet it: where the body standing at the node is read. A node with a slope, half block
+/// or platform in its feet row is read a row up as well (<see cref="Body.ReadARowUp"/>; the executor counts both as there,
+/// PathExecutor.SameNode), so it is a goal only if the node above is one too. Seen in game (measured run U23): a plan to
+/// reach ore at (2075,358) ended at (2076,357), beside a slope at (2077,357); the body rode up it to (2076,356), one row out
+/// of the copper pickaxe's reach, the executor said "finished" and the walk planned the same two steps again, 418 times
+/// over 1.5 game hours. Only for searches whose end must hold the goal: a plan repair's GoalNode joins a plan at a node,
+/// which the executor meets either way.
+/// </summary>
+public sealed class GoalAsStood : IGoal
+{
+	private readonly ITileGrid grid;
+	public IGoal Inner { get; }
+	public TilePos Anchor => Inner.Anchor;
+
+	public GoalAsStood(IGoal inner, ITileGrid grid)
+	{
+		Inner = inner;
+		this.grid = grid;
+	}
+
+	public bool IsGoal(TilePos n) => Inner.IsGoal(n) && (!Body.ReadARowUp(grid, n) || Inner.IsGoal(new TilePos(n.X, n.Y - 1)));
+	public float Heuristic(TilePos n) => Inner.Heuristic(n);
+	public override string ToString() => Inner.ToString();
+}
+
 /// <summary>Exactly this node (plan repair: rejoin the old plan where one of its steps starts).</summary>
 public sealed class GoalNode : IGoal
 {

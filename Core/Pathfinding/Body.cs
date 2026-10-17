@@ -60,6 +60,16 @@ public static class Body
 		return true;
 	}
 
+	/// <summary>A cell the grid lets feet stand in that the body rides on top of instead: a slope, a half block, a platform.</summary>
+	public static bool RiddenOn(CellKind k) => k.IsShaped() || k.IsPlatform() && !k.IsSolid();
+
+	/// <summary>
+	/// Standing at node <paramref name="n"/>, is the body read a row up, at (n.X, n.Y - 1)? Yes when a cell in the feet row is
+	/// <see cref="RiddenOn"/>: the body stands on top of it, 8-16 px up, and <see cref="NodeOf(float, float, PhysicsParams)"/>
+	/// rounds that to the row above (a slope's low end may still read n itself).
+	/// </summary>
+	public static bool ReadARowUp(ITileGrid g, TilePos n) => RiddenOn(g.Get(n.X, n.Y)) || RiddenOn(g.Get(n.X + 1, n.Y));
+
 	public static bool IsStandable(ITileGrid g, int x, int y) => IsClear(g, x, y) && HasSupport(g, x, y);
 
 	public static bool IsStandable(ITileGrid g, TilePos n) => IsStandable(g, n.X, n.Y);
