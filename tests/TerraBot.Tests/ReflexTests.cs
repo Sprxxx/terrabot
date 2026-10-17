@@ -61,6 +61,31 @@ public class ReflexTests
 		Assert.IsType<SurfaceSkill>(brain.Override);
 	}
 
+	/// <summary>world_wof E1 (2026-10-17): "Peppe got melted" at (2237,842) digging in to recover, lava beside the hole.</summary>
+	[Fact]
+	public void AShelter_DoesNotDigIn_BesideLava()
+	{
+		// A deeper field than Field(): 40 rows of stone under the surface at row 9, the body at x 20.
+		var rows = new string[50];
+		for (int y = 0; y < rows.Length; y++)
+			rows[y] = new string(y < 10 ? '.' : 's', 40);
+		rows[9] = rows[9].Remove(20, 1).Insert(20, "S");
+		var g = new FakeGame(rows);
+		BotContext ctx = g.CreateContext(output);
+		TilePos n = g.Sim.Node;
+		int ground = n.Y + 1;
+		// Lava beside the column under the feet, and under the column two to the right.
+		g.Grid.Set(n.X + 2, ground + 2, CellKind.Lava);
+		g.Grid.Set(n.X + 3, ground + ShelterSkill.Depth, CellKind.Lava);
+		g.Refresh(ctx);
+		TilePos target = ShelterSkill.DigTarget(ctx, n);
+		output.WriteLine($"dig in at {target} (body {n})");
+		Assert.True(target.X + 1 < n.X + 2 - 1 || target.X > n.X + 3, $"column {target.X} has lava beside or under it");
+		for (int y = ground; y <= ground + ShelterSkill.Depth + 1; y++)
+			for (int x = target.X - 1; x <= target.X + 2; x++)
+				Assert.False(g.Grid.Get(x, y).HasLava(), $"lava at ({x},{y}) by the hole");
+	}
+
 	[Fact]
 	public void ARetreat_DoesNotCancelTheGuardiansRecall()
 	{

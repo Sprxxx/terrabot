@@ -629,7 +629,7 @@ public sealed class ShelterSkill : ISkill
 	/// be mined (or are open). Seen in game: straight down was under the work bench, which cannot be mined from
 	/// under it, and the plan ran out of nodes after 2.7 s while demon eyes finished the bot off.
 	/// </summary>
-	private static TilePos DigTarget(BotContext ctx, TilePos n)
+	internal static TilePos DigTarget(BotContext ctx, TilePos n)
 	{
 		int ground = n.Y + 1;
 		while (ground < n.Y + 12 && !ctx.Grid.Get(n.X, ground).IsSolid())
@@ -642,11 +642,20 @@ public sealed class ShelterSkill : ISkill
 		return new TilePos(n.X, stand + Depth);
 	}
 
+	/// <summary>
+	/// Can the column be dug in at: no liquid in it, none beside or above any of its cells (the digging moves' own rule,
+	/// BlockRules.LetsLavaIn: lava flows in once a cell is opened) and none just under its bottom (the body would drop into it),
+	/// nothing protected or unbreakable. Seen in game (world_wof E1, 2026-10-17): "Peppe got melted" at (2237,842) digging in, lava
+	/// beside the hole; the check looked only at the hole's own cells.
+	/// </summary>
 	private static bool Diggable(BotContext ctx, int x, int ground)
 	{
+		for (int y = ground + Depth; y <= ground + Depth + 1; y++)
+			if (ctx.Grid.Get(x, y).HasLava())
+				return false;
 		for (int y = ground; y < ground + Depth; y++) {
 			CellKind k = ctx.Grid.Get(x, y);
-			if (k.IsLiquid())
+			if (k.IsLiquid() || Core.Pathfinding.BlockRules.LetsLavaIn(ctx.Grid, new TilePos(x, y)))
 				return false;
 			// Path blocks: the house and arena floor count as unbreakable (BotContext.Protected).
 			if (k.IsSolid() && float.IsInfinity(ctx.PathBlocks?.BreakTicks(x, y) ?? float.PositiveInfinity))
