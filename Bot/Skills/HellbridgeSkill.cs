@@ -262,7 +262,11 @@ public sealed class HellbridgeSkill : ISkill
 			return SkillStatus.Succeeded;
 		}
 		TilePos stand = StandAt(End, ctx), n = ctx.Node;
-		bool onBridge = n.Y == stand.Y && ctx.Body.Grounded && (Dir > 0 ? n.X >= Math.Min(FromX, End) - 1 && n.X <= stand.X : n.X <= Math.Max(FromX, End) && n.X >= stand.X);
+		// On the deck anywhere between the start and the end (a column of slack): the steering below takes it to the stand. Not "at
+		// the stand or short of it": with the stand EdgeMargin columns back from the end, a walk that lands a column short of the stand
+		// read as off the bridge, and the walk began again, for ever (world_wof E20, 2026-10-17: "[walking to the bridge's end at
+		// (1819,1041)]" at x 1818 for two game hours on the flight half, the watchdog's block).
+		bool onBridge = n.Y == stand.Y && ctx.Body.Grounded && n.X >= Math.Min(FromX, End) - 1 && n.X <= Math.Max(FromX, End) + 1;
 		if (!onBridge || walk != null) {
 			// Off it (knocked down, a fight took us away, back from the house): a walk to the end.
 			if (walk == null) {

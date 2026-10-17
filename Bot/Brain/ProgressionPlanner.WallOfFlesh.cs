@@ -212,8 +212,34 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>Where the two halves of the bridge end now (toward the summon end, toward the flight end).</summary>
-	private (int To, int Back) BridgeEnds(BotContext ctx) => (HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo, ctx),
-		bridgeBack == bridgeFrom ? bridgeFrom : HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeBack, ctx));
+	/// <summary>
+	/// Where the two halves end, once a tick and from where they ended last (the scan goes on from there while that column still
+	/// stands, as the bridge skill's does): a scan of the whole span every tick cost 5 ms a tick with 3,000 columns built and the game
+	/// ran at 4 frames a second (world_wof E20, 2026-10-17).
+	/// </summary>
+	private (int To, int Back) BridgeEnds(BotContext ctx)
+	{
+		if (bridgeEndsTick == ctx.Tick)
+			return bridgeEndsCache;
+		bridgeEndsTick = ctx.Tick;
+		int to = ScanEnd(ctx, bridgeTo, ref toEndKnown);
+		int back = bridgeBack == bridgeFrom ? bridgeFrom : ScanEnd(ctx, bridgeBack, ref backEndKnown);
+		return bridgeEndsCache = (to, back);
+	}
+
+	private long bridgeEndsTick = -1;
+	private (int To, int Back) bridgeEndsCache;
+	private int toEndKnown = int.MinValue, backEndKnown = int.MinValue;
+
+	private int ScanEnd(BotContext ctx, int toward, ref int known)
+	{
+		int from = bridgeFrom;
+		if (known != int.MinValue && (known - bridgeFrom) * Math.Sign(toward - bridgeFrom) > 0
+			&& (HellbridgeSkill.Built(ctx.Grid, bridgeRow, known) || HellbridgeSkill.Passable(ctx, ctx.Grid, bridgeRow, known)))
+			from = known;
+		known = HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, from, toward, ctx);
+		return known;
+	}
 
 	private string HellbridgeText => bridgeKnown ? $"row {bridgeRow}, x {Math.Min(bridgeBack, bridgeTo)}-{Math.Max(bridgeBack, bridgeTo)}" : "none";
 
@@ -223,6 +249,8 @@ public sealed partial class ProgressionPlanner
 		shaftX = null;
 		descent = null;
 		bridgeDir = 0;
+		toEndKnown = backEndKnown = int.MinValue;
+		bridgeEndsTick = -1;
 		bridgeKnown = hellbridgeDone = thrownByPlan = unplannedLogged = lootDone = huntOn = false;
 		bridgeFailEnd = int.MinValue;
 		bridgeFails = 0;
@@ -445,6 +473,8 @@ public sealed partial class ProgressionPlanner
 			int west = HellbridgeSkill.BridgeEnd(ctx.Grid, row, n.X, westLimit, ctx);
 			if (east - west >= BridgeLength / ResumedBridgeShare) {
 				bridgeDir = east - n.X <= n.X - west ? 1 : -1;
+				toEndKnown = backEndKnown = int.MinValue;
+				bridgeEndsTick = -1;
 				bridgeKnown = true;
 				bridgeRow = row;
 				bridgeFrom = n.X;
@@ -462,6 +492,8 @@ public sealed partial class ProgressionPlanner
 		// the flight side takes the rest of the length.
 		if (LastLavaColumn(ctx, to, from, dir, row) is int lavaTo && lavaTo != to)
 			(to, back) = BridgeSpan(from, dir, BridgeLength, ctx.WorldWidth, lavaTo);
+		toEndKnown = backEndKnown = int.MinValue;
+		bridgeEndsTick = -1;
 		bridgeKnown = true;
 		bridgeRow = row;
 		bridgeFrom = from;
