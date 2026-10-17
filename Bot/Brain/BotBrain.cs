@@ -97,7 +97,7 @@ public sealed class BotBrain
 			return;
 		}
 		ctx.Log.Warn($"Auto: in the same place ({n}) for {SamePlaceTicks / 3600} game hours; climbing out");
-		BeginOverride(new WalkToSkill(new Core.Pathfinding.GoalRow(n.Y - 2 * SamePlaceTiles, n.X, ctx.Physics)) { Quiet = true, ToSurface = true }, ctx);
+		BeginOverride(new WalkToSkill(new Core.Pathfinding.GoalRow(n.Y - 2 * SamePlaceTiles, n.X, ctx.Physics)) { Quiet = true, ToSurface = true }, ctx, ClimbOutBid);
 	}
 
 	/// <summary>True if the work is stuck (and is failed now).</summary>
@@ -273,14 +273,158 @@ public sealed class BotBrain
 	/// A reflex takes over: the work is paused (its controls and sub-skills released, the instance kept), or a weaker
 	/// reflex is replaced.
 	/// </summary>
-	private void BeginOverride(ISkill skill, BotContext ctx)
+	private void BeginOverride(ISkill skill, BotContext ctx, int bid = LootBid)
 	{
 		if (Override != null)
 			Override.Stop(ctx);
 		else
 			Work?.Pause(ctx);
 		Override = skill;
+		overrideBid = bid;
 		skill.Start(ctx);
+	}
+
+	/// <summary>
+	/// The reflex table (docs ERRAND_DESIGN.md section 5, migration step 2): the survival responses in one ordered table, each with a
+	/// gate (its conditions, as they were in the cascade) and a bid. The highest bid whose gate is open runs as the <see cref="Override"/>;
+	/// a running reflex is replaced only by a higher bid (hysteresis: a flight is not cancelled by a fight, a surfacing by nothing), and
+	/// a reflex never asks the planner nor ends an errand. Loot after a fight and the climb-out bid lowest, so any reflex replaces them.
+	/// </summary>
+	private readonly record struct Reflex(string Name, System.Func<BotContext, int> Bid, System.Func<BotContext, ISkill> Fire);
+	public const int SurfaceBid = 100, GuardianBid = 90, CaughtBid = 75, RetreatBid = 70, FightBid = 60, ClimbOutBid = 50, LootBid = 10;
+	private int overrideBid;
+	private Reflex[] reflexes;
+
+	private Reflex[] Reflexes => reflexes ??= new[] {
+		new Reflex("surface", _ => SurfaceBid, SurfaceGate),
+		new Reflex("guardian", _ => GuardianBid, GuardianGate),
+		new Reflex("retreat", _ => RetreatBid, RetreatGate),
+		new Reflex("fight", ctx => FightBackReason(ctx) != null ? CaughtBid : FightBid, FightGate),
+	};
+
+	/// <summary>One pass of the table: the first (highest) reflex whose gate opens and whose bid beats the running override's.</summary>
+	private void TickReflexes(BotContext ctx)
+	{
+		if (!Auto)
+			return;
+		foreach (Reflex r in Reflexes) {
+			int bid = r.Bid(ctx);
+			if (Override != null && bid <= overrideBid)
+				continue;
+			ISkill s = r.Fire(ctx);
+			if (s == null)
+				continue;
+			BeginOverride(s, ctx, bid);
+			if (r.Name == "fight")
+				fightBackFight = fightBackPending ? Override : null;
+			return;
+		}
+	}
+
+	/// <summary>
+	/// Out of breath under water comes before everything: drowning skips the hurt event and kills in seconds. Or sooner, when the way
+	/// up would take more than half the breath left: seen in game (measured run O1), surfacing at 3/4 breath with air 22 rows up, and
+	/// drowned on the way.
+	/// </summary>
+	private ISkill SurfaceGate(BotContext ctx)
+	{
+		if (Current is SurfaceSkill || ctx.Combat.BreathMax <= 0 || ctx.Combat.Breath >= ctx.Combat.BreathMax || !SurfaceSkill.HeadUnder(ctx))
+			return null;
+		if (!(ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && Current is not HellevatorSkill { DiggingStraight: true }
+			|| ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks))
+			return null;
+		ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}");
+		// No more marking the water's surroundings unreachable (13x13 tiles each time): surfacing works (no drownings in
+		// runs N1, N2), and ore and crystals by water are worth a breath, as for a player (user, 2026-10-14).
+		ctx.Explored.Add(ctx.Node);
+		return new SurfaceSkill();
+	}
+
+	/// <summary>
+	/// A Dungeon Guardian in sight (docs M11_SPEC.md section 4): it cannot be fought (9999 defence and life, so every hit does 1,
+	/// NPC.cs:321, 4796-4810) nor outrun (8 px/tick through blocks, 1000 contact damage, NPC.cs:22462-22475). A recall potion at
+	/// once, as a player drinks one; never a fight with it (it is left out of them, <see cref="BotContext.IgnoreEvenClose"/>). In
+	/// a boss fight the fight's own escape drinks it (BossFightSkill). With no potion there is nothing to do but go on.
+	/// </summary>
+	private ISkill GuardianGate(BotContext ctx)
+	{
+		int guardian = ctx.Ids.DungeonGuardian;
+		if (guardian <= 0)
+			return null;
+		foreach (EntityInfo e in ctx.Hostiles) {
+			if (e.Type != guardian)
+				continue;
+			ctx.IgnoreEvenClose(e.Id, GuardianIgnoreTicks);
+			if (Current is UseItemSkill u && u.ItemType == ctx.Ids.RecallPotion || Current is BossFightSkill)
+				return null;
+			bool recall = ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0;
+			if (guardiansSeen.Add(e.Id) || recall)
+				ctx.Log.Warn($"Danger: a Dungeon Guardian at {e.FeetTile}, us at {ctx.Node}: {(recall ? "drinking a recall potion" : "no recall potion to escape it with")}"
+					+ (Current != null ? $" (was {Current.Name})" : ""));
+			return recall ? new UseItemSkill(ctx.Ids.RecallPotion) : null;
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Hurt with no potion and enemies about: hide and regenerate, as a player would (seen on Classic: demon eyes wore the bot down
+	/// from 200 to 0 while it fought on without potions; they cannot get through blocks). Home if it is near (enemies cannot get
+	/// through the door), else dig in where it is. A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place:
+	/// home if it is near, else fight on (run 50: dug in beside a devourer, killed in the hole). Not home from any distance: a worm
+	/// is faster than a walk (measured run M10e: flights home of 300 tiles from the corruption, 3 of the run's 5 deaths).
+	/// </summary>
+	private ISkill RetreatGate(BotContext ctx)
+	{
+		if (Current is BossFightSkill || Current is ShelterSkill { Retreat: true } || Current is SurfaceSkill || Current is StayHomeSkill)
+			return null;
+		if (RetreatHeldOff(ctx) || ctx.Combat.LifeMax <= 0 || ctx.Combat.LifeFraction >= RetreatThreshold(ctx) || !NoPotion(ctx) || !ProgressionPlanner.InDanger(ctx))
+			return null;
+		if (ctx.Combat.HasRanged && FastFlierNear(ctx))
+			return null;
+		TilePos? retreatHome = Planner.HomeToRetreatTo(ctx);
+		if (retreatHome == null && WormNear(ctx))
+			return null;
+		ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and {(ctx.Combat.PotionSickTicks > 0 ? "potion sick" : "no potion")}; retreating{(Current != null ? $" from {Current.Name}" : "")}");
+		return retreatHome is TilePos home ? new StayHomeSkill(home) { RecoverTo = RetreatUntil } : ShelterSkill.Recover(RetreatUntil);
+	}
+
+	/// <summary>A retreat (or a sealed hole) caught: hit, or something within a swing (ShelterSkill.FightBackReason); the fight's bid rises over the retreat's.</summary>
+	private string FightBackReason(BotContext ctx) =>
+		Current is ShelterSkill caught ? caught.FightBackReason(ctx) : Current is StayHomeSkill fleeing ? fleeing.FightBackReason(ctx) : null;
+
+	private bool fightBackPending;
+
+	/// <summary>
+	/// In the house for the night, zombies and demon eyes outside cannot get in: only what actually hits the bot is fought (seen in
+	/// game: out of the house three times in one night to fight zombies at the door; the third killed it). On the way home for the
+	/// night, keep going: zombies are slower than a running player and cannot open the door (world_eye run 41); only on the last
+	/// stretch, and only what is not hitting it (world_eye run 46). Running home hurt is a flight: hit or not it keeps going. A
+	/// retreat (or a sealed hole) is not stopped for every hostile in sight, only when it is caught; afterwards the retreat is
+	/// decided afresh, not before FightBackHoldTicks (RetreatHeldOff).
+	/// </summary>
+	private ISkill FightGate(BotContext ctx)
+	{
+		fightBackPending = false;
+		if (Current is FightSkill || Current is SurfaceSkill || Current is BossFightSkill)
+			return null;
+		string fightBack = FightBackReason(ctx);
+		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0
+			// A hurt flight at any distance (with a worm near the retreat is home from anywhere: seen in game, world_eye run 69,
+			// 120 tiles out the fight took it back every tick and the retreat gave it up again, until a devourer killed the bot).
+			|| Current is StayHomeSkill { Home: false, RecoverTo: > 0 } && fightBack == null
+			|| Current is StayHomeSkill { Home: false } walking && walking.Inside.ChebyshevTo(ctx.Node) <= ProgressionPlanner.RetreatHomeTiles
+				&& ctx.RecentAttacker < 0 && fightBack == null;
+		bool shelterHolds = Current is ShelterSkill { Retreat: true } or ShelterSkill { Sealed: true } && fightBack == null;
+		if (safeAtHome || shelterHolds || !ProgressionPlanner.InDanger(ctx, toFight: true))
+			return null;
+		if (fightBack != null) {
+			ctx.Log.Info($"Danger: {fightBack}; fighting back");
+			fightBackSince = ctx.Tick;
+			fightBackPending = true;
+		}
+		else if (Current != null)
+			ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
+		return new FightSkill();
 	}
 
 	/// <summary>Ask the planner again at the next chance (nightfall, a chest in sight...): the same job goes on, another replaces it.</summary>
@@ -386,33 +530,6 @@ public sealed class BotBrain
 	/// <summary>A Dungeon Guardian seen is left out of every fight this long (a game hour): it cannot be hurt but 1 a hit.</summary>
 	public const int GuardianIgnoreTicks = 3600;
 	private readonly HashSet<int> guardiansSeen = new();
-
-	/// <summary>
-	/// A Dungeon Guardian in sight (docs M11_SPEC.md section 4): it cannot be fought (9999 defence and life, so every hit does 1,
-	/// NPC.cs:321, 4796-4810) nor outrun (8 px/tick through blocks, 1000 contact damage, NPC.cs:22462-22475). A recall potion at
-	/// once, as a player drinks one; never a fight with it (it is left out of them, <see cref="BotContext.IgnoreEvenClose"/>). In
-	/// a boss fight the fight's own escape drinks it (BossFightSkill). With no potion there is nothing to do but go on.
-	/// </summary>
-	private void GuardianReflex(BotContext ctx)
-	{
-		int guardian = ctx.Ids.DungeonGuardian;
-		if (guardian <= 0)
-			return;
-		foreach (EntityInfo e in ctx.Hostiles) {
-			if (e.Type != guardian)
-				continue;
-			ctx.IgnoreEvenClose(e.Id, GuardianIgnoreTicks);
-			if (Current is UseItemSkill u && u.ItemType == ctx.Ids.RecallPotion || Current is BossFightSkill)
-				return;
-			bool recall = ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0;
-			if (guardiansSeen.Add(e.Id) || recall)
-				ctx.Log.Warn($"Danger: a Dungeon Guardian at {e.FeetTile}, us at {ctx.Node}: {(recall ? "drinking a recall potion" : "no recall potion to escape it with")}"
-					+ (Current != null ? $" (was {Current.Name})" : ""));
-			if (recall)
-				BeginOverride(new UseItemSkill(ctx.Ids.RecallPotion), ctx);
-			return;
-		}
-	}
 
 	/// <summary>Where a blast out was last looked for: not again from the same node (each look plans several walks).</summary>
 	private TilePos? blastLookedAt;
@@ -815,8 +932,11 @@ public sealed class BotBrain
 				Errand.OnDeath(ctx);
 		}
 		// The errand's rules hold every tick it owns the bot (the depth limit lifted on the way down), before the habits and reflexes read them.
-		if (Auto && Errand != null)
+		if (Auto && Errand != null) {
 			Errand.Rules(ctx);
+			if (ctx.Tick % HabitEvery == 0)
+				Planner.AdoptErrand(Errand); // the plan's status line follows the errand's progress (the self-test's stall check reads it)
+		}
 		// Losing breath without the head cells reading as liquid (world_eye run 52: drowned from full life during a mine
 		// with no surfacing at all): say what the head cells are, to find out why.
 		if (ctx.Tick % 60 == 0) {
@@ -826,41 +946,10 @@ public sealed class BotBrain
 			if (Auto && breathFalling && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax / 2 && !SurfaceSkill.HeadUnder(ctx))
 				LogBreathMystery(ctx);
 		}
-		// Out of breath under water comes before everything: drowning skips the hurt event and kills in seconds.
-		// Or sooner, when the way up would take more than half the breath left: seen in game (measured run O1), surfacing at
-		// 3/4 breath with air 22 rows up, and drowned on the way.
-		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax && SurfaceSkill.HeadUnder(ctx)
-			&& (ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && Current is not HellevatorSkill { DiggingStraight: true }
-				|| ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks)) {
-			ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}");
-			// No more marking the water's surroundings unreachable (13x13 tiles each time): surfacing works (no drownings in
-			// runs N1, N2), and ore and crystals by water are worth a breath, as for a player (user, 2026-10-14).
-			ctx.Explored.Add(ctx.Node);
-			BeginOverride(new SurfaceSkill(), ctx);
-		}
-		if (Auto) {
-			GuardianReflex(ctx);
-			Planner.SpareRules(ctx); // the Voodoo Demon spared before the danger check below (docs M12_SPEC.md G7)
-		}
-		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
-		// would hide and regenerate; demon eyes cannot get through blocks.
-		// A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place: home if it is near, else fight on.
-		// Seen in game (run 50): dug in beside a devourer, killed in the hole. Not home from any distance: a worm is faster
-		// than a walk; seen in game (measured run M10e, world_eow): flights home of 300 tiles from the corruption, 3 of the
-		// run's 5 deaths, the worms and eaters of souls about all the way.
-		bool wormNear = false;
-		TilePos? retreatHome = null;
-		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill
-			&& !RetreatHeldOff(ctx) && ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && NoPotion(ctx) && ProgressionPlanner.InDanger(ctx)
-			&& !(ctx.Combat.HasRanged && FastFlierNear(ctx))
-			&& ((retreatHome = Planner.HomeToRetreatTo(ctx)) != null || !(wormNear = WormNear(ctx)))) {
-			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and {(ctx.Combat.PotionSickTicks > 0 ? "potion sick" : "no potion")}; retreating{(Current != null ? $" from {Current.Name}" : "")}");
-			// Home if it is near (enemies cannot get through the door), else dig in where it is.
-			if (retreatHome is TilePos home)
-				BeginOverride(new StayHomeSkill(home) { RecoverTo = RetreatUntil }, ctx);
-			else
-				BeginOverride(ShelterSkill.Recover(RetreatUntil), ctx);
-		}
+		if (Auto)
+			Planner.SpareRules(ctx); // the Voodoo Demon spared before the danger check (docs M12_SPEC.md G7)
+		// The reflexes (surfacing, the Dungeon Guardian, a retreat, a fight) from the table, by bid.
+		TickReflexes(ctx);
 		// Nightfall: work started by day (a walk back to the spawn, a mine near the surface) is planned again, so the night
 		// rule can send the bot home. Seen in game (world_eye run 68): a walk begun by day came up at night among zombies,
 		// and one killed the bot (wooden sword, no armour).
@@ -910,34 +999,6 @@ public sealed class BotBrain
 				if (ProgressionPlanner.LifeCrystalUseful(ctx) && !ctx.Infinite(ctx.Ids.LifeCrystal) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart)
 					RequestReplan($"a life crystal at {heart} came into sight");
 			}
-		}
-		// In the house for the night, zombies and demon eyes outside cannot get in: only what actually hits the bot is
-		// fought. Seen in game: out of the house three times in one night to fight zombies at the door; the third killed it.
-		// On the way home for the night, keep going: zombies are slower than a running player and cannot open the door
-		// (seen in game, world_eye run 41: stopped at dusk to fight zombies with a copper sword, then dug in among them, dead).
-		// Only on the last stretch, and only what is not hitting it: walking without fighting back at all, zombies killed it
-		// 160 tiles out, and twice more just below the spawn (world_eye run 46).
-		// Running home hurt is a flight: hit or not it keeps going (fighting would hand it straight back to the retreat).
-		string fightBack = Current is ShelterSkill caught ? caught.FightBackReason(ctx) : Current is StayHomeSkill fleeing ? fleeing.FightBackReason(ctx) : null;
-		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0
-			// A hurt flight at any distance (with a worm near the retreat is home from anywhere: seen in game, world_eye run 69,
-			// 120 tiles out the fight took it back every tick and the retreat gave it up again, until a devourer killed the bot).
-			|| Current is StayHomeSkill { Home: false, RecoverTo: > 0 } && fightBack == null
-			|| Current is StayHomeSkill { Home: false } walking && walking.Inside.ChebyshevTo(ctx.Node) <= ProgressionPlanner.RetreatHomeTiles
-				&& ctx.RecentAttacker < 0 && fightBack == null;
-		// A retreat (or a sealed hole) is not stopped for every hostile in sight, only when it is caught: hit, or something within
-		// a swing (ShelterSkill.FightBackReason). The shelter is dropped for the fight, and afterwards the retreat is decided
-		// afresh, not before FightBackHoldTicks (RetreatHeldOff).
-		bool shelterHolds = Current is ShelterSkill { Retreat: true } or ShelterSkill { Sealed: true } && fightBack == null;
-		if (Auto && !safeAtHome && Current is not FightSkill && !shelterHolds && Current is not SurfaceSkill && Current is not BossFightSkill && ProgressionPlanner.InDanger(ctx, toFight: true)) {
-			if (fightBack != null) {
-				ctx.Log.Info($"Danger: {fightBack}; fighting back");
-				fightBackSince = ctx.Tick;
-			}
-			else if (Current != null)
-				ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
-			BeginOverride(new FightSkill(), ctx);
-			fightBackFight = fightBack != null ? Override : null;
 		}
 		// Work asked to be planned again (nightfall, a chest in sight): only between reflexes, and the same job goes on. Not an
 		// errand's work: nightfall is no reason to leave a shaft, and its opportunities were offered to it.

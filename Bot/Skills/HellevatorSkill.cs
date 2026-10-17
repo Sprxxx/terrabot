@@ -73,6 +73,13 @@ public sealed class HellevatorSkill : ISkill
 	/// <summary>The column the straight dig is on (the body's left one): the shaft's, or where a step round lava or a leg put it.</summary>
 	private int col = int.MinValue;
 	private int alignTries, openTicks, lastLedgeY = int.MinValue, lastLoggedY = int.MinValue;
+	/// <summary>
+	/// The column is a step over round lava or water (<see cref="StepOver"/>), not yet reached. Not reached at all, the stretch goes
+	/// to a leg, never back to digging beside the liquid. Seen in game (world_wof E2, 2026-10-17): "stepping over to column 2125"
+	/// and "the shaft goes on from column 2127 (column 2125 not reached)" twice a tick for 2 game hours at (2129,749), until the
+	/// errand's watchdog blocked the descent.
+	/// </summary>
+	private bool steppingOver;
 	private TilePos? mineCell;
 	private int mineTicks;
 	/// <summary>
@@ -288,13 +295,24 @@ public sealed class HellevatorSkill : ISkill
 					return SkillStatus.Running;
 				align.Stop(ctx);
 				align = null;
-				if (ctx.Node.X == col)
+				if (ctx.Node.X == col) {
 					alignTries = 0;
+					steppingOver = false;
+				}
 				return SkillStatus.Running;
+			}
+			if (steppingOver) {
+				ctx.Log.Info($"Hellevator: column {col} (the step over the liquid) not reached from {n}; a leg round it instead");
+				steppingOver = false;
+				col = n.X;
+				alignTries = 0;
+				legNext = true;
+				return null;
 			}
 			ctx.Log.Info($"Hellevator: the shaft goes on from column {n.X} (column {col} not reached{(col != ShaftX ? $", x {ShaftX} planned" : "")})");
 			col = n.X;
 		}
+		steppingOver = false;
 		ShaftRow row = StraightShaft.Below(ctx.Moves, col, n.Y);
 		switch (row.Kind) {
 			case ShaftKind.Dig: {
@@ -341,6 +359,8 @@ public sealed class HellevatorSkill : ISkill
 				if (StepOver(ctx, n) is int over) {
 					ctx.Log.Info($"Hellevator: lava or water beside the shaft at {string.Join(" ", row.Cells)}; stepping over to column {over} (clear for {StepOverLookRows} rows)");
 					col = over;
+					alignTries = 0;
+					steppingOver = true;
 					return SkillStatus.Running;
 				}
 				ctx.Log.Info($"Hellevator: lava or water beside the shaft at {string.Join(" ", row.Cells)} and no clear column within {Slack}; a leg round it");

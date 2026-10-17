@@ -388,7 +388,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	{
 		if (e is Errands.WallOfFleshErrand a)
 			shaftX = a.ShaftX;
-		Status = $"errand {e.Id}: {e.Status}";
+		Status = $"errand {e.Id}: {e.Status} [{e.Describe()}]";
 		Complete = false;
 	}
 
