@@ -337,6 +337,26 @@ public class ErrandTests
 		Assert.Contains("deaths on the way down", o.Reason);
 	}
 
+	/// <summary>E3 (2026-10-17): the bridge blocked, and the plan proposed the errand again "[prepare]" with a new column, the shaft dug and the bridge begun.</summary>
+	[Fact]
+	public void AnErrandBlockedAtTheBridge_IsProposedAgainAtTheBridge_NotFromTheTop()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var first = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 40000, () => first.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill);
+		Assert.Equal(WallOfFleshErrand.BridgePhase, first.Phase);
+		int shaft = first.ShaftX;
+		ProgressionPlanner p = brain.Planner;
+		p.OnErrandEnded(first, Outcome.Blocked("3 bridge failures in a row", "test"), ctx);
+		g.Refresh(ctx);
+		Assert.Null(p.Next(ctx));
+		var again = Assert.IsType<WallOfFleshErrand>(p.TakeProposed());
+		Assert.Equal(WallOfFleshErrand.BridgePhase, again.Phase);
+		again.Begin(ctx);
+		Assert.Equal(shaft, again.ShaftX); // the dug shaft, not a new column
+	}
+
 	[Fact]
 	public void NoProgress_ForTheWatchdogsWindow_BlocksTheErrand()
 	{

@@ -462,10 +462,16 @@ public sealed partial class ProgressionPlanner
 	/// column blocked on the way down is left out next time (MaxBlockedShafts of them: the plan is stuck), the same block twice in a
 	/// later phase too.
 	/// </summary>
-	private ISkill ProposeWallOfFlesh(BotContext ctx, string phase)
+	private ISkill ProposeWallOfFlesh(BotContext ctx, string phaseAsked)
 	{
 		if (Proposed != null)
 			return null;
+		// The phase from what the world and the plan know, whichever stage asked (seen in game, E3 2026-10-17: the bridge blocked, and the
+		// errand was proposed again from the top, "[prepare]", choosing a new column with the shaft dug and the bridge begun).
+		string phase = ctx.World != null && ctx.World.BossDefeated(ctx.Ids.WallOfFlesh) ? Errands.WallOfFleshErrand.LootPhase
+			: hellbridgeDone ? Errands.WallOfFleshErrand.FightPhase
+			: bridgeKnown ? Errands.WallOfFleshErrand.BridgePhase
+			: phaseAsked == Errands.WallOfFleshErrand.PreparePhase ? phaseAsked : Errands.WallOfFleshErrand.DescendPhase;
 		if (blockedShafts.Count >= MaxBlockedShafts) {
 			stuck = $"no way to the Underworld: the shaft blocked at x {string.Join(", ", blockedShafts)}";
 			return null;
