@@ -346,7 +346,8 @@ public sealed class FightSkill : ISkill
 		AimSolution s = Ballistics.Lead(cx, cy, t.CenterX, t.CenterY, t.VX, t.VY, ctx.Combat.Projectile);
 		ctx.Output.Tool = ToolRequest.Ranged;
 		ctx.Output.AimMouse(s.AimX, s.AimY);
-		bool clear = s.Hits && ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile);
+		// Nor through a spared NPC (a Voodoo Demon before the summon, BotContext.SparedTypes): an unholy arrow pierces on past its target.
+		bool clear = s.Hits && ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile) && !ctx.SparedInLine(cx, cy, s.AimX, s.AimY, RangedRange * 2f);
 		ctx.Output.UseItem = clear;
 		if (s.Hits && shotAt != t.Id) {
 			shotAt = t.Id;
@@ -426,7 +427,7 @@ public sealed class FightSkill : ISkill
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
 			bool candidate = (d <= engageIt || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash) || !flies && d <= engage && ShotReaches(ctx, e, cx, cy))
-				&& !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
+				&& !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d) && !ctx.Spared(e)
 				&& NotTooDeep(ctx, e, d)
 				&& (FlyingAiStyles.Contains(e.AiStyle) ? FlierThreat(ctx, e, d, cx, cy) // a flier: only one that is a threat
 					: !ctx.WaitedOut(e.Id) || d <= ThreatTiles * 16f || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) // not waited for again

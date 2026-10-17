@@ -313,6 +313,12 @@ public sealed class BotContext
 
 	public void NoteDeathByEnemy(TilePos at)
 	{
+		// In the Underworld on its errand (the shaft, the hellbridge, the Wall of Flesh): the bridge is the only way there and the
+		// fight's arena, and a zone over it would bar the walk back along it after the respawn (docs M12_SPEC.md risk 6).
+		if (DepthErrand && UnderworldRow > 0 && at.Y >= UnderworldRow) {
+			Log.Info($"Killed at {at}, in the Underworld on its errand: no danger zone there (the hellbridge is the way)");
+			return;
+		}
 		// Not round the spawn on the surface: that is where the bot comes back to, and living there is answered by the house
 		// at night, not by staying away. Seen in game (measured run P1): two zombies killed it by the house at night, the
 		// spawn fell inside the zone, every job from the respawn failed "off limits" at once, and auto mode stopped.

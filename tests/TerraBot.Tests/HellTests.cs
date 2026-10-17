@@ -22,18 +22,21 @@ public class HellTests
 	/// <summary>The tower's roof: columns 36-46 on the bridge's row.</summary>
 	public const int TowerFrom = 36, TowerTo = 46;
 
-	public static FakeGame Hell(bool tower = true)
+	public static FakeGame Hell(bool tower = true) => Hell(Width, ShaftX, TowerFrom, TowerTo, tower);
+
+	/// <summary>The same world <paramref name="width"/> wide, the bot at <paramref name="startX"/> and the tower at the columns given.</summary>
+	public static FakeGame Hell(int width, int startX, int towerFrom, int towerTo, bool tower = true)
 	{
 		var rows = new char[SeaTop + 8][];
 		for (int y = 0; y < rows.Length; y++) {
-			rows[y] = new string(y <= SurfaceFeet ? '.' : y == rows.Length - 1 ? '@' : y >= SeaTop ? '!' : y > CeilingBottom ? '.' : 's', Width).ToCharArray();
+			rows[y] = new string(y <= SurfaceFeet ? '.' : y == rows.Length - 1 ? '@' : y >= SeaTop ? '!' : y > CeilingBottom ? '.' : 's', width).ToCharArray();
 			if (y > CeilingBottom && y < SeaTop && tower && y == BridgeRow)
-				for (int x = TowerFrom; x <= TowerTo; x++)
+				for (int x = towerFrom; x <= towerTo; x++)
 					rows[y][x] = 's';
 		}
 		rows[LavaY][LavaX] = '!';
 		rows[LavaY - 1][LavaX] = 's';
-		rows[SurfaceFeet][ShaftX] = 'S';
+		rows[SurfaceFeet][startX] = 'S';
 		var g = new FakeGame(rows.Select(r => new string(r)).ToArray());
 		g.Items[FakeGame.StoneBlock] = 300;
 		return g;

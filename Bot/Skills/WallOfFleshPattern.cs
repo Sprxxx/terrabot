@@ -144,10 +144,13 @@ public static class WallOfFleshPattern
 	public static ThrowItemSkill Summon(GameIds ids, int facing) => new(ids.GuideVoodooDoll, facing, "Guide Voodoo Doll") {
 		Refuse = c => c.World.TownNpcAlive(c.Ids.Guide) ? null : "no Guide alive: the doll would only burn (doll wasted, no Guide); he comes back by day",
 		Done = c => Wall(c.Hostiles) != null || c.World.BossBarLife(c.Ids.WallOfFlesh) > 0,
-		DoneText = c => Wall(c.Hostiles) is EntityInfo w
-			? $"Throw: wall of flesh summoned at ({(int)(w.CenterX / 16f)},{(int)(w.CenterY / 16f)}), {FromSide(Direction(w, c.Body.CenterX(c.Physics)))}, us at {c.Node}"
-			: $"Throw: wall of flesh summoned (on its bar, not in view), us at {c.Node}",
+		DoneText = c => Wall(c.Hostiles) is EntityInfo w ? SummonedText(c, w) : $"Throw: wall of flesh summoned (on its bar, not in view), us at {c.Node}",
 	};
+
+	/// <summary>The summon's line (the self-test's "wall of flesh summoned" milestone): where it is and the side it came from.</summary>
+	public static string SummonedText(BotContext ctx, in EntityInfo wall) =>
+		$"wall of flesh summoned at ({(int)(wall.CenterX / 16f)},{(int)(wall.CenterY / 16f)}), {FromSide(Direction(wall, ctx.Body.CenterX(ctx.Physics)))}, "
+		+ $"{Math.Abs(wall.CenterX - ctx.Body.CenterX(ctx.Physics)) / 16f:0} tiles off, us at {ctx.Node}";
 
 	/// <summary>"from the east" / "from the west": the side a Wall travelling <paramref name="dir"/> came from.</summary>
 	public static string FromSide(int dir) => dir < 0 ? "from the east" : "from the west";

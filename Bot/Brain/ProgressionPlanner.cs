@@ -89,7 +89,27 @@ public sealed record BossDefeated(int Npc, int SummonItem, int[] Minions, string
 	/// Skeletron (docs M11_SPEC.md section 2, S5-S7). <see cref="SummonItem"/> is 0.
 	/// </summary>
 	public bool ByOldMan { get; init; }
+	/// <summary>
+	/// Summoned by the Guide Voodoo Doll (<see cref="SummonItem"/>) thrown into the Underworld's lava from the hellbridge's far end,
+	/// and fought along the bridge: the Wall of Flesh (docs M12_SPEC.md S5-S7).
+	/// </summary>
+	public bool ByVoodooDoll { get; init; }
 }
+
+/// <summary>A town NPC of this type is alive in the world (the map shows his head): the Guide, without whom the doll is wasted (docs M12_SPEC.md S2).</summary>
+public sealed record TownNpcAlive(int Npc, string Label) : Need(Label);
+
+/// <summary>Standing on the hellbridge's row in the Underworld, down a hellevator from the house (docs M12_SPEC.md S3).</summary>
+public sealed record UnderworldReached(string Label) : Need(Label);
+
+/// <summary>The hellbridge built, its length the plan's (<see cref="ProgressionPlanner.BridgeLength"/>; docs M12_SPEC.md S4).</summary>
+public sealed record HellbridgeBuilt(string Label) : Need(Label);
+
+/// <summary>Blocks for what is left of the hellbridge to build, and a margin (docs M12_SPEC.md S1: L + 100).</summary>
+public sealed record BridgeBlocks(string Label) : Need(Label);
+
+/// <summary>The boss's loot picked up where it died (the Wall of Flesh's brick box, docs M12_SPEC.md S8): moot until it is defeated.</summary>
+public sealed record BossLoot(int Npc, string Label) : Need(Label);
 
 /// <summary>Preparation for a boss (life, bow, arrows): moot once that boss is defeated.</summary>
 public sealed record PrepFor(int BossNpc, Need Inner) : Need(Inner.Label);
@@ -125,7 +145,7 @@ public sealed record StepToward(IReadOnlyList<(int Item, int Count)> Made, Need 
 /// rough gather-time estimate, which also rules out unobtainable ones (e.g. lead in an iron world).
 /// At night, surface gathering (wood, hunting) is replaced by sitting it out in a <see cref="ShelterSkill"/>.
 /// </summary>
-public sealed class ProgressionPlanner
+public sealed partial class ProgressionPlanner
 {
 	public const int WoodStockpile = 30;
 	public const int DangerRadiusTiles = 12;
@@ -194,7 +214,15 @@ public sealed class ProgressionPlanner
 		/// M11_SPEC.md section 6). Not after the Eater of Worlds: nothing in Skeletron's chain needs it.
 		/// </summary>
 		public const string Skeletron = "skeletron";
-		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss, EvilBoss, Skeletron };
+		/// <summary>
+		/// Boss (the Eye first, if not done), then the Wall of Flesh (Milestone 12, docs M12_SPEC.md section 9): the prep, the Guide
+		/// alive, a hellevator down to the Underworld, a hellbridge over its lava, a Guide Voodoo Doll, the summon and the fight.
+		/// Needs neither Skeletron nor the Eater of Worlds.
+		/// </summary>
+		public const string WallOfFlesh = "wof";
+		/// <summary>Just the hellbridge, from where the bot stands in the Underworld (a building block of "wof"; the synthetic scenarios).</summary>
+		public const string Hellbridge = "hellbridge";
+		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss, EvilBoss, Skeletron, WallOfFlesh, Hellbridge };
 	}
 
 	/// <summary>Worm Food: 30 Vile Powder + 15 Rotten Chunk at a Demon Altar (Recipe.cs:14407-14413).</summary>
@@ -293,6 +321,8 @@ public sealed class ProgressionPlanner
 			return new Need[] { new LifeAtLeast(BossLife, "max life") };
 		if (plan == Plans.Arena)
 			return new Need[] { new ArenaBuilt("arena") };
+		if (plan == Plans.Hellbridge)
+			return new Need[] { new BridgeBlocks("bridge blocks"), new UnderworldReached("the Underworld"), new HellbridgeBuilt("hellbridge") };
 		var stages = new List<Need> {
 			new StationPlaced(ids.WorkBenchTile, "work bench"),
 			new HaveItem(ids.WoodenSword, 1, "wooden sword"),
@@ -331,6 +361,8 @@ public sealed class ProgressionPlanner
 			stages.AddRange(EvilBossStages(ids));
 		if (plan == Plans.Skeletron)
 			stages.AddRange(SkeletronStages(ids));
+		if (plan == Plans.WallOfFlesh)
+			stages.AddRange(WallOfFleshStages(ids));
 		return stages;
 	}
 
@@ -444,6 +476,7 @@ public sealed class ProgressionPlanner
 		dungeonBricksAt = null;
 		OldManMet = false;
 		SkeletronPrepMet = false;
+		ResetWallOfFlesh();
 		dungeonSideForced = null;
 		dungeonSide = null;
 		dungeonSideAt = long.MinValue / 2;
@@ -700,6 +733,7 @@ public sealed class ProgressionPlanner
 		}
 		if (skill is LootChestSkill loot)
 			ctx.OpenedChests.Add(loot.Chest); // looted, or not reachable: either way not again
+		WallOfFleshFinished(skill, status, ctx);
 		if (skill is WaitSkill { What: "life" })
 			lastRestEnd = ctx.Tick; // one rest per summon attempt: a rest that timed out is not started again at once
 		if (skill is BuildSkill bridge && bridge.Blueprint.IsBridge) {
@@ -830,6 +864,9 @@ public sealed class ProgressionPlanner
 	{
 		// An errand in the evil biome is this pass's to choose again (ResolveItem, ResolveBoss): anything else, it is over.
 		ctx.EvilErrand = false;
+		// Likewise the Underworld's (the depth limit lifted for the shaft, the bridge and the fight), and the Wall of Flesh's rules.
+		ctx.DepthErrand = false;
+		WallOfFleshRules(ctx);
 		RememberStations(ctx);
 		NoteDungeon(ctx);
 		ProtectBuilt(ctx);
@@ -870,6 +907,8 @@ public sealed class ProgressionPlanner
 		foreach (Need stage in StagesFor(Plan, ctx.Ids)) {
 			if (SkeletronStage(stage))
 				SkeletronPrepMet = true; // every stage before met
+			if (stage is PrepFor { Inner: TownNpcAlive })
+				WofPrepMet = true; // S1 met: on to the Guide, the shaft and the bridge
 			ISkill skill = Resolve(stage, claims, 0, ctx);
 			if (stuck != null) {
 				Status = $"stuck on {stage.Label}: {stuck}";
@@ -887,6 +926,8 @@ public sealed class ProgressionPlanner
 			Plans.Boss => "the Eye of Cthulhu is defeated",
 			Plans.EvilBoss => "the Eater of Worlds is defeated",
 			Plans.Skeletron => "Skeletron is defeated",
+			Plans.WallOfFlesh => "the Wall of Flesh is defeated: Hardmode",
+			Plans.Hellbridge => $"the hellbridge is built ({HellbridgeText})",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
 		Complete = true;
@@ -988,6 +1029,11 @@ public sealed class ProgressionPlanner
 			ArenaBuilt { AtDungeon: true } ad => ResolveDungeonArena(ad, claims, depth, ctx),
 			ArenaBuilt ab => ResolveArena(ab, claims, depth, ctx),
 			DungeonFound => ResolveDungeon(ctx, "for Skeletron"),
+			TownNpcAlive ta => ResolveTownNpc(ta, ctx),
+			UnderworldReached => ResolveUnderworld(ctx),
+			HellbridgeBuilt => ResolveHellbridge(ctx),
+			BridgeBlocks bb => ResolveBridgeBlocks(bb, claims, depth, ctx),
+			BossLoot bl => ResolveBossLoot(bl, ctx),
 			BossDefeated b => ResolveBoss(b, claims, depth, ctx),
 			// The prep for a boss is moot once it is down, and while it is up: the fight is on.
 			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) || BossUp(ctx, pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
@@ -1453,7 +1499,7 @@ public sealed class ProgressionPlanner
 		return ArenaReady(ctx, bp, s) && ctx.CorruptionAround(Middle(bp, s)) >= BotContext.CorruptionZoneTiles ? s : null;
 	}
 
-	private (TilePos?, TilePos?, bool, TilePos?, bool, int, TilePos?, bool) protectedFor = (null, null, false, null, false, 0, null, false);
+	private (TilePos?, TilePos?, bool, TilePos?, bool, int, TilePos?, bool, (int, int, int)) protectedFor = (null, null, false, null, false, 0, null, false, (0, 0, 0));
 
 	/// <summary>
 	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house,
@@ -1468,7 +1514,7 @@ public sealed class ProgressionPlanner
 		bool eyeReady = eyeArena.Site is TilePos ready && ArenaReady(ctx, arena, ready);
 		bool evilReady = evilArena.Site is TilePos evilSite && ArenaReady(ctx, arena, evilSite);
 		bool dungeonReady = dungeonArena.Site is TilePos dungeonSite && ArenaReady(ctx, dungeon, dungeonSite);
-		var key = (HouseSite, eyeArena.Site, eyeReady, evilArena.Site, evilReady, Bridges.Count, dungeonArena.Site, dungeonReady);
+		var key = (HouseSite, eyeArena.Site, eyeReady, evilArena.Site, evilReady, Bridges.Count, dungeonArena.Site, dungeonReady, HellbridgeKey(ctx));
 		if (protectedFor == key && ctx.Protected != null)
 			return;
 		protectedFor = key;
@@ -1494,6 +1540,7 @@ public sealed class ProgressionPlanner
 		foreach (ChasmOpening o in Bridges)
 			for (int x = o.X0; x <= o.X1; x++)
 				cells.Add(new TilePos(x, o.Row));
+		ProtectHellbridge(ctx, cells);
 		ctx.Protected = cells;
 	}
 
@@ -1559,6 +1606,8 @@ public sealed class ProgressionPlanner
 		bool bossHere = BossUp(ctx, b.Npc);
 		if (b.ByOldMan)
 			return ResolveSkeletron(b, bossHere, claims, depth, ctx);
+		if (b.ByVoodooDoll)
+			return ResolveWallOfFlesh(b, bossHere, ctx);
 		if (!bossHere) {
 			ISkill sub = Resolve(new HaveItem(b.SummonItem, 1, ctx.Knowledge.ItemName(b.SummonItem)), claims, depth + 1, ctx);
 			if (sub != null || stuck != null)
@@ -1607,6 +1656,9 @@ public sealed class ProgressionPlanner
 	public static bool BossUp(BotContext ctx, int npc)
 	{
 		int[] parts = WormPattern.SegmentTypes(npc);
+		// The Wall of Flesh: its mouth or an eye in view (they share its life), or its bar (it is 75 tiles off when it spawns).
+		if (WallOfFleshPattern.IsWallOfFlesh(npc))
+			return WallOfFleshPattern.Wall(ctx.Hostiles) != null || ctx.World != null && ctx.World.BossBarLife(npc) > 0;
 		return ctx.Hostiles.Any(h => parts.Contains(h.Type)) || WormPattern.IsWormBoss(npc) && ctx.World != null && ctx.World.BossBarLife(npc) > 0;
 	}
 
@@ -3036,7 +3088,7 @@ public sealed class ProgressionPlanner
 		// Only hostiles we can see: one behind solid blocks cannot reach us right now (and must not interrupt a build).
 		// Nor ones the fight would not take on below the depth limit: seen in game (world_eye run 66), at row 461 every walk
 		// up was stopped for a fight that ended at once with nothing to fight, a few times a second for 6 game hours.
-		return (ctx.Combat.HasWeapon || ctx.Combat.HasRanged) && ctx.Hostiles.Any(h => ctx.Fightable(h.Id, h.DistanceTo(cx, cy), FightSkill.IgnoredDangerWithin) && h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f
+		return (ctx.Combat.HasWeapon || ctx.Combat.HasRanged) && ctx.Hostiles.Any(h => ctx.Fightable(h.Id, h.DistanceTo(cx, cy), FightSkill.IgnoredDangerWithin) && !ctx.Spared(h) && h.DistanceTo(cx, cy) <= DangerRadiusTiles * 16f
 			&& (!toFight || FightSkill.NotTooDeep(ctx, h, h.DistanceTo(cx, cy)))
 			&& (!FightSkill.InWater(ctx, h) || h.Id == ctx.RecentAttacker)
 			&& FightSkill.ClearShot(ctx, cx, cy, h.CenterX, h.CenterY));

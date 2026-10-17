@@ -317,6 +317,8 @@ public sealed class BossFightSkill : ISkill
 			return SkillStatus.Running;
 		}
 		if (boss is EntityInfo b) {
+			if (!seenBoss && IsWallOfFlesh)
+				ctx.Log.Info("Boss fight: " + WallOfFleshPattern.SummonedText(ctx, b));
 			if (!seenBoss)
 				ctx.Log.Info($"Boss fight: {b.Name} is here, life {b.Life}/{b.LifeMax}");
 			seenBoss = true;
