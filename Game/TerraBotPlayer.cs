@@ -386,6 +386,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		Context.IsNight = !Main.dayTime;
 		Context.NightTicksLeft = Main.dayTime ? 0 : (int)Math.Max(0, Main.nightLength - Main.time);
 		Context.Expert = Main.expertMode;
+		Context.TrashResearched = ModContent.GetInstance<TerraBotConfig>()?.TrashResearchedItems ?? false;
 		Context.CavernY = (int)Main.rockLayer;
 		Context.SurfaceY = (int)Main.worldSurface;
 		Context.WorldHeight = Main.maxTilesY;

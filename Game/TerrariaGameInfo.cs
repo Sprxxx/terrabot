@@ -64,6 +64,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 			NPCID.LarvaeAntlion, NPCID.TombCrawlerHead, NPCID.TombCrawlerBody, NPCID.TombCrawlerTail },
 		LifeCrystal = ItemID.LifeCrystal,
 		FloatingAccessories = new int[] { ItemID.FloatingTube }, // Player.ApplyEquipFunctional: canFloatInWater
+		Coins = new int[] { ItemID.CopperCoin, ItemID.SilverCoin, ItemID.GoldCoin, ItemID.PlatinumCoin },
 		PickupBlockers = new int[] { ItemID.EncumberingStone }, // Player.RefreshMechanicalAccsFromItemType: preventAllItemPickups
 		IronTierBow = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBow : ItemID.IronBow,
 		WoodenArrow = ItemID.WoodenArrow,

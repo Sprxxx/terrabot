@@ -282,6 +282,8 @@ public sealed class GameIds
 	/// Player.RefreshMechanicalAccsFromItemType sets preventAllItemPickups for it over all 58 slots, Player.UpdateEquips).
 	/// </summary>
 	public int[] PickupBlockers { get; init; } = System.Array.Empty<int>();
+	/// <summary>Copper, silver, gold and platinum coins (ItemID 71-74): money, never trashed.</summary>
+	public int[] Coins { get; init; } = System.Array.Empty<int>();
 	/// <summary>
 	/// Skeletron (Milestone 11, docs M11_SPEC.md): the head and its hands (NPC 35, 36, NPC.cs:4270-4300), the Old Man who curses
 	/// the player to summon it (37, a town NPC at the Dungeon's entrance, NPC.cs:4301-4314) and the Dungeon Guardian (68, every

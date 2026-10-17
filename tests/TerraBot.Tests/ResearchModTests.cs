@@ -119,4 +119,43 @@ public class ResearchModTests
 		g.Journey.StationsByResearch.Add(FakeGame.TileAnvil);
 		Assert.IsType<CraftSkill>(new ProgressionPlanner().ResolveForTest(need, ctx));
 	}
+
+	/// <summary>An item nothing in the plan uses (a gem, a pumpkin): researched with one.</summary>
+	private const int Junk = 9001;
+
+	[Fact]
+	public void TrashResearched_PickedUpResearchedJunkGoes_WhatTheBotUsesStays()
+	{
+		var (g, ctx) = Journey();
+		ctx.TrashResearched = true;
+		g.Journey.Caps[Junk] = 1;
+		g.Journey.MarkResearched(Junk, FakeGame.Wood, FakeGame.StoneBlock);
+		g.Items[Junk] = 5;
+		g.Items[FakeGame.Wood] = 20;
+		g.Items[FakeGame.StoneBlock] = 40;
+		g.Items[FakeGame.Lens] = 3; // not researched: stays for research
+		Assert.True(ResearchHabit.TrashResearched(ctx, null) > 0);
+		Assert.Equal(0, g.Count(Junk));
+		Assert.Equal(20, g.Count(FakeGame.Wood));
+		Assert.Equal(40, g.Count(FakeGame.StoneBlock));
+		Assert.Equal(3, g.Count(FakeGame.Lens));
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.StartsWith("Journey: trashed 5 "));
+	}
+
+	[Fact]
+	public void TrashResearched_Off_OrNoDuplication_OrClassic_TrashesNothing()
+	{
+		var (g, ctx) = Journey();
+		g.Journey.Caps[Junk] = 1;
+		g.Journey.MarkResearched(Junk);
+		g.Items[Junk] = 5;
+		Assert.Equal(0, ResearchHabit.TrashResearched(ctx, null)); // the setting off
+		ctx.TrashResearched = true;
+		g.Journey.ChecklistMode = true;
+		Assert.Equal(0, ResearchHabit.TrashResearched(ctx, null)); // nothing would come back
+		g.Journey.ChecklistMode = false;
+		g.Journey.On = false;
+		Assert.Equal(0, ResearchHabit.TrashResearched(ctx, null)); // Classic
+		Assert.Equal(5, g.Count(Junk));
+	}
 }

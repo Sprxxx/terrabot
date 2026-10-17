@@ -102,4 +102,38 @@ public static class ResearchHabit
 			ctx.Log.Info($"Journey: duplicated {got} {ctx.Knowledge?.ItemName(itemType) ?? $"item {itemType}"} ({why}); {ctx.Inventory.Count(itemType)} carried");
 		return got;
 	}
+
+	/// <summary>
+	/// The user's TerraBot setting "Journey: trash researched items the bot has no use for" (<see cref="BotContext.TrashResearched"/>):
+	/// every stack (a pass a second, BotBrain.HabitEvery ticks) of an item researched to its cap that the bag does not keep
+	/// (<see cref="BotBrain.KeptItems"/>: gear, the plan's items and their makings), trashed as a ctrl-click does; what is needed
+	/// later is duplicated. So what is picked up already researched goes within the second, as the user has it with Upgraded
+	/// Research's auto-trash, but not what the bot uses (wood, torches, arrows stay in the bag). Never coins, nor the stone and dirt the paths build with; another placeable (sand, mud, furniture)
+	/// only while stone or dirt is carried, so the bag never goes without blocks. Not with the duplication menu off (nothing
+	/// would come back), not in a boss fight, a throw or a research. Returns how many stacks it trashed.
+	/// </summary>
+	public static int TrashResearched(BotContext ctx, ISkill current)
+	{
+		IJourney j = ctx.Journey;
+		if (!ctx.TrashResearched || j == null || !j.Enabled || !j.DuplicationAllowed || ctx.Inventory == null || ctx.Crafter == null || ctx.Knowledge == null)
+			return 0;
+		if (current is BossFightSkill or ThrowItemSkill or ResearchSkill or DuplicateSkill)
+			return 0;
+		int trashed = 0;
+		var stacks = ctx.Inventory.Stacks();
+		System.Collections.Generic.HashSet<int> kept = BotBrain.KeptItems(ctx, stacks);
+		bool blocks = System.Array.Exists(ctx.Ids.BuildingBlocks, b => ctx.Inventory.Count(b) > 0);
+		foreach (int type in System.Linq.Enumerable.Distinct(System.Linq.Enumerable.Select(stacks, s => s.Type))) {
+			if (type <= 0 || kept.Contains(type) || System.Array.IndexOf(ctx.Ids.BuildingBlocks, type) >= 0 || System.Array.IndexOf(ctx.Ids.Coins, type) >= 0
+				|| !j.IsResearched(type) || ctx.Knowledge.TilePlacedBy(type) >= 0 && !blocks)
+				continue;
+			int n = ctx.Inventory.Count(type);
+			// Stack after stack (the quick trash takes the smallest), at most the bag's slots.
+			for (int k = 0; k < MaxStacksAtOnce && ctx.Inventory.Count(type) > 0 && ctx.Crafter.TryTrash(type); k++)
+				trashed++;
+			if (ctx.Inventory.Count(type) < n)
+				ctx.Log.Info($"Journey: trashed {n - ctx.Inventory.Count(type)} {ctx.Knowledge.ItemName(type)} (researched, nothing needs it)");
+		}
+		return trashed;
+	}
 }

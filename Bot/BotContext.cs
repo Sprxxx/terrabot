@@ -141,6 +141,8 @@ public sealed class BotContext
 	public PlaceMemory LookedFrom { get; } = new();
 	/// <summary>Expert or Master world (Main.expertMode): bosses attack faster.</summary>
 	public bool Expert { get; set; }
+	/// <summary>Journey: trash researched items nothing needs (the game adapter's TerraBot setting; ResearchHabit.TrashResearched).</summary>
+	public bool TrashResearched { get; set; }
 	public IBotLog Log { get; set; } = NullLog.Instance;
 	/// <summary>When true, skills log a line per tick (pos, vel, step, input).</summary>
 	public bool Trace { get; set; }

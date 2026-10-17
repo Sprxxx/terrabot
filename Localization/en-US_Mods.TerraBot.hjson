@@ -1,3 +1,18 @@
+Configs: {
+	TerraBotConfig: {
+		DisplayName: TerraBot
+		TrashResearchedItems: {
+			Label: "Journey: trash researched items the bot has no use for"
+			Tooltip:
+				'''
+				In Journey Mode, the bot trashes picked-up items that are fully researched and that nothing it does needs
+				(not gear, not what its plan uses or makes things from, not coins, not its stone or dirt for building).
+				Whatever it needs later it duplicates from the research menu. Off: researched items stay in the bag.
+				'''
+		}
+	}
+}
+
 Keybinds: {
 	ToggleBot.DisplayName: Toggle Bot
 	SetTarget.DisplayName: Set Bot Target (tile under cursor)

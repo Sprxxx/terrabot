@@ -713,6 +713,7 @@ public sealed class BotBrain
 			ResearchHabit.Tick(ctx, Current);
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			DropPickupBlockers(ctx);
+			ResearchHabit.TrashResearched(ctx, Current);
 			KeepRoom(ctx);
 			WearAccessories(ctx);
 			NoteEvilEnemies(ctx);
