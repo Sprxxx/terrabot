@@ -730,7 +730,8 @@ public sealed class BotBrain
 		// Or sooner, when the way up would take more than half the breath left: seen in game (measured run O1), surfacing at
 		// 3/4 breath with air 22 rows up, and drowned on the way.
 		if (Auto && Current is not SurfaceSkill && ctx.Combat.BreathMax > 0 && ctx.Combat.Breath < ctx.Combat.BreathMax && SurfaceSkill.HeadUnder(ctx)
-			&& (ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 || ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks)) {
+			&& (ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && Current is not HellevatorSkill { DiggingStraight: true }
+				|| ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks)) {
 			ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}");
 			// No more marking the water's surroundings unreachable (13x13 tiles each time): surfacing works (no drownings in
 			// runs N1, N2), and ore and crystals by water are worth a breath, as for a player (user, 2026-10-14).

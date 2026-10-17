@@ -65,12 +65,18 @@ public sealed class HellevatorSkill : ISkill
 	private int alignTries, openTicks, lastLedgeY = int.MinValue, lastLoggedY = int.MinValue;
 	private TilePos? mineCell;
 	private int mineTicks;
+	/// <summary>
+	/// Digging the straight shaft (not a leg, not the approach): the brain's breath reflex then surfaces only when the way up needs
+	/// the breath left (BotBrain), not at three quarters. Seen in game (S1): the shaft through a flooded stretch at rows 760-777,
+	/// surfaced at 149/200 breath about ten times, each a pillar of 6 blocks in the shaft, mined again on the way back down.
+	/// </summary>
+	public bool DiggingStraight => leg == null && approach == null && !forceFinal && col != int.MinValue;
 	/// <summary>The next stretch is a leg (the straight dig could not go on: lava, a cell too hard, a deep drop).</summary>
 	private bool legNext;
 	/// <summary>Ticks on one cell of the floor before the straight dig gives that stretch to a leg (a pickaxe takes a stone in about 23).</summary>
 	public const int MineCellTicks = 240;
 	/// <summary>Tries to walk onto the shaft's column from beside it before the dig goes on from the column the body is on.</summary>
-	public const int MaxAlignTries = 2;
+	public const int MaxAlignTries = 4;
 	/// <summary>Rows of the column read ahead before stepping over to it round lava (<see cref="StraightShaft.TroubleAhead"/>).</summary>
 	public const int StepOverLookRows = 12;
 	/// <summary>The column the last leg seeks the row round: the shaft's, or the bot's when it is down there already far from it.</summary>
@@ -176,7 +182,8 @@ public sealed class HellevatorSkill : ISkill
 			seekX = n.X;
 			ctx.Log.Info($"Hellevator: down at {n} already, {Math.Abs(n.X - ShaftX)} columns from the shaft; onto row {StandRow} within {SeekTiles} of here");
 		}
-		if (leg == null && !forceFinal && Math.Abs(n.X - ShaftX) > ApproachTiles)
+		// Once begun, the walk to the shaft's top goes on to it (seen in game, S1: given up 40 columns off, the shaft was dug at 2115).
+		if (leg == null && !forceFinal && (approach != null || Math.Abs(n.X - ShaftX) > ApproachTiles))
 			return Approach(ctx, n);
 		// The straight drop, down to the last leg's rows (the ceiling and the open band over the lava are the last leg's).
 		if (leg == null && !forceFinal && !legNext && StandRow - n.Y > FinalLegRows && Straight(ctx, n) is SkillStatus dug)
@@ -232,7 +239,7 @@ public sealed class HellevatorSkill : ISkill
 	{
 		var p = ctx.Physics;
 		if (col == int.MinValue)
-			col = Math.Abs(n.X - ShaftX) <= Slack ? ShaftX : n.X;
+			col = ShaftX;
 		if (!ctx.Body.Grounded) {
 			ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(col, p), p);
 			State = $"dropping down the shaft at x {col}";
@@ -252,9 +259,14 @@ public sealed class HellevatorSkill : ISkill
 				return SkillStatus.Running;
 		}
 		if (n.X != col) {
-			if (Math.Abs(n.X - col) <= Slack && alignTries < MaxAlignTries) {
+			// Back onto the column (a fight, a surfacing pushed the body off it); seen in game (S1): given up after two tries, the
+			// shaft went on from wherever the body was, 2149, 2138, 2120.
+			if (Math.Abs(n.X - col) <= ApproachTiles && alignTries < MaxAlignTries) {
 				if (align == null) {
-					align = new WalkToSkill(new TilePos(col, n.Y)) { Quiet = true, Underground = true, MaxNoPathAttempts = 1 };
+					// Onto the column at this row or below it: the shaft under the spot is dug out (nothing to stand on there), so
+					// the way back is into the shaft (seen in the test: StandAt the column's cell ended beside it, a column off).
+					int onto = col;
+					align = new WalkToSkill(new GoalRow(n.Y, col, ctx.Physics) { Below = true, Accept = t => t.X == onto }) { Quiet = true, Underground = true, MaxNoPathAttempts = 1 };
 					align.Start(ctx);
 					alignTries++;
 				}
@@ -264,12 +276,13 @@ public sealed class HellevatorSkill : ISkill
 					return SkillStatus.Running;
 				align.Stop(ctx);
 				align = null;
+				if (ctx.Node.X == col)
+					alignTries = 0;
 				return SkillStatus.Running;
 			}
 			ctx.Log.Info($"Hellevator: the shaft goes on from column {n.X} (column {col} not reached{(col != ShaftX ? $", x {ShaftX} planned" : "")})");
 			col = n.X;
 		}
-		alignTries = 0;
 		ShaftRow row = StraightShaft.Below(ctx.Moves, col, n.Y);
 		switch (row.Kind) {
 			case ShaftKind.Dig: {

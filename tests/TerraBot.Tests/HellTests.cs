@@ -166,6 +166,42 @@ public class HellTests
 		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("(straight, column"));
 	}
 
+	/// <summary>
+	/// In game (S1) fights and surfacing pushed the body off the shaft and the dig went on from wherever it stood (2149, 2138, 2120).
+	/// Pushed 5 columns off mid-shaft (a side pocket dug there), the bot goes back onto its column and digs on from it.
+	/// </summary>
+	[Fact]
+	public void TheHellevator_PushedOffItsColumn_GoesBackOntoIt()
+	{
+		FakeGame g = Hell();
+		BotContext ctx = Context(g);
+		var shaft = new HellevatorSkill(ShaftX, BridgeRow - 1);
+		shaft.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		bool pushed = false;
+		int t = 0;
+		for (; t < 30000 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			if (!pushed && g.Sim.Node.Y >= 20 && ctx.Body.Grounded) {
+				// A side pocket off the shaft (as a fight's or a surfacing's moves leave), and the body in it.
+				int y = g.Sim.Node.Y;
+				for (int x = ShaftX - 6; x < ShaftX; x++)
+					for (int r = y - 2; r <= y; r++)
+						g.Grid.Set(x, r, CellKind.Empty);
+				var pp = Core.Physics.PhysicsParams.Default;
+				g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(ShaftX - 5, pp), Y = Core.Pathfinding.Body.StandingTop(y, pp), ReleaseJump = true };
+				pushed = true;
+				g.Refresh(ctx);
+			}
+			s = shaft.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"{s} at {g.Sim.Node} after {t} ticks");
+		Assert.True(pushed);
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.DoesNotContain(((TestLog)ctx.Log).Lines, l => l.Contains("the shaft goes on from column"));
+	}
+
 	/// <summary>The Hell world with the bot standing on the tower's roof at its east end, ready to bridge east.</summary>
 	private (FakeGame, BotContext) OnTheTower(int blocks = 300)
 	{
