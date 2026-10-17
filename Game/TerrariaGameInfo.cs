@@ -156,7 +156,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		// Ammo goes into the ammo slots first (Player.GetItem: FitsAmmoSlot, then FillAmmo, slots 54-57). Seen in game
 		// (measured run M10f, world_eow): the 50 main slots full (the one KeepRoom freed refilled by a pickup at once),
 		// "crafting 500 Wooden Arrow" refused as busy over and over for 20+ game hours, the arrows' own stack in an ammo slot.
-		if (itemType > 0 && itemType < ItemLoader.ItemCount && ContentSamples.ItemsByType[itemType].FitsAmmoSlot())
+		if (ContentSamples.ItemsByType.TryGetValue(itemType, out Item sample) && sample.FitsAmmoSlot())
 			for (int i = 54; i < 58; i++) {
 				Item it = player.inventory[i];
 				if (it.IsAir || (it.type == itemType && it.stack < it.maxStack))
