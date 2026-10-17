@@ -240,6 +240,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	// ---------- IGameKnowledge ----------
 
+	/// <summary>Where generation puts the altars (TerrariaGameInfo.GenerationArea); null: no rule, as before.</summary>
+	public GenArea? AltarArea;
+	public GenArea? GenerationArea(int tileType) => tileType == TileDemonAltar ? AltarArea : null;
+
 	public IReadOnlyList<RecipeInfo> RecipesFor(int itemType) => recipes.TryGetValue(itemType, out List<RecipeInfo> l) ? l : Array.Empty<RecipeInfo>();
 
 	public ItemSource SourceOf(int itemType) => itemType switch {

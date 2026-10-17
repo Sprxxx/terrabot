@@ -72,6 +72,31 @@ public interface IGameKnowledge
 
 	/// <summary>What a shop pays for the item (vanilla Item.value, in copper); 0: worth nothing.</summary>
 	int ItemValue(int itemType);
+
+	/// <summary>
+	/// Where world generation puts the tile, for one looked for in the world rather than placed (a demon or crimson altar):
+	/// what a player knows of where to look. Null when generation has no such rule for it.
+	/// </summary>
+	GenArea? GenerationArea(int tileType) => null;
+}
+
+/// <summary>
+/// The tiles world generation puts a tile in: columns <see cref="MinX"/>..<see cref="MaxX"/> but not
+/// <see cref="SkipFromX"/>..<see cref="SkipToX"/>, rows <see cref="MinY"/>..<see cref="MaxY"/>. For the altars (WorldGen's
+/// "Altars" pass, WorldGen.cs:11846-11898): never in the middle tenth of the world's width, where the spawn is.
+/// </summary>
+public readonly record struct GenArea(int MinX, int MaxX, int SkipFromX, int SkipToX, int MinY, int MaxY)
+{
+	public bool HoldsColumn(int x) => x >= MinX && x <= MaxX && (x < SkipFromX || x > SkipToX);
+
+	/// <summary>Columns it holds from <paramref name="x"/> on in direction <paramref name="dir"/> before an edge or the skipped middle (0 when x is not in it).</summary>
+	public int RoomFrom(int x, int dir)
+	{
+		if (!HoldsColumn(x))
+			return 0;
+		int end = dir > 0 ? (x < SkipFromX ? SkipFromX - 1 : MaxX) : (x > SkipToX ? SkipToX + 1 : MinX);
+		return System.Math.Abs(end - x);
+	}
 }
 
 public static class InventoryExtensions

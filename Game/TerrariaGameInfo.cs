@@ -480,6 +480,21 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 			list.Sort();
 	}
 
+	/// <summary>
+	/// The altars' area, as WorldGen's "Altars" pass draws them (WorldGen.cs:11846-11898): x in 281..maxTilesX-284 but not over
+	/// 0.45 to 0.55 of the width, y from (2 worldSurface + rockLayer) / 3 to (rockLayer + 2 (maxTilesY - 350)) / 3; a "don't dig
+	/// up" world, rows 100 to 0.9 maxTilesY. The evil biome's own passes put a few more in it (WorldGen.cs:10689), wherever it is.
+	/// </summary>
+	public GenArea? GenerationArea(int tileType)
+	{
+		if (tileType != TileID.DemonAltar || Main.maxTilesX <= 0)
+			return null;
+		int w = Main.maxTilesX;
+		int minY = Main.remixWorld ? 100 : (int)((Main.worldSurface * 2.0 + Main.rockLayer) / 3);
+		int maxY = Main.remixWorld ? (int)(Main.maxTilesY * 0.9) : (int)(Main.rockLayer + (Main.maxTilesY - 350) * 2) / 3;
+		return new GenArea(281, w - 284, (int)(w * 0.45), (int)System.Math.Ceiling(w * 0.55), minY, maxY);
+	}
+
 	public IReadOnlyList<RecipeInfo> RecipesFor(int itemType)
 	{
 		BuildIndex();

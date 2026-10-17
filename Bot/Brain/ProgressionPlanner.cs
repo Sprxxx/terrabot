@@ -1230,6 +1230,20 @@ public sealed partial class ProgressionPlanner
 				// game (measured run S17): all else ready at d5 +21h, then "no DemonAltar found after 10 explorations" and
 				// auto mode stopped at d7 +17h.
 				int tripKey = -s.TileType;
+				// Where generation puts none (the altars: never in the world's middle tenth, where the spawn is), a trip first,
+				// to the nearest ground it does (TripColumns keeps every trip for it there). Seen in game (Journey run J1, The
+				// Aggressive Site, 6400 wide, spawn at x 3198): every exploration for a DemonAltar went over x 3050-3320 and every
+				// trip to x 3078 or 3318, all within x 2880-3520 where the "Altars" pass puts none; 354 explorations, none found.
+				GenArea? area = k.GenerationArea(s.TileType);
+				// Once each time the bot is in those columns: with no trip possible, it explores there as before.
+				if (area is GenArea ga && ga.HoldsColumn(ctx.Node.X))
+					areaTripTried.Remove(tripKey);
+				else if (area is GenArea gb && travelDest == null && areaTripTried.Add(tripKey)
+					&& fruitlessMines.GetValueOrDefault(tripKey) == travelledFor.GetValueOrDefault(tripKey)) {
+					ctx.Log.Info($"Auto: no {k.TileName(s.TileType)} is generated in columns {gb.SkipFromX}-{gb.SkipToX} (the world's middle tenth); travelling out of them to look");
+					NoteFruitless(tripKey);
+					stationHeading = null;
+				}
 				if (TravelForOre(ctx, tripKey, k.TileName(s.TileType)) is ISkill trip)
 					return trip;
 				if (stationExplores >= MaxStationExplores) {
@@ -1249,7 +1263,7 @@ public sealed partial class ProgressionPlanner
 				// run U8): every replan after a fight started a fresh exploration the other way from wherever the fight left the
 				// bot and counted it, so the 10 explorations went to and fro over the same ground in about 10 fights (run S17:
 				// "no DemonAltar found after 10 explorations").
-				stationHeading ??= ctx.SaferSide(ctx.Node);
+				stationHeading ??= StationHeading(ctx, area);
 				return Do($"exploring for a {k.TileName(s.TileType)} (none seen yet)",
 					new ExploreSkill(k.TileName(s.TileType), c => c.World.FindTiles(tile, c.Node, StationSearchRadius).Count > 0, ExploreBias.Down, stationHeading.Value)
 					{ JobKey = $"Explore station {tile}" });
@@ -2813,6 +2827,8 @@ public sealed partial class ProgressionPlanner
 	private int stationExplores;
 	/// <summary>The heading explorations for a station go in, chosen once (see ResolveStation).</summary>
 	private int? stationHeading;
+	/// <summary>Station trips forced out of the columns generation puts none in, since the bot was last in columns it does.</summary>
+	private readonly HashSet<int> areaTripTried = new();
 	public const int MaxStationExplores = 10;
 	/// <summary>Trips to new ground for a station nothing can place (a demon altar), before the plan is stuck.</summary>
 	public const int MaxStationTrips = 6;
@@ -3106,7 +3122,7 @@ public sealed partial class ProgressionPlanner
 			// Nowhere to go (seen in game, world_eye run 68: between a corruption and a desert, every way crosses one):
 			// no trip, and no recall potion drunk for one either (five were, in a minute, each followed by mining from the spawn).
 			// Instead: back to the spawn to look from there, and from there deeper (run 70: auto mode stopped, every job failing).
-			if (ChooseTravelDest(ctx, fails, failedTrips) is not TilePos chosen)
+			if (ChooseTravelDest(ctx, fails, failedTrips, TripColumns(ctx, item)) is not TilePos chosen)
 				return NoTripPossible(ctx, item, name);
 			travelDest = chosen;
 			fresh = true;
@@ -3215,7 +3231,7 @@ public sealed partial class ProgressionPlanner
 	/// explored already, and the same trip came again: 63,674 explorations in the run (24,517 from (2331,193)), runs of 757
 	/// to 6,030 "travelling to new ground at (2335,193)" in a row, then the same at (2215,196).</para>
 	/// </summary>
-	private static TilePos? ChooseTravelDest(BotContext ctx, int fails, Dictionary<TilePos, long> failed)
+	private static TilePos? ChooseTravelDest(BotContext ctx, int fails, Dictionary<TilePos, long> failed, Func<int, bool> columns = null)
 	{
 		bool FailedLately(TilePos c) => failed.Any(f => ctx.Tick - f.Value < FailedTripTicks && f.Key.ChebyshevTo(c) <= TravelArrivedTiles);
 		int dir = fails % 2 == 1 ? 1 : -1;
@@ -3227,11 +3243,34 @@ public sealed partial class ProgressionPlanner
 		for (int i = 0; i < MaxTravelTiles / TravelTiles; i++) {
 			int r = (reach - TravelTiles + i * TravelTiles) % MaxTravelTiles + TravelTiles;
 			foreach (int d in new[] { dir, -dir })
-				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && c.ChebyshevTo(ctx.Node) > ExploreSkill.MaxLegTiles && !FailedLately(c) && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
+				if ((columns == null || columns(originX + d * r)) && SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && c.ChebyshevTo(ctx.Node) > ExploreSkill.MaxLegTiles && !FailedLately(c) && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
 					return c;
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// The columns a trip may end in: for a station looked for in the world (its trip key, the tile negated), those
+	/// generation puts it in (<see cref="IGameKnowledge.GenerationArea"/>); any column otherwise.
+	/// </summary>
+	private static Func<int, bool> TripColumns(BotContext ctx, int item) =>
+		item < 0 && ctx.Knowledge?.GenerationArea(-item) is GenArea a ? a.HoldsColumn : null;
+
+	/// <summary>
+	/// The way to explore for a station looked for in the world: the safer side, unless the ground it is generated in runs out
+	/// that way within a few legs (the world's edge, or the middle tenth it is never put in) and there is more the other way.
+	/// </summary>
+	private static int StationHeading(BotContext ctx, GenArea? area)
+	{
+		int safer = ctx.SaferSide(ctx.Node);
+		if (area is not GenArea a || !a.HoldsColumn(ctx.Node.X))
+			return safer;
+		int room = a.RoomFrom(ctx.Node.X, safer), other = a.RoomFrom(ctx.Node.X, -safer);
+		return room < StationRoomTiles && other > room ? -safer : safer;
+	}
+
+	/// <summary>Ground ahead (tiles) an exploration for a station wants on its side: a few legs (ExploreSkill.MaxLegTiles each).</summary>
+	public const int StationRoomTiles = 4 * ExploreSkill.MaxLegTiles;
 
 	/// <summary>Surface samples (tiles apart) checked along a trip's way.</summary>
 	public const int RouteSampleTiles = 15;

@@ -398,6 +398,51 @@ public class BossPlannerTests
 		Assert.DoesNotContain("item43", q.Status);
 	}
 
+	/// <summary>
+	/// Journey run J1 (The Aggressive Site, 6400 wide, spawn at x 3198): 354 explorations for a DemonAltar over x 3050-3320 and
+	/// trips to x 3078 and 3318, all in x 2880-3520, the middle tenth WorldGen's "Altars" pass never puts one in. Standing there,
+	/// the search travels out first, to ground generation does put altars in; with no such rule known, it explores as before.
+	/// </summary>
+	[Fact]
+	public void InTheColumnsNoAltarIsGeneratedIn_TheSearchTravelsOutFirst()
+	{
+		FakeGame g = ProgressionTests.Mine(width: 600, sky: 60);
+		g.Items[FakeGame.Lens] = 6;
+		g.IsNight = true;
+		g.AltarArea = new GenArea(0, 599, 0, 150, 0, 80); // the bot at x 3, in the skipped columns
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		Assert.IsType<WalkToSkill>(s);
+		var log = ((TestLog)ctx.Log).Lines;
+		Assert.Contains(log, l => l.Contains("no tile26 is generated in columns 0-150"));
+		string trip = p.Status;
+		int x = int.Parse(System.Text.RegularExpressions.Regex.Match(trip, @"new ground at \((\d+),").Groups[1].Value);
+		Assert.True(x > 150, trip);
+
+		// No rule known: explored for from where it stands, as before.
+		FakeGame h = ProgressionTests.Mine(width: 600, sky: 60);
+		h.Items[FakeGame.Lens] = 6;
+		h.IsNight = true;
+		BotContext hc = h.CreateContext(output);
+		h.Refresh(hc);
+		Assert.IsType<ExploreSkill>(new ProgressionPlanner().ResolveForTest(Eye, hc));
+	}
+
+	[Fact]
+	public void GenArea_ColumnsAndRoom()
+	{
+		var a = new GenArea(281, 6116, 2880, 3520, 493, 1180); // The Aggressive Site's altars
+		Assert.False(a.HoldsColumn(3198)); // the spawn
+		Assert.True(a.HoldsColumn(2575)); // where the Crimson's edge was
+		Assert.False(a.HoldsColumn(100)); // the ocean side
+		Assert.Equal(2879 - 2575, a.RoomFrom(2575, 1)); // up to the middle tenth
+		Assert.Equal(2575 - 281, a.RoomFrom(2575, -1)); // to the world's edge side
+		Assert.Equal(0, a.RoomFrom(3198, 1));
+	}
+
 	[Fact]
 	public void AnAltarOnTheMap_FarBeyondTheSearchRound_IsWalkedTo_NotExploredFor()
 	{
