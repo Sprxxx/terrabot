@@ -1382,7 +1382,11 @@ public sealed class ProgressionPlanner
 				if (!InArena(ctx.Node, ax0, ax1, ay))
 					return Do($"walking to the arena in the corruption to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay));
 			}
-			else if (ctx.CorruptionAround(ctx.Node) < BotContext.CorruptionZoneTiles) {
+			// On the surface: the worm is fought from open ground, kiting sideways as it arcs out (spec G9-G10), not where
+			// the Worm Food happened to be made. Seen in game (measured run M10e, world_eow): crafted at an altar in a pocket
+			// at row 409, some 130 rows under the corruption's surface, and summoned there at once: "no room to run from the
+			// worm's head" 20 times, the bot held in place at (1890,409) and killed, the worm at 9637 of 10050 life.
+			else if (ctx.CorruptionAround(ctx.Node) < BotContext.CorruptionZoneTiles || UnderTheSurface(ctx)) {
 				if (EvilGround(ctx) is not TilePos spot)
 					return ExploreForEvilBiome(ctx, $"to summon the {b.Label}");
 				if (spot.ChebyshevTo(ctx.Node) > SummonSpotTiles)
@@ -1396,6 +1400,13 @@ public sealed class ProgressionPlanner
 		}
 		return Do($"fighting the {b.Label} in the corruption{(arena != null ? ", in the arena" : "")} ({(ctx.IsNight ? "night" : "day")})",
 			new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena });
+	}
+
+	/// <summary>Below the ground's surface here by more than <see cref="TravelFromSurfaceRows"/> (as for a trip's "up first").</summary>
+	private static bool UnderTheSurface(BotContext ctx)
+	{
+		int surface = SurfaceRow(ctx);
+		return surface > 0 && ctx.Node.Y > surface + TravelFromSurfaceRows;
 	}
 
 	/// <summary>
@@ -1897,11 +1908,32 @@ public sealed class ProgressionPlanner
 	/// <summary>Cells of one placed station (an altar is 3×2): found again as another of its cells.</summary>
 	public const int StationSiteTiles = 3;
 
-	/// <summary>The nearest seen station of this type that no walk lately failed to reach.</summary>
-	private TilePos? FindReachableUnplaceable(int tile, BotContext ctx) =>
-		ctx.World.FindTiles(tile, ctx.Node, StationSearchRadius)
-			.Where(t => !failedStationSites.Any(f => ctx.Tick - f.Value < FailedTripTicks && f.Key.ChebyshevTo(t) <= StationSiteTiles))
-			.Cast<TilePos?>().FirstOrDefault();
+	/// <summary>
+	/// The nearest seen station of this type that no walk lately failed to reach: round the bot, or failing that anywhere on
+	/// the map (what the player has seen, at any time). Seen in game (measured run M10e, world_eow): with the vile powder made
+	/// at d3 +11h at home (2079,282), "exploring for a DemonAltar (none seen yet)", the altars at (1732,358) and (1439,360),
+	/// on the map from runs before, being 350 and 640 tiles off, beyond <see cref="StationSearchRadius"/>.
+	/// </summary>
+	private TilePos? FindReachableUnplaceable(int tile, BotContext ctx)
+	{
+		bool Usable(TilePos t) => !failedStationSites.Any(f => ctx.Tick - f.Value < FailedTripTicks && f.Key.ChebyshevTo(t) <= StationSiteTiles);
+		TilePos? near = ctx.World.FindTiles(tile, ctx.Node, StationSearchRadius).Where(Usable).Cast<TilePos?>().FirstOrDefault();
+		if (near != null)
+			return near;
+		// The whole map is a big scan (millions of cells): once a game hour, the answer kept till then.
+		if (!wideStationSearch.TryGetValue(tile, out var w) || ctx.Tick - w.Tick >= WideStationSearchTicks || ctx.Tick < w.Tick) {
+			w = (ctx.Tick, ctx.World.FindTiles(tile, ctx.Node, WideStationSearchRadius));
+			wideStationSearch[tile] = w;
+			if (w.Found.Count > 0)
+				ctx.Log.Info($"Auto: none within {StationSearchRadius} tiles; {w.Found.Count} cell(s) of {ctx.Knowledge.TileName(tile)} on the map, the nearest at {w.Found[0]} ({w.Found[0].ChebyshevTo(ctx.Node)} tiles away)");
+		}
+		return w.Found.Where(Usable).OrderBy(t => t.ChebyshevTo(ctx.Node)).Cast<TilePos?>().FirstOrDefault();
+	}
+
+	private readonly Dictionary<int, (long Tick, IReadOnlyList<TilePos> Found)> wideStationSearch = new();
+	/// <summary>The map-wide look for a station nothing places: the width of a large world either way.</summary>
+	public const int WideStationSearchRadius = 8400;
+	public const int WideStationSearchTicks = 3600;
 
 	/// <summary>Look for a station nothing can place (once per planner reset); remember it when found.</summary>
 	private bool FindUnplaceableStation(int tile, BotContext ctx)

@@ -543,6 +543,39 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void WormFoodMadeDeepInTheCorruption_IsNotUsedThere_TheSummonIsOnTheSurface()
+	{
+		// Measured run M10e: the Worm Food was made at an altar in a pocket at row 409, 130 rows under the corruption's
+		// surface, and the worm summoned there at once; with no room to run, the bot was held in place and killed.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y <= Feet; y++)
+			rows.Add(y == Feet ? "...S" + new string('.', 496) : new string('.', 500));
+		for (int y = Feet + 1; y < Feet + 60; y++) {
+			char[] r = new string('#', 500).ToCharArray();
+			if (y >= Feet + 40 && y <= Feet + 43)
+				for (int x = 348; x <= 358; x++)
+					r[x] = '.'; // the altar's pocket, its floor at row Feet + 44
+			rows.Add(new string(r));
+		}
+		rows.Add(new string('@', 500));
+		FakeGame g = new FakeGame(rows.ToArray());
+		for (int x = CorruptFrom; x <= CorruptTo; x++)
+			for (int y = Feet + 1; y < Feet + 60; y++)
+				if (g.Grid.Get(x, y).IsSolid())
+					g.TileTypes[new TilePos(x, y)] = y == Feet + 1 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		BotContext ctx = Armoured(g);
+		g.Items[FakeGame.WormFood] = 1;
+		MoveTo(g, ctx, 352, Feet + 43);
+		Assert.True(ctx.CorruptionAround(ctx.Node) >= BotContext.CorruptionZoneTiles);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eater, ctx);
+		output.WriteLine($"at {ctx.Node}: {p.Status} -> {s?.Describe()}");
+		Assert.IsNotType<BossFightSkill>(s);
+		var walk = Assert.IsType<WalkToSkill>(s);
+		Assert.True(walk.Target.Y <= Feet + 1, $"walking to {walk.Target}");
+	}
+
+	[Fact]
 	public void TheMushroomJob_PicksOnlyTheMushrooms_AmongTheCorruptPlants()
 	{
 		FakeGame g = CorruptWorld();

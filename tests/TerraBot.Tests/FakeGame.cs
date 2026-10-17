@@ -329,8 +329,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius)
 	{
 		var found = new List<TilePos>();
-		for (int x = around.X - radius; x <= around.X + radius; x++)
-			for (int y = around.Y - radius; y <= around.Y + radius; y++)
+		for (int x = System.Math.Max(0, around.X - radius); x <= System.Math.Min(Grid.Width - 1, around.X + radius); x++)
+			for (int y = System.Math.Max(0, around.Y - radius); y <= System.Math.Min(Grid.Height - 1, around.Y + radius); y++)
 				if (Grid.InBounds(x, y) && TileTypeAt(x, y) == tileType && !Blocks.Unbreakable.Contains(new TilePos(x, y)) && IsRevealed(x, y))
 					found.Add(new TilePos(x, y));
 		return found.OrderBy(c => c.ChebyshevTo(around)).ToList();

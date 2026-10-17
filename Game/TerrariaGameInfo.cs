@@ -270,10 +270,13 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public IReadOnlyList<TilePos> FindTiles(int tileType, TilePos around, int radius)
 	{
 		var found = new List<TilePos>();
-		for (int x = around.X - radius; x <= around.X + radius; x++)
-			for (int y = around.Y - radius; y <= around.Y + radius; y++)
+		// Clamped to the world: a map-wide look passes a radius wider than the world.
+		int x0 = Math.Max(2, around.X - radius), x1 = Math.Min(Main.maxTilesX - 3, around.X + radius);
+		int y0 = Math.Max(2, around.Y - radius), y1 = Math.Min(Main.maxTilesY - 3, around.Y + radius);
+		for (int x = x0; x <= x1; x++)
+			for (int y = y0; y <= y1; y++)
 				// Only what the player has seen: no x-ray. Exploring (and torchlight) reveals the map.
-				if (WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && Main.tile[x, y].TileType == tileType && (XRay || Main.Map.IsRevealed(x, y)))
+				if (Main.tile[x, y].HasTile && Main.tile[x, y].TileType == tileType && (XRay || Main.Map.IsRevealed(x, y)))
 					found.Add(new TilePos(x, y));
 		found.Sort((a, b) => a.ChebyshevTo(around).CompareTo(b.ChebyshevTo(around)));
 		return found;

@@ -334,6 +334,26 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AnAltarOnTheMap_FarBeyondTheSearchRound_IsWalkedTo_NotExploredFor()
+	{
+		// Measured run M10e (world_eow): at home with the vile powder, "exploring for a DemonAltar (none seen yet)", the altars
+		// on the map 350 and 640 tiles off being beyond the 150 tiles looked at round the bot.
+		FakeGame g = ProgressionTests.Mine(width: 500);
+		g.AddAltar(400, 23);
+		g.Items[FakeGame.Lens] = 6;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		Assert.True(400 - ctx.Node.X > ProgressionPlanner.StationSearchRadius);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		Assert.IsNotType<ExploreSkill>(s);
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos altar), p.Status);
+		Assert.True(altar.X >= 400, $"{altar}");
+	}
+
+	[Fact]
 	public void AnAltarNoWalkGetsTo_IsNotFoundAgain_TheNextOneIs()
 	{
 		// Measured run M10d (world_eow): the altar at (1732,358) lay behind a chasm's ebonstone lining (pick 40 breaks none);
