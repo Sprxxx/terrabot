@@ -381,7 +381,7 @@ public sealed partial class ProgressionPlanner
 		stages.Add(new PrepFor(ids.EyeBoss, new HouseBuilt("heart lantern in the house", HeartLantern: true)));
 		stages.Add(new BossDefeated(ids.EyeBoss, ids.SuspiciousEye, new[] { ids.EyeServant }, "Eye of Cthulhu") { NightOnly = true });
 		if (plan == Plans.EvilBoss)
-			stages.AddRange(EvilBossStages(ids));
+			stages.AddRange(WorldEvilBossStages(ids));
 		if (plan == Plans.Skeletron)
 			stages.AddRange(SkeletronStages(ids));
 		if (plan == Plans.WallOfFlesh)
@@ -408,7 +408,7 @@ public sealed partial class ProgressionPlanner
 	private static IEnumerable<Need> SkeletronStages(GameIds ids)
 	{
 		int boss = ids.SkeletronHead;
-		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.DemonBow), 1, "bow"));
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.EvilBow), 1, "bow"));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, UnholyArrows, "unholy arrows")));
 		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), SkeletronArrows, "arrows") { RefillBelow = SkeletronArrows * 4 / 5 });
 		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));
@@ -449,6 +449,58 @@ public sealed partial class ProgressionPlanner
 		yield return new PrepFor(boss, new StepToward(Array.Empty<(int, int)>(), new HaveItem(ids.WormFood, 1, "worm food")));
 		yield return new PrepFor(boss, new ArenaBuilt(EvilArenaLabel, InEvilBiome: true));
 		yield return new BossDefeated(boss, ids.WormFood, new[] { ids.EvilBossBody, ids.EvilBossTail }, "Eater of Worlds") { NightOnly = false, InEvilBiome = true };
+	}
+
+	/// <summary>The evil boss's stages for this world's evil: the Brain of Cthulhu's in a Crimson world, else the Eater of Worlds'.</summary>
+	private static IEnumerable<Need> WorldEvilBossStages(GameIds ids) => ids.Crimson ? CrimsonBossStages(ids) : EvilBossStages(ids);
+
+	/// <summary>Bloody Spine: 30 Vicious Powder + 15 Vertebrae at a Demon or Crimson Altar (Recipe.cs:14414-14420).</summary>
+	public const int SpinePowder = 30, SpineVertebrae = 15;
+	/// <summary>
+	/// Wooden arrows to carry into the Brain of Cthulhu's fight: its 1250 life behind 20 Creepers of 100 (defence 14 and 10; NPC.cs:
+	/// 7590-7622) is 460 hits of an Iron Bow's wooden arrow (13 - 7 and 13 - 5 a hit in Classic), 180 of the Tendon Bow's; at half of
+	/// them landing about 900 at most: the worm's 1000 (<see cref="WormArrows"/>).
+	/// </summary>
+	public const int BrainArrows = WormArrows;
+	/// <summary>The Brain of Cthulhu's arena stage (<see cref="ArenaBuilt.InEvilBiome"/>, in a Crimson world).</summary>
+	public const string CrimsonArenaLabel = "arena in the crimson";
+
+	/// <summary>
+	/// After the Eye, in a Crimson world (<see cref="GameIds.Crimson"/>): the Brain of Cthulhu by a Bloody Spine, the Worm Food path's
+	/// twin, every part verified in the decompile (BrainPattern for the fight):
+	/// <list type="number">
+	/// <item>A bow and arrows, and max life 200, as for the Eye.</item>
+	/// <item>(a) The Tendon Bow, from the bag: 8 bars of the Eye's crimtane (30-90 ore in a Crimson world, ItemDropDatabase.cs:496; a
+	/// bar of 3 ore at a furnace, Recipe.cs:10323; the bow at an anvil, Recipe.cs:10333). Damage 19 against the Iron Bow's 8.</item>
+	/// <item>(b) 15 vertebrae, hunted from crimeras in the crimson (1 in 3, ItemDropDatabase.cs:1111; a crimera flies as an eater of
+	/// souls does, AI style 5, NPC.cs:6321-6330): about 45 kills. They spawn over the crimson's ground only (the tile under the spawn
+	/// crimson grass, crimstone... NPC.cs:89569), 7 in 16 of its surface spawns by day; face monsters (7 in 16) and blood crawlers drop
+	/// them too, and are fought as they come (NPC.cs:89603-89616).</item>
+	/// <item>(c) 30 vicious powder, which its recipe resolves as the vicious mushrooms it still needs (crimson plants of frame 270 on
+	/// crimson grass, WorldGen.cs:54379 and 59644-59648) and a placed bottle (Recipe.cs:2512-2516).</item>
+	/// <item>(d) The Bloody Spine at the altar (a crimson altar is a Demon Altar tile, 26, style 1: WorldGen.cs:10689).</item>
+	/// <item>(e) Unholy arrows, from the bag: the vertebrae left over make them (5 wooden arrows and one, Recipe.cs:2283-2290). After
+	/// the spine, not before (the corruption's place for them): from the bag first they took the vertebrae the spine wants.</item>
+	/// <item>(f) An arena on the crimson's surface (the Corruption's arena code: where the Crimson zone holds at its middle, as the
+	/// spine works only there, Player.cs:43549-43552, and the Brain sinks away once we leave it, NPC.cs:33385-33397), (g) summoned
+	/// there by day or night (no time rule in the AI nor the item) and fought (<see cref="BossFightSkill.IsBrain"/>).</item>
+	/// </list>
+	/// The spine's parts are each moot once it is carried (<see cref="StepToward"/>), and all the prep once the Brain is up (<see cref="BossUp"/>).
+	/// </summary>
+	private static IEnumerable<Need> CrimsonBossStages(GameIds ids)
+	{
+		int boss = ids.BrainOfCthulhu;
+		var spine = new[] { (ids.BloodySpine, 1) };
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.TendonBow), 1, "bow"));
+		yield return new PrepFor(boss, new HaveItem(ids.WoodenArrow, BrainArrows, "arrows") { RefillBelow = BrainArrows * 4 / 5 });
+		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));
+		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.TendonBow, 1, "tendon bow")));
+		yield return new PrepFor(boss, new StepToward(spine, new HaveItem(ids.Vertebrae, SpineVertebrae, "vertebrae")));
+		yield return new PrepFor(boss, new StepToward(spine, new HaveItem(ids.ViciousPowder, SpinePowder, "vicious powder")));
+		yield return new PrepFor(boss, new StepToward(Array.Empty<(int, int)>(), new HaveItem(ids.BloodySpine, 1, "bloody spine")));
+		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, UnholyArrows, "unholy arrows")));
+		yield return new PrepFor(boss, new ArenaBuilt(CrimsonArenaLabel, InEvilBiome: true));
+		yield return new BossDefeated(boss, ids.BloodySpine, new[] { ids.Creeper }, "Brain of Cthulhu") { NightOnly = false, InEvilBiome = true };
 	}
 
 	/// <summary>Mining for this item found none around here (more travel, and a higher cost for it in recipes).</summary>
@@ -1040,7 +1092,7 @@ public sealed partial class ProgressionPlanner
 			Plans.Crystals => $"max life {ctx.Combat.LifeMaxBase} from life crystals",
 			Plans.Arena => ArenaOnOpenGround ? "no arena site: the boss is fought on open ground" : $"the arena at {ArenaSite} is ready",
 			Plans.Boss => "the Eye of Cthulhu is defeated",
-			Plans.EvilBoss => "the Eater of Worlds is defeated",
+			Plans.EvilBoss => ctx.Ids.Crimson ? "the Brain of Cthulhu is defeated" : "the Eater of Worlds is defeated",
 			Plans.Skeletron => "Skeletron is defeated",
 			Plans.WallOfFlesh => "the Wall of Flesh is defeated: Hardmode",
 			Plans.Hellbridge => $"the hellbridge is built ({HellbridgeText})",
@@ -1125,11 +1177,14 @@ public sealed partial class ProgressionPlanner
 
 	/// <summary>
 	/// The prep of the milestone after this plan's last boss, for the days its night-only boss waits (<see cref="DayWorkBeforeTheNight"/>):
-	/// after the Eye (the boss plan), the Eater of Worlds' (Milestone 10, the next one; its world_eow run starts from the Eye's
-	/// checkpoint). Prep only (<see cref="PrepFor"/>: moot once that boss is down), never its fight.
+	/// after the Eye (the boss plan), this world's evil boss's (Milestone 10, the next one; its world_eow run starts from the Eye's
+	/// checkpoint): the Eater of Worlds', or the Brain of Cthulhu's in a Crimson world. Prep only (<see cref="PrepFor"/>: moot once
+	/// that boss is down), never its fight. Seen in game (measured run J2, world_eye on the Crimson world The Aggressive Site, log line
+	/// 16832): "by day, before the night ...: exploring for the corruption (none seen yet) to hunt for Rotten Chunk", the worm's prep in
+	/// a world without a corruption.
 	/// </summary>
 	private static IEnumerable<Need> NextMilestonePrep(string plan, GameIds ids) =>
-		plan == Plans.Boss && ids.EvilBoss > 0 && ids.WormFood > 0 ? EvilBossStages(ids).OfType<PrepFor>() : Enumerable.Empty<Need>();
+		plan == Plans.Boss && ids.WorldEvilBoss > 0 && ids.WorldEvilSummon > 0 ? WorldEvilBossStages(ids).OfType<PrepFor>() : Enumerable.Empty<Need>();
 
 	/// <summary>
 	/// Where the feet stand inside the house (on the floor, by the left wall's inner side) when a house is built and
@@ -1656,12 +1711,12 @@ public sealed partial class ProgressionPlanner
 		bool evil = need.InEvilBiome;
 		ArenaSlot slot = evil ? evilArena : eyeArena;
 		Blueprint bp = Blueprint.Arena(ctx.Ids, inEvilBiome: evil);
-		string name = evil ? "arena in the corruption" : "arena";
+		string name = evil ? $"arena in the {ctx.Ids.EvilName}" : "arena";
 		if (evil) {
 			ctx.EvilErrand = true;
 			if (slot.Site == null && !slot.OnOpenGround && EyeArenaInTheZone(ctx) is TilePos eye) {
 				slot.Site = eye;
-				ctx.Log.Info($"Auto: the arena at {eye} lies in the corruption ({ctx.CorruptionAround(Middle(bp, eye))} corruption tiles round its middle): "
+				ctx.Log.Info($"Auto: the arena at {eye} lies in the {ctx.Ids.EvilName} ({ctx.CorruptionAround(Middle(bp, eye))} {ctx.Ids.EvilName} tiles round its middle): "
 					+ "the Eater of Worlds is fought there");
 			}
 		}
@@ -1712,7 +1767,7 @@ public sealed partial class ProgressionPlanner
 			TilePos chosen = slot.Site.Value;
 			bool inEvil = SiteFinder.InEvilBiome(ctx, bp, chosen);
 			ctx.Log.Info($"Auto: {name} site {chosen} ({SiteFinder.Edits(ctx, bp, chosen)} edits"
-				+ (evil ? $", floor row {chosen.Y + bp.Height - 1}, {ctx.CorruptionAround(Middle(bp, chosen))} corruption tiles round its middle, {SiteFinder.CorruptionOnceBuilt(ctx, bp, chosen, Middle(bp, chosen))} once built"
+				+ (evil ? $", floor row {chosen.Y + bp.Height - 1}, {ctx.CorruptionAround(Middle(bp, chosen))} {ctx.Ids.EvilName} tiles round its middle, {SiteFinder.CorruptionOnceBuilt(ctx, bp, chosen, Middle(bp, chosen))} once built"
 					+ $" (the zone wants {BotContext.CorruptionZoneTiles}, {SiteFinder.ZoneMargin} over it for the kiting: {SiteFinder.ZoneShortfall(ctx, bp, chosen)} short)" : "")
 				+ (inEvil != evil ? $", {(evil ? "off" : "in")} the evil biome: each step costs {SiteFinder.EvilStepFactor}x" : "") + ")");
 		}
@@ -1929,10 +1984,13 @@ public sealed partial class ProgressionPlanner
 	/// <summary>
 	/// Is the boss up? A part of it in view (any segment of a worm: the head may be the part out of sight), or, for a worm,
 	/// its health bar showing life (<see cref="IWorldInfo.BossBarLife"/>): a burrowed worm is out of view but still on the bar,
-	/// as a player reads it. The Eye of Cthulhu fights in view (BossPerceptionRadiusPx, 200 tiles round the bot).
+	/// as a player reads it. The Eye of Cthulhu fights in view (BossPerceptionRadiusPx, 200 tiles round the bot). The Brain of
+	/// Cthulhu: itself or a Creeper in view, or its bar (its life and the Creepers', BrainOfCthuluBigProgressBar.cs:29-41).
 	/// </summary>
 	public static bool BossUp(BotContext ctx, int npc)
 	{
+		if (BrainPattern.IsBrain(npc))
+			return ctx.Hostiles.Any(h => BrainPattern.IsPart(h.Type)) || ctx.World != null && ctx.World.BossBarLife(npc) > 0;
 		int[] parts = WormPattern.SegmentTypes(npc);
 		// The Wall of Flesh: its mouth or an eye in view (they share its life), or its bar (it is 75 tiles off when it spawns).
 		if (WallOfFleshPattern.IsWallOfFlesh(npc))
@@ -2380,7 +2438,7 @@ public sealed partial class ProgressionPlanner
 			}
 			if (arena is (int ax0, int ax1, int ay) && summonAt is TilePos at) {
 				if (!InArena(ctx.Node, at.X, at.X, ay))
-					return Do($"walking to {at} on the arena in the corruption, where the zone holds, to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay, at.X));
+					return Do($"walking to {at} on the arena in the {ctx.Ids.EvilName}, where the zone holds, to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay, at.X));
 			}
 			// On the surface: the worm is fought from open ground, kiting sideways as it arcs out (spec G9-G10), not where
 			// the Worm Food happened to be made. Seen in game (measured run M10e, world_eow): crafted at an altar in a pocket
@@ -2391,7 +2449,7 @@ public sealed partial class ProgressionPlanner
 				if (EvilGround(ctx) is not TilePos spot)
 					return ExploreForEvilBiome(ctx, $"to summon the {b.Label}");
 				if (spot.ChebyshevTo(ctx.Node) > SummonSpotTiles)
-					return Do($"walking to the corruption at {spot} to summon the {b.Label} ({ctx.CorruptionAround(spot)} corruption tiles round it){offArena}",
+					return Do($"walking to the {ctx.Ids.EvilName} at {spot} to summon the {b.Label} ({ctx.CorruptionAround(spot)} {ctx.Ids.EvilName} tiles round it){offArena}",
 						new WalkToSkill(new Core.Pathfinding.GoalNearTile(spot, SummonSpotTiles, ctx.Physics)) { Quiet = true });
 				// There, and still too little seen round it to be sure: the summon is tried anyway (the game counts what is there).
 			}
@@ -2399,7 +2457,7 @@ public sealed partial class ProgressionPlanner
 				return Do($"resting to {SummonLifeFraction:P0} life before summoning the {b.Label} ({ctx.Combat.Life}/{ctx.Combat.LifeMax})",
 					new WaitSkill("life", c => c.Combat.LifeFraction >= SummonLifeFraction, MaxRestTicks));
 		}
-		return Do($"fighting the {b.Label} in the corruption{(arena != null ? ", in the arena" : "")} ({(ctx.IsNight ? "night" : "day")}){offArena}",
+		return Do($"fighting the {b.Label} in the {ctx.Ids.EvilName}{(arena != null ? ", in the arena" : "")} ({(ctx.IsNight ? "night" : "day")}){offArena}",
 			new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena });
 	}
 
@@ -2429,7 +2487,7 @@ public sealed partial class ProgressionPlanner
 			ISkill bridgeFirst = BridgeTheChasms(ground, claims, depth, ctx);
 			if (bridgeFirst != null || stuck != null)
 				return bridgeFirst;
-			return Do($"need {more} more {name} (hunting to {target} in the corruption round {ground})",
+			return Do($"need {more} more {name} (hunting to {target} in the {ctx.Ids.EvilName} round {ground})",
 				new HuntSkill(item, src.NpcAiStyle, target) { Ground = ground });
 		}
 		var mine = new MineSkill(item, src.TileType, target) { FrameX = src.FrameX, Bias = ExploreBias.Sideways, PatrolEvilSurface = true };
@@ -2444,10 +2502,10 @@ public sealed partial class ProgressionPlanner
 			if (EvilGround(ctx) is not TilePos ground)
 				return ExploreForEvilBiome(ctx, $"to look for {name}");
 			if (ground.ChebyshevTo(ctx.Node) > TravelArrivedTiles)
-				return Do($"no {name} seen; walking to the corruption at {ground} to look for it there",
+				return Do($"no {name} seen; walking to the {ctx.Ids.EvilName} at {ground} to look for it there",
 					new WalkToSkill(new Core.Pathfinding.GoalNearTile(ground, TravelArrivedTiles, ctx.Physics)) { Quiet = true });
 		}
-		return Do($"need {more} more {name} (picking to {target} in the corruption)", mine);
+		return Do($"need {more} more {name} (picking to {target} in the {ctx.Ids.EvilName})", mine);
 	}
 
 	/// <summary>The chasm openings bridged so far (kept across re-plans; their blocks are <see cref="BotContext.Protected"/>).</summary>
@@ -2500,8 +2558,8 @@ public sealed partial class ProgressionPlanner
 	private ISkill ExploreForEvilBiome(BotContext ctx, string why)
 	{
 		evilHeading = -evilHeading;
-		return Do($"exploring for the corruption (none seen yet) {why}",
-			new ExploreSkill("the corruption", c => c.InEvilBiome(c.Node), ExploreBias.Sideways, evilHeading) { JobKey = "Explore evil biome" });
+		return Do($"exploring for the {ctx.Ids.EvilName} (none seen yet) {why}",
+			new ExploreSkill($"the {ctx.Ids.EvilName}", c => c.InEvilBiome(c.Node), ExploreBias.Sideways, evilHeading) { JobKey = "Explore evil biome" });
 	}
 
 	/// <summary>

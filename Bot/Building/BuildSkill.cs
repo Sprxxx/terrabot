@@ -91,6 +91,8 @@ public static class SiteFinder
 		private readonly int[][] nextBlock;
 		/// <summary>The worm's reach over the ground (<see cref="WormPattern.ReachRows"/>).</summary>
 		public int ReachRows { get; }
+		/// <summary>The evil biome's boss comes up from the ground (the Eater of Worlds), not in a Crimson world.</summary>
+		private readonly bool wormComes;
 
 		public static RaisedFloors For(BotContext ctx, Blueprint bp, TilePos around) =>
 			!bp.IsHouse && bp.RaisedFloor ? new RaisedFloors(ctx, bp, around) : null;
@@ -99,6 +101,9 @@ public static class SiteFinder
 		{
 			this.bp = bp;
 			ReachRows = WormPattern.ReachRows(ctx.Expert);
+			// The worm's reach rules out a floor only in a Corruption world: the Brain of Cthulhu flies and teleports to us (BrainPattern),
+			// a floor high over the crimson's ground is no worse for it.
+			wormComes = !ctx.Ids.Crimson;
 			int reach = bp.SearchRadius;
 			// The columns of every site's span and one either side; the rows as far up and down as the ground is followed
 			// (Ground), and the open air over the highest floor.
@@ -144,7 +149,7 @@ public static class SiteFinder
 		/// </summary>
 		public bool OutOfWormReach(int x0, int floor)
 		{
-			if (!bp.InEvilBiome)
+			if (!bp.InEvilBiome || !wormComes)
 				return false; // only the worm comes up from the ground; Skeletron's arena over the lake flies free of it
 			int i0 = x0 - cx0, jf = floor - cy0;
 			if (jf < 0 || jf + 1 >= rows)

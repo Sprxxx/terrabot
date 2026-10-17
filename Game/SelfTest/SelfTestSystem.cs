@@ -42,6 +42,8 @@ public sealed class SelfTestSystem : ModSystem
 	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated", "Eye loot collected",
 		// Milestone 10's: the Eater fight measured from the Worm Food in hand, not after the chunk hunt and the mushrooms again.
 		"vile powder 30", "worm food", "eow arena",
+		// Its twins in a Crimson world (world_boc): the Brain fight measured from the Bloody Spine in hand or its arena.
+		"vicious powder 30", "bloody spine", "boc arena", "Brain of Cthulhu defeated", "boc loot collected",
 		// After the Eater (the start of later runs), and Milestone 11's: the Skeletron fight rerun from its arena by the Dungeon
 		// (docs M11_SPEC.md, the proposed scenario), without the walk and the build.
 		"Eater of Worlds defeated", "eow loot collected", "dungeon arena",
@@ -328,6 +330,8 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				if (s.ResetSkeletron)
 					NPC.downedBoss3 = false;
+				if (s.ResetEvilBoss)
+					NPC.downedBoss2 = false;
 				if (s.ResetBosses) {
 					NPC.downedBoss1 = false;
 					NPC.downedSlimeKing = false;
@@ -401,6 +405,12 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (s.Mode == "boss") {
 					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.SuspiciousLookingEye, NPCID.EyeofCthulhu, NPCID.ServantofCthulhu), bot.Context);
+				}
+				else if (s.Mode == "boc") {
+					// The Brain of Cthulhu (Milestone 10 in a Crimson world): the Bloody Spine used where the bot stands, on the crimstone
+					// floor that holds the Crimson zone; no arena (the fight's leash round where it began, as the worm's on open ground).
+					Mod.Logger.Info($"SELFTEST {s.Name}: ZoneCrimson {p.ZoneCrimson}, the scene's crimson tiles {Main.SceneMetrics.BloodTileCount}");
+					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.BloodySpine, NPCID.BrainofCthulhu, NPCID.Creeper), bot.Context);
 				}
 				else if (s.Mode == "build") {
 					Bot.Building.Blueprint bp = Bot.Building.Blueprint.SmallHouse(bot.Context.Ids);
@@ -726,17 +736,21 @@ public sealed class SelfTestSystem : ModSystem
 		Note("Eye loot collected", NPC.downedBoss1 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill));
 		// Milestone 10 (docs M10_SPEC.md): the Worm Food path, in the plan's order.
 		int Count(int type) => Enumerable.Range(0, 58).Where(i => p.inventory[i].type == type).Sum(i => p.inventory[i].stack);
-		bool food = Count(ItemID.WormFood) > 0;
-		Note("demon bow", Has(new int[] { ItemID.DemonBow }));
-		Note("rotten chunks 15", Count(ItemID.RottenChunk) >= Bot.Brain.ProgressionPlanner.WormFoodChunks || food);
-		Note("vile powder 30", Count(ItemID.VilePowder) >= Bot.Brain.ProgressionPlanner.WormFoodPowder || food);
-		Note("worm food", food);
-		// The Eater of Worlds' arena in the corruption, built (or the Eye's, lying in the zone), before the summon (spec G9).
-		if (!milestoneSeen.Contains("eow arena") && plan.EvilArenaSite is TilePos eowArena)
-			Note("eow arena", Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, Bot.Building.Blueprint.Arena(bot.Context.Ids), eowArena));
-		Note("Eater fight", NPC.AnyNPCs(NPCID.EaterofWorldsHead));
-		Note("Eater of Worlds defeated", NPC.downedBoss2);
-		Note("eow loot collected", NPC.downedBoss2 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill));
+		if (WorldGen.crimson)
+			TrackCrimsonMilestones(bot, plan, Note, Count, Has);
+		else {
+			bool food = Count(ItemID.WormFood) > 0;
+			Note("demon bow", Has(new int[] { ItemID.DemonBow }));
+			Note("rotten chunks 15", Count(ItemID.RottenChunk) >= Bot.Brain.ProgressionPlanner.WormFoodChunks || food);
+			Note("vile powder 30", Count(ItemID.VilePowder) >= Bot.Brain.ProgressionPlanner.WormFoodPowder || food);
+			Note("worm food", food);
+			// The Eater of Worlds' arena in the corruption, built (or the Eye's, lying in the zone), before the summon (spec G9).
+			if (!milestoneSeen.Contains("eow arena") && plan.EvilArenaSite is TilePos eowArena)
+				Note("eow arena", Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, Bot.Building.Blueprint.Arena(bot.Context.Ids), eowArena));
+			Note("Eater fight", NPC.AnyNPCs(NPCID.EaterofWorldsHead));
+			Note("Eater of Worlds defeated", NPC.downedBoss2);
+			Note("eow loot collected", NPC.downedBoss2 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill));
+		}
 		// Milestone 11 (docs M11_SPEC.md, the proposed scenario's list), in the plan's order.
 		Note("skeletron prep", plan.SkeletronPrepMet);
 		if (!milestoneSeen.Contains("dungeon found") && plan.DungeonFoundAt is TilePos dungeon) {
@@ -756,6 +770,28 @@ public sealed class SelfTestSystem : ModSystem
 		if (!milestoneSeen.Contains("skeletron loot") && NPC.downedBoss3 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill)) {
 			Mod.Logger.Info($"SELFTEST skeletron loot: {Count(ItemID.HealingPotion)} healing potions (had {healingAtStart}), deaths {bot.Context.Deaths - deathsAtStart}");
 			Note("skeletron loot", true);
+		}
+	}
+
+	/// <summary>
+	/// Milestone 10 in a Crimson world (world_boc), in the crimson stages' order: the Tendon Bow, 15 vertebrae, 30 vicious powder, the
+	/// Bloody Spine, the arena in the crimson, the fight, the Brain defeated (downedBoss2, NPC.cs:85475-85481), its loot picked up
+	/// (with the Tissue Samples carried then).
+	/// </summary>
+	private void TrackCrimsonMilestones(TerraBotPlayer bot, Bot.Brain.ProgressionPlanner plan, Action<string, bool> note, Func<int, int> count, Func<int[], bool> has)
+	{
+		bool spine = count(ItemID.BloodySpine) > 0;
+		note("tendon bow", has(new int[] { ItemID.TendonBow }));
+		note("vertebrae 15", count(ItemID.Vertebrae) >= Bot.Brain.ProgressionPlanner.SpineVertebrae || spine);
+		note("vicious powder 30", count(ItemID.ViciousPowder) >= Bot.Brain.ProgressionPlanner.SpinePowder || spine);
+		note("bloody spine", spine);
+		if (!milestoneSeen.Contains("boc arena") && plan.EvilArenaSite is TilePos bocArena)
+			note("boc arena", Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, Bot.Building.Blueprint.Arena(bot.Context.Ids), bocArena));
+		note("Brain fight", NPC.AnyNPCs(NPCID.BrainofCthulhu));
+		note("Brain of Cthulhu defeated", NPC.downedBoss2);
+		if (!milestoneSeen.Contains("boc loot collected") && NPC.downedBoss2 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill)) {
+			Mod.Logger.Info($"SELFTEST boc loot: {count(ItemID.TissueSample)} Tissue Samples, {count(ItemID.CrimtaneOre)} Crimtane Ore carried");
+			note("boc loot collected", true);
 		}
 	}
 

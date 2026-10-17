@@ -428,6 +428,7 @@ public sealed class FightSkill : ISkill
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
 			bool candidate = (d <= engageIt || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash) || !flies && d <= engage && ShotReaches(ctx, e, cx, cy))
 				&& !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d) && !ctx.Spared(e)
+				&& !e.DontTakeDamage // nothing hurts it (the Brain of Cthulhu behind its Creepers): its Creepers are the fight
 				&& NotTooDeep(ctx, e, d)
 				&& (FlyingAiStyles.Contains(e.AiStyle) ? FlierThreat(ctx, e, d, cx, cy) // a flier: only one that is a threat
 					: !ctx.WaitedOut(e.Id) || d <= ThreatTiles * 16f || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) // not waited for again

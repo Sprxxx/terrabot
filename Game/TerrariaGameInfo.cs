@@ -94,6 +94,21 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Bottle = ItemID.Bottle,
 		BottleTile = TileID.Bottles,
 		CorruptionWeights = CorruptionZoneWeights(),
+		// Milestone 10 in a Crimson world: the Brain of Cthulhu and the Bloody Spine path (BrainPattern, ProgressionPlanner's crimson
+		// stages). The world's evil is chosen at generation and saved with it (WorldGen.crimson).
+		Crimson = WorldGen.crimson,
+		BrainOfCthulhu = NPCID.BrainofCthulhu,
+		Creeper = NPCID.Creeper,
+		BloodySpine = ItemID.BloodySpine,
+		ViciousPowder = ItemID.ViciousPowder,
+		ViciousMushroom = ItemID.ViciousMushroom,
+		Vertebrae = ItemID.Vertebrae,
+		CrimsonGrass = TileID.CrimsonGrass,
+		CrimsonThorns = TileID.CrimsonThorns,
+		CrimtaneOre = ItemID.CrimtaneOre,
+		CrimtaneBar = ItemID.CrimtaneBar,
+		TendonBow = ItemID.TendonBow,
+		TissueSample = ItemID.TissueSample,
 		TileExplosives = TileExplosiveInfos(),
 		// Milestone 11 (docs M11_SPEC.md): Skeletron, the Old Man, the Dungeon Guardian; the Dungeon's bricks, and the snow and
 		// jungle surfaces that tell its side (WorldGen.cs:8209-8259).
@@ -150,12 +165,15 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	private static readonly Projectile explodeProbe = new();
 
 	/// <summary>
-	/// What each tile counts for Player.ZoneCorrupt, as tModLoader sums the scene scan (TileLoader.cs:1640-1652): the
-	/// TileID.Sets.CorruptBiome weights (RemixCorruptBiome in a remix world), mods' tiles included.
+	/// What each tile counts for the zone of the world's evil, as tModLoader sums the scene scan (TileLoader.cs:1640-1652): for
+	/// Player.ZoneCorrupt the TileID.Sets.CorruptBiome weights (RemixCorruptBiome in a remix world), in a Crimson world for
+	/// Player.ZoneCrimson the CrimsonBiome ones (RemixCrimsonBiome; summed as BloodTileCount, SceneMetrics.cs:144, the same 300 as
+	/// the Corruption's), mods' tiles included.
 	/// </summary>
 	private static Dictionary<int, int> CorruptionZoneWeights()
 	{
-		int[] set = Main.remixWorld ? TileID.Sets.RemixCorruptBiome : TileID.Sets.CorruptBiome;
+		int[] set = WorldGen.crimson ? (Main.remixWorld ? TileID.Sets.RemixCrimsonBiome : TileID.Sets.CrimsonBiome)
+			: Main.remixWorld ? TileID.Sets.RemixCorruptBiome : TileID.Sets.CorruptBiome;
 		var weights = new Dictionary<int, int>();
 		for (int t = 0; t < set.Length; t++)
 			if (set[t] != 0)
@@ -512,6 +530,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	/// <summary>A corrupt plant (TileID.CorruptPlants) of this frame column is a vile mushroom and drops one (WorldGen.cs:59639-59641).</summary>
 	public const int VileMushroomFrameX = 144;
+	/// <summary>A crimson plant (TileID.CrimsonPlants) of this frame column is a vicious mushroom and drops one (WorldGen.cs:59644-59648).</summary>
+	public const int ViciousMushroomFrameX = 270;
 
 	/// <summary>
 	/// Items a tile drops although the item does not place that tile (KillTile_GetItemDrops special cases), with the frame
@@ -522,6 +542,9 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		// On corrupt grass only (WorldGen.cs:54373: a plant growing there turns mushroom at 1/50 or 1/40); tileNoFail, so
 		// one hit of any pickaxe breaks it (Main.cs:8037, Player.GetPickaxeDamage).
 		[ItemID.VileMushroom] = (TileID.CorruptPlants, VileMushroomFrameX, true),
+		// Its twin on crimson grass: a crimson plant of frame 270 (WorldGen.cs:54379, 59644-59648), tileCut and tileNoFail too
+		// (Main.cs:7943, 8033).
+		[ItemID.ViciousMushroom] = (TileID.CrimsonPlants, ViciousMushroomFrameX, true),
 	};
 
 	/// <summary>
@@ -535,6 +558,9 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		[ItemID.RottenChunk] = (NPCAIStyleID.Flying, true),
 		// Devourers (NPC 7-9, aiStyle 6 worm): 3-8 at 100% (ItemDropDatabase.cs:1113).
 		[ItemID.WormTooth] = (NPCAIStyleID.Worm, true),
+		// Crimeras (NPC 173, aiStyle 5 flying, NPC.cs:6321-6330), the Crimson's eaters of souls: 1 in 3, as from its face monsters
+		// and blood crawlers (ItemDropDatabase.cs:1111). They spawn only over crimson ground (NPC.cs:89569).
+		[ItemID.Vertebrae] = (NPCAIStyleID.Flying, true),
 	};
 
 	/// <summary>
@@ -547,8 +573,20 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		ItemID.Wood, ItemID.Ebonwood, ItemID.Shadewood, ItemID.RichMahogany, ItemID.Pearlwood, ItemID.BorealWood, ItemID.PalmWood, ItemID.AshWood,
 	};
 
+	/// <summary>
+	/// The evil biome's drops of one evil only: a world has one (WorldGen.crimson), so the other's are had nowhere (pre-Hardmode,
+	/// before the evils spread). The Corruption's eaters of souls and devourers, and corrupt plants, spawn and grow only on its tiles
+	/// (NPC.cs:89569 for the Crimson's; WorldGen.cs:54335-54380), the Crimson's crimeras and crimson plants only on the Crimson's.
+	/// Without this a Crimson world's unholy arrows went for worm teeth (the first recipe, Recipe.cs:2276) from devourers that are not
+	/// there, while the vertebrae for the other (Recipe.cs:2283) lay in the bag.
+	/// </summary>
+	private static readonly HashSet<int> CorruptionOnly = new() { ItemID.RottenChunk, ItemID.WormTooth, ItemID.VileMushroom };
+	private static readonly HashSet<int> CrimsonOnly = new() { ItemID.Vertebrae, ItemID.ViciousMushroom };
+
 	public ItemSource SourceOf(int itemType)
 	{
+		if ((WorldGen.crimson ? CorruptionOnly : CrimsonOnly).Contains(itemType))
+			return ItemSource.None;
 		if (DroppedByTile.TryGetValue(itemType, out var drop))
 			return new ItemSource(SourceKind.Mine, drop.Tile, FrameX: drop.FrameX, EvilBiome: drop.Evil);
 		if (DroppedByNpcAi.TryGetValue(itemType, out var hunted))
@@ -688,15 +726,17 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	/// <summary>
 	/// The boss bar's life: for the Eater of Worlds the sum over every active head, body and tail, as its bar counts them
-	/// (EaterOfWorldsProgressBar.cs:34-41, at any distance); for another boss the life of its active NPCs.
+	/// (EaterOfWorldsProgressBar.cs:34-41, at any distance); for the Brain of Cthulhu its life and every active Creeper's
+	/// (BrainOfCthuluBigProgressBar.cs:29-41); for another boss the life of its active NPCs.
 	/// </summary>
 	public int BossBarLife(int npcType)
 	{
-		bool worm = npcType == NPCID.EaterofWorldsHead;
+		bool worm = npcType == NPCID.EaterofWorldsHead, brain = npcType == NPCID.BrainofCthulhu;
 		int life = 0;
 		for (int i = 0; i < Main.maxNPCs; i++) {
 			NPC n = Main.npc[i];
-			if (n.active && (worm ? n.type == NPCID.EaterofWorldsHead || n.type == NPCID.EaterofWorldsBody || n.type == NPCID.EaterofWorldsTail : n.type == npcType))
+			if (n.active && (worm ? n.type == NPCID.EaterofWorldsHead || n.type == NPCID.EaterofWorldsBody || n.type == NPCID.EaterofWorldsTail
+					: brain ? n.type == NPCID.BrainofCthulhu || n.type == NPCID.Creeper : n.type == npcType))
 				life += n.life;
 		}
 		return life;
