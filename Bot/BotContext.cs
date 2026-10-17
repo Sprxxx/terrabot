@@ -329,7 +329,56 @@ public sealed class BotContext
 
 	/// <summary>The gear gates of <see cref="OffLimits"/> alone (the underground desert, the evil biome), without the danger zones.</summary>
 	public bool BiomeOffLimits(TilePos t) => Combat.Defense < DeepDefense && InUndergroundDesert(t)
-		|| (Combat.Defense < CavernDefense || EvilStoneTooHard) && !EvilSurfaceOpen(t) && InEvilBiome(t);
+		|| (Combat.Defense < CavernDefense || EvilStoneTooHard) && !EvilSurfaceOpen(t) && (UnderEvilGround(t) || InEvilBiome(t));
+
+	/// <summary>
+	/// Is the tile in the evil biome's underground, under its known surface: in a chunk column within
+	/// <see cref="BiomeChunkRadius"/> of one whose surface layer (rows above <see cref="SurfaceY"/>) the map shows as evil
+	/// ground (a chunk with <see cref="EvilChunkTiles"/> seen evil tiles, as <see cref="KnownEvil"/>), below that chunk, and
+	/// not deeper than the caverns (<see cref="CavernY"/>)? A player who has seen the purple ground knows the corruption goes
+	/// down under it, seen or not: vanilla's Corruption pass converts the biome's columns from the surface down to 30-50 rows
+	/// below Main.worldSurface (WorldGen.cs:10838-10900) and its chasms carve on down to Main.rockLayer (ChasmRunner,
+	/// WorldGen.cs:70266), and Devourers spawn wherever the player is in the Corruption zone (NPC.cs:89094). The share of
+	/// evil tiles (<see cref="InEvilBiome"/>) misses that ground: the pass leaves dirt as dirt, so under one layer of corrupt
+	/// grass the seen ground is mostly plain dirt, and two chunks down the grass is out of the share's window.
+	/// <para>Seen in game (measured runs U25 and U27, copper gear, max life 100; the corruption's surface to x ~1960 at rows
+	/// ~280, worldSurface 337, rockLayer 451): iron-ore explorations went from its edge at (1963,282) down under it, legs
+	/// (1935,292) (1913,310) (1932,339) (1957,334), and Devourers killed the bot at (1961,335) and (1954,396) (U27) and at
+	/// (1927,353) (U25). The zone of the first sighting, 60 tiles round (1921,335), ended a row above the second death: a
+	/// fact about the place, not a radius round a sighting. In full armour with an iron pickaxe (U27, d7) a trip west past
+	/// the corruption was routed under it, (1924,356) to (1866,453), and ended in an ebonstone pocket at (1872,366). The
+	/// margin is the share's own window (<see cref="BiomeChunkRadius"/>): those deaths were up to a tile past the surface's
+	/// edge, and the worms burrow; the spawn at x 2075-2095 is 7 chunks off it.</para>
+	/// </summary>
+	public bool UnderEvilGround(TilePos t)
+	{
+		if (World == null || Ids.EvilTiles.Length == 0 || SurfaceY <= 0 || CavernY > 0 && t.Y > CavernY)
+			return false;
+		int cx = (int)Math.Floor(t.X / (double)DesertChunk);
+		for (int dx = -BiomeChunkRadius; dx <= BiomeChunkRadius; dx++)
+			if (EvilGroundBelow(cx + dx) is int top && t.Y >= top)
+				return true;
+		return false;
+	}
+
+	/// <summary>
+	/// The first row under the topmost chunk of the surface layer in chunk column <paramref name="cx"/> the map shows as
+	/// evil ground (<see cref="EvilChunkTiles"/> seen evil tiles), or null; counted again as often as a chunk not all seen.
+	/// </summary>
+	private int? EvilGroundBelow(int cx)
+	{
+		if (evilColumns.TryGetValue(cx, out var v) && Tick - v.At < PartlySeenRecheckTicks)
+			return v.Below;
+		int? below = null;
+		for (int cy = 0; cy * DesertChunk < SurfaceY; cy++)
+			if (ChunkCounts(cx, cy).Evil >= EvilChunkTiles) {
+				below = (cy + 1) * DesertChunk;
+				break;
+			}
+		evilColumns[cx] = (Tick, below);
+		return below;
+	}
+	private readonly System.Collections.Generic.Dictionary<int, (long At, int? Below)> evilColumns = new();
 
 	/// <summary>
 	/// Set by the planner for its pass when the work it chose is an errand in the evil biome: hunting eaters of souls for
