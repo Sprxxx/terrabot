@@ -441,6 +441,25 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void WithTheBagFull_ACraftMakesRoom_InsteadOfStayingBlocked()
+	{
+		// Measured runs M10f, M10g: "crafting 1 Bottle" refused "crafting stayed blocked (cursor item / full inventory)" for
+		// 12-20 game hours, the 50 slots full of gel, glowsticks, acorns and the like.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.Stations[FakeGame.TileBench] = ctx.Node;
+		g.Items[FakeGame.Wood] = 30;
+		for (int junk = 900; junk < 905; junk++)
+			g.Items[junk] = 1; // worth 1 copper each, needed by nothing
+		g.SlotLimit = g.Stacks().Count; // full
+		g.Refresh(ctx);
+		var craft = new CraftSkill(FakeGame.WoodenSword);
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, craft, 600);
+		output.WriteLine($"{st}: {craft.Describe()} {craft.FailureReason}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+	}
+
+	[Fact]
 	public void WithTheBagFull_ADropThatDoesNotFit_IsNotGoneFor()
 	{
 		// Measured run M10f: 50 of 240 heartbeats Collect, "fetching Goodie Bag x1 got 0" over and over beside a full bag.

@@ -179,8 +179,19 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	public CraftResult TryCraft(int itemType)
 	{
-		if (!Main.mouseItem.IsAir || !HasRoomFor(itemType))
-			return CraftResult.Busy;
+		// Something left on the cursor blocks every craft (vanilla crafts onto the cursor): put it in the bag like a click on a
+		// slot, or throw it out, as a player would. Seen in game (measured run M10g, world_eow): "crafting 1 Bottle (Glass
+		// 1/1)" refused "crafting stayed blocked (cursor item / full inventory)" for 12 game hours with 1-2 slots free.
+		if (!Main.mouseItem.IsAir) {
+			string held = $"{Main.mouseItem.Name} x{Main.mouseItem.stack}";
+			Main.mouseItem = player.GetItem(player.whoAmI, Main.mouseItem, GetItemSettings.InventoryUIToInventorySettings);
+			if (!Main.mouseItem.IsAir) {
+				player.QuickSpawnItem(player.GetSource_FromThis(), Main.mouseItem, Main.mouseItem.stack);
+				Main.mouseItem.TurnToAir();
+			}
+			Terraria.ModLoader.ModContent.GetInstance<TerraBotMod>()?.Logger.Info($"Craft: {held} was on the cursor; put away before crafting");
+		}
+		bool room = HasRoomFor(itemType);
 		// Vanilla refreshes nearby crafting stations (adjTile) only while the inventory screen is open, i.e. when
 		// the crafting menu is visible. Do that same range check here before asking which recipes are available.
 		player.AdjTiles();
@@ -189,6 +200,9 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 			Recipe r = Main.recipe[Main.availableRecipe[i]];
 			if (r.createItem.type != itemType)
 				continue;
+			// No free slot: the craft still fits if it uses up an ingredient's whole stack (that slot comes free).
+			if (!room && !r.requiredItem.Any(ing => !ing.IsAir && player.CountItem(ing.type, ing.stack + 1) <= ing.stack))
+				return CraftResult.Busy;
 			Main.CraftItem(r);
 			// The craft lands on the cursor; put it into the inventory like clicking an empty slot would.
 			Main.mouseItem = player.GetItem(player.whoAmI, Main.mouseItem, GetItemSettings.InventoryUIToInventorySettings);

@@ -504,6 +504,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		RecipeInfo r = all.FirstOrDefault(x => HasItems(x) && HasStations(x));
 		if (r == null)
 			return all.Any(HasItems) ? CraftResult.NeedsStation : CraftResult.Missing;
+		// As the game: no room for the result (no free slot, no stack it joins, no ingredient stack used up) is busy.
+		if (!HasRoomFor(itemType) && !r.Ingredients.Any(i => i.Accepts.Sum(a => Count(a)) <= i.Stack))
+			return CraftResult.Busy;
 		foreach (Ingredient ing in r.Ingredients) {
 			int left = ing.Stack;
 			foreach (int a in ing.Accepts) {
