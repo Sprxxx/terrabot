@@ -801,6 +801,8 @@ public sealed class SelfTestSystem : ModSystem
 		var plan = bot.Brain.Planner;
 		if (plan.Plan != Bot.Brain.ProgressionPlanner.Plans.WallOfFlesh)
 			return;
+		note("evil pickaxe", count(ItemID.NightmarePickaxe) + count(ItemID.DeathbringerPickaxe) > 0);
+		note($"unholy arrows {Bot.Brain.ProgressionPlanner.WofUnholyArrows}", count(ItemID.UnholyArrow) >= Bot.Brain.ProgressionPlanner.WofUnholyArrows);
 		note("wof prep", plan.WofPrepMet);
 		note("guide alive", plan.WofPrepMet && NPC.AnyNPCs(NPCID.Guide));
 		if (!milestoneSeen.Contains("underworld reached") && plan.UnderworldReachedOnce && plan.Hellbridge is (int row, int from, int to)) {

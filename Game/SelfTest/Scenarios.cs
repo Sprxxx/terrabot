@@ -372,6 +372,25 @@ public sealed class Scenario
 	private static string Max(RunResult r, int expected, int actual, string what) =>
 		actual > expected ? $"{what} {actual} > {expected}" : null;
 
+	/// <summary>
+	/// The Wall of Flesh fight's damage a second as BossFightSkill logs it at the end ("Boss fight: Wall of Flesh defeated: ... 8000 life
+	/// taken (50.3 a second), ..."); -1 when no fight ended.
+	/// </summary>
+	private static float WofDps(RunResult r)
+	{
+		foreach (string l in r.Log) {
+			int end = l.IndexOf(" a second)", StringComparison.Ordinal);
+			int open = end < 0 || !l.Contains("life taken") ? -1 : l.LastIndexOf('(', end);
+			if (open >= 0 && float.TryParse(l.Substring(open + 1, end - open - 1).Replace(',', '.'), System.Globalization.NumberStyles.Float,
+					System.Globalization.CultureInfo.InvariantCulture, out float dps))
+				return dps;
+		}
+		return -1f;
+	}
+
+	/// <summary>The damage a second fight_wof_150 must reach: what fight_wof_unholy had over its 161 s, and was still lost at (WofUnholyArrows).</summary>
+	private const float WofDpsBar = 32.5f;
+
 	private static IReadOnlyList<Scenario> CreateAll()
 	{
 		var list = new List<Scenario> {
@@ -476,9 +495,12 @@ public sealed class Scenario
 			Build = true,
 			DayTime = 3000,
 			ResumeAtCheckpoint = true,
-			// 6 in-game days, the spec's budget: about 2.5 expected (the top-up 0.3, the shaft 0.5, the bridge 0.7-1, the doll hunt
-			// 0.3-1 with a long tail, the fight under 5 minutes), the rest the margin for one failed fight (a new doll, the Guide back by day).
-			TimeoutTicks = 6 * 86400,
+			// 7 in-game days: the spec's 6 (about 2.5 expected: the top-up 0.3, the shaft 0.5, the bridge 0.7-1, the doll hunt 0.3-1 with
+			// a long tail, the fight under 5 minutes; the rest the margin for one failed fight, a new doll and the Guide back by day) and a
+			// day for the unholy arrows hunted before the descent (WofUnholyArrows: from eow_arena 30 worm teeth, a devourer in 65 of the
+			// corruption's spawns, NPC.cs:86707 and 89094, a spawn every 100-300 ticks there, NPC.cs:86680-86705: a devourer every 2-4
+			// game hours, 3-8 teeth each, ItemDropDatabase.cs:1113).
+			TimeoutTicks = 7 * 86400,
 			Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
 		},
 		new() {
@@ -1083,6 +1105,26 @@ public sealed class Scenario
 				Inventory = WofKit(75),
 				TimeoutTicks = 60 * 60 * 15,
 				Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
+			},
+			new() {
+				// The same with the plan's unholy arrows (ProgressionPlanner.WofUnholyArrows, 150: hunted for before the descent). Measured
+				// before (m12_synthetic_classic): an unholy arrow took 41.6 of the Wall's life, a wooden one 10.1; fight_wof on wooden ones
+				// went 21 a second, fight_wof_unholy with 75 went 32.5 and died at 161 s with 2775 left. With 150 the sum gives about 160 s
+				// at 50 a second. Passes with the Wall defeated at WofDpsBar a second or more.
+				Name = "fight_wof_150",
+				Rows = Underworld(LongBridge + 11, LongBridge),
+				ArenaCentreX = LongBridgeCentreX,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				NoFarReach = true,
+				Mode = "wof",
+				EnemyType = Terraria.ID.NPCID.Guide,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Inventory = WofKit(Bot.Brain.ProgressionPlanner.WofUnholyArrows),
+				TimeoutTicks = 60 * 60 * 15,
+				Check = r => !r.HardMode ? "the Wall of Flesh was not defeated"
+					: WofDps(r) < WofDpsBar ? $"the Wall defeated at {WofDps(r):0.0} a second, under {WofDpsBar}" : null,
 			},
 			new() {
 				// A Voodoo Demon over the lava by the hellbridge while it is being built, the Guide alive (spec section 10, G7): it is
