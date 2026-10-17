@@ -677,13 +677,18 @@ public sealed class ProgressionPlanner
 			else if (status == SkillStatus.Failed && !skill.FailureReason.Contains("same step") && !skill.FailureReason.Contains("died")) {
 				int n = stationWalkFailures.TryGetValue(stationWalkType, out int f) ? f + 1 : 1;
 				stationWalkFailures[stationWalkType] = n;
-				if (n >= MaxStationWalkFailures && ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0) {
+				bool placeable = ctx.Knowledge.ItemsPlacing(stationWalkType).Count > 0;
+				// Not for a station nothing places (a demon altar): home is where the stations it can make again are, and the
+				// altar is no nearer from there. Seen in game (measured run U30): "no way back to the DemonAltar (2 walks failed);
+				// drinking a recall potion to go home" 5 times from t538000 to t561600, each walk from home back to the same lip at
+				// (1779,341) or pocket at (1792,324) under the corruption, until no potion was left and the altar was given up.
+				if (n >= MaxStationWalkFailures && placeable && ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0) {
 					// Like a player: drink a recall potion and be home, rather than rebuild the stations (an anvil is 15 ore).
 					ctx.Log.Info($"Auto: no way back to the {ctx.Knowledge.TileName(stationWalkType)} ({n} walks failed); drinking a recall potion to go home");
 					recallNext = true;
 					stationWalkFailures.Remove(stationWalkType);
 				}
-				else if (n >= MaxStationWalkFailures && ctx.Knowledge.ItemsPlacing(stationWalkType).Count == 0) {
+				else if (n >= MaxStationWalkFailures && !placeable) {
 					TilePos site = KnownStations.GetValueOrDefault(stationWalkType);
 					failedStationSites[site] = ctx.Tick;
 					ctx.Log.Info($"Auto: no way to the {ctx.Knowledge.TileName(stationWalkType)} at {site} ({n} walks failed); not that one again for a day, another one");

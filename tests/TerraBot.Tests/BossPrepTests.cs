@@ -457,6 +457,42 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AnAltarNoWalkGetsTo_WithRecallPotionsCarried_IsNotWalkedToAgainFromHome_TheNextOneIs()
+	{
+		// Measured run U30 (world_eye): "no way back to the DemonAltar (2 walks failed); drinking a recall potion to go home",
+		// 5 times from d6 +18h (t538000-t561600), each walk from home back to the same lip at (1779,341) or pocket at
+		// (1792,324) under the corruption; only the 5th failure, no potion left, went on to "another one". A recall takes the
+		// bot home to stations it can make again; an altar nothing places is no nearer from home.
+		FakeGame g = ProgressionTests.Mine(width: 120);
+		for (int x = 26; x <= 36; x++)
+			for (int y = 27; y <= 35; y++) {
+				bool inside = x > 27 && x < 35 && y > 28 && y < 34;
+				g.Grid.Set(x, y, inside ? CellKind.Empty : CellKind.Solid);
+				if (!inside)
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.AddAltar(30, 32); // sealed in
+		g.AddAltar(80, 23); // out in the open, farther
+		g.Items[FakeGame.Lens] = 6;
+		g.Items[FakeGame.RecallPotion] = 5;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		for (int i = 0; i < ProgressionPlanner.MaxStationWalkFailures; i++) {
+			ISkill s = p.ResolveForTest(Eye, ctx);
+			output.WriteLine($"{p.Status} -> {s?.Describe()}");
+			var walk = Assert.IsType<WalkToSkill>(s);
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 600));
+			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		}
+		ISkill next = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}; known {string.Join(", ", p.KnownStations)}");
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos altar), p.Status);
+		Assert.True(altar.X >= 80, $"the sealed altar again: {altar}");
+	}
+
+	[Fact]
 	public void NoAltarFoundAround_TravelsToNewGround_NotStuck()
 	{
 		// Measured run S17: all else ready at d5 +21h, then "no DemonAltar found after 10 explorations" and auto mode
