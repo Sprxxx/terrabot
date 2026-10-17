@@ -84,6 +84,29 @@ public class EarlyGameTests
 		Assert.Equal(SkillStatus.Succeeded, s);
 	}
 
+	/// <summary>
+	/// Journey run J4 (Journey Test): two trees that stand but give no wood (gem trees in the caverns: TreeWood 0, as for a tree
+	/// felled), remembered as seen; "no trees in sight; back to one seen at (3006,685)", then (3008,714), and back, 168 game hours.
+	/// A trunk of no wood is no tree to go back to; the real trees farther off are gone to instead.
+	/// </summary>
+	[Fact]
+	public void GatherWood_TreesOfNoWood_AreNotWalkedBackAndForth()
+	{
+		FakeGame game = FieldFrom(400, 200, 40, 70, 330);
+		game.TreeSight = 50;
+		game.TreeWoods[new Core.Grid.TilePos(40, 24)] = 0; // gem trees
+		game.TreeWoods[new Core.Grid.TilePos(70, 24)] = 0;
+		BotContext ctx = game.CreateContext(output);
+		ctx.Seen = new Surroundings { Trees = new[] { new Core.Grid.TilePos(40, 24), new Core.Grid.TilePos(70, 24) } };
+		ctx.KnownTrees.Add(new Core.Grid.TilePos(40, 24));
+		ctx.KnownTrees.Add(new Core.Grid.TilePos(70, 24));
+		SkillStatus s = RunSkill(game, ctx, new GatherWoodSkill(FakeGame.Wood, 5), 20000);
+		int back = ((TestLog)ctx.Log).Lines.Count(l => l.Contains("back to one seen at (40,24)") || l.Contains("back to one seen at (70,24)"));
+		output.WriteLine($"{s}, wood {game.Count(FakeGame.Wood)}, at {game.Sim.Node}, {back} walks back to the gem trees");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(back <= 1, $"{back} walks back to trees of no wood");
+	}
+
 	[Fact]
 	public void GatherWood_WithNoTreeKnown_ExploresFurtherOutEachTime()
 	{

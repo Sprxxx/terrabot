@@ -361,8 +361,13 @@ public sealed class GatherWoodSkill : ISkill
 				}
 				// There, and no tree in sight: forgotten (a scan that sees it again remembers it). Seen in game (measured run
 				// U9): just respawned on the spot of a remembered tree, the walk "arrived" each tick, 19 ticks running.
-				else if (NearestTree(ctx) == null)
+				// Not taken again by this gather either: a tree that stands but gives no wood (a gem tree, a mushroom tree) is seen
+				// again at once, and the scan remembered it again. Seen in game (Journey run J4, Journey Test): "no trees in sight;
+				// back to one seen at (3006,685)", then at (3008,714), and back, for 168 game hours (348 heartbeats) at 7 of 10 wood.
+				else if (NearestTree(ctx) == null) {
 					ctx.KnownTrees.Remove(w);
+					badTrees.Add(w);
+				}
 				walkingTo = null;
 			}
 			if (s == SkillStatus.Failed && sub is ChopTreeSkill chop) {
@@ -437,10 +442,11 @@ public sealed class GatherWoodSkill : ISkill
 		int bestDist = int.MaxValue;
 		foreach (TilePos t in ctx.KnownTrees) {
 			int d = Math.Abs(t.X - node.X) + Math.Abs(t.Y - node.Y);
-			// A tree remembered with its ground (it was seen): one whose wood does not count is no use to go back to. Gone (0):
-			// going there forgets it.
+			// A tree remembered with its ground (it was seen): one whose wood does not count is no use to go back to. Gone (no
+			// trunk there now): going there forgets it. A trunk of no wood (a gem tree, a mushroom tree: TreeWood 0) is not gone.
 			int wood = ctx.World.TreeWood(t.X, t.Y);
-			if (d < bestDist && !badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t) && (wood == 0 || Counts(wood))) {
+			bool gone = !ctx.World.IsTreeTrunk(t.X, t.Y);
+			if (d < bestDist && !badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t) && (gone || Counts(wood))) {
 				best = t;
 				bestDist = d;
 			}
