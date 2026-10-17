@@ -43,6 +43,8 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	/// <summary>Tile the bot points at this tick; applied to Player.tileTargetX/Y in PreItemCheck.</summary>
 	private TilePos? aim;
+	private TilePos? placeWatchCell;
+	private int placeWatchTicks;
 	/// <summary>World point the virtual mouse points at during this tick's ItemCheck.</summary>
 	private Vector2? mouseAim;
 	private (int, int)? savedMouse;
@@ -282,6 +284,30 @@ public sealed class TerraBotPlayer : ModPlayer
 				Context.Log.Info($"Axe swing: holding {held.Name} (slot {Player.selectedItem + 1}, axe {held.axe}, pick {held.pick}), anim {Player.itemAnimation}, itemTime {Player.itemTime}, "
 					+ $"toolTime {Player.toolTime}, use {Player.controlUseItem}, target {a}: tile {(t.HasTile ? t.TileType : -1)} frame ({t.TileFrameX},{t.TileFrameY}), "
 					+ $"in range {Player.IsTargetTileInItemRange(held)}, canKill {WorldGen.CanKillTile(a.X, a.Y)}, tileAxe {(t.HasTile && Main.tileAxe[t.TileType])}, noBuilding {Player.noBuilding}");
+			}
+		}
+		// Evidence for a block that does not go in (world_wof E9 and E22, 2026-10-17: "placing at (833,1042) did nothing in 90 ticks:
+		// the cell reads Empty", nothing the world knows of refusing it): what vanilla sees, once a second while the same cell is
+		// aimed at with a block and nothing lands.
+		if (aim is TilePos pa && LastOutput.Tool == ToolRequest.Block && LastOutput.UseItem) {
+			if (pa == placeWatchCell)
+				placeWatchTicks++;
+			else {
+				placeWatchCell = pa;
+				placeWatchTicks = 0;
+			}
+			if (placeWatchTicks > 0 && placeWatchTicks % 60 == 0) {
+				Item held = Player.inventory[Player.selectedItem];
+				Tile t = Main.tile[pa.X, pa.Y];
+				bool inRange = Player.position.X / 16f - Player.tileRangeX - held.tileBoost - Player.blockRange <= pa.X
+					&& (Player.position.X + Player.width) / 16f + Player.tileRangeX + held.tileBoost - 1f + Player.blockRange >= pa.X
+					&& Player.position.Y / 16f - Player.tileRangeY - held.tileBoost - Player.blockRange <= pa.Y
+					&& (Player.position.Y + Player.height) / 16f + Player.tileRangeY + held.tileBoost - 2f + Player.blockRange >= pa.Y;
+				string Near(int x, int y) { Tile n = Main.tile[x, y]; return n.HasTile ? $"t{n.TileType}" : n.WallType > 0 ? $"w{n.WallType}" : "-"; }
+				Context.Log.Info($"Block swing: holding {held.Name} (slot {Player.selectedItem + 1}, createTile {held.createTile}, stack {held.stack}), anim {Player.itemAnimation}, "
+					+ $"itemTime {Player.itemTime}, use {Player.controlUseItem}, cursor {(Main.mouseItem.IsAir ? "empty" : Main.mouseItem.Name)}, target {pa}: tile {(t.HasTile ? t.TileType : -1)} "
+					+ $"liquid {t.LiquidAmount}/{t.LiquidType}, wall {t.WallType}, around L {Near(pa.X - 1, pa.Y)} R {Near(pa.X + 1, pa.Y)} U {Near(pa.X, pa.Y - 1)} D {Near(pa.X, pa.Y + 1)}, "
+					+ $"in range {inRange}, empty of bodies {Collision.EmptyTile(pa.X, pa.Y, true)}, noBuilding {Player.noBuilding}, us ({Player.position.X:0},{Player.position.Y:0})");
 			}
 		}
 		// Virtual mouse: vanilla reads Main.mouseX/Y (+ screenPosition = MouseWorld) for weapon aim and facing.

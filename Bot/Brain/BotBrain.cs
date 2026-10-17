@@ -52,6 +52,8 @@ public sealed class BotBrain
 	public Errands.Errand Errand { get; private set; }
 	/// <summary>Opportunities the errand declined, by key, with the detour cost then: offered again only when much nearer.</summary>
 	private readonly Dictionary<string, float> declined = new();
+	/// <summary>The opportunity the running override took up, if any: declined for good if the detour fails.</summary>
+	private string offeredKey;
 	private bool replan;
 	private string replanWhy = "";
 
@@ -229,14 +231,18 @@ public sealed class BotBrain
 			return;
 		if (ProgressionPlanner.NextChest(ctx) is ChestInfo chest) {
 			var o = new Errands.Opportunity(Errands.OpportunityKind.Chest, chest.TopLeft, Errands.Opportunity.Detour(ctx, chest.TopLeft));
-			if (Offer(o, ctx))
+			if (Offer(o, ctx)) {
+				offeredKey = o.Key;
 				BeginOverride(new LootChestSkill(chest.TopLeft), ctx);
+			}
 		}
 		if (Override == null && ProgressionPlanner.LifeCrystalUseful(ctx) && !ctx.Infinite(ctx.Ids.LifeCrystal)
 			&& !(Work is MineSkill m && m.ItemType == ctx.Ids.LifeCrystal) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart) {
 			var o = new Errands.Opportunity(Errands.OpportunityKind.LifeCrystal, heart, Errands.Opportunity.Detour(ctx, heart));
-			if (Offer(o, ctx))
+			if (Offer(o, ctx)) {
+				offeredKey = o.Key;
 				BeginOverride(new MineSkill(ctx.Ids.LifeCrystal, ctx.Knowledge.SourceOf(ctx.Ids.LifeCrystal).TileType, ctx.Inventory.Count(ctx.Ids.LifeCrystal) + 1), ctx);
+			}
 		}
 	}
 
@@ -1172,6 +1178,16 @@ public sealed class BotBrain
 			// they lie there: each fight's collect began afresh and stood on the same ones again. The set keeps only drops still
 			// on the ground (ids are item slots, reused once a drop is gone).
 			lootGivenUp.IntersectWith(ctx.Drops.Select(d => d.Id));
+			// An opportunity whose detour failed (a life crystal in a cave off the shaft with no way to it) is declined from here on:
+			// offered and taken again every few minutes, it held the re-descent for two game hours and the watchdog blocked the
+			// expedition (world_wof E23, 2026-10-17, "taking the LifeCrystal at (2130,748)" over and over at row 742).
+			if (offeredKey != null) {
+				if (status != SkillStatus.Succeeded) {
+					declined[offeredKey] = 0f;
+					ctx.Log.Info($"Errand: the {offeredKey} could not be had ({skill.FailureReason}); left for good");
+				}
+				offeredKey = null;
+			}
 			if (Auto && wasFight && CollectDropsSkill.AnyInRange(ctx, d => !lootGivenUp.Contains(d.Id), LootRadiusTiles)) {
 				ctx.Log.Info("Auto: picking up loot after the fight");
 				BeginOverride(new CollectDropsSkill(_ => true, LootRadiusTiles, lootGivenUp), ctx);

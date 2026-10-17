@@ -152,6 +152,33 @@ public class ErrandTests
 		Assert.False(access.Accepts(new Opportunity(OpportunityKind.LifeCrystal, new TilePos(Preferred + 60, 50), WallOfFleshErrand.AcceptDetourTicks + 1), ctx));
 	}
 
+	/// <summary>E23 (2026-10-17): a life crystal in a cave off the shaft with no way to it, taken and failed every few minutes for two game hours.</summary>
+	[Fact]
+	public void AnOpportunity_WhoseDetourFails_IsLeftForGood()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 3000, () => access.Phase == WallOfFleshErrand.DescendPhase && g.Sim.Node.Y >= HellTests.SurfaceFeet + 5);
+		// A heart 6 columns off the shaft, 10 rows down, walled in with rock nothing mines: no way to it.
+		int hx = access.ShaftX + 6, hy = g.Sim.Node.Y + 10;
+		g.AddHeart(hx, hy);
+		for (int x = hx - 2; x <= hx + 3; x++)
+			for (int y = hy - 2; y <= hy + 3; y++)
+				if (x < hx || x > hx + 1 || y < hy || y > hy + 1) {
+					g.Grid.Set(x, y, CellKind.Solid);
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+				}
+		Run(g, ctx, brain, 40000, () => brain.Planner.UnderworldReachedOnce);
+		int taken = log.Lines.Count(l => l.Contains("taking the LifeCrystal"));
+		output.WriteLine($"taken {taken}; {brain.Describe()} at {g.Sim.Node}");
+		Assert.True(brain.Planner.UnderworldReachedOnce, "the Underworld reached");
+		Assert.True(taken <= 1, $"the crystal taken up {taken} times");
+		if (taken == 1)
+			Assert.Contains(log.Lines, l => l.Contains("left for good"));
+	}
+
 	[Fact]
 	public void TheDetour_CountsTheRockInTheWay()
 	{
