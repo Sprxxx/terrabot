@@ -318,6 +318,21 @@ public class WaterTests
 	}
 
 	[Fact]
+	public void FinishingTheVein_StopsAtMaxVeinExtra()
+	{
+		// The vein is finished past the amount (the next armour piece needs the same ore), but only up to MaxVeinExtra tiles:
+		// with a "veining" flag the done check was skipped for any target, each next tile came from the usual search after
+		// the drops were collected, and this job for 3 mined all 63 tiles of the vein in sight.
+		FakeGame g = ProgressionTests.Mine(); // iron at columns 10-30, rows 29-31: 63 tiles
+		BotContext ctx = g.CreateContext(output);
+		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, mine, 60 * 240));
+		output.WriteLine($"mined {mine.Mined}, iron {g.Count(FakeGame.IronOre)}");
+		Assert.True(mine.Mined > 3, $"mined only {mine.Mined}: the rest of the vein left behind");
+		Assert.True(mine.Mined <= 3 + MineSkill.MaxVeinExtra, $"mined {mine.Mined} for 3 (vein bound {MineSkill.MaxVeinExtra})");
+	}
+
+	[Fact]
 	public void HeadUnderWater_CostsFarMoreThanWading()
 	{
 		var grid = ArrayTileGrid.Parse("......", "~~~~~~", "~~~~~~", "~~~~~~", "######");

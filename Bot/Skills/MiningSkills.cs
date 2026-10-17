@@ -63,7 +63,14 @@ public sealed class MineSkill : ISkill
 	/// <summary>Vertical speed (px/tick) under which the body counts as held still for mining though not grounded.</summary>
 	public const float HeldStillVY = 0.5f;
 	private int veinExtra;
-	private bool veining;
+	/// <summary>
+	/// The tile the vein step picked (the done check's own, within <see cref="VeinRadius"/> of the last one mined): only
+	/// while that is the target is the done check skipped. A flag for "veining" skipped it for any target, and after each
+	/// tile's drops were collected the next was picked by the usual search (any ore within <see cref="SearchRadius"/>), not by
+	/// the vein step, so <see cref="MaxVeinExtra"/> was never counted past the first: unit tests with an Amount of 3 mined 48
+	/// and 63 tiles, all the ore in sight.
+	/// </summary>
+	private TilePos? veinTarget;
 
 	public int ItemType { get; }
 	public int TileType { get; }
@@ -181,18 +188,18 @@ public sealed class MineSkill : ISkill
 		}
 		int have = ctx.Inventory.Count(ItemType);
 		lastHave = have;
-		// Done once the amount is in, unless finishing the vein (a target of it set: carry on with that one). Ore only: a
+		// Done once the amount is in, unless finishing the vein (the vein step's target set: carry on with that one; any
+		// other target is dropped for the vein step's, so each tile past the amount counts against MaxVeinExtra). Ore only: a
 		// "vein" of stone or dirt is the whole world (a settle scenario mined 776 blocks and never finished).
-		if (have >= Amount && sub is not CollectDropsSkill && !(veining && target != null)) {
+		if (have >= Amount && sub is not CollectDropsSkill && !(target != null && target == veinTarget)) {
 			bool ore = !ctx.Ids.BuildingBlocks.Contains(ItemType);
 			if (ore && veinExtra < MaxVeinExtra && lastMined is TilePos last && Nearest(ctx, last, VeinRadius) is TilePos more) {
 				if (veinExtra == 0)
 					ctx.Log.Info($"Mine: {Label(ctx)} {have}/{Amount}; finishing the vein first");
 				veinExtra++;
-				veining = true;
 				sub?.Stop(ctx);
 				sub = null;
-				target = more;
+				target = veinTarget = more;
 				mineTicks = 0;
 				arrivedOutOfReach = 0;
 				State = "finishing the vein";
