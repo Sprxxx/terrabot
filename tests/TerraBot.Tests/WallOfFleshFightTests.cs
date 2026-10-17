@@ -78,6 +78,19 @@ public class WallOfFleshFightTests
 	}
 
 	[Fact]
+	public void BelowHalfLife_TheBand62TilesOff_TheUpperEyeIsStillShot()
+	{
+		// Spec section 6: below 50 % the Hungry reach 57 tiles, the band from 62: an arrow's flight there is over the 120 ticks
+		// other fights aim within.
+		var (_, ctx, fight) = Setup(Wall(66f, life: 3000));
+		fight.Tick(ctx);
+		output.WriteLine($"{fight.State}: target {fight.TargetId}, out {ctx.Output}");
+		Assert.Equal(0, ctx.Output.Horizontal);
+		Assert.Equal(UpperEyeId, fight.TargetId);
+		Assert.True(ctx.Output.UseItem);
+	}
+
+	[Fact]
 	public void AtTheBandsNearEdge_TheBotRunsOnAwayFromTheWall_AndKeepsRunningThroughTheBand()
 	{
 		var (_, ctx, fight) = Setup(Wall(31f));
