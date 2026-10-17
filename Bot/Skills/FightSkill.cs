@@ -372,10 +372,11 @@ public sealed class FightSkill : ISkill
 				WaitInTheOpen(ctx, t, dx);
 			KeepOffEdge(ctx);
 		}
-		else if (Deck is (int dx0, int dx1, _) && (int)MathF.Floor(t.CenterX / 16f) is int tc && (tc < dx0 - DeckSlack || tc > dx1 + DeckSlack)) {
-			// Past the deck's columns (a slime on the Underworld's floor beyond the bridge's end): never chased off it. Shot from the
-			// deck when the arc clears (UseRanged above), met if it comes, else left to the no-closer rule. Seen in game (world_wof E10,
-			// 2026-10-17): "Fight Lava Slime [chasing]" 550 columns past the bridge's end, and a Demon killed the bot on the floor there.
+		else if (BeyondTheDeck(Deck, t)) {
+			// Past the deck's columns, or below it (a slime on the Underworld's floor beyond the bridge's end, or under the bridge):
+			// never chased off it. Shot from the deck when the arc clears (UseRanged above), met if it comes, else left to the no-closer
+			// rule. Seen in game (world_wof E10, 2026-10-17): "Fight Lava Slime [chasing]" 550 columns past the bridge's end, and a
+			// Demon killed the bot on the floor there; E11: a walk to a Lava Slime 20 rows under the deck, a 13-row drop into lava.
 			if (ctx.Combat.HasWeapon && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY))
 				HoldAndMeet(ctx, t, dx, dy, reachX, reachY);
 			else
@@ -612,6 +613,18 @@ public sealed class FightSkill : ISkill
 			turnOnly = true;
 		}
 		State = "waiting for it in the open";
+	}
+
+	/// <summary>
+	/// A target the fight never leaves the deck for: past its columns (<see cref="DeckSlack"/> either side) or below its floor by more
+	/// than a step. Above it is fine: fliers come down, and the bot stays put for them anyway.
+	/// </summary>
+	public static bool BeyondTheDeck((int MinX, int MaxX, int StandY)? deck, in EntityInfo t)
+	{
+		if (deck is not (int x0, int x1, int standY))
+			return false;
+		int tc = (int)MathF.Floor(t.CenterX / 16f), tr = (int)MathF.Floor((t.Y + t.Height) / 16f) - 1; // its feet row, as the body's node
+		return tc < x0 - DeckSlack || tc > x1 + DeckSlack || tr > standY + 2;
 	}
 
 	/// <summary>Shots within this many px are threats to the dodge.</summary>

@@ -92,6 +92,21 @@ public class FightSkillTests
 	private static EntityInfo Enemy(float x, float y, int life) =>
 		new(7, 1, "Test Slime", x, y, 24, 24, 0, 0, life, 60, 10);
 
+	/// <summary>E10: a chase 550 columns past the bridge's end; E11: a walk to a Lava Slime 20 rows under the deck, a 13-row drop into lava.</summary>
+	[Fact]
+	public void ATarget_PastTheDecksColumns_OrBelowItsFloor_IsNeverLeftTheDeckFor()
+	{
+		(int, int, int)? deck = (100, 200, 40); // feet row 40: standing on row 41
+		static EntityInfo At(int col, int feetRow) => new(1, 1, "Lava Slime", col * 16f, (feetRow + 1) * 16f - 24f, 24, 24, 0, 0, 50, 50, 10);
+		Assert.False(FightSkill.BeyondTheDeck(deck, At(150, 40)), "on the deck");
+		Assert.False(FightSkill.BeyondTheDeck(deck, At(150, 30)), "a flier above it");
+		Assert.False(FightSkill.BeyondTheDeck(deck, At(201, 41)), "a column past the end, within the slack");
+		Assert.True(FightSkill.BeyondTheDeck(deck, At(150, 60)), "20 rows under the deck");
+		Assert.True(FightSkill.BeyondTheDeck(deck, At(260, 40)), "60 columns past the end");
+		Assert.True(FightSkill.BeyondTheDeck(deck, At(90, 40)), "before the start");
+		Assert.False(FightSkill.BeyondTheDeck(null, At(150, 60)), "no deck: any ground");
+	}
+
 	/// <summary>world_wof E10 (2026-10-17): nine Demon sickles taken standing still ("[waiting for it in the open]"), two deaths on the bridge.</summary>
 	[Fact]
 	public void AShotFlyingAtTheBot_IsDodged_InAnOrdinaryFight()
