@@ -391,8 +391,11 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// <summary>The brain runs the errand: the planner's memory follows it (the shaft's column for the bridge), and its status line too.</summary>
 	public void AdoptErrand(Errands.Errand e)
 	{
-		if (e is Errands.WallOfFleshErrand a)
+		if (e is Errands.WallOfFleshErrand a) {
 			shaftX = a.ShaftX;
+			if (a.ShaftRoute.Count > 0)
+				{ shaftRoute.Clear(); shaftRoute.AddRange(a.ShaftRoute); } // the next errand at this shaft goes down the same dug way
+		}
 		Status = $"errand {e.Id}: {e.Status} [{e.Describe()}]";
 		Complete = false;
 	}
@@ -408,6 +411,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			if (outcome.Kind == Errands.OutcomeKind.Blocked && a.Phase == Errands.WallOfFleshErrand.DescendPhase) {
 				blockedShafts.Add(a.ShaftX);
 				shaftX = null;
+				shaftRoute.Clear();
 			}
 			else if (a.Landed is TilePos landed && !bridgeKnown)
 				KnowBridge(ctx, landed, a.StandRow + 1);

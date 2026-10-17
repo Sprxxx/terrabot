@@ -115,4 +115,22 @@ public class ReadyForBossTests
 		Assert.Equal(SkillStatus.Succeeded, ready.Tick(ctx));
 		Assert.Equal(1, g.Count(Ironskin));
 	}
+
+	/// <summary>world_wof E30 (2026-10-18): with the Wall up out of view, each new fight threw a doll it did not have; three failures blocked the errand.</summary>
+	[Fact]
+	public void WithTheBossUpOutOfView_TheFightWaitsForIt_AndSummonsNothing()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.HasRanged = true;
+		var fight = new BossFightSkill(FakeGame.SuspiciousEye, FakeGame.EyeNpc) { BossAlreadyUp = true };
+		fight.Start(ctx);
+		for (int t = 0; t < 600; t++) {
+			g.Refresh(ctx);
+			ctx.Combat.HasRanged = true;
+			Assert.Equal(SkillStatus.Running, fight.Tick(ctx));
+			g.Step(ctx);
+		}
+		Assert.DoesNotContain(((TestLog)ctx.Log).Lines, l => l.Contains("could not summon") || l.Contains("Throw start"));
+	}
 }

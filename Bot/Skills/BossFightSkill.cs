@@ -148,6 +148,13 @@ public sealed class BossFightSkill : ISkill
 	public const float UnderHeadPx = 40f;
 	private bool seenBoss;
 	private bool summoned;
+	/// <summary>
+	/// The boss is up already (the planner sees it, out of this fight's view): nothing is summoned, the fight waits for it to come
+	/// into view, up to <see cref="WaitForBossUpTicks"/>. Seen in game (world_wof E30, 2026-10-18): the bot outran the Wall, lost sight
+	/// of it ("the boss left"), and each new fight began by throwing a doll it no longer had, until the errand blocked on three failures.
+	/// </summary>
+	public bool BossAlreadyUp { get; init; }
+	public const int WaitForBossUpTicks = 60 * 60;
 	private int waitForBoss;
 	public const int MaxWaitForBoss = 60 * 5;
 	private int fightTicks;
@@ -349,9 +356,9 @@ public sealed class BossFightSkill : ISkill
 		}
 
 		if (boss == null && !seenBoss) {
-			if (summoned) {
+			if (summoned || BossAlreadyUp) {
 				// The item is used up the moment the game spawns the boss, a few tiles off screen: wait for it to show.
-				if (++waitForBoss > MaxWaitForBoss)
+				if (++waitForBoss > (BossAlreadyUp ? WaitForBossUpTicks : MaxWaitForBoss))
 					return Fail(ctx, $"no boss within {MaxWaitForBoss} ticks of summoning");
 				State = "waiting for the boss";
 				Move(ctx, null);

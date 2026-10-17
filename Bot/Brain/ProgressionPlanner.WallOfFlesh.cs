@@ -210,6 +210,8 @@ public sealed partial class ProgressionPlanner
 	public (int Row, int From, int To)? Hellbridge => bridgeKnown ? (bridgeRow, bridgeBack, bridgeTo) : null;
 	/// <summary>The hellevator's column (null before one was chosen).</summary>
 	public int? ShaftX => shaftX;
+	/// <summary>The shaft's route as dug (HellevatorSkill.Route), kept across errands at the same shaft.</summary>
+	private readonly List<(int Row, int Col)> shaftRoute = new();
 
 	/// <summary>How far the hellbridge is built (0-1), as the tiles show it now.</summary>
 	public double HellbridgeProgress(BotContext ctx)
@@ -257,6 +259,7 @@ public sealed partial class ProgressionPlanner
 	{
 		WofPrepMet = false;
 		shaftX = null;
+		shaftRoute.Clear();
 		descent = null;
 		bridgeDir = 0;
 		toEndKnown = backEndKnown = int.MinValue;
@@ -582,6 +585,8 @@ public sealed partial class ProgressionPlanner
 		int fromX = ctx.SpawnTile?.X ?? ctx.Node.X;
 		int preferred = shaftX ?? fromX + BridgeDirection(ctx, fromX) * ShaftOffsetTiles;
 		var errand = new Errands.WallOfFleshErrand(preferred, stand, ctx.Ids, phase);
+		if (shaftX == preferred && shaftRoute.Count > 0)
+			errand.UseRoute(shaftRoute); // the shaft's route from the errand before (E30: a new errand began a fresh column)
 		foreach (int blockedX in blockedShafts)
 			errand.Exclude(blockedX);
 		Proposed = errand;
@@ -683,11 +688,11 @@ public sealed partial class ProgressionPlanner
 	private (int MinX, int MaxX, int StandY)? HellbridgeBounds() =>
 		bridgeKnown ? (Math.Min(bridgeBack, bridgeTo), Math.Max(bridgeBack, bridgeTo), bridgeRow - 1) : null;
 
-	private BossFightSkill WallOfFleshFight(BossDefeated b, BotContext ctx)
+	private BossFightSkill WallOfFleshFight(BossDefeated b, BotContext ctx, bool up = false)
 	{
 		GameIds ids = ctx.Ids;
 		int dir = bridgeDir != 0 ? bridgeDir : 1;
-		return new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = HellbridgeBounds(), Summon = () => WallOfFleshPattern.Summon(ids, dir) };
+		return new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = HellbridgeBounds(), Summon = () => WallOfFleshPattern.Summon(ids, dir), BossAlreadyUp = up };
 	}
 
 	/// <summary>
@@ -740,7 +745,7 @@ public sealed partial class ProgressionPlanner
 				else
 					ctx.Log.Warn($"Auto: unplanned wof: the Wall of Flesh is up with no doll thrown by the plan (a Voodoo Demon killed over lava?), us at {ctx.Node}");
 			}
-			return Do($"fighting the {b.Label} along the hellbridge", WallOfFleshFight(b, ctx));
+			return Do($"fighting the {b.Label} along the hellbridge", WallOfFleshFight(b, ctx, up: true));
 		}
 		if (!hellbridgeDone)
 			return ResolveHellbridge(ctx);

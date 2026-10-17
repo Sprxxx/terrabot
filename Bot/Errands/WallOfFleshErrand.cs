@@ -204,6 +204,9 @@ public sealed class WallOfFleshErrand : Errand
 
 	/// <summary>The shaft as dug, row by row (<see cref="HellevatorSkill.Route"/>): the trip back goes down it. Saved with the errand.</summary>
 	public List<(int Row, int Col)> ShaftRoute { get; private set; } = new();
+
+	/// <summary>Down the route an earlier errand dug at this shaft (the planner keeps it).</summary>
+	public void UseRoute(IEnumerable<(int Row, int Col)> route) => ShaftRoute = route.ToList();
 	private int routeLogged;
 
 	/// <summary>A chest in the deck's way the bridge stopped at (<see cref="HellbridgeSkill.Chest"/>): looted next, once per cell.</summary>
