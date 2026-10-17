@@ -70,6 +70,8 @@ public sealed class SelfTestSystem : ModSystem
 	private List<Scenario> queue;
 	private int index;
 	private Arena arena, sharedArena;
+	/// <summary>Main.hardMode when the self-test began: each synthetic scenario starts from it (a Wall of Flesh fight turns it on).</summary>
+	private bool hardModeBefore;
 	private RunResult result;
 	private bool[,] before;
 	private TeeLog tee;
@@ -207,6 +209,7 @@ public sealed class SelfTestSystem : ModSystem
 				if (phaseTicks < StartDelayTicks)
 					return;
 				Active = true;
+				hardModeBefore = Main.hardMode;
 				sharedArena = arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2, queue.Where(q => q.ArenaFloorRow <= 0).Select(q => q.Width).DefaultIfEmpty(0).Max());
 				double fullGravityRow = 60 + 10 * Math.Pow(Main.maxTilesX / 4200.0, 2) + Main.worldSurface / 6.0;
 				Mod.Logger.Info($"SELFTEST world: surface row {Main.worldSurface:0}, caverns from row {Main.rockLayer:0}, {Main.maxTilesX}x{Main.maxTilesY}");
@@ -256,6 +259,13 @@ public sealed class SelfTestSystem : ModSystem
 						Main.npc[i].active = false;
 				for (int i = 0; i < Main.maxItems; i++)
 					Main.item[i].active = false;
+				// Nor a scenario's leftovers: hostile shots (the Wall's lasers), and Hardmode turned on by a Wall of Flesh fight before
+				// (the world as it was when the self-test began). Seen in game (m12_synthetic_3): fight_wof_unholy "won" at once in the
+				// world fight_wof had turned to Hardmode, and its own Wall, never fought, then killed the bot in voodoo_rule.
+				for (int i = 0; i < Main.maxProjectiles; i++)
+					if (Main.projectile[i].active && Main.projectile[i].hostile)
+						Main.projectile[i].active = false;
+				Main.hardMode = hardModeBefore;
 				arena.Build(s.Rows);
 				CachedTileGrid.Instance.Clear();
 				Arena.SetHotbar(p, s.Pickaxe, s.Blocks, s.Weapon, s.Axe);

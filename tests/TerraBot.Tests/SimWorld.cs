@@ -103,8 +103,9 @@ public sealed class SimWorld
 		if (blocks is TestBlockActions tb && tb.NoPlace.Contains(cell))
 			return; // as the planner was told: nothing goes in there
 		// ...or a wall in the cell or beside it (Player.PlaceThing_Tiles_BlockPlacementForAssortedThings).
-		bool neighbour = SolidAt(cell.X - 1, cell.Y) || SolidAt(cell.X + 1, cell.Y)
-			|| SolidAt(cell.X, cell.Y - 1) || grid.Get(cell.X, cell.Y + 1).CanStandOn()
+		// Vanilla's rule (Player.cs:40510-40516): a 4-neighbour with a solid tile, platforms included (Main.tileSolid holds for them).
+		bool neighbour = SolidAt(cell.X - 1, cell.Y) || SolidAt(cell.X + 1, cell.Y) || grid.Get(cell.X - 1, cell.Y).IsPlatform() || grid.Get(cell.X + 1, cell.Y).IsPlatform()
+			|| SolidAt(cell.X, cell.Y - 1) || grid.Get(cell.X, cell.Y - 1).IsPlatform() || grid.Get(cell.X, cell.Y + 1).CanStandOn()
 			|| blocks.HasWall(cell.X, cell.Y) || blocks.HasWall(cell.X - 1, cell.Y) || blocks.HasWall(cell.X + 1, cell.Y)
 			|| blocks.HasWall(cell.X, cell.Y - 1) || blocks.HasWall(cell.X, cell.Y + 1);
 		int left = (int)State.X, top = (int)State.Y;

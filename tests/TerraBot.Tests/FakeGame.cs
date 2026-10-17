@@ -89,6 +89,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public static ExplosiveInfo DynamiteInfo => Ids.TileExplosives[1];
 	/// <summary>Solid cells a blast does not break (a dungeon brick, an altar); every other solid cell it does.</summary>
 	public readonly HashSet<TilePos> NoExplode = new();
+	/// <summary>Non-solid tile types (in <see cref="Furniture"/>) one pickaxe hit removes.</summary>
+	public readonly HashSet<int> PickaxeRemoves = new();
 	/// <summary>Explosives thrown and not yet gone off: where they came to rest (pixels) and the fuse left.</summary>
 	public readonly List<(ExplosiveInfo Info, float X, float Y, int Fuse)> Lit = new();
 	/// <summary>Blasts so far, and the ones whose box touched the player.</summary>
@@ -664,6 +666,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			if (FrameXs.Remove(cell, out int frame) && frame == VileMushroomFrame)
 				Drops.Add(new DropInfo(nextDropId++, VileMushroom, "Vile Mushroom", 1, cell.X * 16f + 4, FallRow(cell.X, cell.Y) * 16f + 4, 8, 8));
 		}
+		// A pickaxe on a non-solid tile a test lets it take (a pot, a chain in the hellbridge's way): one hit removes it.
+		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int any)
+			&& PickaxeRemoves.Contains(any) && Sim.InToolRange(new TilePos(o.AimX, o.AimY)))
+			Furniture.Remove(new TilePos(o.AimX, o.AimY));
 		// Using a life crystal: +20 max life up to 400.
 		if (o.Tool == ToolRequest.Item && o.ToolItem == LifeCrystal && o.UseItem && Count(LifeCrystal) > 0 && LifeMax < 400 && ++useTicks >= 30) {
 			useTicks = 0;

@@ -100,22 +100,26 @@ public class WallOfFleshPlanTests
 		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, shaft, 30000));
 		p.OnSkillFinished(shaft, SkillStatus.Succeeded, ctx);
 		Assert.True(p.UnderworldReachedOnce);
-		var (row, from, to) = Assert.IsType<(int, int, int)>(p.Hellbridge);
-		output.WriteLine($"bridge row {row} x {from}-{to}");
-		Assert.Equal((Row, TowerFrom, TowerFrom + Bridge), (row, from, to)); // from the tower's west end: its roof is bridge already
+		var (row, back, to) = Assert.IsType<(int, int, int)>(p.Hellbridge);
+		int from = shaft.Landed.Value.X + 1; // under the body's front column, going east
+		output.WriteLine($"bridge row {row} x {back}-{to}");
+		// A bridge's length east (the world's width unknown here: no edge), nothing left for the flight side.
+		Assert.Equal((Row, from, from + Bridge), (row, back, to));
 
 		// S4: the bridge.
 		g.Refresh(ctx);
 		var bridge = Assert.IsType<HellbridgeSkill>(Next(p, ctx));
-		Assert.Equal((Row, TowerFrom, TowerFrom + Bridge), (bridge.Row, bridge.FromX, bridge.ToX));
+		Assert.Equal((Row, from, from + Bridge), (bridge.Row, bridge.FromX, bridge.ToX));
 		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, bridge, 30000));
 		p.OnSkillFinished(bridge, SkillStatus.Succeeded, ctx);
-		Assert.True(p.HellbridgeDone);
+		int TowerFrom = from, ToEnd = from + Bridge; // the names below: the arena's ends
 
 		// S5: at its far end with no doll, the hunt; there the Voodoo Demon is not spared.
 		g.Refresh(ctx);
 		var hunt = Assert.IsType<WaitSkill>(Next(p, ctx));
 		Assert.Equal("a Guide Voodoo Doll", hunt.What);
+		Assert.True(p.HellbridgeDone);
+		p.SpareRules(ctx); // as the brain does each tick
 		Assert.DoesNotContain(FakeGame.VoodooDemonNpc, ctx.SparedTypes);
 
 		// S6: with a doll, at the end, lava under where it lands: the fight, its summon the throw.
@@ -130,7 +134,7 @@ public class WallOfFleshPlanTests
 		var fight = Assert.IsType<BossFightSkill>(s);
 		Assert.True(fight.IsWallOfFlesh);
 		Assert.NotNull(fight.Summon);
-		Assert.Equal(((int, int, int)?)(TowerFrom, TowerFrom + Bridge, Row - 1), fight.Arena);
+		Assert.Equal(((int, int, int)?)(TowerFrom, ToEnd, Row - 1), fight.Arena);
 		Assert.Contains("summoning", p.Status);
 		g.WorldWidthTiles = 200; // the end (x 144) in the world's east half
 		var log = (TestLog)ctx.Log;
@@ -175,6 +179,30 @@ public class WallOfFleshPlanTests
 		var more = Assert.IsType<HellbridgeSkill>(Next(p, ctx));
 		Assert.Equal(bridge.ToX + ProgressionPlanner.BridgeExtendTiles, more.ToX);
 		Assert.False(p.HellbridgeDone);
+	}
+
+	[Fact]
+	public void AHellbridgeStepThatKeepsFailing_IsNotStartedAgainAndAgain_ThePlanIsStuckThere()
+	{
+		// Seen in game (measured run M12a): "could not place a block at (2156,1042) (3 tries)", and the same step started again 33
+		// times in a few seconds.
+		var (g, ctx, p) = AfterTheEye();
+		var shaft = Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, shaft, 30000));
+		p.OnSkillFinished(shaft, SkillStatus.Succeeded, ctx);
+		int from = shaft.Landed.Value.X + 1;
+		g.Blocks.NoPlace.Add(new TilePos(TowerTo + 3, Row)); // past the tower's roof: the game takes no block there
+		for (int i = 0; i < ProgressionPlanner.MaxBridgeFails; i++) {
+			g.Refresh(ctx);
+			var bridge = Assert.IsType<HellbridgeSkill>(Next(p, ctx));
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, bridge, 20000));
+			p.OnSkillFinished(bridge, SkillStatus.Failed, ctx);
+		}
+		g.Refresh(ctx);
+		Assert.Null(Next(p, ctx));
+		Assert.True(p.Stuck);
+		Assert.Contains("hellbridge failed 2 times", p.Status);
+		Assert.True(from > 0);
 	}
 
 	[Fact]
@@ -243,8 +271,8 @@ public class WallOfFleshPlanTests
 	[Fact]
 	public void TheVoodooRule_TheGuideAlive_TheDemonByTheBridgeIsNotFought_AndTheBridgeIsBuilt()
 	{
-		// Over the lava 6 columns past where the 40-tile bridge from the tower's west end (x 36) ends: never over its deck.
-		var (g, ctx, brain) = OnTheTowerAuto(guide: true, demonX: HellTests.TowerFrom + 40 + 6);
+		// Over the lava 7 columns past where the 40-tile bridge from the tower's end (x 46-86) ends: never over its deck.
+		var (g, ctx, brain) = OnTheTowerAuto(guide: true, demonX: HellTests.TowerTo + 40 + 8);
 		bool fought = false;
 		int t = 0;
 		for (; t < 20000 && brain.Auto && !(brain.Planner.Complete && brain.Current == null); t++) {

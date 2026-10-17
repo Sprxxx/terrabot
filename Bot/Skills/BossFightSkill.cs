@@ -137,6 +137,7 @@ public sealed class BossFightSkill : ISkill
 	private int runDir = 1;
 	private bool dodging;
 	private int? deathsAtStart;
+	private bool? defeatedAtStart;
 	private long lastDashTick = -100000;
 	private (float, float)? lastBossV;
 	private long lastForcedTurnLog = -100000;
@@ -250,7 +251,12 @@ public sealed class BossFightSkill : ISkill
 			segments = ctx.Hostiles.Where(h => segmentTypes.Contains(h.Type)).Select(h => Measured(ctx, h)).OrderBy(h => h.DistanceTo(cx, cy)).ToList();
 		RememberPositions(ctx);
 		// A worm is defeated with its last segment (the flag is set as it dies); one still in view is another worm.
-		if (ctx.World.BossDefeated(BossType) && segments.Count == 0) {
+		// Defeated before the fight began (Hardmode on before this Wall of Flesh: there is no downed flag of its own) is no win: the
+		// Wall's is when it is seen and then gone with its bar empty (below). Seen in game (m12_synthetic_3): fight_wof_unholy "won"
+		// in 3 ticks in a world fight_wof had just turned to Hardmode, its own Wall summoned and left there.
+		defeatedAtStart ??= ctx.World.BossDefeated(BossType);
+		bool wonBefore = IsWallOfFlesh && defeatedAtStart == true;
+		if (ctx.World.BossDefeated(BossType) && segments.Count == 0 && !wonBefore) {
 			ctx.Log.Info($"Boss fight: boss {BossType} defeated after {fightTicks} ticks, {Dodges} dodges, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}"
 				+ (IsWorm ? $", up to {maxSegmentsSeen} segments seen at once" : ""));
 			State = "won";
@@ -338,7 +344,13 @@ public sealed class BossFightSkill : ISkill
 			ctx.Log.Info(IsWorm ? $"Boss fight: no segment of the worm in view, us at {ctx.Node}"
 				: $"Boss fight: lost sight of the boss (last seen at {bossLifeSeen} life), us at {ctx.Node}");
 		else if (goneTicks > (IsWorm ? WormPattern.GoneTicks : GoneTicks)) {
-			if (ctx.World.BossDefeated(BossType))
+			if (wonBefore && seenBoss && ctx.World.BossBarLife(BossType) <= 0) {
+				ctx.Log.Info($"Boss fight: boss {BossType} gone after {fightTicks} ticks, its bar empty (Hardmode was on before): defeated");
+				State = "won";
+				LogWallSummary(ctx, "defeated");
+				return SkillStatus.Succeeded;
+			}
+			if (ctx.World.BossDefeated(BossType) && !wonBefore)
 				return SkillStatus.Running;
 			// Out of view that long but still on its bar: burrowed or diving, not gone. Wait for it where the fight is (back on
 			// the arena, or within the leash), which keeps us in the zone; the worm only dives off for good while no player is in

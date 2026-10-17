@@ -411,6 +411,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		TileID.Stone, TileID.Dirt, TileID.ClayBlock, TileID.Mud, TileID.SnowBlock, TileID.Granite, TileID.Marble,
 		TileID.Copper, TileID.Tin, TileID.Iron, TileID.Lead, TileID.Silver, TileID.Tungsten, TileID.Gold, TileID.Platinum,
 		TileID.Sand,
+		// The Underworld's ash (Ash Block, 172): the hellbridge's blocks are got from it down there (Milestone 12).
+		TileID.Ash,
 	};
 
 	/// <summary>Ore pairs: a world generates only one ore of each tier (WorldGen.SavedOreTiers).</summary>

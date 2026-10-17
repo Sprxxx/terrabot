@@ -53,7 +53,7 @@ public sealed class HellbridgeSkill : ISkill
 	private WalkToSkill walk;
 	private TilePos? actionCell;
 	private bool actionPlace;
-	private int actionTicks, lavaTicks, waitForBlocks, loggedPercent;
+	private int actionTicks, lavaTicks, waitForBlocks, loggedPercent, lastEnd = int.MinValue;
 	private readonly System.Collections.Generic.Dictionary<TilePos, int> failures = new();
 
 	public HellbridgeSkill(int row, int fromX, int toX)
@@ -97,21 +97,33 @@ public sealed class HellbridgeSkill : ISkill
 	}
 
 	/// <summary>
-	/// A column of the bridge done: its cell in the row solid, the <see cref="ClearRows"/> over it open, the top one (the jump's
-	/// spare) left solid only where opening it would let lava in.
+	/// A column of the bridge done: its cell in the row one to stand on (a block, or a tile already there that is stood on: a
+	/// platform, a slope or half block of a ruined house's bricks, which the grid reads as platforms), the <see cref="ClearRows"/>
+	/// over it open, the top one (the jump's spare) left in only where opening it would let lava in.
 	/// </summary>
 	public static bool Built(ITileGrid g, int row, int x)
 	{
-		if (!g.Get(x, row).IsSolid())
+		if (!g.Get(x, row).CanStandOn())
 			return false;
 		for (int y = row - ClearRows; y < row; y++)
-			if (g.Get(x, y).IsSolid() && !(y == row - ClearRows && BlockRules.LetsLavaIn(g, new TilePos(x, y))))
+			if (InTheWay(g.Get(x, y)) && !(y == row - ClearRows && BlockRules.LetsLavaIn(g, new TilePos(x, y))))
 				return false;
 		return true;
 	}
 
+	/// <summary>A cell over the bridge the body cannot pass: a block, a slope or half block, a platform (mined: a jump would stop on it).</summary>
+	private static bool InTheWay(CellKind k) => k.IsSolid() || k.IsShaped() || k.IsPlatform();
+
 	/// <summary>The node standing at the end with the body's front column on it (the body is 2 wide: going west, the end is its left column).</summary>
-	private TilePos StandAt(int end) => new(Dir > 0 ? end - 1 : end, Row - 1);
+	private TilePos StandAt(int end) => new((Dir > 0 ? end - 1 : end) - (standBack ? Dir : 0), Row - 1);
+
+	/// <summary>
+	/// Placing the next block failed from the end (<see cref="MaxFailuresPerCell"/> tries): the next tries from a column back (the
+	/// body's hitbox, the reach), then the skill fails (and the planner does not start the same step again at once). A tile in the
+	/// cell that is neither stood on nor solid is mined before any try. Seen in game (measured run M12a, world_wof): "could not place a block at (2156,1042) (3 tries)" by the ruined
+	/// tower's roof, the planner starting the same step again 33 times in a few seconds.
+	/// </summary>
+	private bool standBack;
 
 	public SkillStatus Tick(BotContext ctx)
 	{
@@ -121,20 +133,26 @@ public sealed class HellbridgeSkill : ISkill
 			return ctx.BodyIssue == "dead" ? Fail(ctx, "died") : SkillStatus.Running;
 		}
 		ITileGrid g = ctx.Grid;
-		// The action under way done (the cell mined, or the block in): counted, and the next.
-		if (actionCell is TilePos done && g.Get(done.X, done.Y).IsSolid() == actionPlace) {
+		// The action under way done (the cell mined, or the block in): counted, and the next. A mined cell is done once no tile is
+		// left in it (a non-solid one, such as a platform, too).
+		if (actionCell is TilePos done && (actionPlace ? g.Get(done.X, done.Y).IsSolid()
+				: ctx.World != null ? ctx.World.TileTypeAt(done.X, done.Y) < 0 : !g.Get(done.X, done.Y).IsSolid())) {
 			if (actionPlace)
 				Placed++;
 			else
 				Mined++;
 			actionCell = null;
 		}
-		if (!g.Get(FromX, Row).IsSolid())
+		if (!g.Get(FromX, Row).CanStandOn())
 			return Fail(ctx, $"no ground at the bridge's start ({FromX},{Row})");
 		// From where it ended last tick while that column still stands (a scan of up to 1700 columns a tick otherwise).
 		int scanFrom = End != FromX && (End - FromX) * Dir > 0 && Built(g, Row, End) ? End : FromX;
 		End = BridgeEnd(g, Row, scanFrom, ToX);
 		LogProgress(ctx);
+		if (End != lastEnd) {
+			standBack = false; // on: from the end again
+			lastEnd = End;
+		}
 		if (End == ToX) {
 			State = "done";
 			ctx.Log.Info($"Hellbridge done: row {Row} from x {FromX} to {ToX}, {Placed} blocks placed and {Mined} cells mined here");
@@ -178,7 +196,7 @@ public sealed class HellbridgeSkill : ISkill
 				State = $"waiting for the lava at {cell} to drain";
 				return SkillStatus.Running;
 			}
-			if (!k.IsSolid())
+			if (!InTheWay(k))
 				continue;
 			if (BlockRules.LetsLavaIn(g, cell)) {
 				if (y == Row - ClearRows)
@@ -190,13 +208,17 @@ public sealed class HellbridgeSkill : ISkill
 		lavaTicks = 0;
 		// 2. The bridge's own cell.
 		var deck = new TilePos(c, Row);
-		if (!g.Get(c, Row).IsSolid()) {
+		if (!g.Get(c, Row).CanStandOn()) {
 			if (g.Get(c, Row).HasLava()) {
 				if (++lavaTicks > LavaWaitTicks)
 					return Fail(ctx, $"lava in the bridge's cell {deck}: no block goes into lava");
 				State = $"waiting for the lava in {deck} to go";
 				return SkillStatus.Running;
 			}
+			// A tile there that is neither stood on nor solid (a pot, a chain, a banner: placing a block over it fails, Player.PlaceThing):
+			// mined first.
+			if (ctx.World != null && ctx.World.TileTypeAt(c, Row) >= 0)
+				return Act(ctx, deck, place: false);
 			return Act(ctx, deck, place: true);
 		}
 		// 3. One tile on.
@@ -232,9 +254,18 @@ public sealed class HellbridgeSkill : ISkill
 			int f = failures.TryGetValue(cell, out int was) ? was + 1 : 1;
 			failures[cell] = f;
 			actionTicks = 0;
-			if (f >= MaxFailuresPerCell)
-				return Fail(ctx, $"could not {(place ? "place a block at" : "mine")} {cell} ({f} tries)");
-			ctx.Log.Info($"Hellbridge: {(place ? "placing" : "mining")} {cell} did nothing in {ActionTicks} ticks, try {f + 1}/{MaxFailuresPerCell}");
+			if (f == 1)
+				ctx.Log.Info($"Hellbridge: {(place ? "placing at" : "mining")} {cell} did nothing in {ActionTicks} ticks: the cell reads {ctx.Grid.Get(cell.X, cell.Y)}, "
+					+ $"tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}, us at {ctx.Node} ({ctx.Body.X:0},{ctx.Body.Y:0} px), {ctx.Blocks?.BlockCount ?? 0} blocks on the hotbar");
+			// Escalate rather than repeat: from a column back, then give up (standBack).
+			if (place && f == MaxFailuresPerCell && !standBack) {
+				standBack = true;
+				ctx.Log.Info($"Hellbridge: placing at {cell} failed {f} times from the end; trying from a column back");
+			}
+			else if (f >= (place ? 2 : 1) * MaxFailuresPerCell)
+				return Fail(ctx, $"could not {(place ? "place a block at" : "mine")} {cell} ({f} tries{(place ? ", from the end and a column back" : "")})");
+			else
+				ctx.Log.Info($"Hellbridge: {(place ? "placing" : "mining")} {cell} did nothing in {ActionTicks} ticks, try {f + 1}");
 		}
 		ctx.Output.Tool = place ? ToolRequest.Block : ToolRequest.Pickaxe;
 		ctx.Output.Aim(cell.X, cell.Y);

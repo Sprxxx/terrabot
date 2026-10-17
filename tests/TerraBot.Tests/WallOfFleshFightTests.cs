@@ -171,6 +171,25 @@ public class WallOfFleshFightTests
 	}
 
 	[Fact]
+	public void HardmodeOnBeforeTheFight_IsNoWin_TheWallGoneIs()
+	{
+		// Seen in game (m12_synthetic_3): fight_wof_unholy "won" in 3 ticks, Hardmode left on by fight_wof.
+		var (g, ctx, fight) = Setup(Wall(50f));
+		g.BossesDefeated.Add(FakeGame.WofNpc);
+		Assert.Equal(SkillStatus.Running, fight.Tick(ctx));
+		ctx.Hostiles = System.Array.Empty<EntityInfo>();
+		SkillStatus s = SkillStatus.Running;
+		int t = 0;
+		for (; t < 200 && s == SkillStatus.Running; t++) {
+			ctx.Tick = t + 1;
+			s = fight.Tick(ctx);
+		}
+		output.WriteLine($"{s} after {t} ticks");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(t > BossFightSkill.GoneTicks);
+	}
+
+	[Fact]
 	public void TheWallDown_IsHardmode_AndTheFightIsWon()
 	{
 		var (g, ctx, fight) = Setup(Wall(50f));
