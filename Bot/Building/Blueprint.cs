@@ -72,6 +72,19 @@ public sealed class Blueprint
 	/// despawns once no player is in it (NPC.cs:55436-55481): an arena off it is of no use for that fight.
 	/// </summary>
 	public bool InEvilBiome { get; init; }
+	/// <summary>
+	/// An arena whose floor may be raised off the ground (SiteFinder's raised floors: a long floor in the air, as a player
+	/// bridges a chasm or a lake with it). The worm's arena over the corruption, and Skeletron's over the lake by the Dungeon.
+	/// </summary>
+	public bool RaisedFloor { get; init; }
+	/// <summary>
+	/// Rows over the floor an arena wants open to the sky, beyond its own open air (0: none): each block in them costs a site as
+	/// if the build mined it (SiteFinder.Score). Skeletron hovers with its top 250 px over the player's top
+	/// (<see cref="Skills.SkeletronPattern.HoverTopRows"/>), and an arrow stops on a tile where the boss does not.
+	/// </summary>
+	public int SkyRows { get; init; }
+	/// <summary>Skeletron's arena by the Dungeon's entrance (the planner keeps its own memory of it).</summary>
+	public bool AtDungeon { get; init; }
 
 	public Blueprint(string name, string[] rows, IReadOnlyList<PlanItem> items, TilePos inside, TilePos outsideStand, int wallItem)
 	{
@@ -166,7 +179,7 @@ public sealed class Blueprint
 	/// it from a long flat floor on the corruption's surface, kiting sideways as it arcs out of the ground (docs M10_SPEC.md
 	/// section 4 and G9, at least 60 tiles; this one is 96).
 	/// </summary>
-	public static Blueprint Arena(GameIds ids, int width = ArenaWidth, int searchRadius = ArenaSearchRadius, bool inEvilBiome = false)
+	public static Blueprint Arena(GameIds ids, int width = ArenaWidth, int searchRadius = ArenaSearchRadius, bool inEvilBiome = false, bool atDungeon = false)
 	{
 		var rows = new string[ArenaClearance + 1];
 		for (int y = 0; y < ArenaClearance; y++)
@@ -182,11 +195,25 @@ public sealed class Blueprint
 		for (int x = ArenaTorchSpacing / 2; x < width; x += ArenaTorchSpacing)
 			if (x < mid - 2 || x > mid + 2)
 				items.Add(new PlanItem(ids.Torch, x, top, 1, 1, Optional: true));
-		return new Blueprint(inEvilBiome ? "boss arena in the evil biome" : "boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
-			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, RebuildBlocks = true, MaxEdits = 600, SearchRadius = searchRadius,
-			InEvilBiome = inEvilBiome,
+		return new Blueprint(atDungeon ? "boss arena by the Dungeon" : inEvilBiome ? "boss arena in the evil biome" : "boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
+			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, RebuildBlocks = true, MaxEdits = ArenaMaxEdits(width), SearchRadius = searchRadius,
+			InEvilBiome = inEvilBiome, RaisedFloor = inEvilBiome || atDungeon, AtDungeon = atDungeon,
+			SkyRows = atDungeon ? Skills.SkeletronPattern.HoverTopRows : 0,
 		};
 	}
+
+	/// <summary>
+	/// Edits an arena may take: 600 for the standard 96-wide one; in proportion for a wider one (Skeletron's by the Dungeon).
+	/// </summary>
+	private static int ArenaMaxEdits(int width) => width <= ArenaWidth ? 600 : 600 * width / ArenaWidth;
+
+	/// <summary>
+	/// Skeletron's arena width: long enough to run from the spinning head for a whole spin from the middle, either way. It spins
+	/// for 400 ticks at 1.5 px/tick (NPC.cs:22382-22399) against the player's 3 (Player.maxRunSpeed): 400 × 3 = 1200 px, 75
+	/// tiles a side, 150, and the arena's hard margins (BossFightSkill.ArenaHardMargin, 4) at each end: 158, rounded up to 160.
+	/// The spec's floor in the M11 world is 170 long (docs M11_SPEC.md section 3d); with no site that long, the standard one.
+	/// </summary>
+	public const int DungeonArenaWidth = 160;
 
 	/// <summary>
 	/// One row of blocks <paramref name="width"/> long across a chasm's opening, level with the lower of its two lips

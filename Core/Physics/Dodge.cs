@@ -18,7 +18,12 @@ namespace TerraBot.Core.Physics;
 /// <item>fall: add <see cref="Gravity"/> to the vertical velocity each tick, up to <see cref="MaxFallSpeed"/> (a worm's
 /// head out of the ground);</item>
 /// <item>path: where it will be, worked out beforehand (<see cref="PathX"/>, <see cref="PathY"/>: top-left on ticks 1, 2, ...;
-/// it stays at the last one after): a worm's body, which follows the segment ahead of it rather than a velocity of its own.</item>
+/// it stays at the last one after): a worm's body, which follows the segment ahead of it rather than a velocity of its own;</item>
+/// <item>homing: each tick its velocity is set straight at the player's centre at <see cref="HomingSpeed"/> (Skeletron's spin
+/// and its daytime chase, NPC.cs:22383-22399 and 22462-22475: the AI sets the velocity outright, no acceleration);</item>
+/// <item>wind-up: before its dash (<see cref="DashAt"/>), each tick the velocity is multiplied by <see cref="WindDragX"/> and
+/// <see cref="WindDragY"/>, <see cref="WindAX"/> and <see cref="WindAY"/> are added, and each component is kept within
+/// <see cref="WindMaxSpeed"/> (a Skeletron hand rising before its slam, or swinging out before its sweep, NPC.cs:22703-22789).</item>
 /// </list>
 /// </summary>
 public sealed record Threat(float X, float Y, int Width, int Height, float VX, float VY)
@@ -36,7 +41,14 @@ public sealed record Threat(float X, float Y, int Width, int Height, float VX, f
 	public float MaxFallSpeed { get; init; } = float.PositiveInfinity;
 	public float[] PathX { get; init; }
 	public float[] PathY { get; init; }
+	public float HomingSpeed { get; init; }
+	public float WindDragX { get; init; } = 1f;
+	public float WindDragY { get; init; } = 1f;
+	public float WindAX { get; init; }
+	public float WindAY { get; init; }
+	public float WindMaxSpeed { get; init; } = float.PositiveInfinity;
 	public bool Seeks => SeekAccel > 0f && SeekSpeed > 0f;
+	public bool WindsUp => WindDragX != 1f || WindDragY != 1f || WindAX != 0f || WindAY != 0f;
 }
 
 /// <summary>
@@ -297,6 +309,17 @@ public static class Dodge
 				vx *= th.Brake;
 				vy *= th.Brake;
 			}
+		}
+		if (dashed < 0 && th.HomingSpeed > 0f) {
+			float dx = pcx - cx, dy = pcy - cy, d = MathF.Sqrt(dx * dx + dy * dy);
+			if (d > 0f) {
+				vx = dx / d * th.HomingSpeed;
+				vy = dy / d * th.HomingSpeed;
+			}
+		}
+		if (dashed < 0 && th.WindsUp && (th.DashAt < 0 || t < th.DashAt)) {
+			vx = Math.Clamp(vx * th.WindDragX + th.WindAX, -th.WindMaxSpeed, th.WindMaxSpeed);
+			vy = Math.Clamp(vy * th.WindDragY + th.WindAY, -th.WindMaxSpeed, th.WindMaxSpeed);
 		}
 		if (dashed < 0 && th.Seeks) {
 			float dx = pcx - cx, dy = pcy - th.SeekAbove - cy, d = MathF.Sqrt(dx * dx + dy * dy);

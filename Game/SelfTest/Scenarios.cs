@@ -36,6 +36,8 @@ public sealed class RunResult
 	public bool EyeDefeated;
 	/// <summary>NPC.downedBoss2 at the end (the Eater of Worlds, or the Brain of Cthulhu in a Crimson world).</summary>
 	public bool EvilBossDefeated;
+	/// <summary>NPC.downedBoss3 at the end (Skeletron).</summary>
+	public bool SkeletronDefeated;
 	/// <summary>Real-world runs: the milestones reached, in order, with the tick each came at.</summary>
 	public string Milestones = "";
 	/// <summary>The planner's arena: null = finished (floor, open air, torches, campfire), else why not.</summary>
@@ -78,6 +80,8 @@ public sealed class Scenario
 	public int MaxLife { get; init; }
 	/// <summary>Clear the world's "boss defeated" flags (throw-away copy of the world).</summary>
 	public bool ResetBosses { get; init; }
+	/// <summary>Clear NPC.downedBoss3 (throw-away copy of the world): the Old Man stays, Skeletron can be summoned.</summary>
+	public bool ResetSkeletron { get; init; }
 	/// <summary>Armour to wear (head, body, legs item types), empty = none.</summary>
 	public int[] Wear { get; init; } = System.Array.Empty<int>();
 	/// <summary>Main.time at the start for a day scenario (27000 = mid-morning; 0 = dawn, 15 minutes of daylight).</summary>
@@ -89,6 +93,12 @@ public sealed class Scenario
 	/// town NPCs, starting at the world spawn. For "does it actually play the game" runs.
 	/// </summary>
 	public bool RealWorld { get; init; }
+	/// <summary>
+	/// A real-world run started from a checkpoint begins where the player stood when it was saved (the checkpoint's start.txt,
+	/// SelfTestSystem.SaveCheckpoint), not at the world's spawn: the Skeletron fight from its "dungeon arena" checkpoint without
+	/// the walk of 1,225 tiles to the Dungeon again.
+	/// </summary>
+	public bool ResumeAtCheckpoint { get; init; }
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
 	public Action<Arena, int> During { get; init; }
 	/// <summary>The run also ends once the bot logs a line containing this (for skills that never finish on their own).</summary>
@@ -169,6 +179,15 @@ public sealed class Scenario
 			stone.Select(r => new string(r)).ToArray(), new string('@', width));
 	}
 
+	/// <summary>The bow bot's kit for Skeletron (spec S1): the Demon Bow, 999 unholy arrows, 10 healing potions, a recall potion.</summary>
+	private static void SkeletronKit(Terraria.Player p)
+	{
+		p.inventory[3] = new Terraria.Item(Terraria.ID.ItemID.DemonBow);
+		p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.UnholyArrow, 999);
+		p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.HealingPotion, 10);
+		p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.RecallPotion, 1);
+	}
+
 	private static string Max(RunResult r, int expected, int actual, string what) =>
 		actual > expected ? $"{what} {actual} > {expected}" : null;
 
@@ -207,6 +226,25 @@ public sealed class Scenario
 			// 5 in-game days, the spec's budget (about 3 expected: the hunt for 45 eaters of souls about 1, the rest about 1.5).
 			TimeoutTicks = 5 * 86400,
 			Check = r => !r.EvilBossDefeated ? "the Eater of Worlds was not defeated" : null,
+		},
+		new() {
+			// Milestone 11: Skeletron (docs M11_SPEC.md section 6), /bot auto skeletron: the prep, the walk to the Dungeon, an
+			// arena by the Old Man, the night, the Curse, the fight. Started from a checkpoint after the Eye (selftest.ps1
+			// -FromCheckpoint ...\checkpoints\M10j\worm_food, or Eye_loot_collected): nothing in it needs the Eater of Worlds. From
+			// its own "dungeon arena" checkpoint it starts where that was saved, by the Dungeon (ResumeAtCheckpoint). Run it by name.
+			Name = "world_skeletron",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "auto",
+			AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Skeletron,
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			ResumeAtCheckpoint = true,
+			// 3 in-game days, the spec's budget: about 1 expected (the walk 0.25-0.5 of a day, the build 0.1-0.2, the wait for
+			// dusk, the fight under 5 minutes), and two nights more for failed tries (one summon a night).
+			TimeoutTicks = 3 * 86400,
+			Check = r => !r.SkeletronDefeated ? "Skeletron was not defeated" : null,
 		},
 		new() {
 			// Times path searches on the real world from the spawn (PathBench). Run it by name.
@@ -540,6 +578,53 @@ public sealed class Scenario
 				},
 				TimeoutTicks = 60 * 60 * 8,
 				Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
+			},
+			new() {
+				// Milestone 11 (docs M11_SPEC.md, the cheap synthetic scenarios): the Old Man two tiles off at night, the fight's
+				// summon is his Curse button (ChatButtonSkill, TerrariaGameInfo.PressFirstChatButton). Passes once the head is up.
+				Name = "oldman_curse",
+				Rows = Grid(Repeat(new string('.', 40), 12), "..........S..E.........................", new string('@', 40)),
+				Mode = "skeletron",
+				Night = true,
+				ResetSkeletron = true,
+				EnemyType = Terraria.ID.NPCID.OldMan,
+				Pickaxe = false,
+				Inventory = SkeletronKit,
+				ExpectSuccess = false,
+				FinishOnLog = "Boss fight: Skeletron is here",
+				TimeoutTicks = 60 * 30,
+				Check = r => !r.LogHas("Chat: pressed") ? "the Curse button was not pressed" : !r.LogHas("Skeletron is here") ? "no Skeletron after the Curse" : null,
+			},
+			new() {
+				// The same by day: no Curse button (Main.cs:51819-51825), nothing spawns, the fight fails at once.
+				Name = "oldman_curse_day",
+				Rows = Grid(Repeat(new string('.', 40), 12), "..........S..E.........................", new string('@', 40)),
+				Mode = "skeletron",
+				ResetSkeletron = true,
+				EnemyType = Terraria.ID.NPCID.OldMan,
+				Pickaxe = false,
+				Inventory = SkeletronKit,
+				ExpectSuccess = false,
+				TimeoutTicks = 60 * 30,
+				Check = r => !r.LogHas("no Curse button by day") ? "no \"no Curse button by day\" refusal" : r.LogHas("Skeletron is here") ? "Skeletron came by day" : null,
+			},
+			new() {
+				// Skeletron on a flat 170-tile floor at nightfall, the head spawned 16 rows over the bot (about its hover, 250 px
+				// over the player's top): the Demon Bow and unholy arrows, iron armour, 200 life, healing potions. Measures the
+				// fight's length and the hits taken, and tunes SkeletronPattern and the dodge against the hands' 18 and 17 px/tick.
+				Name = "fight_skeletron",
+				Rows = Grid(Repeat(new string('.', 170), 4), Set(new string('.', 170), 85, 'E'), Repeat(new string('.', 170), 15),
+					Set(new string('.', 170), 85, 'S'), new string('@', 170)),
+				Mode = "skeletron",
+				Night = true,
+				ResetSkeletron = true,
+				EnemyType = Terraria.ID.NPCID.SkeletronHead,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Pickaxe = false,
+				Inventory = SkeletronKit,
+				TimeoutTicks = 60 * 60 * 9,
+				Check = r => !r.SkeletronDefeated ? "Skeletron was not defeated" : null,
 			},
 			new() {
 				// Milestone 7: max life 100 -> 200 from five life crystals in stone pockets below the surface.

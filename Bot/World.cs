@@ -44,6 +44,13 @@ public interface IWorldInfo
 	/// <summary>Is there a background wall in the cell?</summary>
 	bool HasWall(int x, int y);
 
+	/// <summary>
+	/// Is the cell's background wall a dungeon wall (vanilla Main.wallDungeon: walls 7-9 and 94-99, Main.cs:10586-10594), in a
+	/// cell the player has seen (revealed on the map)? A player standing in front of one below the surface is in the Dungeon
+	/// (Player.ZoneDungeon, Player.cs:15312-15321).
+	/// </summary>
+	bool IsDungeonWall(int x, int y);
+
 	/// <summary>Could the wall item go into the cell now (vanilla: no wall yet, a tile or wall on a 4-neighbour)?</summary>
 	bool CanPlaceWall(int wallItem, int x, int y);
 
@@ -154,6 +161,15 @@ public interface ICrafter
 
 	/// <summary>Human-readable recipe needs for logs ("10 Wood @ Work Bench").</summary>
 	string Describe(int itemType);
+
+	/// <summary>
+	/// Talk to the town NPC <paramref name="npcId"/> (whoAmI) and press its first chat button, as a right-click on it and a click
+	/// on the button do (vanilla Main.HoverOverNPCs opening the chat, Main.cs:56077-56096, and Main.GUIChatDrawInner's
+	/// first-button handler, Main.cs:52056-52124), with the game's own guards: in chat range, the button there (the Old Man's
+	/// "Curse" only at night, Main.cs:51819-51825, and as mods leave it, NPCLoader.SetChatButtons). Returns null when it was
+	/// pressed, else why not. Only the Old Man's button (summon Skeletron) is supported.
+	/// </summary>
+	string PressFirstChatButton(int npcId);
 }
 
 /// <summary>
@@ -256,6 +272,26 @@ public sealed class GameIds
 	/// Player.RefreshMechanicalAccsFromItemType sets preventAllItemPickups for it over all 58 slots, Player.UpdateEquips).
 	/// </summary>
 	public int[] PickupBlockers { get; init; } = System.Array.Empty<int>();
+	/// <summary>
+	/// Skeletron (Milestone 11, docs M11_SPEC.md): the head and its hands (NPC 35, 36, NPC.cs:4270-4300), the Old Man who curses
+	/// the player to summon it (37, a town NPC at the Dungeon's entrance, NPC.cs:4301-4314) and the Dungeon Guardian (68, every
+	/// spawn in the Dungeon before Skeletron is beaten, NPC.cs:88648-88673). 0 = none.
+	/// </summary>
+	public int SkeletronHead { get; init; }
+	public int SkeletronHand { get; init; }
+	public int OldMan { get; init; }
+	public int DungeonGuardian { get; init; }
+	/// <summary>The Dungeon's bricks (TileID.BlueDungeonBrick, GreenDungeonBrick, PinkDungeonBrick): seen on the surface, the Dungeon is there.</summary>
+	public int[] DungeonBrickTiles { get; init; } = System.Array.Empty<int>();
+	/// <summary>
+	/// The snow biome's surface tiles (snow, ice) and the jungle's (jungle grass): world generation puts the snow on the
+	/// Dungeon's side of the world and the jungle on the other (WorldGen.cs:8209-8259), which way to look for the Dungeon.
+	/// </summary>
+	public int[] SnowTiles { get; init; } = System.Array.Empty<int>();
+	public int[] JungleTiles { get; init; } = System.Array.Empty<int>();
+	/// <summary>Healing Potion (heals 100, Item.cs:5997) and Lesser Healing Potion (50): carried into the Skeletron fight.</summary>
+	public int HealingPotion { get; init; }
+	public int LesserHealingPotion { get; init; }
 	/// <summary>Thrown explosives whose blast breaks tiles (the Bomb, Dynamite), smallest blast first; empty = none known.</summary>
 	public ExplosiveInfo[] TileExplosives { get; init; } = System.Array.Empty<ExplosiveInfo>();
 

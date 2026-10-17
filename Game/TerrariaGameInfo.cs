@@ -94,6 +94,17 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		BottleTile = TileID.Bottles,
 		CorruptionWeights = CorruptionZoneWeights(),
 		TileExplosives = TileExplosiveInfos(),
+		// Milestone 11 (docs M11_SPEC.md): Skeletron, the Old Man, the Dungeon Guardian; the Dungeon's bricks, and the snow and
+		// jungle surfaces that tell its side (WorldGen.cs:8209-8259).
+		SkeletronHead = NPCID.SkeletronHead,
+		SkeletronHand = NPCID.SkeletronHand,
+		OldMan = NPCID.OldMan,
+		DungeonGuardian = NPCID.DungeonGuardian,
+		DungeonBrickTiles = new int[] { TileID.BlueDungeonBrick, TileID.GreenDungeonBrick, TileID.PinkDungeonBrick },
+		SnowTiles = new int[] { TileID.SnowBlock, TileID.IceBlock },
+		JungleTiles = new int[] { TileID.JungleGrass },
+		HealingPotion = ItemID.HealingPotion,
+		LesserHealingPotion = ItemID.LesserHealingPotion,
 	};
 
 	/// <summary>
@@ -577,6 +588,70 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	}
 
 	public bool HasWall(int x, int y) => WorldGen.InWorld(x, y, 1) && Main.tile[x, y].WallType > WallID.None;
+
+	/// <summary>Main.wallDungeon (Main.cs:10586-10594) of the cell's wall, in a cell the map has revealed.</summary>
+	public bool IsDungeonWall(int x, int y) =>
+		WorldGen.InWorld(x, y, 1) && Main.wallDungeon[Main.tile[x, y].WallType] && (XRay || Main.Map.IsRevealed(x, y)); // paths ask it below the surface: the wall first
+
+	/// <summary>
+	/// A right-click on the NPC and a click on its first chat button, as the game runs them (a UI action: PLAN.md, "Actions that
+	/// stand in for UI clicks"). The click is read only while the chat panel is drawn (Main.GUIChatDrawInner), which the fast
+	/// self-test skips 15 frames in 16, so the handler's body is called with the same guards (docs M11_SPEC.md section 2c):
+	/// <list type="number">
+	/// <item>the chat would open: singleplayer, the local player alive and without a Wire Kite out, the NPC one that chats
+	/// (NPCLoader.CanChat, town NPCs by default) and its hitbox in the 80 × 64 px box round the player's centre
+	/// (Main.HoverOverNPCs, Main.cs:56045-56068);</item>
+	/// <item>open it as the right-click does (Main.cs:56083-56096: SetTalkNPC, the inventory and chest closed, the recipes
+	/// found again, the NPC's chat line);</item>
+	/// <item>the button would be there: the Old Man's "Curse" (Lang.inter[50]) only when it is not day (Main.cs:51819-51825),
+	/// as mods leave it (NPCLoader.SetChatButtons, Main.cs:52004);</item>
+	/// <item>the first button's handler (Main.cs:52056-52060, 52113-52124): NPCLoader.PreChatButtonClicked and
+	/// OnChatButtonClicked, then NPC.SpawnSkeletron (NPC.cs:91018), and the chat closed.</item>
+	/// </list>
+	/// Not with Skeletron up already (SpawnSkeletron would take the Old Man away and spawn nothing) or beaten.
+	/// </summary>
+	public string PressFirstChatButton(int npcId)
+	{
+		Player p = player;
+		if (p.whoAmI != Main.myPlayer || Main.netMode != NetmodeID.SinglePlayer)
+			return "not the local player in singleplayer";
+		if (npcId < 0 || npcId >= Main.maxNPCs || !Main.npc[npcId].active)
+			return $"no NPC #{npcId}";
+		NPC npc = Main.npc[npcId];
+		if (p.dead)
+			return "dead";
+		if (p.ownedProjectileCounts[ProjectileID.WireKite] > 0)
+			return "a Wire Kite is out (no chat)";
+		if (!(Terraria.ModLoader.NPCLoader.CanChat(npc) ?? npc.townNPC))
+			return $"{npc.FullName} does not chat";
+		var box = new Rectangle((int)(p.position.X + p.width / 2 - Player.tileRangeX * 16), (int)(p.position.Y + p.height / 2 - Player.tileRangeY * 16),
+			Player.tileRangeX * 16 * 2, Player.tileRangeY * 16 * 2);
+		if (!box.Intersects(npc.Hitbox))
+			return $"{npc.FullName} is out of chat range";
+		if (npc.type != NPCID.OldMan)
+			return $"only the Old Man's first button is supported, not {npc.FullName}'s";
+		if (NPC.downedBoss3)
+			return "Skeletron is beaten already";
+		if (NPC.AnyNPCs(NPCID.SkeletronHead))
+			return "Skeletron is up already (a second Curse would only take the Old Man away)";
+		p.SetTalkNPC(npcId);
+		Main.playerInventory = false;
+		p.chest = -1;
+		Recipe.FindRecipes();
+		Main.npcChatText = npc.GetChat();
+		string button = Main.IsItDay() ? "" : Lang.inter[50].Value, button2 = "";
+		Terraria.ModLoader.NPCLoader.SetChatButtons(ref button, ref button2);
+		string refused = string.IsNullOrEmpty(button) ? (Main.IsItDay() ? "no Curse button by day" : "no first chat button (a mod took it away)")
+			: !Terraria.ModLoader.NPCLoader.PreChatButtonClicked(firstButton: true) ? "a mod refused the click (PreChatButtonClicked)"
+			: null;
+		if (refused == null) {
+			Terraria.ModLoader.NPCLoader.OnChatButtonClicked(firstButton: true);
+			NPC.SpawnSkeletron(Main.myPlayer);
+		}
+		Main.npcChatText = "";
+		p.SetTalkNPC(-1);
+		return refused;
+	}
 
 	/// <summary>Mirror of the conditions in Player.PlaceThing_Walls (range aside): no wall yet, a tile or wall on a 4-neighbour.</summary>
 	public bool CanPlaceWall(int wallItem, int x, int y)
