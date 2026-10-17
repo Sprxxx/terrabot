@@ -44,6 +44,14 @@ public sealed class BotBrain
 	public ISkill Override { get; private set; }
 	/// <summary>What runs now.</summary>
 	public ISkill Current => Override ?? Work;
+	/// <summary>
+	/// The errand that owns the bot (docs ERRAND_DESIGN.md; ProgressionPlanner.Schedulers.Errands): its skills are the work, the
+	/// planner is not asked while it runs, a reflex pauses its skill and hands back to it, optional work is offered to it with a
+	/// detour cost (<see cref="OfferOpportunities"/>), a death leaves it in place.
+	/// </summary>
+	public Errands.Errand Errand { get; private set; }
+	/// <summary>Opportunities the errand declined, by key, with the detour cost then: offered again only when much nearer.</summary>
+	private readonly Dictionary<string, float> declined = new();
 	private bool replan;
 	private string replanWhy = "";
 
@@ -155,10 +163,92 @@ public sealed class BotBrain
 		ctx.DigAnyway = false; // a last resort of the run before, not of this one (it leaked into the next self-test scenario)
 		ctx.DepthBonus = 0;
 		backoffUntil = -1;
+		// An errand loaded from the player's save goes on under the same plan (a run resumed from a checkpoint); otherwise auto mode
+		// begins afresh and whatever errand there was is over.
+		bool keepErrand = on && Errand != null && Errand.Restored && Errand.Plan == (plan ?? Planner.Plan);
 		Planner.Reset(plan);
+		if (keepErrand) {
+			Errand.ReserveAgain(ctx);
+			Planner.AdoptErrand(Errand);
+			ctx.Log.Info($"Errand {Errand.Id} goes on from the save: {Errand.Describe()}");
+		}
+		else if (Errand != null)
+			EndErrand(ctx, Errands.Outcome.Abandoned("auto mode begun afresh"));
+		ctx.Reservations.Clear();
+		Errand?.ReserveAgain(ctx);
 		ctx.UnreachableTiles.Clear();
 		LastResult = "";
-		ctx.Log.Info($"Auto mode {(on ? "ON" : "OFF")}" + (on ? $", plan '{Planner.Plan}'" : ""));
+		ctx.Log.Info($"Auto mode {(on ? "ON" : "OFF")}" + (on ? $", plan '{Planner.Plan}', scheduler {Planner.Scheduler}" : ""));
+	}
+
+	/// <summary>An errand loaded with the player (TerraBotPlayer.LoadData): taken up again by <see cref="SetAuto"/> under its plan.</summary>
+	public void RestoreErrand(Errands.Errand e) => Errand = e;
+
+	private void StartErrand(Errands.Errand e, BotContext ctx)
+	{
+		Errand = e;
+		e.Plan = Planner.Plan;
+		declined.Clear();
+		failures = 0;
+		backoffs = 0;
+		backoffUntil = -1;
+		e.Begin(ctx);
+		Planner.AdoptErrand(e);
+		ctx.Log.Info($"Errand {e.Id} start: {e.Describe()}; owns the bot until its goal holds or it is blocked (reflexes preempt and hand back; a death sends it back to its frontier)");
+	}
+
+	/// <summary>The errand is over: its outcome recorded with the planner, its reservations released, its skill dropped.</summary>
+	private void EndErrand(BotContext ctx, Errands.Outcome outcome)
+	{
+		Errands.Errand e = Errand;
+		ctx.Log.Info($"Errand {e.Id} ({e.Identity}) ended after {(ctx.Tick - e.StartedTick) / 3600.0:0.0} game hours, {e.Deaths} deaths: {outcome}");
+		Planner.OnErrandEnded(e, outcome, ctx);
+		e.End(ctx, outcome);
+		Errand = null;
+		declined.Clear();
+		if (Work != null) {
+			Work.Stop(ctx);
+			Work = null;
+		}
+		failures = 0;
+		LastResult = $"errand {e.Id} {outcome}";
+	}
+
+	/// <summary>
+	/// Optional work in sight (a chest, a life crystal), offered to the errand with the detour's cost (Opportunity.Detour): accepted,
+	/// it runs as a reflex does (the errand's skill paused, resumed after); declined, it is remembered and offered again only once the
+	/// detour is less than half what it was. Never during a reflex. No other code path leaves an errand for it.
+	/// </summary>
+	private void OfferOpportunities(BotContext ctx)
+	{
+		if (Override != null || Work == null || Errand == null)
+			return;
+		if (ProgressionPlanner.NextChest(ctx) is ChestInfo chest) {
+			var o = new Errands.Opportunity(Errands.OpportunityKind.Chest, chest.TopLeft, Errands.Opportunity.Detour(ctx, chest.TopLeft));
+			if (Offer(o, ctx))
+				BeginOverride(new LootChestSkill(chest.TopLeft), ctx);
+		}
+		if (Override == null && ProgressionPlanner.LifeCrystalUseful(ctx) && !ctx.Infinite(ctx.Ids.LifeCrystal)
+			&& !(Work is MineSkill m && m.ItemType == ctx.Ids.LifeCrystal) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart) {
+			var o = new Errands.Opportunity(Errands.OpportunityKind.LifeCrystal, heart, Errands.Opportunity.Detour(ctx, heart));
+			if (Offer(o, ctx))
+				BeginOverride(new MineSkill(ctx.Ids.LifeCrystal, ctx.Knowledge.SourceOf(ctx.Ids.LifeCrystal).TileType, ctx.Inventory.Count(ctx.Ids.LifeCrystal) + 1), ctx);
+		}
+	}
+
+	private bool Offer(in Errands.Opportunity o, BotContext ctx)
+	{
+		if (declined.TryGetValue(o.Key, out float before) && o.DetourTicks > before / 2f)
+			return false;
+		if (Errand.Accepts(o, ctx)) {
+			declined.Remove(o.Key);
+			ctx.Log.Info($"Errand {Errand.Id}: taking the {o.Kind} at {o.Where} (a detour of about {o.DetourTicks:0} ticks), then back to {Work.Name}");
+			return true;
+		}
+		if (!declined.ContainsKey(o.Key))
+			ctx.Log.Info($"Errand {Errand.Id}: leaving the {o.Kind} at {o.Where} (a detour of about {o.DetourTicks:0} ticks); it waits for the errand");
+		declined[o.Key] = o.DetourTicks;
+		return false;
 	}
 
 	/// <summary>Forget the target, leave auto mode and stop the running skill.</summary>
@@ -635,8 +725,10 @@ public sealed class BotBrain
 		// In a Crimson world its twins: the Bloody Spine's makings, the Eye's crimtane, and the Creepers' Tissue Samples.
 		if (ids.Crimson)
 			kept.UnionWith(new[] { ids.BloodySpine, ids.ViciousPowder, ids.ViciousMushroom, ids.Vertebrae, ids.CrimtaneOre, ids.CrimtaneBar, ids.TissueSample });
-		// Whatever a stage of the plan wants (the planner's pass, BotContext.NeededItems).
+		// Whatever a stage of the plan wants (the planner's pass, BotContext.NeededItems), and what the errand that owns the bot has
+		// reserved (its packing list and reserve: the bridge's blocks, the fight's arrows, the potions kept back).
 		kept.UnionWith(ctx.NeededItems);
+		kept.UnionWith(ctx.Reservations.Items());
 		kept.Remove(0);
 		foreach (var s in stacks)
 			if (gearToo && ctx.Inventory.IsGear(s.Type))
@@ -711,12 +803,20 @@ public sealed class BotBrain
 				if (Auto) {
 					if (Override != null)
 						Planner.OnSkillFinished(Override, SkillStatus.Failed, ctx);
-					if (Work != null)
+					if (Work != null) {
 						Planner.OnSkillFinished(Work, SkillStatus.Failed, ctx);
+						Errand?.OnSkillFinished(Work, SkillStatus.Failed, "died", ctx);
+					}
 				}
 				Interrupt(ctx);
 			}
+			// The errand stays: back to its frontier (docs ERRAND_DESIGN.md section 12, the death policy).
+			if (Auto && Errand != null)
+				Errand.OnDeath(ctx);
 		}
+		// The errand's rules hold every tick it owns the bot (the depth limit lifted on the way down), before the habits and reflexes read them.
+		if (Auto && Errand != null)
+			Errand.Rules(ctx);
 		// Losing breath without the head cells reading as liquid (world_eye run 52: drowned from full life during a mine
 		// with no surfacing at all): say what the head cells are, to find out why.
 		if (ctx.Tick % 60 == 0) {
@@ -799,6 +899,9 @@ public sealed class BotBrain
 			bool onAWalk = Override == null && Work is WalkToSkill;
 			// Optional loot waits while an operation owns the bot (the Wall's descent, ProgressionPlanner.Schedulers.Operation).
 			if (Planner.DescentOwns(ctx)) { }
+			// An errand decides for itself, by the detour's cost.
+			else if (Errand != null)
+				OfferOpportunities(ctx);
 			else if ((Current is MineSkill or ExploreSkill or HuntSkill || onAWalk) && ProgressionPlanner.NextChest(ctx) is ChestInfo seen)
 				RequestReplan($"a chest at {seen.TopLeft} came into sight");
 			// A life crystal: whatever the work (building, gathering, crafting, going home...), only not during a reflex.
@@ -836,10 +939,22 @@ public sealed class BotBrain
 			BeginOverride(new FightSkill(), ctx);
 			fightBackFight = fightBack != null ? Override : null;
 		}
-		// Work asked to be planned again (nightfall, a chest in sight): only between reflexes, and the same job goes on.
+		// Work asked to be planned again (nightfall, a chest in sight): only between reflexes, and the same job goes on. Not an
+		// errand's work: nightfall is no reason to leave a shaft, and its opportunities were offered to it.
+		if (replan && Errand != null)
+			replan = false;
 		if (replan && Override == null && Work != null && Auto) {
 			replan = false;
 			ChooseWork(ctx, paused: false, replanWhy);
+		}
+		// The errand's outcome is checked every tick (its goal, its failures, no progress).
+		if (Auto && Errand != null) {
+			Errands.Outcome outcome = Errand.Check(ctx);
+			if (outcome.Over) {
+				EndErrand(ctx, outcome);
+				if (Override == null)
+					return;
+			}
 		}
 		if (Current == null && Target != null)
 			Begin(new WalkToSkill(Target.Value), ctx);
@@ -854,8 +969,24 @@ public sealed class BotBrain
 			}
 			return;
 		}
+		if (Current == null && Auto && Errand != null) {
+			// The errand's own next skill; nothing, and it says why (blocked) or is done.
+			ISkill job = Errand.NextSkill(ctx, Planner);
+			if (job == null) {
+				Errands.Outcome outcome = Errand.Check(ctx);
+				EndErrand(ctx, outcome.Over ? outcome : Errands.Outcome.Blocked("nothing to do", Errand.Describe()));
+				return;
+			}
+			Planner.AdoptErrand(Errand);
+			ctx.Log.Info($"Errand {Errand.Id}: {Errand.Status} -> {job.Name}");
+			Begin(job, ctx);
+		}
 		if (Current == null && Auto) {
 			ISkill next = Planner.Next(ctx);
+			if (next == null && Planner.TakeProposed() is Errands.Errand proposed) {
+				StartErrand(proposed, ctx);
+				return; // its first skill next tick
+			}
 			if (next == null) {
 				if (Planner.Complete && LastResult != "auto: done") {
 					ctx.Log.Info("Auto: " + Planner.Status);
@@ -909,8 +1040,11 @@ public sealed class BotBrain
 		// the hold first. With a worm near the retreat rule goes home at once (or not at all), never into a hole.
 		if (skill is ShelterSkill { Retreat: true } && status == SkillStatus.Failed && !WormNear(ctx))
 			fightBackSince = ctx.Tick;
-		if (Auto)
+		if (Auto) {
 			Planner.OnSkillFinished(skill, status, ctx);
+			if (Errand != null && Override == null)
+				Errand.OnSkillFinished(skill, status, why, ctx);
+		}
 		skill.Stop(ctx);
 		if (Override != null) {
 			// A reflex is over: its loot, then back to the paused work if the planner still wants it. Reflexes do not count
@@ -926,10 +1060,16 @@ public sealed class BotBrain
 				return;
 			}
 			if (Work != null) {
-				if (Auto)
+				if (Auto && Errand == null)
 					ChooseWork(ctx, paused: true, skill.Name.ToLowerInvariant());
-				else
+				else {
+					// An errand's work goes on as it was: the planner is not asked (docs ERRAND_DESIGN.md section 4, step 2).
 					Work.Resume(ctx);
+					if (Errand != null) {
+						ctx.Log.Info($"Errand {Errand.Id}: back to {Work.Name} after {skill.Name.ToLowerInvariant()}");
+						Errand.OnEmergencyOver(ctx);
+					}
+				}
 			}
 			return;
 		}
@@ -941,6 +1081,12 @@ public sealed class BotBrain
 		if (Auto && skill is BossFightSkill && status == SkillStatus.Succeeded && CollectDropsSkill.AnyInRange(ctx, _ => true, BossLootRadiusTiles)) {
 			ctx.Log.Info("Auto: picking up the boss's loot");
 			BeginOverride(new CollectDropsSkill(_ => true, BossLootRadiusTiles), ctx);
+		}
+		// An errand's failures are its own (its outcome check): no rests, no blasts, no give-ups here.
+		if (Auto && Errand != null) {
+			if (status == SkillStatus.Succeeded)
+				ctx.DigAnyway = false;
+			return;
 		}
 		if (Auto) {
 			failures = status == SkillStatus.Failed ? failures + 1 : 0;
@@ -990,7 +1136,7 @@ public sealed class BotBrain
 
 	public string Describe() =>
 		Falls.Active ? (Auto ? "auto: " : "") + "fall: " + Falls.State + (Current != null ? " (" + Current.Describe() + ")" : "")
-		: Current != null ? (Auto ? "auto: " : "") + Current.Describe()
+		: Current != null ? (Auto ? "auto: " : "") + (Errand != null && Override == null ? Errand.Id + " > " : "") + Current.Describe()
 		: Target != null ? $"target {Target.Value} (idle)"
 		: Auto ? "auto: " + Planner.Status
 		: LastResult.Length > 0 ? $"idle - last: {LastResult}"

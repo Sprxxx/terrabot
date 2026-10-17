@@ -128,7 +128,8 @@ public sealed class LightKeeper
 	private static void KeepStock(BotContext ctx, int torch)
 	{
 		// The last of the wood is the plan's: torches made from it left the boss scenario 4 wood short in an arena with no trees.
-		if (ctx.Inventory.Count(torch) >= Reserve || ctx.Inventory.Count(ctx.Ids.Gel) <= 0 || ctx.Inventory.Count(ctx.Ids.Wood) <= SpareWood || ctx.Crafter == null)
+		// And an errand's reserved wood is its own (BotContext.Reservations): torches only from what is spare over it.
+		if (ctx.Inventory.Count(torch) >= Reserve || ctx.Inventory.Count(ctx.Ids.Gel) <= 0 || ctx.Spare(ctx.Ids.Wood) <= SpareWood || ctx.Crafter == null)
 			return;
 		CraftResult r = ctx.Crafter.TryCraft(torch);
 		if (r == CraftResult.Crafted)

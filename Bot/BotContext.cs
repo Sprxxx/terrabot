@@ -32,6 +32,10 @@ public sealed class BotContext
 	private MoveContext moves;
 
 	public ITileGrid Grid { get; set; }
+	/// <summary>What the errand that owns the bot has reserved in the bag (its packing list and reserve): the habits use only what is spare.</summary>
+	public Reservations Reservations { get; } = new();
+	/// <summary>What is carried over the errand's reservation of it.</summary>
+	public int Spare(int itemType) => Inventory == null ? 0 : Reservations.Spare(Inventory, itemType);
 	public PhysicsParams Physics { get; set; } = PhysicsParams.Default;
 	public BodyState Body { get; set; }
 	/// <summary>Non-null when the bot must not act this tick (dead, mounted, grappled, reversed gravity...).</summary>

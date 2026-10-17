@@ -192,3 +192,25 @@ Gotchas already hit:
 - Nullable and implicit usings are off in both projects; write explicit `using`s.
 - Commits: small and descriptive, ending with the `Co-Authored-By` trailer. Run `dotnet build` (0 warnings) and
   `dotnet test` before committing.
+
+## Decision-layer rules (approved 2026-10-17; design in Desktop\Projekt\terrabot\docs\ERRAND_DESIGN.md, verdict in docs\VERDICT.md)
+- One errand owns the bot. Nothing but an emergency (the reflex table) preempts it, and emergencies hand back to the same errand.
+- An errand's prerequisites and packing list are resolved before it starts and frozen. Resupply only when the remaining
+  demand exceeds what is carried plus the reserve. Expected consumption never reopens preparation.
+- Loot, crystals, research and restocking are opportunities, offered to the errand with a detour cost from the pathfinder.
+  No other code path may leave an errand.
+- Forbidden in the decision layer: new named constants, conditionals on which skill is running or on another errand's
+  phase, tick-based cooldowns. If one seems needed it is a missing errand field or outcome: stop and propose it.
+- Progression knowledge lives in the stage table (`Bot/Progression`). Acquisition goes through the resolver (recipes,
+  shops, drops, tile sources); hand-written acquisition only where the resolver cannot express it, with a comment saying why.
+- Hazards (lava, water, falls, hot tiles) are pathfinder costs or moves, never errand logic.
+- A death does not end an errand: the bot goes back to its frontier.
+- Perception: the path grid reads all terrain (option B); items (ore, chests) only where the map is revealed. Use the
+  known terrain (a shaft column with the least lava), don't pretend it is unknown.
+- Every failed run gets a line in Desktop\Projekt\terrabot\docs\failures.md: run, symptom, category (no-commitment,
+  missing-capability, execution-speed, pathing, knowledge-gap, fight), what a player would have done. Three of one
+  category is a design task, not a patch.
+- Measure on the seed set (five worlds), by the median time to every milestone and the run invariants. One run is not a
+  measurement. A change that regresses a median is not merged.
+- Planner or errand changes stop at a design note and wait for the user's review. No unattended loop commits to the
+  decision layer.

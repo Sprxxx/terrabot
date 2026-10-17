@@ -94,6 +94,41 @@ public sealed class TerraBotPlayer : ModPlayer
 		return true;
 	}
 
+	/// <summary>
+	/// The errand that owns the bot is saved with the player (docs ERRAND_DESIGN.md section 3: persistence), as strings (Bot knows no
+	/// game types): a run resumed from a checkpoint goes on with the same shaft and frontier instead of recomputing them.
+	/// </summary>
+	public override void SaveData(Terraria.ModLoader.IO.TagCompound tag)
+	{
+		if (Brain.Errand is not Bot.Errands.Errand e)
+			return;
+		var lines = new List<string>();
+		foreach (KeyValuePair<string, string> kv in e.Save())
+			lines.Add(kv.Key + "=" + kv.Value);
+		tag["errandId"] = e.Id;
+		tag["errand"] = lines;
+	}
+
+	public override void LoadData(Terraria.ModLoader.IO.TagCompound tag)
+	{
+		if (!tag.ContainsKey("errandId"))
+			return;
+		string id = tag.GetString("errandId");
+		var state = new Dictionary<string, string>();
+		foreach (string line in tag.GetList<string>("errand")) {
+			int i = line.IndexOf('=');
+			if (i > 0)
+				state[line.Substring(0, i)] = line.Substring(i + 1);
+		}
+		Bot.Errands.Errand e = Bot.Errands.ErrandFactory.Create(id, state, Context?.Ids ?? TerrariaGameInfo.CreateIds());
+		if (e == null) {
+			Mod.Logger.Warn($"Errand '{id}' in the player's save is unknown; dropped");
+			return;
+		}
+		Brain.RestoreErrand(e);
+		Mod.Logger.Info($"Errand {id} loaded from the player's save: {e.Describe()} (taken up again by /bot auto under its plan)");
+	}
+
 	public override void OnEnterWorld()
 	{
 		Enabled = false;

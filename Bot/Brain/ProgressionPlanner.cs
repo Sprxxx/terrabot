@@ -158,7 +158,7 @@ public sealed record StepToward(IReadOnlyList<(int Item, int Count)> Made, Need 
 /// rough gather-time estimate, which also rules out unobtainable ones (e.g. lead in an iron world).
 /// At night, surface gathering (wood, hunting) is replaced by sitting it out in a <see cref="ShelterSkill"/>.
 /// </summary>
-public sealed partial class ProgressionPlanner
+public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 {
 	public const int WoodStockpile = 30;
 	public const int DangerRadiusTiles = 12;
@@ -341,17 +341,88 @@ public sealed partial class ProgressionPlanner
 	public Dictionary<int, TilePos> KnownStations { get; } = new();
 	public string Plan { get; private set; } = Plans.Settle;
 	/// <summary>
-	/// How long-running work is scheduled (docs DESCENT_DIAGNOSIS.md): <see cref="Schedulers.Restart"/>, every pass walks the
-	/// plan's stages from the top, whatever was being done; <see cref="Schedulers.Operation"/>, a continuing job (the Wall's
+	/// How long-running work is scheduled (docs DESCENT_DIAGNOSIS.md, ERRAND_DESIGN.md): <see cref="Schedulers.Restart"/>, every pass
+	/// walks the plan's stages from the top, whatever was being done; <see cref="Schedulers.Operation"/>, a continuing job (the Wall's
 	/// descent) owns the bot until it is done, blocked or a death, with only its remaining demand resupplied, and optional work
-	/// (chests, crystals in sight) deferred. Survival reflexes preempt either. Self-test: selftest.ps1 -Scheduler.
+	/// (chests, crystals in sight) deferred; <see cref="Schedulers.Errands"/>, the stage's errand (<see cref="Errands.Errand"/>) owns
+	/// the bot (the brain asks it, not the planner) until its goal holds or it is blocked, through deaths, with its packing list
+	/// reserved and optional work taken by its detour cost. Survival reflexes preempt all three. Self-test: selftest.ps1 -Scheduler.
+	/// The older two stay selectable until migration step 4 (docs ERRAND_DESIGN.md section 12).
 	/// </summary>
-	public enum Schedulers { Restart, Operation }
-	public Schedulers Scheduler { get; set; } = Schedulers.Operation;
+	public enum Schedulers { Restart, Operation, Errands }
+	public Schedulers Scheduler { get; set; } = Schedulers.Errands;
 	public string Status { get; private set; } = "";
 	public bool Complete { get; private set; }
 	/// <summary>Set when a stage cannot be resolved (no recipe, nothing places the station...).</summary>
 	public bool Stuck => stuck != null;
+
+	/// <summary>
+	/// The errand the last pass proposed for the stage it stopped at (<see cref="Schedulers.Errands"/>): the brain takes it
+	/// (<see cref="TakeProposed"/>) and runs it in place of the plan until it ends.
+	/// </summary>
+	public Errands.Errand Proposed { get; private set; }
+
+	public Errands.Errand TakeProposed()
+	{
+		Errands.Errand e = Proposed;
+		Proposed = null;
+		return e;
+	}
+
+	/// <summary>Shafts whose access errands ended blocked (their columns): the next errand chooses elsewhere.</summary>
+	private readonly List<int> blockedShafts = new();
+	/// <summary>Access errands blocked at different columns before the plan is stuck on the Underworld (policy).</summary>
+	public const int MaxBlockedShafts = 3;
+	/// <summary>The errands that ended and how (the failure record a later decision reads).</summary>
+	public List<(string Id, string Identity, Errands.Outcome Outcome, long Tick)> ErrandOutcomes { get; } = new();
+
+	/// <summary>The brain runs the errand: the planner's memory follows it (the shaft's column for the bridge), and its status line too.</summary>
+	public void AdoptErrand(Errands.Errand e)
+	{
+		if (e is Errands.AccessErrand a)
+			shaftX = a.ShaftX;
+		Status = $"errand {e.Id}: {e.Status}";
+		Complete = false;
+	}
+
+	/// <summary>The errand is over: its outcome recorded; a blocked access errand's column is not chosen again.</summary>
+	public void OnErrandEnded(Errands.Errand e, Errands.Outcome outcome, BotContext ctx)
+	{
+		ErrandOutcomes.Add((e.Id, e.Identity, outcome, ctx.Tick));
+		if (e is Errands.AccessErrand a) {
+			if (outcome.Kind == Errands.OutcomeKind.Blocked) {
+				blockedShafts.Add(a.ShaftX);
+				shaftX = null;
+			}
+			else if (outcome.Kind == Errands.OutcomeKind.Done && !bridgeKnown && a.Landed is TilePos landed)
+				KnowBridge(ctx, landed, a.StandRow + 1);
+		}
+	}
+
+	/// <summary>
+	/// <see cref="Errands.IErrandSupport.ResolveNeeds"/>: the errand's needs (its packing list, its remaining demand) resolved as a
+	/// stage's are, with fresh claims; the first unmet one's skill, or null when all are met; <paramref name="blocked"/> for one that
+	/// cannot be met at all.
+	/// </summary>
+	public ISkill ResolveNeeds(IEnumerable<Need> needs, BotContext ctx, out string blocked)
+	{
+		costs.Clear();
+		costEvaluations = 0;
+		stuck = null;
+		blocked = null;
+		var claims = new Dictionary<int, int>();
+		foreach (Need n in needs) {
+			ISkill s = Resolve(n, claims, 0, ctx);
+			if (stuck != null) {
+				blocked = $"{n.Label}: {stuck}";
+				stuck = null;
+				return null;
+			}
+			if (s != null)
+				return s;
+		}
+		return null;
+	}
 
 	public static IReadOnlyList<Need> StagesFor(string plan, GameIds ids)
 	{
@@ -573,6 +644,9 @@ public sealed partial class ProgressionPlanner
 	{
 		if (plan != null)
 			Plan = plan;
+		Proposed = null;
+		blockedShafts.Clear();
+		ErrandOutcomes.Clear();
 		lastDeeperTick = long.MinValue / 2;
 		crystalNoTripAt = null;
 		travelDest = null;
@@ -1141,6 +1215,12 @@ public sealed partial class ProgressionPlanner
 			ISkill skill = Resolve(stage, claims, 0, ctx);
 			if (stuck != null) {
 				Status = $"stuck on {stage.Label}: {stuck}";
+				Complete = false;
+				return null;
+			}
+			// The stage's errand (Schedulers.Errands): the brain runs it in place of the plan from here.
+			if (Proposed != null) {
+				Status = $"{stage.Label}: the errand {Proposed.Id}";
 				Complete = false;
 				return null;
 			}

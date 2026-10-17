@@ -1,0 +1,348 @@
+using System.Collections.Generic;
+using System.Linq;
+using TerraBot.Bot;
+using TerraBot.Bot.Brain;
+using TerraBot.Bot.Errands;
+using TerraBot.Bot.Skills;
+using TerraBot.Core.Grid;
+using TerraBot.Core.Pathfinding;
+using TerraBot.Core.Physics;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace TerraBot.Tests;
+
+/// <summary>
+/// The errand layer (docs ERRAND_DESIGN.md, migration steps 1 and 3): the Underworld's access errand proposed by the Wall of
+/// Flesh plan under <see cref="ProgressionPlanner.Schedulers.Errands"/>, run by the brain in <see cref="HellTests.Hell(int, int, int, int, bool)"/>'s
+/// world (the house at x 30, the preferred column 60 east, the tower's roof under it on the bridge's row). What the design asks
+/// of it: one instance owns the bot to the row, the surface's stages are never asked again, a near chest is taken and a far one
+/// left, consumption resupplies only the remaining demand, a death leaves it in place, failures change the column once and then
+/// block it with the reason, and it survives a save.
+/// </summary>
+public class ErrandTests
+{
+	private readonly ITestOutputHelper output;
+	public ErrandTests(ITestOutputHelper output) => this.output = output;
+
+	private const int SpawnX = 30, TowerFrom = 84, TowerTo = 96, Bridge = 60;
+	private const int Preferred = SpawnX + ProgressionPlanner.ShaftOffsetTiles;
+	private const int Row = HellTests.BridgeRow, StandRow = Row - 1;
+
+	/// <summary>The Wall's plan after the Eye, every stage before the Underworld met (as WallOfFleshPlanTests has it).</summary>
+	private (FakeGame, BotContext, BotBrain) AfterTheEye()
+	{
+		FakeGame g = HellTests.Hell(320, SpawnX, TowerFrom, TowerTo);
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = 7;
+		ctx.Combat.HasRanged = true;
+		ctx.SurfaceY = HellTests.SurfaceFeet + 3;
+		ctx.CavernY = HellTests.SurfaceFeet + 25;
+		ctx.UnderworldRow = Row - ProgressionPlanner.BridgeRowsUnderTop;
+		ctx.SpawnTile = new TilePos(SpawnX, HellTests.SurfaceFeet);
+		g.Blocks.TicksPerBlock = 4;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Stations[FakeGame.TileBench] = new TilePos(SpawnX + 2, HellTests.SurfaceFeet);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(SpawnX + 5, HellTests.SurfaceFeet);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(SpawnX - 2, HellTests.SurfaceFeet);
+		foreach (int item in new[] { FakeGame.WoodenSword, FakeGame.IronBroadsword, FakeGame.IronBow })
+			g.Items[item] = 1;
+		g.Equipped.UnionWith(new[] { FakeGame.IronHelmet, FakeGame.IronChainmail, FakeGame.IronGreaves });
+		g.LifeMax = ProgressionPlanner.MaxCrystalLife;
+		g.BossesDefeated.Add(FakeGame.EyeNpc);
+		g.AliveTownNpcs.Add(FakeGame.GuideNpc);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.WallOfFlesh);
+		Assert.Equal(ProgressionPlanner.Schedulers.Errands, brain.Planner.Scheduler);
+		brain.Planner.BridgeLength = Bridge;
+		BuildingTests.HouseAlreadyThere(g, brain.Planner, ctx);
+		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.WofArrows;
+		g.Items[FakeGame.UnholyArrow] = ProgressionPlanner.WofUnholyArrows;
+		g.Items[FakeGame.HealingPotion] = ProgressionPlanner.WofPotions;
+		g.Items[FakeGame.Torch] = 50;
+		g.Items[FakeGame.StoneBlock] = Bridge + ProgressionPlanner.BridgeBlockMargin + 40;
+		g.Refresh(ctx);
+		return (g, ctx, brain);
+	}
+
+	private static TestLog Log(BotContext ctx) => (TestLog)ctx.Log;
+
+	/// <summary>Ticks the brain until <paramref name="until"/> holds or the ticks run out; returns the ticks spent.</summary>
+	private static int Run(FakeGame g, BotContext ctx, BotBrain brain, int maxTicks, System.Func<bool> until)
+	{
+		int t = 0;
+		for (; t < maxTicks && !until(); t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		return t;
+	}
+
+	private static void Die(FakeGame g, BotContext ctx)
+	{
+		ctx.Deaths++;
+		g.Sim.State = new BodyState { X = Body.CanonicalLeft(SpawnX, ctx.Physics), Y = Body.StandingTop(HellTests.SurfaceFeet, ctx.Physics), ReleaseJump = true };
+	}
+
+	[Fact]
+	public void ThePlan_ProposesTheAccessErrand_AtTheUnderworldStage_WithTheRowsPackingList()
+	{
+		var (_, ctx, brain) = AfterTheEye();
+		ProgressionPlanner p = brain.Planner;
+		Assert.Null(p.Next(ctx));
+		var access = Assert.IsType<AccessErrand>(p.Proposed);
+		Assert.Contains("the errand access:underworld", p.Status);
+		Assert.Equal(StandRow, access.StandRow);
+		Assert.Equal(Preferred, access.Preferred);
+		Assert.Equal(Errand.PreparePhase, access.Phase);
+		Assert.Contains(access.Packing, n => n is HaveItem { Count: ProgressionPlanner.WofFightArrows, Label: "arrows for the fight" });
+		Assert.Contains(access.Packing, n => n is BridgeBlocks);
+		Assert.Contains(access.Reserve, n => n is HaveItem { Label: "healing potions" });
+		Assert.Same(access, p.TakeProposed());
+		Assert.Null(p.Proposed);
+	}
+
+	[Fact]
+	public void TheColumn_IsChosenFromTheKnownTerrain_AwayFromLava()
+	{
+		var (g, ctx, _) = AfterTheEye();
+		// Lava beside the preferred column's way down: a player who can see it digs a few columns over.
+		for (int y = 30; y <= 34; y++)
+			g.Grid.Set(Preferred + 2, y, CellKind.Lava);
+		var access = new AccessErrand(Preferred, StandRow, ctx.Ids);
+		access.Begin(ctx);
+		output.WriteLine(Log(ctx).Lines.Last(l => l.Contains("shaft's column")));
+		Assert.NotInRange(access.ShaftX, Preferred, Preferred + 3); // x 92 would be beside or in the shaft's two columns
+		Assert.InRange(access.ShaftX, Preferred - 4, Preferred + 4); // the nearest clear column, not a far one
+		Assert.Equal($"the shaft at x {access.ShaftX}", access.Identity);
+		ShaftSite.Count(g.Grid, access.ShaftX, HellTests.SurfaceFeet, StandRow, out int lava, out _);
+		Assert.Equal(0, lava);
+	}
+
+	[Fact]
+	public void ThePolicy_TakesANearChest_AndLeavesAFarOne_OnceDescending()
+	{
+		var (_, ctx, brain) = AfterTheEye();
+		var access = new AccessErrand(Preferred, StandRow, ctx.Ids);
+		Assert.True(access.Accepts(new Opportunity(OpportunityKind.Chest, new TilePos(Preferred + 60, 50), 99999f), ctx), "the prepare phase takes everything, as the plan did");
+		access.Begin(ctx);
+		ProgressionPlanner p = brain.Planner;
+		Assert.IsType<HellevatorSkill>(access.NextSkill(ctx, p)); // packed: descending
+		Assert.Equal(AccessErrand.DescendPhase, access.Phase);
+		Assert.True(access.Accepts(new Opportunity(OpportunityKind.Chest, new TilePos(Preferred + 2, 40), AccessErrand.AcceptDetourTicks - 1), ctx));
+		Assert.False(access.Accepts(new Opportunity(OpportunityKind.LifeCrystal, new TilePos(Preferred + 60, 50), AccessErrand.AcceptDetourTicks + 1), ctx));
+	}
+
+	[Fact]
+	public void TheDetour_CountsTheRockInTheWay()
+	{
+		var (g, ctx, _) = AfterTheEye();
+		g.Refresh(ctx);
+		TilePos n = ctx.Node;
+		float open = Opportunity.Detour(ctx, new TilePos(n.X + 20, n.Y)); // along the surface: air
+		float rock = Opportunity.Detour(ctx, new TilePos(n.X + 20, n.Y + 20)); // down into the stone
+		output.WriteLine($"open {open:0}, through rock {rock:0}");
+		Assert.True(rock > open + 20 * g.Blocks.TicksPerBlock, "the rock's mining time is in the estimate");
+	}
+
+	[Fact]
+	public void TheBrain_RunsOneErrandInstance_ToTheRow_WithoutAskingThePlanAgain()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<AccessErrand>(brain.Errand);
+		int before = log.Lines.Count;
+		int ticks = Run(g, ctx, brain, 40000, () => brain.Planner.UnderworldReachedOnce);
+		output.WriteLine($"{ticks} ticks: {brain.Describe()} at {g.Sim.Node}; {brain.Planner.ErrandOutcomes.Count} outcomes");
+		Assert.True(brain.Planner.UnderworldReachedOnce, "the Underworld reached");
+		var (id, identity, outcome, _) = Assert.Single(brain.Planner.ErrandOutcomes);
+		Assert.Equal(AccessErrand.ErrandId, id);
+		Assert.Equal(access.Identity, identity);
+		Assert.Equal(OutcomeKind.Done, outcome.Kind);
+		Assert.Null(brain.Errand);
+		// The plan's surface stages were never asked for on the way: no "Auto: need", no "instead of going back to".
+		var planLines = log.Lines.Skip(before).Where(l => l.StartsWith("Auto: ") && (l.Contains("need ") || l.Contains("instead of going back") || l.Contains("NPC room"))).ToList();
+		Assert.True(planLines.Count == 0, string.Join("\n", planLines));
+		Assert.Contains(log.Lines, l => l.Contains("Errand access:underworld start"));
+		Assert.Contains(log.Lines, l => l.Contains("ended after") && l.Contains("done: on row"));
+		Assert.Equal(0, ctx.Reservations.Count); // released
+	}
+
+	[Fact]
+	public void AChestInTheShaftsWall_IsLooted_AndTheSameErrandGoesOn()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<AccessErrand>(brain.Errand);
+		Run(g, ctx, brain, 3000, () => access.Phase == AccessErrand.DescendPhase && g.Sim.Node.Y >= HellTests.SurfaceFeet + 5);
+		var chest = new TilePos(access.ShaftX + 2, g.Sim.Node.Y + 12);
+		g.Chests[chest] = new List<(int, int)> { (FakeGame.HealingPotion, 3) };
+		int potions = g.Count(FakeGame.HealingPotion);
+		Run(g, ctx, brain, 20000, () => ctx.OpenedChests.Contains(chest) || brain.Planner.UnderworldReachedOnce);
+		Assert.Contains(log.Lines, l => l.Contains("taking the Chest") && l.Contains("then back to Hellevator"));
+		Assert.Contains(chest, ctx.OpenedChests);
+		Assert.Equal(potions + 3, g.Count(FakeGame.HealingPotion));
+		Assert.Same(access, brain.Errand);
+		Assert.Contains(log.Lines, l => l.Contains("back to Hellevator after lootchest"));
+		Run(g, ctx, brain, 40000, () => brain.Planner.UnderworldReachedOnce);
+		Assert.True(brain.Planner.UnderworldReachedOnce, brain.Describe());
+	}
+
+	[Fact]
+	public void ArrowsShot_DoNotResupply_UntilTheFightsDemandIsShort()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<AccessErrand>(brain.Errand);
+		Run(g, ctx, brain, 3000, () => access.Phase == AccessErrand.DescendPhase);
+		ISkill shaft = brain.Work;
+		Assert.IsType<HellevatorSkill>(shaft);
+		Assert.Equal(ProgressionPlanner.WofFightArrows, ctx.Reservations.Reserved(FakeGame.WoodenArrow));
+		// 300 arrows shot at cave bats: below the plan's 800 refill line, above the fight's 600: no resupply, the same shaft.
+		g.Items[FakeGame.WoodenArrow] = 700;
+		g.Items[FakeGame.UnholyArrow] = 0;
+		g.Refresh(ctx);
+		Assert.Same(shaft, access.NextSkill(ctx, brain.Planner));
+		Assert.DoesNotContain("resupply", access.Status);
+		// Short of the fight's 600: the remaining demand is resupplied.
+		g.Items[FakeGame.WoodenArrow] = 500;
+		g.Refresh(ctx);
+		ISkill more = access.NextSkill(ctx, brain.Planner);
+		output.WriteLine($"{access.Status} -> {more?.Describe()}");
+		Assert.NotSame(shaft, more);
+		Assert.StartsWith("resupply", access.Status);
+	}
+
+	[Fact]
+	public void ADeathMidDescent_KeepsTheErrand_AndItGoesBackDownToTheRow()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<AccessErrand>(brain.Errand);
+		Run(g, ctx, brain, 20000, () => g.Sim.Node.Y >= HellTests.SurfaceFeet + 30);
+		int frontier = g.Sim.Node.Y;
+		Die(g, ctx);
+		Run(g, ctx, brain, 2, () => false);
+		Assert.Same(access, brain.Errand);
+		Assert.Equal(1, access.Deaths);
+		Assert.Contains(log.Lines, l => l.Contains("Errand access:underworld: died; back down"));
+		int before = log.Lines.Count;
+		int ticks = Run(g, ctx, brain, 40000, () => brain.Planner.UnderworldReachedOnce);
+		output.WriteLine($"frontier was row {frontier}; {ticks} ticks after the death: {brain.Describe()} at {g.Sim.Node}");
+		Assert.True(brain.Planner.UnderworldReachedOnce, "back down to the row");
+		Assert.DoesNotContain(log.Lines.Skip(before), l => l.StartsWith("Auto: ") && l.Contains("need "));
+		Assert.Equal(OutcomeKind.Done, brain.Planner.ErrandOutcomes.Single().Outcome.Kind);
+	}
+
+	[Fact]
+	public void HellevatorFailures_ChangeTheColumnOnce_ThenBlockTheErrandWithTheReason()
+	{
+		var (_, ctx, brain) = AfterTheEye();
+		ProgressionPlanner p = brain.Planner;
+		var access = new AccessErrand(Preferred, StandRow, ctx.Ids);
+		access.Begin(ctx);
+		int first = access.ShaftX;
+		ISkill shaft = access.NextSkill(ctx, p);
+		Assert.IsType<HellevatorSkill>(shaft);
+		for (int i = 0; i < AccessErrand.MaxFailures; i++) {
+			Assert.Equal(OutcomeKind.Running, access.Check(ctx).Kind);
+			access.OnSkillFinished(shaft, SkillStatus.Failed, "no way down from (90,40)", ctx);
+			shaft = access.NextSkill(ctx, p);
+		}
+		// The method change: another column, the failed one left out, the goal kept.
+		Assert.Equal(OutcomeKind.Running, access.Check(ctx).Kind);
+		Assert.True(access.ColumnChanged);
+		Assert.NotEqual(first, access.ShaftX);
+		Assert.True(System.Math.Abs(access.ShaftX - first) > HellevatorSkill.Slack);
+		Assert.Equal(0, access.Failures);
+		shaft = access.NextSkill(ctx, p);
+		Assert.Equal(access.ShaftX, ((HellevatorSkill)shaft).ShaftX);
+		for (int i = 0; i < AccessErrand.MaxFailures; i++) {
+			access.OnSkillFinished(shaft, SkillStatus.Failed, "no way to the shaft", ctx);
+			shaft = access.NextSkill(ctx, p);
+		}
+		Outcome blocked = access.Check(ctx);
+		output.WriteLine(blocked.ToString());
+		Assert.Equal(OutcomeKind.Blocked, blocked.Kind);
+		Assert.Contains("hellevator failures in a row", blocked.Reason);
+		Assert.Equal("no way to the shaft", blocked.Evidence);
+		// The plan records it and proposes the next errand elsewhere; after enough blocked columns it is stuck, not looping.
+		p.OnErrandEnded(access, blocked, ctx);
+		Assert.Null(p.Next(ctx));
+		var next = Assert.IsType<AccessErrand>(p.TakeProposed());
+		next.Begin(ctx);
+		Assert.True(System.Math.Abs(next.ShaftX - access.ShaftX) > HellevatorSkill.Slack, $"not the blocked column {access.ShaftX} again: {next.ShaftX}");
+		p.OnErrandEnded(next, Outcome.Blocked("test", ""), ctx);
+		p.OnErrandEnded(next, Outcome.Blocked("test", ""), ctx);
+		Assert.Null(p.Next(ctx));
+		Assert.Null(p.Proposed);
+		Assert.True(p.Stuck);
+		Assert.Contains("no way to the Underworld", p.Status);
+	}
+
+	[Fact]
+	public void NoProgress_ForTheWatchdogsWindow_BlocksTheErrand()
+	{
+		var (_, ctx, brain) = AfterTheEye();
+		var access = new AccessErrand(Preferred, StandRow, ctx.Ids);
+		access.Begin(ctx);
+		Assert.IsType<HellevatorSkill>(access.NextSkill(ctx, brain.Planner)); // descending from here
+		access.Rules(ctx);
+		Assert.Equal(OutcomeKind.Running, access.Check(ctx).Kind);
+		ctx.Tick += access.NoProgressTicks + 1;
+		Outcome o = access.Check(ctx);
+		Assert.Equal(OutcomeKind.Blocked, o.Kind);
+		Assert.Contains("no progress", o.Reason);
+	}
+
+	[Fact]
+	public void TheErrand_SurvivesASaveAndALoad_AndGoesOnUnderItsPlan()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<AccessErrand>(brain.Errand);
+		Run(g, ctx, brain, 20000, () => g.Sim.Node.Y >= HellTests.SurfaceFeet + 25);
+		Dictionary<string, string> saved = access.Save();
+		output.WriteLine(string.Join(", ", saved.Select(kv => kv.Key + "=" + kv.Value)));
+		var loaded = Assert.IsType<AccessErrand>(ErrandFactory.Create(AccessErrand.ErrandId, saved, ctx.Ids));
+		Assert.True(loaded.Restored);
+		Assert.Equal(access.ShaftX, loaded.ShaftX);
+		Assert.Equal(access.Phase, loaded.Phase);
+		Assert.Equal(access.StandRow, loaded.StandRow);
+		Assert.Equal(access.Identity, loaded.Identity);
+		// A new brain (the game started again, the player loaded): auto mode under the same plan takes the errand up again.
+		var again = new BotBrain();
+		again.RestoreErrand(loaded);
+		again.SetAuto(true, ctx, ProgressionPlanner.Plans.WallOfFlesh);
+		Assert.Same(loaded, again.Errand);
+		Assert.Equal(ProgressionPlanner.WofFightArrows, ctx.Reservations.Reserved(FakeGame.WoodenArrow));
+		Assert.Equal(loaded.ShaftX, again.Planner.ShaftX);
+		Assert.Contains(Log(ctx).Lines, l => l.Contains("goes on from the save"));
+		// Under another plan it is over.
+		var other = new BotBrain();
+		other.RestoreErrand(ErrandFactory.Create(AccessErrand.ErrandId, saved, ctx.Ids));
+		other.SetAuto(true, ctx, ProgressionPlanner.Plans.Boss);
+		Assert.Null(other.Errand);
+	}
+
+	[Fact]
+	public void TheReservations_KeepTheBagsHabitsOffThePackingList()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<AccessErrand>(brain.Errand);
+		Run(g, ctx, brain, 3000, () => access.Phase == AccessErrand.DescendPhase);
+		Assert.True(ctx.Reservations.Count > 0);
+		HashSet<int> kept = BotBrain.KeptItems(ctx, g.Stacks());
+		Assert.Contains(FakeGame.WoodenArrow, kept);
+		Assert.Contains(FakeGame.StoneBlock, kept);
+		Assert.Contains(FakeGame.HealingPotion, kept);
+		Assert.Equal(g.Count(FakeGame.WoodenArrow) - ProgressionPlanner.WofFightArrows, ctx.Spare(FakeGame.WoodenArrow));
+		Assert.Equal(0, ctx.Spare(FakeGame.HealingPotion)); // all kept back
+	}
+}

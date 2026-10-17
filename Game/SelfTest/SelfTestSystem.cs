@@ -33,7 +33,7 @@ public sealed class SelfTestSystem : ModSystem
 	public const string DaysFlag = "-terrabotdays";
 	/// <summary>Real-world runs on a Journey character: research and duplication off (the Classic behaviour), selftest.ps1 -NoJourney.</summary>
 	public const string NoJourneyFlag = "-terrabotnojourney";
-	/// <summary>The planner's scheduler for the run (restart or operation; ProgressionPlanner.Schedulers), selftest.ps1 -Scheduler.</summary>
+	/// <summary>The planner's scheduler for the run (restart, operation or errands; ProgressionPlanner.Schedulers), selftest.ps1 -Scheduler.</summary>
 	public const string SchedulerFlag = "-terrabotscheduler";
 	/// <summary>
 	/// Milestones a checkpoint is saved at: the late stages can then be measured from there in a few minutes instead of a

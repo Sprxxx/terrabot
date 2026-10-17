@@ -49,6 +49,8 @@ public class WallOfFleshPlanTests
 			g.AliveTownNpcs.Add(FakeGame.GuideNpc);
 		var p = new ProgressionPlanner();
 		p.Reset(ProgressionPlanner.Plans.WallOfFlesh);
+		// These tests cover the older schedulers (kept until migration step 4, docs ERRAND_DESIGN.md); the errand one is ErrandTests.
+		p.Scheduler = ProgressionPlanner.Schedulers.Operation;
 		p.BridgeLength = Bridge;
 		BuildingTests.HouseAlreadyThere(g, p, ctx);
 		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.WofArrows;

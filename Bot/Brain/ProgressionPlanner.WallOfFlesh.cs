@@ -403,6 +403,21 @@ public sealed partial class ProgressionPlanner
 			return null;
 		}
 		ctx.DepthErrand = true;
+		// The access errand (docs ERRAND_DESIGN.md, migration step 3): it chooses the column from the known terrain near the preferred
+		// offset, owns the bot to the row through deaths, and ends blocked with the reason; a blocked column is left out next time.
+		if (Scheduler == Schedulers.Errands) {
+			if (blockedShafts.Count >= MaxBlockedShafts) {
+				stuck = $"no way to the Underworld: access errands blocked at x {string.Join(", ", blockedShafts)}";
+				return null;
+			}
+			int fromX = ctx.SpawnTile?.X ?? n.X;
+			int preferred = shaftX ?? fromX + BridgeDirection(ctx, fromX) * ShaftOffsetTiles;
+			var access = new Errands.AccessErrand(preferred, stand, ctx.Ids);
+			foreach (int blockedX in blockedShafts)
+				access.Exclude(blockedX);
+			Proposed = access;
+			return null;
+		}
 		if (shaftX == null) {
 			int from = ctx.SpawnTile?.X ?? n.X;
 			shaftX = from + BridgeDirection(ctx, from) * ShaftOffsetTiles;
@@ -631,7 +646,8 @@ public sealed partial class ProgressionPlanner
 		if (skill is HellevatorSkill shaft) {
 			if (status == SkillStatus.Succeeded && shaft.Landed is TilePos landed && !bridgeKnown)
 				KnowBridge(ctx, landed, shaft.StandRow + 1);
-			else if (status == SkillStatus.Failed && shaft.FailureReason.StartsWith("no way down") && shaftX is int x) {
+			// Under the errand scheduler the column is the access errand's (chosen from the terrain, changed once by it): never shifted here.
+			else if (Scheduler != Schedulers.Errands && status == SkillStatus.Failed && shaft.FailureReason.StartsWith("no way down") && shaftX is int x) {
 				shaftX = x + (bridgeDir != 0 ? bridgeDir : 1) * ShaftShiftTiles;
 				ctx.Log.Info($"Auto: no ground on row {shaft.StandRow + 1} under the shaft at x {x}; the hellevator moves to x {shaftX}");
 				if (descent != null)

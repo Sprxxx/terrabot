@@ -43,8 +43,8 @@ param(
 	# Other mods to load beside TerraBot, by internal name (e.g. UpgradedResearch): the .tmod from your Mods folder, else the
 	# newest one in the Steam workshop folder, with your saved settings for it (ModConfigs\<name>_*.json). Default: none.
 	[string[]]$Mods = @(),
-	# The planner's scheduler (ProgressionPlanner.Schedulers): restart (stages from the top every pass) or operation (a continuing
-	# job owns the bot). Default: the build's own (operation).
+	# The planner's scheduler (ProgressionPlanner.Schedulers): restart (stages from the top every pass), operation (a continuing
+	# job owns the bot) or errands (the stage's errand owns the bot, docs ERRAND_DESIGN.md). Default: the build's own (errands).
 	[string]$Scheduler = ""
 )
 $ErrorActionPreference = "Stop"
