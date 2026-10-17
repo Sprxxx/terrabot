@@ -803,6 +803,40 @@ public sealed class ProgressionPlanner
 		return null;
 	}
 
+	/// <summary>
+	/// A boss's summon item made at a station nothing places (the Suspicious Looking Eye, Worm Food: a demon altar), its
+	/// makings all in the bag, and such an altar in sight (not one given up on): made now, whatever stage the plan is at, as a
+	/// player at an altar with the lenses makes the eye there rather than come back for it. Seen in game (measured run U30): from
+	/// t496800 to t516000, with 7 lenses and max life 200, the bot climbed from the caverns past the DemonAltar at (1748,411),
+	/// 14 tiles off at (1734,398), "up to the surface before building the arena"; the walks back to that altar from home
+	/// began at t534000 and the Suspicious Looking Eye was made at t722520.
+	/// </summary>
+	private ISkill SummonAtAnAltarInSight(BotContext ctx)
+	{
+		if (ctx.World == null || ctx.Seen == null)
+			return null;
+		TilePos from = ctx.Seen.Origin ?? ctx.Node;
+		foreach (BossDefeated b in StagesFor(Plan, ctx.Ids).OfType<BossDefeated>()) {
+			if (b.ByOldMan || b.SummonItem <= 0 || ctx.World.BossDefeated(b.Npc) || ctx.Inventory.Count(b.SummonItem) > 0)
+				continue;
+			RecipeInfo r = BestRecipe(b.SummonItem, ctx);
+			if (r == null || r.Stations.Count == 0 || !r.Ingredients.All(i => ctx.Inventory.CountAny(i.Accepts) >= i.Stack))
+				continue;
+			bool atHand = r.Stations.All(st => ctx.Knowledge.ItemsPlacing(st).Count == 0 && ctx.Seen.Stations.TryGetValue(st, out TilePos at)
+				&& at.ChebyshevTo(from) <= StationSightTiles && !GivenUpSite(at, ctx));
+			if (!atHand)
+				continue;
+			costs.Clear();
+			costEvaluations = 0;
+			stuck = null;
+			ISkill s = Resolve(new HaveItem(b.SummonItem, 1, ctx.Knowledge.ItemName(b.SummonItem)), new Dictionary<int, int>(), 0, ctx);
+			stuck = null;
+			if (s != null)
+				return s;
+		}
+		return null;
+	}
+
 	private ISkill NightPartsForTheSummon(BotContext ctx)
 	{
 		if (NightPartFor(ctx) is not var (item, ai, amount))
@@ -869,6 +903,8 @@ public sealed class ProgressionPlanner
 		}
 		if (NightPartsForTheSummon(ctx) is ISkill hunt)
 			return hunt;
+		if (SummonAtAnAltarInSight(ctx) is ISkill summon)
+			return AtNight(summon, ctx);
 		costs.Clear();
 		costEvaluations = 0;
 		stuck = null;

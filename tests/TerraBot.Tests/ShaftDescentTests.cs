@@ -87,7 +87,7 @@ public class ShaftDescentTests
 	}
 
 	[Fact]
-	public void AWideShaft_WithNothingToFixABlockTo_IsNotPlannedDown()
+	public void AWideShaft_WithNoWallBehind_IsPlannedDownOnlyWhereABlockHasRockToHoldIt()
 	{
 		// Vanilla takes a block into open air only beside a solid tile or a wall: mid-shaft with neither, no catch. A 10-wide
 		// shaft with no wall behind: only down its sides, against the rock.

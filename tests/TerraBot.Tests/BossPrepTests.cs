@@ -373,6 +373,32 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void TheLensesInTheBag_AndAnAltarInSight_TheEyeIsMadeThere_BeforeTheStagesBeforeIt()
+	{
+		// Measured run U30: from t496800 to t516000, 7 lenses in the bag and max life 200, the bot climbed past the DemonAltar at
+		// (1748,411), 14 tiles off at (1734,398), "up to the surface before building the arena"; the walks back to that altar
+		// from home began at t534000, and the Suspicious Looking Eye was made at t722520.
+		FakeGame g = ProgressionTests.Mine();
+		g.AddAltar(18, 23); // on the grass, 15 tiles from the bot
+		g.Items[FakeGame.Lens] = 7;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Boss);
+		ISkill s = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		Assert.True(s is WalkToSkill || s is CraftSkill { ItemType: FakeGame.SuspiciousEye }, p.Status);
+		Assert.Contains("item43", p.Status); // the Suspicious Looking Eye (the fake names items by id)
+		// Not without the lenses: then the plan's own order (nothing to make there yet).
+		g.Items[FakeGame.Lens] = 5;
+		var q = new ProgressionPlanner();
+		q.Reset(ProgressionPlanner.Plans.Boss);
+		ISkill t = q.Next(ctx);
+		output.WriteLine($"{q.Status} -> {t?.Describe()}");
+		Assert.DoesNotContain("item43", q.Status);
+	}
+
+	[Fact]
 	public void AnAltarOnTheMap_FarBeyondTheSearchRound_IsWalkedTo_NotExploredFor()
 	{
 		// Measured run M10e (world_eow): at home with the vile powder, "exploring for a DemonAltar (none seen yet)", the altars
