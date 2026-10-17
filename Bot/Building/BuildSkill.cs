@@ -39,6 +39,8 @@ public static class SiteFinder
 				var origin = new TilePos(x0, floor - (bp.Height - 1));
 				if (avoid != null && avoid.Contains(origin))
 					continue;
+				if (raised != null && raised.OutOfWormReach(x0, floor))
+					continue;
 				if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X
 					&& origin.Y <= r.Max.Y && origin.Y + bp.Height - 1 >= r.Min.Y))
 					continue;
@@ -85,6 +87,10 @@ public static class SiteFinder
 		private readonly int[][] blocks, bad;
 		private readonly bool[][] liquid;
 		private readonly int?[] top;
+		/// <summary>Per column and row, the first row at or below it with a block (relative to cy0), or rows if none.</summary>
+		private readonly int[][] nextBlock;
+		/// <summary>The worm's reach over the ground (<see cref="WormPattern.ReachRows"/>).</summary>
+		public int ReachRows { get; }
 
 		public static RaisedFloors For(BotContext ctx, Blueprint bp, TilePos around) =>
 			!bp.IsHouse && bp.InEvilBiome ? new RaisedFloors(ctx, bp, around) : null;
@@ -92,6 +98,7 @@ public static class SiteFinder
 		private RaisedFloors(BotContext ctx, Blueprint bp, TilePos around)
 		{
 			this.bp = bp;
+			ReachRows = WormPattern.ReachRows(ctx.Expert);
 			int reach = bp.SearchRadius;
 			// The columns of every site's span and one either side; the rows as far up and down as the ground is followed
 			// (Ground), and the open air over the highest floor.
@@ -103,6 +110,7 @@ public static class SiteFinder
 			bad = new int[cols][];
 			liquid = new bool[cols][];
 			top = new int?[cols];
+			nextBlock = new int[cols][];
 			ITileGrid g = ctx.Grid;
 			for (int i = 0; i < cols; i++) {
 				int x = cx0 + i;
@@ -121,7 +129,28 @@ public static class SiteFinder
 					if (block && top[i] == null)
 						top[i] = y;
 				}
+				nextBlock[i] = new int[rows + 1];
+				nextBlock[i][rows] = rows;
+				for (int j = rows - 1; j >= 0; j--)
+					nextBlock[i][j] = blocks[i][j + 1] != blocks[i][j] ? j : nextBlock[i][j + 1];
 			}
+		}
+
+		/// <summary>
+		/// Is the floor at <paramref name="floor"/> for the site whose left edge is <paramref name="x0"/> higher over the
+		/// ground under any of its columns (the first block below the floor row) than the worm reaches
+		/// (<see cref="ReachRows"/>)? The kiting goes the floor's whole length, and the worm comes up at the bot from the
+		/// ground under it.
+		/// </summary>
+		public bool OutOfWormReach(int x0, int floor)
+		{
+			int i0 = x0 - cx0, jf = floor - cy0;
+			if (jf < 0 || jf + 1 >= rows)
+				return false;
+			for (int i = i0; i < i0 + bp.Width; i++)
+				if (nextBlock[i][jf + 1] - jf > ReachRows)
+					return true;
+			return false;
 		}
 
 		private static int Count(int[] prefix, int j0, int j1) => prefix[j1 + 1] - prefix[j0];
@@ -153,7 +182,7 @@ public static class SiteFinder
 					edits += 2 * Count(blocks[i], ja, jf - 1) + (Count(blocks[i], jf, jf) == 0 ? 1 : 0);
 					attached |= Count(blocks[i], jf, jf + 1) > 0;
 				}
-				if (ok && attached && edits < bestEdits) {
+				if (ok && attached && edits < bestEdits && !OutOfWormReach(x0, floor)) {
 					bestEdits = edits;
 					best = floor;
 				}
@@ -362,6 +391,10 @@ public static class SiteFinder
 				var origin = new TilePos(x0, floor - (bp.Height - 1));
 				if (avoid != null && avoid.Contains(origin)) {
 					Count(kind + "given up before");
+					continue;
+				}
+				if (raised != null && raised.OutOfWormReach(x0, floor)) {
+					Count(kind + $"over ground more than {raised.ReachRows} rows down (the worm's reach)", new TilePos(x0 + bp.Width / 2, floor));
 					continue;
 				}
 				if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X

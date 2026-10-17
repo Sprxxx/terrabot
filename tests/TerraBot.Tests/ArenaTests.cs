@@ -498,6 +498,32 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_TheWormsArena_IsNotRaisedOutOfTheWormsReach()
+	{
+		// Measured run M10r: the arena at (1814,239), floor row 246, an old floor of no edits, over ground at rows 285-297; in a
+		// fight of 54,000 ticks the worm never got up to it (67 segments in the ground, none in a clear line), 14 arrows shot,
+		// no hit either way. A head out of the ground falls at 0.11 px/tick² (WormPattern.ReachRows: 14 rows in Classic).
+		FakeGame g = EbonstoneHills();
+		int old = HillsGround - 40;
+		for (int x = 150; x <= 350; x++)
+			g.Grid.Set(x, old, CellKind.Solid); // an old floor, 40 rows over the ground: no edits at all
+		BotContext ctx = g.CreateContext(output);
+		var anchor = new TilePos(250, HillsGround - 1);
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, inEvilBiome: true);
+		TilePos? site = SiteFinder.Find(ctx, eater, anchor);
+		output.WriteLine($"site {site}; {SiteFinder.Explain(ctx, eater, anchor)}");
+		Assert.NotNull(site);
+		int floor = site.Value.Y + eater.Height - 1;
+		int reach = WormPattern.ReachRows(ctx.Expert);
+		for (int x = site.Value.X; x < site.Value.X + eater.Width; x++) {
+			int below = floor + 1;
+			while (below < HillsGround && !g.Grid.Get(x, below).IsBlock())
+				below++;
+			Assert.True(below - floor <= reach, $"column {x}: ground {below - floor} rows under the floor at row {floor}, the worm reaches {reach}");
+		}
+	}
+
+	[Fact]
 	public void BuildSkill_TheWormsRaisedArena_OverEbonstoneHills_IsBuiltFromTheGround()
 	{
 		// The raised floor must be reachable and buildable: from the valley floor, up by the hills (placing blocks to climb

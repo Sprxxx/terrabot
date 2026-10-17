@@ -53,6 +53,16 @@ public static class WormPattern
 	public static float TopSpeed(bool expert) => expert ? ExpertHeadTopSpeed : HeadTopSpeed;
 
 	/// <summary>
+	/// Rows above the ground the worm gets at: out of the ground a head flies on at its top speed and falls at
+	/// <see cref="AirGravity"/>, so an arc coming up at 45° (half its speed upwards, in square) tops out at
+	/// TopSpeed² / (4 × AirGravity) px: 227 px, 14 rows in Classic, 20 in Expert. A floor higher than that over the ground
+	/// is out of its reach. Seen in game (measured run M10r): the arena floor at row 246 over ground at rows 285-297 (40-50
+	/// rows down); in a fight of 54,000 ticks the bot shot 14 arrows, took no hit, and the worm stayed at 10050 of 10050,
+	/// its 67 segments in the ground below, none in a clear line.
+	/// </summary>
+	public static int ReachRows(bool expert) => (int)(TopSpeed(expert) * TopSpeed(expert) / (4f * AirGravity) / 16f);
+
+	/// <summary>
 	/// A head in open air, falling: not touching a solid tile, a platform or liquid (the cells its box overlaps, as
 	/// vanilla tests them), and within <see cref="FreeFlightPx"/> of the player at (<paramref name="playerX"/>,
 	/// <paramref name="playerY"/>, the body's top-left).
