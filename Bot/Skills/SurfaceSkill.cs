@@ -1,11 +1,12 @@
 using System;
+using TerraBot.Core.Execution;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Physics;
 
 namespace TerraBot.Bot.Skills;
 
 /// <summary>
-/// Out of breath under water: pillar up (jump, block under the feet) towards the nearest column with air above the head, until
+/// Out of breath under water: pillar up (jump, blocks stacked under the rising body: <see cref="WaterPillar"/>) towards the nearest column with air above the head, until
 /// breath is back near full and the head is out. Seen in game: the bot chased a slime into a flooded cave and
 /// drowned (vanilla takes 2 life per breath tick at 0 breath, without a hurt event: nothing showed in the log).
 /// </summary>
@@ -24,6 +25,11 @@ public sealed class SurfaceSkill : ISkill
 	private int ticks;
 	private int? column;
 	private bool jumpedLastTick;
+	/// <summary>Ticks since the body last stood (the water jump's hold counts from the press).</summary>
+	private int airTicks;
+	/// <summary>The pillar cell aimed at last tick, and the blocks seen to go in (logged with the pillaring, to tell a stuck place in a log).</summary>
+	private TilePos? stackCell;
+	private int placed;
 	private WalkToSkill walk;
 	private bool walkFailed;
 	/// <summary>How far (cells, through water and air) to look for a dry place to stand.</summary>
@@ -40,7 +46,8 @@ public sealed class SurfaceSkill : ISkill
 	/// One held jump under water from standing until back where it began, by vanilla (Player.cs, wet without gear: jumpHeight
 	/// 30, jumpSpeed 6.01, gravity 0.2, maxFallSpeed 5.01; WaterCollision moves the body half its velocity): 30 ticks at
 	/// 3 px (90 px), 30 more slowing by 0.2 a tick (45 px: the 8 rows of a water jump), then the 135 px back down, 25 ticks
-	/// gathering speed (31 px) and 42 at 2.5 px. About 127 ticks; a working pillar gains a row in each, landing on its block.
+	/// gathering speed (31 px) and 42 at 2.5 px. About 127 ticks: the longest a water jump takes, held through. The pillar lets
+	/// go sooner and stacks several blocks a jump (<see cref="WaterPillar"/>), so this only bounds the stall check.
 	/// </summary>
 	public const int WaterJumpCycleTicks = 130;
 	/// <summary>
@@ -198,6 +205,8 @@ public sealed class SurfaceSkill : ISkill
 		// the mining above never look at. Seen in game (measured runs U6, U8): the node on the column, the hitbox 0.3-1.5 px
 		// into the next one under a block, jumping in place until it drowned; 12 of 26 drownings in U1-U8 had the hitbox across
 		// three columns.
+		bool haveBlocks = ctx.Blocks != null && ctx.Blocks.BlockCount > 0;
+		airTicks = footing ? 0 : airTicks + 1;
 		if (footing && column == n.X && OffColumns(ctx.Body.X, n.X, ctx.Physics)) {
 			ctx.Output.Jump = false;
 			jumpedLastTick = false;
@@ -207,14 +216,25 @@ public sealed class SurfaceSkill : ISkill
 			jumpedLastTick = ctx.Output.Jump;
 		}
 		else {
-			ctx.Output.Jump = ctx.Body.VY < 0f; // keep the jump going while rising
+			// In water the jump is let go after the simulated hold, so the stack under it keeps within reach (WaterPillar); out of
+			// it, kept going while rising.
+			bool wet = Core.Pathfinding.Body.InLiquid(ctx.Grid, n);
+			int hold = wet && haveBlocks ? WaterPillar.HoldTicks(ctx.Physics, ctx.Blocks.PlaceTicks) : int.MaxValue;
+			ctx.Output.Jump = ctx.Body.VY < 0f && airTicks < hold;
 			jumpedLastTick = ctx.Output.Jump;
-			var below = new TilePos(n.X, n.Y + 1);
-			bool clearOfIt = ctx.Body.Y + ctx.Physics.Height <= below.Y * 16f - 1f;
-			if (ctx.Body.VY < 0f && clearOfIt && !ctx.Grid.Get(below.X, below.Y).IsSolid() && ctx.Blocks != null && ctx.Blocks.BlockCount > 0) {
-				ctx.Output.Tool = ToolRequest.Block;
+		}
+		// The block in hand from the ground on (a slot switch waits for a swing to end: Player.selectedItem is set only between
+		// swings), and in the air the cell over the top of the stack under the body, rising or falling: vanilla places it the
+		// first tick it is out of the hitbox and in reach, one every useTime, each on the one before (WaterPillar).
+		if (stackCell is TilePos last && ctx.Grid.Get(last.X, last.Y).IsSolid())
+			placed++; // the cell aimed at last tick took its block
+		stackCell = null;
+		if (haveBlocks) {
+			ctx.Output.Tool = ToolRequest.Block;
+			if (!footing && WaterPillar.StackCell(ctx.Grid, ctx.Body, ctx.Physics, ctx.Blocks) is TilePos cell) {
 				ctx.Output.UseItem = true;
-				ctx.Output.Aim(below.X, below.Y);
+				ctx.Output.Aim(cell.X, cell.Y);
+				stackCell = cell;
 			}
 		}
 		// Steer onto the column's centre, not just until the node is on it: pressing on until the node changed, then letting
@@ -226,7 +246,7 @@ public sealed class SurfaceSkill : ISkill
 		State = column != null ? $"pillaring up towards column {column}" : "pillaring up";
 		if (ticks % LogEveryTicks == 0)
 			ctx.Log.Info($"Surface: pillaring at {n} towards column {column?.ToString() ?? "-"}{(straightUp ? " (straight up)" : "")}, footing {footing}, vy {ctx.Body.VY:0.00}, "
-				+ $"breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax}, cells {Cells(ctx.Grid, n, column ?? n.X)}");
+				+ $"breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax}, blocks placed {placed}{(stackCell is TilePos sc ? $", next at {sc}" : "")}, cells {Cells(ctx.Grid, n, column ?? n.X)}");
 		return SkillStatus.Running;
 	}
 

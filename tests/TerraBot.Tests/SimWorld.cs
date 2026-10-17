@@ -55,18 +55,58 @@ public sealed class SimWorld
 
 	public TilePos Node => Body.NodeOf(State, p);
 
+	/// <summary>
+	/// Vanilla's water: wet (<see cref="Wet"/>), the body moves with <see cref="PhysicsParams.InWater"/> at half its velocity
+	/// (Player.WaterCollision). On by default; a test of the old dry-only sim turns it off.
+	/// </summary>
+	public bool WaterPhysics { get; set; } = true;
+	/// <summary>Ticks of item time after a block is placed (vanilla ApplyItemTime(useTime * tileSpeed) in PlaceThing_Tiles_PlaceIt): no place before it runs out.</summary>
+	public int PlaceCooldown { get; private set; }
+
+	/// <summary>
+	/// Collision.WetCollision: a box 10 px wide and half the hitbox high, centred on it, over a liquid cell (the liquid's level
+	/// aside: a cell of water counts whole).
+	/// </summary>
+	public bool Wet
+	{
+		get {
+			float cx = State.X + p.Width / 2f, cy = State.Y + p.Height / 2f, hw = 5f, hh = p.Height / 4f;
+			for (int x = Floor((cx - hw) / T); x <= Floor((cx + hw - 0.001f) / T); x++)
+				for (int y = Floor((cy - hh) / T); y <= Floor((cy + hh - 0.001f) / T); y++)
+					if (grid.Get(x, y).IsOpenLiquid())
+						return true;
+			return false;
+		}
+	}
+
 	public void Step(MoveInput c)
 	{
 		Ticks++;
-		PlayerPhysics.ApplyControls(ref State, c, p);
+		bool wet = WaterPhysics && Wet;
+		PhysicsParams q = wet ? p.InWater() : p;
+		PlayerPhysics.ApplyControls(ref State, c, q);
 
-		if (State.VY == p.Gravity)
+		if (State.VY == q.Gravity)
 			StepDown();
-		if (State.VY >= p.Gravity && !c.Down && State.VX != 0f)
+		if (State.VY >= q.Gravity && !c.Down && State.VX != 0f)
 			StepUp();
 
+		float vx = State.VX, vy = State.VY;
+		if (wet) {
+			State.VX *= PhysicsParams.WaterMoveFactor;
+			State.VY *= PhysicsParams.WaterMoveFactor;
+		}
 		MoveX();
 		MoveY(c.Down);
+		if (wet) {
+			// The full velocity back where no tile stopped it (a stop leaves 0, as vanilla's collided velocity does).
+			if (State.VX != 0f)
+				State.VX = vx;
+			if (State.VY != 0f)
+				State.VY = vy;
+		}
+		if (PlaceCooldown > 0)
+			PlaceCooldown--;
 		UseItem(c);
 	}
 
@@ -98,7 +138,7 @@ public sealed class SimWorld
 		if (c.Tool != ToolRequest.Block)
 			return; // other items (walls, furniture) are the caller's business, not blocks
 		// Place: vanilla needs an empty cell, a solid neighbour, and Collision.EmptyTile (no hitbox overlap).
-		if (k.CanStandOn() || blocks.BlockCount <= 0)
+		if (k.CanStandOn() || blocks.BlockCount <= 0 || PlaceCooldown > 0)
 			return;
 		if (blocks is TestBlockActions tb && tb.NoPlace.Contains(cell))
 			return; // as the planner was told: nothing goes in there
@@ -113,6 +153,7 @@ public sealed class SimWorld
 		if (!neighbour || overlaps)
 			return;
 		editable.Set(cell.X, cell.Y, CellKind.Solid);
+		PlaceCooldown = (int)blocks.PlaceTicks;
 		blocks.BlockCount--;
 		Placed++;
 	}

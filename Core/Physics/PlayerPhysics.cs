@@ -25,6 +25,17 @@ public static class PlayerPhysics
 		s.Y += s.VY;
 	}
 
+	/// <summary>
+	/// One tick in open water: controls with <paramref name="wet"/> (<see cref="PhysicsParams.InWater"/>), then half the velocity
+	/// (<see cref="PhysicsParams.WaterMoveFactor"/>, Player.WaterCollision).
+	/// </summary>
+	public static void StepWater(ref BodyState s, in MoveInput c, PhysicsParams wet)
+	{
+		ApplyControls(ref s, c, wet);
+		s.X += s.VX * PhysicsParams.WaterMoveFactor;
+		s.Y += s.VY * PhysicsParams.WaterMoveFactor;
+	}
+
 	/// <summary>Player.HorizontalMovement, non-mounted, no wind/ice/carts. Branch order matters and matches vanilla.</summary>
 	public static void Horizontal(ref BodyState s, in MoveInput c, PhysicsParams p)
 	{
