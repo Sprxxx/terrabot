@@ -252,6 +252,18 @@ public class JourneyTests
 	}
 
 	[Fact]
+	public void TheDoll_IsResearched_AndDuplicatedBack()
+	{
+		// An accessory by its stats (so "gear"), but never worn nor in use: the one carried is researched (1) and comes back.
+		var (g, ctx) = Journey();
+		g.Gear.Add(FakeGame.GuideVoodooDoll);
+		g.Items[FakeGame.GuideVoodooDoll] = 1;
+		Assert.True(Habit(ctx));
+		Assert.True(g.Journey.IsResearched(FakeGame.GuideVoodooDoll));
+		Assert.True(g.Count(FakeGame.GuideVoodooDoll) >= 1);
+	}
+
+	[Fact]
 	public void ResearchedDoll_IsDuplicated_NoHunt()
 	{
 		var (g, ctx) = Journey();

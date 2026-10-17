@@ -857,13 +857,14 @@ public sealed partial class ProgressionPlanner
 		// went up where the arena should (boss_auto, which starts armoured at night with the house kit in the bag).
 		if (Plan != Plans.Boss && Plan != Plans.EvilBoss && Plan != Plans.Skeletron || !ctx.IsNight || ctx.Combat.Defense < NightOutDefense || ids.SuspiciousEye <= 0 || ctx.World == null
 			|| HomeInside(ctx) == null
-			|| ctx.World.BossDefeated(ids.EyeBoss) || ctx.Inventory.Count(ids.SuspiciousEye) > 0
+			|| ctx.World.BossDefeated(ids.EyeBoss) || ctx.Inventory.Count(ids.SuspiciousEye) > 0 || ctx.Infinite(ids.SuspiciousEye)
 			|| ctx.SurfaceY > 0 && ctx.Node.Y > ctx.SurfaceY + NightMineRows)
 			return null;
 		foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(ids.SuspiciousEye))
 			foreach (Ingredient ing in r.Ingredients) {
 				ItemSource src = ctx.Knowledge.SourceOf(ing.Item);
-				if (src.Kind == SourceKind.Hunt && NocturnalAiStyles.Contains(src.NpcAiStyle) && ctx.Inventory.Count(ing.Item) < ing.Stack)
+				// Journey: a researched part (lenses) is duplicated when the summon is made, not hunted at night.
+				if (src.Kind == SourceKind.Hunt && NocturnalAiStyles.Contains(src.NpcAiStyle) && ctx.Inventory.Count(ing.Item) < ing.Stack && !ctx.Infinite(ing.Item))
 					return (ing.Item, src.NpcAiStyle, ing.Stack);
 			}
 		return null;

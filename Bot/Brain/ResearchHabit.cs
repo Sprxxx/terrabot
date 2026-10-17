@@ -58,7 +58,10 @@ public static class ResearchHabit
 		int left = ctx.Journey.ResearchLeft(itemType);
 		if (left <= 0)
 			return false;
-		return ctx.Inventory.IsGear(itemType) ? carried > left : carried >= left;
+		// The Guide Voodoo Doll is an accessory by its stats (Item.cs:6839-6845), so "gear", but never worn (BotBrain.WearAccessories)
+		// nor in use: research takes the one carried (1, Sacrifices.tsv "D") and it is duplicated back the same tick.
+		bool inUse = ctx.Inventory.IsGear(itemType) && itemType != ctx.Ids.GuideVoodooDoll;
+		return inUse ? carried > left : carried >= left;
 	}
 
 	/// <summary>
