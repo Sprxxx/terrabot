@@ -355,6 +355,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 	public readonly System.Collections.Generic.HashSet<int> BossesDefeated = new();
 	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
+	/// <summary>The life each boss's health bar shows (none: 0).</summary>
+	public readonly Dictionary<int, int> BossBars = new();
+	public int BossBarLife(int npcType) => BossBars.GetValueOrDefault(npcType);
 	/// <summary>Light everywhere; tests set it lower for the torch habit.</summary>
 	public float Light = 1f;
 	public float LightAt(int x, int y) => Light;

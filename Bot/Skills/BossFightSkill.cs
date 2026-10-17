@@ -24,14 +24,15 @@ namespace TerraBot.Bot.Skills;
 /// <para>
 /// A worm boss (the Eater of Worlds, <see cref="WormPattern"/>) is fought differently, chosen by <see cref="BossType"/>:
 /// <list type="bullet">
-/// <item>the boss is every segment of it (head, bodies, tail; a split makes more heads): alive while any is in view,
-/// won once none is and the game records it defeated, gone after <see cref="WormPattern.GoneTicks"/> with none;</item>
+/// <item>the boss is every segment of it (head, bodies, tail; a split makes more heads): alive while any is in view or its
+/// health bar shows life (<see cref="IWorldInfo.BossBarLife"/>: burrowed out of view), won once none is and the game records
+/// it defeated, gone after <see cref="WormPattern.GoneTicks"/> with none in view and its bar empty;</item>
 /// <item>shoot the nearest segment the arrow can reach (any segment's damage counts);</item>
 /// <item>move: run away from the nearest head, from where it will cross our height (a head out of the ground falls),
 /// and past it when an end of the arena leaves no room; the dodge planner jumps over or runs from under a head with a
 /// falling-head model, no Eye of Cthulhu dash model or dash timing;</item>
 /// <item>stay inside the arena, or within <see cref="HardHalfWidth"/> of where the fight started, so as not to leave the
-/// Corruption (the worm despawns then).</item>
+/// Corruption (the worm despawns then); knocked off it, or down a chasm deeper than a safe fall, walk back.</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -182,6 +183,14 @@ public sealed class BossFightSkill : ISkill
 		// A worm: its nearest segment stands for it.
 		EntityInfo? boss = IsWorm ? segments.Cast<EntityInfo?>().FirstOrDefault()
 			: ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault();
+		// A worm's bar shows the life of all its segments, wherever they are (IWorldInfo.BossBarLife): one burrowed out of view
+		// is still up. A fight taken up again with the worm out of view (after a pause, or a new instance of this job) does not
+		// summon a second time: the Worm Food is used up, and the game allows no second head while one lives (SummonItemCheck).
+		int barLife = IsWorm ? ctx.World.BossBarLife(BossType) : 0;
+		if (boss == null && !seenBoss && barLife > 0) {
+			seenBoss = true;
+			ctx.Log.Info($"Boss fight: the worm is up (its bar shows {barLife} life) but none of it is in view; waiting for it");
+		}
 
 		if (boss == null && !seenBoss) {
 			if (summoned) {
@@ -226,8 +235,19 @@ public sealed class BossFightSkill : ISkill
 			ctx.Log.Info(IsWorm ? $"Boss fight: no segment of the worm in view, us at {ctx.Node}"
 				: $"Boss fight: lost sight of the boss (last seen at {bossLifeSeen} life), us at {ctx.Node}");
 		else if (goneTicks > (IsWorm ? WormPattern.GoneTicks : GoneTicks)) {
-			return ctx.World.BossDefeated(BossType) ? SkillStatus.Running
-				: Fail(ctx, IsWorm ? $"the worm left: no segment in view for {WormPattern.GoneTicks} ticks, not defeated" : "the boss left");
+			if (ctx.World.BossDefeated(BossType))
+				return SkillStatus.Running;
+			// Out of view that long but still on its bar: burrowed or diving, not gone. Wait for it where the fight is (back on
+			// the arena, or within the leash), which keeps us in the zone; the worm only dives off for good while no player is in
+			// it (NPC.cs:55436-55481), and then its bar empties as it despawns. Seen in game (measured run M10j): "no segment of
+			// the worm in view" at (1914,361), in a chasm's water, the worm at 8597 of 10050, and the fight was over.
+			if (barLife <= 0)
+				return Fail(ctx, IsWorm ? $"the worm left: no segment in view for {WormPattern.GoneTicks} ticks, not defeated, its bar empty" : "the boss left");
+			if (ctx.Tick - lastWormLog >= WormLogTicks) {
+				lastWormLog = ctx.Tick;
+				ctx.Log.Info($"Boss fight: no segment of the worm in view for {goneTicks} ticks, but its bar shows {barLife} life: "
+					+ $"waiting for it {(Arena != null ? "on the arena" : $"round {centre}")}, us at {ctx.Node}");
+			}
 		}
 		int maxTicks = IsWorm ? WormMaxFightTicks : MaxFightTicks;
 		if (++fightTicks > maxTicks)
@@ -238,8 +258,12 @@ public sealed class BossFightSkill : ISkill
 		bool walkingBack = BackToArena(ctx);
 		if (!walkingBack)
 			Move(ctx, boss);
-		// Target: a servant about to bite, else the boss.
-		EntityInfo? servant = ctx.Hostiles.Where(h => MinionTypes.Contains(h.Type) && h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
+		// Target: a servant about to bite, else the boss. For a worm every segment is the boss (WormShot takes the nearest it
+		// can hit): the ones about to bite besides are the zone's own spawns, eaters of souls (40 life, 22 contact damage,
+		// NPC.cs:3849; 2-3 arrows), which the boss fight shot none of. Seen in game (measured run M10k, world_eow from the
+		// worm_food checkpoint): held in a pocket at x 1720-1722, hit by segments and eaters of souls in turn, dead in the fight.
+		EntityInfo? servant = ctx.Hostiles.Where(h => (IsWorm ? !segmentTypes.Contains(h.Type) && h.Damage > 0 : MinionTypes.Contains(h.Type))
+				&& h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
 			.OrderBy(h => h.DistanceTo(cx, cy)).Cast<EntityInfo?>().FirstOrDefault();
 		// A worm: its nearest segment in reach (WormShot).
 		EntityInfo? target = servant ?? (IsWorm ? null : boss);
@@ -253,18 +277,18 @@ public sealed class BossFightSkill : ISkill
 			clear = s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile);
 			TargetId = t.Id;
 		}
-		else if (canShoot && target == null && IsWorm)
+		else if (canShoot && IsWorm) // no servant, or none in a clear line: the worm
 			(aim, clear) = WormShot(ctx, cx, cy);
 		if (aim is AimSolution a) {
 			ctx.Output.Tool = ToolRequest.Ranged;
 			ctx.Output.AimMouse(a.AimX, a.AimY);
 			ctx.Output.UseItem = clear;
-			State = !clear ? "no clear arc" : servant != null ? "shooting a servant" : IsWorm ? "shooting a segment" : "shooting the boss";
+			State = !clear ? "no clear arc" : servant is EntityInfo sv && TargetId == sv.Id ? (IsWorm ? $"shooting the {sv.Name} by us" : "shooting a servant") : IsWorm ? "shooting a segment" : "shooting the boss";
 		}
 		else
 			State = "kiting";
 		if (walkingBack)
-			State = "walking back to the arena, " + State;
+			State = $"walking back to {(Arena != null ? "the arena" : "where the fight began")}, " + State;
 		Heal(ctx);
 		return SkillStatus.Running;
 	}
@@ -335,20 +359,40 @@ public sealed class BossFightSkill : ISkill
 	/// </summary>
 	private bool BackToArena(BotContext ctx)
 	{
-		if (Arena is not (int x0, int x1, int standY)) {
-			return false;
-		}
 		TilePos n = ctx.Node;
-		// A column of slack at the ends: braking slides the body a few pixels past an end, and the node (rounded to the
-		// nearest column, Body.NodeOf) then reads one column out; off the floor's end the body falls and the row test
-		// catches it. Seen in game (checkpoint run U16cp): "off the arena at (2030,266), walking back" four times, the
-		// floor from 2031, and the walks back (no dodging) let the Eye of Cthulhu kill the bot at (2028,272).
-		bool off = n.X < x0 - EndSlack || n.X > x1 + EndSlack || n.Y > standY + 1;
+		bool off;
+		Func<IGoal> goal;
+		string place;
+		if (Arena is (int x0, int x1, int standY)) {
+			// A column of slack at the ends: braking slides the body a few pixels past an end, and the node (rounded to the
+			// nearest column, Body.NodeOf) then reads one column out; off the floor's end the body falls and the row test
+			// catches it. Seen in game (checkpoint run U16cp): "off the arena at (2030,266), walking back" four times, the
+			// floor from 2031, and the walks back (no dodging) let the Eye of Cthulhu kill the bot at (2028,272).
+			off = n.X < x0 - EndSlack || n.X > x1 + EndSlack || n.Y > standY + 1;
+			// Onto the arena's floor anywhere, the same test as "off" above: a goal near its middle was "reached" from below
+			// the floor, and every tick the next walk began. Seen in game (measured run U11cp): knocked down to (2084,272),
+			// 5 rows under the floor and within 6 tiles of the middle, "off the arena, walking back" 6460 times while the Eye
+			// of Cthulhu killed the bot.
+			goal = () => new GoalStandOnRow(standY, x0, x1, ctx.Physics);
+			place = "the arena";
+		}
+		else if (IsWorm) {
+			// No arena: the worm's leash (MoveFreely), and no deeper than a safe fall under where the fight began: a walk never
+			// drops further on its own (the paths' Drop moves), so lower down means knocked or slid down a chasm. Seen in game
+			// (measured run M10j): from (1874,291), on the corruption's open ground, down a chasm to (1921,358), under water.
+			TilePos c = centre.Value;
+			int lowest = c.Y + ctx.Physics.SafeFallTiles;
+			off = Math.Abs(n.X - c.X) > HardHalfWidth + EndSlack || n.Y > lowest;
+			goal = () => new GoalRow(lowest, c.X, ctx.Physics) { Accept = t => Math.Abs(t.X - c.X) <= HardHalfWidth };
+			place = $"the ground round {c}";
+		}
+		else
+			return false;
 		if (!off && ctx.Body.Grounded) {
 			if (backToArena != null) {
 				backToArena.Stop(ctx);
 				backToArena = null;
-				ctx.Log.Info($"Boss fight: back in the arena at {n}");
+				ctx.Log.Info(Arena != null ? $"Boss fight: back in the arena at {n}" : $"Boss fight: back on {place} at {n}");
 			}
 			return false;
 		}
@@ -359,12 +403,8 @@ public sealed class BossFightSkill : ISkill
 		if (backToArena == null && ctx.Tick - backFailedAt < BackRetryTicks)
 			return false;
 		if (backToArena == null) {
-			ctx.Log.Info($"Boss fight: off the arena at {n}, walking back");
-			// Onto the arena's floor anywhere, the same test as "off" above: a goal near its middle was "reached" from below
-			// the floor, and every tick the next walk began. Seen in game (measured run U11cp): knocked down to (2084,272),
-			// 5 rows under the floor and within 6 tiles of the middle, "off the arena, walking back" 6460 times while the Eye
-			// of Cthulhu killed the bot.
-			backToArena = new WalkToSkill(new GoalStandOnRow(standY, x0, x1, ctx.Physics)) { Quiet = true };
+			ctx.Log.Info(Arena != null ? $"Boss fight: off the arena at {n}, walking back" : $"Boss fight: off {place} at {n}, walking back");
+			backToArena = new WalkToSkill(goal()) { Quiet = true };
 			backToArena.Start(ctx);
 		}
 		return WalkBack(ctx);
@@ -373,7 +413,7 @@ public sealed class BossFightSkill : ISkill
 	private bool WalkBack(BotContext ctx)
 	{
 		SkillStatus s = backToArena.Tick(ctx);
-		State = "walking back to the arena";
+		State = $"walking back to {(Arena != null ? "the arena" : "where the fight began")}";
 		if (s == SkillStatus.Failed)
 			backFailedAt = ctx.Tick;
 		if (s != SkillStatus.Running) {

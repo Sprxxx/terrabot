@@ -91,12 +91,13 @@ public class EvilBossTests
 		Assert.True(eye.NightOnly);
 		Assert.False(eye.InEvilBiome);
 		// Then (a) the Demon Bow and (b) unholy arrows from the bag, (c) the chunks, (f) the powder (its mushrooms and bottle
-		// come from its recipe), (g) Worm Food, (h) the fight.
-		Assert.Equal(new[] { "bow", "arrows", "max life", "demon bow", "unholy arrows", "rotten chunks", "vile powder", "worm food", "Eater of Worlds" },
-			evil.Skip(boss.Count).Select(n => n.Label));
-		Assert.All(evil.Skip(boss.Count).Take(8), n => Assert.Equal(FakeGame.EowHead, Assert.IsType<PrepFor>(n).BossNpc));
+		// come from its recipe), (g) Worm Food, (h) the arena in the corruption, (i) the fight.
+		Assert.Equal(new[] { "bow", "arrows", "max life", "demon bow", "unholy arrows", "rotten chunks", "vile powder", "worm food",
+			ProgressionPlanner.EvilArenaLabel, "Eater of Worlds" }, evil.Skip(boss.Count).Select(n => n.Label));
+		Assert.All(evil.Skip(boss.Count).Take(9), n => Assert.Equal(FakeGame.EowHead, Assert.IsType<PrepFor>(n).BossNpc));
 		Assert.IsType<FromBag>(((PrepFor)evil[boss.Count + 3]).Inner);
 		Assert.IsType<FromBag>(((PrepFor)evil[boss.Count + 4]).Inner);
+		Assert.True(Assert.IsType<ArenaBuilt>(((PrepFor)evil[boss.Count + 8]).Inner).InEvilBiome);
 		BossDefeated eater = Eater;
 		Assert.Equal((FakeGame.EowHead, FakeGame.WormFood), (eater.Npc, eater.SummonItem));
 		Assert.Equal(new[] { FakeGame.EowBody, FakeGame.EowTail }, eater.Minions);
@@ -183,14 +184,92 @@ public class EvilBossTests
 		g.Items[FakeGame.RottenChunk] = 0;
 		g.Items[FakeGame.WormFood] = 1;
 
-		// (h) The fight, here in the corruption, by day.
-		s = Next(p, ctx);
-		var fight = Assert.IsType<BossFightSkill>(s);
+		// (h) The arena in the corruption, built.
+		BuildTheEvilArena(g, ctx, p);
+
+		// (i) The fight, on it, by day.
+		var fight = FightNext(g, ctx, p);
 		Assert.Equal((FakeGame.WormFood, FakeGame.EowHead), (fight.SummonItem, fight.BossType));
 		Assert.Equal(new[] { FakeGame.EowBody, FakeGame.EowTail }, fight.MinionTypes);
+		Assert.Equal(p.EvilArenaBounds(ctx), fight.Arena);
 		g.BossesDefeated.Add(FakeGame.EowHead);
 		Assert.Null(Next(p, ctx));
 		Assert.True(p.Complete, p.Status);
+	}
+
+	/// <summary>The plan's next job is the arena in the corruption: built in the fake, and the plan told it is done.</summary>
+	private BuildSkill BuildTheEvilArena(FakeGame g, BotContext ctx, ProgressionPlanner p)
+	{
+		g.Items[FakeGame.DirtBlock] = 40;
+		g.Items[FakeGame.Torch] = 10;
+		g.Items[FakeGame.Campfire] = 1;
+		ISkill s = Next(p, ctx);
+		var build = Assert.IsType<BuildSkill>(s);
+		Assert.True(build.Blueprint.InEvilBiome, build.Describe());
+		Assert.False(build.Blueprint.IsHouse);
+		Assert.Equal(build.Origin, p.EvilArenaSite);
+		var mid = new TilePos(build.Origin.X + build.Blueprint.Width / 2, build.Origin.Y + build.Blueprint.StandRow);
+		Assert.True(ctx.InEvilBiome(mid), $"the arena's middle {mid} is not on the corruption's ground");
+		Assert.True(ctx.CorruptionAround(mid) >= BotContext.CorruptionZoneTiles, $"{ctx.CorruptionAround(mid)} corruption tiles round {mid}");
+		SkillStatus built = EarlyGameTests.RunSkill(g, ctx, build, 60 * 60 * 4);
+		output.WriteLine($"build: {built} {build.FailureReason}");
+		Assert.Equal(SkillStatus.Succeeded, built);
+		p.OnSkillFinished(build, built, ctx);
+		build.Stop(ctx);
+		g.Refresh(ctx);
+		Assert.True(ProgressionPlanner.ArenaReady(ctx, build.Blueprint, build.Origin));
+		return build;
+	}
+
+	/// <summary>The plan's next job, the boss fight: from the arena's middle if the plan first walks there.</summary>
+	private BossFightSkill FightNext(FakeGame g, BotContext ctx, ProgressionPlanner p)
+	{
+		ISkill s = Next(p, ctx);
+		if (s is WalkToSkill && p.EvilArenaBounds(ctx) is (int x0, int x1, int y)) {
+			MoveTo(g, ctx, (x0 + x1) / 2, y);
+			s = Next(p, ctx);
+		}
+		return Assert.IsType<BossFightSkill>(s);
+	}
+
+	[Fact]
+	public void WithTheWormFoodInHand_AnArenaIsBuiltInTheCorruption_AndTheWormIsFoughtOnIt()
+	{
+		// Measured runs M10e and M10j: summoned where the Worm Food was made (a pocket 130 rows down), then on the corruption's
+		// open ground at (1874,291): "no room to run from the worm's head" 20 and 11 times; killed in the pocket, and on the
+		// open ground run down a chasm into water at (1921,358), the worm lost. Spec G9: a long flat floor on the corruption's
+		// surface, built in advance, where the zone holds at its middle.
+		FakeGame g = CorruptWorld();
+		var (ctx, p) = AfterTheEye(g);
+		g.Items[FakeGame.WormFood] = 1;
+		BuildSkill build = BuildTheEvilArena(g, ctx, p);
+		Assert.NotEqual(p.ArenaSite, p.EvilArenaSite); // its own memory, not the Eye's arena by the house
+
+		BossFightSkill fight = FightNext(g, ctx, p);
+		var (x0, x1, standY) = Assert.IsType<(int, int, int)>(fight.Arena);
+		Assert.Equal((build.Origin.X + 1, build.Origin.X + build.Blueprint.Width - 2, build.Origin.Y + build.Blueprint.StandRow), (x0, x1, standY));
+		Assert.True(x1 - x0 + 1 >= 60, "the spec's 60 tiles at least");
+		Assert.Equal(standY, ctx.Node.Y);
+	}
+
+	[Fact]
+	public void WhileTheWormIsUp_OutOfSight_ThePlanStaysOnTheFight_NotOnANewWormFood()
+	{
+		// Measured run M10j: after "surfacing (pausing Boss)" from a chasm's water, the worm out of view (8597 of 10050 on its
+		// bar), the plan went on to a work bench and arrows, then "need 6 more Vile Mushroom" for a new Worm Food.
+		FakeGame g = CorruptWorld();
+		var (ctx, p) = AfterTheEye(g);
+		MoveTo(g, ctx, InTheCorruption.X, Feet);
+		g.Items[FakeGame.WoodenArrow] = 10; // the arrow stock low, as after a fight: no refill now
+		g.BossBars[FakeGame.EowHead] = 8597;
+		g.Refresh(ctx);
+		ISkill s = Next(p, ctx);
+		var fight = Assert.IsType<BossFightSkill>(s);
+		Assert.Equal(FakeGame.EowHead, fight.BossType);
+		// The fight takes up the wait: no second summon with no Worm Food (the fake sets no bow stats: a bow in hand).
+		ctx.Combat.HasRanged = true;
+		Assert.Equal(SkillStatus.Running, fight.Tick(ctx));
+		Assert.Equal("", fight.FailureReason);
 	}
 
 	[Fact]

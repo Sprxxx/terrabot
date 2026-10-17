@@ -482,6 +482,22 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		_ => false,
 	};
 
+	/// <summary>
+	/// The boss bar's life: for the Eater of Worlds the sum over every active head, body and tail, as its bar counts them
+	/// (EaterOfWorldsProgressBar.cs:34-41, at any distance); for another boss the life of its active NPCs.
+	/// </summary>
+	public int BossBarLife(int npcType)
+	{
+		bool worm = npcType == NPCID.EaterofWorldsHead;
+		int life = 0;
+		for (int i = 0; i < Main.maxNPCs; i++) {
+			NPC n = Main.npc[i];
+			if (n.active && (worm ? n.type == NPCID.EaterofWorldsHead || n.type == NPCID.EaterofWorldsBody || n.type == NPCID.EaterofWorldsTail : n.type == npcType))
+				life += n.life;
+		}
+		return life;
+	}
+
 	public bool HasWall(int x, int y) => WorldGen.InWorld(x, y, 1) && Main.tile[x, y].WallType > WallID.None;
 
 	/// <summary>Mirror of the conditions in Player.PlaceThing_Walls (range aside): no wall yet, a tile or wall on a 4-neighbour.</summary>

@@ -62,6 +62,13 @@ public sealed class Blueprint
 	public int MaxEdits { get; init; } = SiteFinder.MaxEdits;
 	/// <summary>How far (columns) <see cref="SiteFinder"/> looks for a site.</summary>
 	public int SearchRadius { get; init; } = SiteFinder.SearchRadius;
+	/// <summary>
+	/// An arena for the evil biome's boss: wanted IN the evil biome, so <see cref="SiteFinder.Score"/> inverts its evil-site
+	/// cost (a site whose middle is off the biome and out of the Corruption zone costs <see cref="SiteFinder.EvilStepFactor"/>
+	/// times as much, one in it the plain cost). Worm Food works only in the zone (Player.cs:43462) and the worm dives and
+	/// despawns once no player is in it (NPC.cs:55436-55481): an arena off it is of no use for that fight.
+	/// </summary>
+	public bool InEvilBiome { get; init; }
 
 	public Blueprint(string name, string[] rows, IReadOnlyList<PlanItem> items, TilePos inside, TilePos outsideStand, int wallItem)
 	{
@@ -152,8 +159,11 @@ public sealed class Blueprint
 	///   ...t...........CCC.....t..   y6  torches and the campfire on the floor
 	///   ##########################   y7  floor (pits filled)
 	/// </code>
+	/// The same arena serves the Eater of Worlds (<paramref name="inEvilBiome"/>, <see cref="InEvilBiome"/>): the guides fight
+	/// it from a long flat floor on the corruption's surface, kiting sideways as it arcs out of the ground (docs M10_SPEC.md
+	/// section 4 and G9, at least 60 tiles; this one is 96).
 	/// </summary>
-	public static Blueprint Arena(GameIds ids, int width = ArenaWidth, int searchRadius = ArenaSearchRadius)
+	public static Blueprint Arena(GameIds ids, int width = ArenaWidth, int searchRadius = ArenaSearchRadius, bool inEvilBiome = false)
 	{
 		var rows = new string[ArenaClearance + 1];
 		for (int y = 0; y < ArenaClearance; y++)
@@ -169,8 +179,9 @@ public sealed class Blueprint
 		for (int x = ArenaTorchSpacing / 2; x < width; x += ArenaTorchSpacing)
 			if (x < mid - 2 || x > mid + 2)
 				items.Add(new PlanItem(ids.Torch, x, top, 1, 1));
-		return new Blueprint("boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
+		return new Blueprint(inEvilBiome ? "boss arena in the evil biome" : "boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
 			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, RebuildBlocks = true, MaxEdits = 600, SearchRadius = searchRadius,
+			InEvilBiome = inEvilBiome,
 		};
 	}
 
