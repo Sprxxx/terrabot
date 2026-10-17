@@ -80,6 +80,8 @@ public sealed class Scenario
 	public int MaxLife { get; init; }
 	/// <summary>Clear the world's "boss defeated" flags (throw-away copy of the world).</summary>
 	public bool ResetBosses { get; init; }
+	/// <summary>Clear NPC.downedBoss3 (throw-away copy of the world): the Old Man stays, Skeletron can be summoned.</summary>
+	public bool ResetSkeletron { get; init; }
 	/// <summary>Armour to wear (head, body, legs item types), empty = none.</summary>
 	public int[] Wear { get; init; } = System.Array.Empty<int>();
 	/// <summary>Main.time at the start for a day scenario (27000 = mid-morning; 0 = dawn, 15 minutes of daylight).</summary>
@@ -175,6 +177,15 @@ public sealed class Scenario
 		}
 		return Grid(Repeat(new string('.', width), 14), "..S" + new string('.', width - 3), new string(',', width), new string('#', width),
 			stone.Select(r => new string(r)).ToArray(), new string('@', width));
+	}
+
+	/// <summary>The bow bot's kit for Skeletron (spec S1): the Demon Bow, 999 unholy arrows, 10 healing potions, a recall potion.</summary>
+	private static void SkeletronKit(Terraria.Player p)
+	{
+		p.inventory[3] = new Terraria.Item(Terraria.ID.ItemID.DemonBow);
+		p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.UnholyArrow, 999);
+		p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.HealingPotion, 10);
+		p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.RecallPotion, 1);
 	}
 
 	private static string Max(RunResult r, int expected, int actual, string what) =>
@@ -567,6 +578,53 @@ public sealed class Scenario
 				},
 				TimeoutTicks = 60 * 60 * 8,
 				Check = r => !r.EyeDefeated ? "the Eye of Cthulhu was not defeated" : null,
+			},
+			new() {
+				// Milestone 11 (docs M11_SPEC.md, the cheap synthetic scenarios): the Old Man two tiles off at night, the fight's
+				// summon is his Curse button (ChatButtonSkill, TerrariaGameInfo.PressFirstChatButton). Passes once the head is up.
+				Name = "oldman_curse",
+				Rows = Grid(Repeat(new string('.', 40), 12), "..........S..E.........................", new string('@', 40)),
+				Mode = "skeletron",
+				Night = true,
+				ResetSkeletron = true,
+				EnemyType = Terraria.ID.NPCID.OldMan,
+				Pickaxe = false,
+				Inventory = SkeletronKit,
+				ExpectSuccess = false,
+				FinishOnLog = "Boss fight: Skeletron is here",
+				TimeoutTicks = 60 * 30,
+				Check = r => !r.LogHas("Chat: pressed") ? "the Curse button was not pressed" : !r.LogHas("Skeletron is here") ? "no Skeletron after the Curse" : null,
+			},
+			new() {
+				// The same by day: no Curse button (Main.cs:51819-51825), nothing spawns, the fight fails at once.
+				Name = "oldman_curse_day",
+				Rows = Grid(Repeat(new string('.', 40), 12), "..........S..E.........................", new string('@', 40)),
+				Mode = "skeletron",
+				ResetSkeletron = true,
+				EnemyType = Terraria.ID.NPCID.OldMan,
+				Pickaxe = false,
+				Inventory = SkeletronKit,
+				ExpectSuccess = false,
+				TimeoutTicks = 60 * 30,
+				Check = r => !r.LogHas("no Curse button by day") ? "no \"no Curse button by day\" refusal" : r.LogHas("Skeletron is here") ? "Skeletron came by day" : null,
+			},
+			new() {
+				// Skeletron on a flat 170-tile floor at nightfall, the head spawned 16 rows over the bot (about its hover, 250 px
+				// over the player's top): the Demon Bow and unholy arrows, iron armour, 200 life, healing potions. Measures the
+				// fight's length and the hits taken, and tunes SkeletronPattern and the dodge against the hands' 18 and 17 px/tick.
+				Name = "fight_skeletron",
+				Rows = Grid(Repeat(new string('.', 170), 4), Set(new string('.', 170), 85, 'E'), Repeat(new string('.', 170), 15),
+					Set(new string('.', 170), 85, 'S'), new string('@', 170)),
+				Mode = "skeletron",
+				Night = true,
+				ResetSkeletron = true,
+				EnemyType = Terraria.ID.NPCID.SkeletronHead,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Pickaxe = false,
+				Inventory = SkeletronKit,
+				TimeoutTicks = 60 * 60 * 9,
+				Check = r => !r.SkeletronDefeated ? "Skeletron was not defeated" : null,
 			},
 			new() {
 				// Milestone 7: max life 100 -> 200 from five life crystals in stone pockets below the surface.

@@ -260,6 +260,8 @@ public sealed class SelfTestSystem : ModSystem
 					p.ConsumedLifeFruit = 0;
 					p.statLifeMax = s.MaxLife;
 				}
+				if (s.ResetSkeletron)
+					NPC.downedBoss3 = false;
 				if (s.ResetBosses) {
 					NPC.downedBoss1 = false;
 					NPC.downedSlimeKing = false;
@@ -311,6 +313,12 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (s.Mode == "chop") {
 					bot.Brain.StartSkill(new Bot.Skills.GatherWoodSkill(Terraria.ID.ItemID.Wood, 5), bot.Context);
+				}
+				else if (s.Mode == "skeletron") {
+					// Skeletron's fight (Milestone 11): summoned by the Old Man's Curse button unless the head is up already.
+					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(0, NPCID.SkeletronHead, NPCID.SkeletronHand) {
+						Summon = () => new Bot.Skills.ChatButtonSkill(NPCID.OldMan, "Old Man"),
+					}, bot.Context);
 				}
 				else if (s.Mode == "boss") {
 					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.SuspiciousLookingEye, NPCID.EyeofCthulhu, NPCID.ServantofCthulhu), bot.Context);
