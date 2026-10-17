@@ -457,8 +457,14 @@ public class WallOfFleshPlanTests
 		Assert.Null(p.ResolveForTest(need, ctx));
 		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("max life for the wall") && l.Contains("not met; the plan goes on without it"));
 		ctx.Tick += 100;
-		Assert.Null(p.ResolveForTest(need, ctx)); // let go for a day
-		ctx.Tick += ProgressionPlanner.BestEffortRetryTicks;
-		Assert.NotNull(p.ResolveForTest(need, ctx)); // and taken up again
+		Assert.Null(p.ResolveForTest(need, ctx)); // let go
+		// world_wof M12d: let go for a fixed day, it came back 13 game hours into the descent's stages (the hellevator begun)
+		// and sent the bot crystal hunting again. It stays let go however long the stages after it take...
+		ctx.Tick += 3 * 24 * 3600;
+		Assert.Null(p.ResolveForTest(need, ctx));
+		// ...until a death says it was wanted after all.
+		ctx.Deaths++;
+		Assert.NotNull(p.ResolveForTest(need, ctx));
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("a death since it was let go"));
 	}
 }

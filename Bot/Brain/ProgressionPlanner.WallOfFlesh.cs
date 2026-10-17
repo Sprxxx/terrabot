@@ -182,7 +182,7 @@ public sealed partial class ProgressionPlanner
 		// at 200 life the bot died to an eye laser with the Wall at 1961, its damage 40.1 a second (enough), 19 hits for 336.
 		// Surface prep (BeforeTheUnderworld): a run resumed down there, or a bridge built, is not sent back up for crystals; a death
 		// there respawns it at the spawn, and the crystals come then. The earlier bosses' 200 is a must; the rest up to 400 for a
-		// game day at most (BestEffort): fight_wof_150 on Classic won 2 of 3 at 400, 0 of 1 at 200 and at 300 (the Wall at 331 and
+		// game day at most, then not again until a death (BestEffort): fight_wof_150 on Classic won 2 of 3 at 400, 0 of 1 at 200 and at 300 (the Wall at 331 and
 		// 332 when the bot died), but world_wof M12c found no crystal near home in three game days and the Wall was never reached.
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new LifeAtLeast(BossLife, "max life")));
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new BestEffort(new LifeAtLeast(MaxCrystalLife, "max life for the wall"), WofLifeTicks)));

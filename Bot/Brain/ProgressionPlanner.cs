@@ -130,7 +130,7 @@ public sealed record FromBag(HaveItem Inner) : Need(Inner.Label);
 public sealed record BeforeTheUnderworld(Need Inner) : Need(Inner.Label);
 
 /// <summary>
-/// <see cref="Inner"/> worked on for <see cref="MaxTicks"/> at most, then let go for a game day (logged): a comfort the plan is
+/// <see cref="Inner"/> worked on for <see cref="MaxTicks"/> at most, then let go until the next death (logged): a comfort the plan is
 /// better with but goes on without, as more max life before a boss when the world's crystals near home are gone.
 /// </summary>
 public sealed record BestEffort(Need Inner, int MaxTicks) : Need(Inner.Label);
@@ -516,34 +516,42 @@ public sealed partial class ProgressionPlanner
 		yield return new BossDefeated(boss, ids.BloodySpine, new[] { ids.Creeper }, "Brain of Cthulhu") { NightOnly = false, InEvilBiome = true };
 	}
 
-	/// <summary>How long a <see cref="BestEffort"/> need given up on is left alone (a game day).</summary>
-	public const int BestEffortRetryTicks = 24 * 3600;
-	/// <summary>Per best-effort need (its label): when work on it began, and when it was last given up on.</summary>
-	private readonly Dictionary<string, (long Began, long GaveUp)> bestEffort = new();
+	/// <summary>
+	/// Per best-effort need (its label): when work on it began, and the death count it was given up at (-1: not given up). A need
+	/// let go stays let go until the bot dies again: what comes after it (the descent, the bridge, the fight) is then tried without
+	/// it, and only a death says it was wanted after all. Seen in game (world_wof M12d, Peppe): let go for a fixed game day, it
+	/// came back 13 game hours into the next stages, the hellevator just begun (day 3 +7h51), and took the plan back to a
+	/// fruitless crystal search for another day.
+	/// </summary>
+	private readonly Dictionary<string, (long Began, int GaveUpAtDeaths)> bestEffort = new();
 
 	private ISkill ResolveBestEffort(BestEffort be, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
-		var (began, gaveUp) = bestEffort.GetValueOrDefault(be.Label, (long.MinValue, long.MinValue / 2));
-		if (ctx.Tick - gaveUp < BestEffortRetryTicks && ctx.Tick >= gaveUp)
-			return null;
+		var (began, gaveUpAt) = bestEffort.GetValueOrDefault(be.Label, (long.MinValue, -1));
+		if (gaveUpAt >= 0) {
+			if (ctx.Deaths <= gaveUpAt)
+				return null;
+			ctx.Log.Info($"Auto: {be.Label}: a death since it was let go; worked on again");
+			(began, gaveUpAt) = (long.MinValue, -1);
+		}
 		ISkill s = Resolve(be.Inner, claims, depth, ctx);
 		if (s == null || stuck != null) {
 			bestEffort.Remove(be.Label); // met (or stuck: the plan's own trouble, left to it)
 			if (stuck != null) {
 				ctx.Log.Info($"Auto: {be.Label} is not to be had now ({stuck}); the plan goes on without it");
 				stuck = null;
-				bestEffort[be.Label] = (long.MinValue, ctx.Tick);
+				bestEffort[be.Label] = (long.MinValue, ctx.Deaths);
 			}
 			return null;
 		}
 		if (began == long.MinValue)
 			began = ctx.Tick;
 		if (ctx.Tick - began > be.MaxTicks) {
-			ctx.Log.Info($"Auto: {be.Label}: {be.MaxTicks / 3600} game hours on it, not met; the plan goes on without it for a day");
-			bestEffort[be.Label] = (long.MinValue, ctx.Tick);
+			ctx.Log.Info($"Auto: {be.Label}: {be.MaxTicks / 3600} game hours on it, not met; the plan goes on without it until a death");
+			bestEffort[be.Label] = (long.MinValue, ctx.Deaths);
 			return null;
 		}
-		bestEffort[be.Label] = (began, gaveUp);
+		bestEffort[be.Label] = (began, -1);
 		return s;
 	}
 
