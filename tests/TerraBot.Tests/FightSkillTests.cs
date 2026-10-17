@@ -92,6 +92,42 @@ public class FightSkillTests
 	private static EntityInfo Enemy(float x, float y, int life) =>
 		new(7, 1, "Test Slime", x, y, 24, 24, 0, 0, life, 60, 10);
 
+	/// <summary>world_wof E10 (2026-10-17): nine Demon sickles taken standing still ("[waiting for it in the open]"), two deaths on the bridge.</summary>
+	[Fact]
+	public void AShotFlyingAtTheBot_IsDodged_InAnOrdinaryFight()
+	{
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		PhysicsParams p = ctx.Physics;
+		float bx = ctx.Body.X, by = ctx.Body.Y;
+		// A Demon 14 tiles off that stays put (a flier: waited for in the open), and its sickle at the feet 10 tiles off, flying at the bot.
+		g.ExtraHostiles.Add(new EntityInfo(9, 62, "Demon", bx + 14 * 16f, by - 16f, 38, 54, 0f, 0f, 120, 120, 30, 2));
+		float sx = bx + 10 * 16f, sy = by + p.Height - 20f;
+		var skill = new FightSkill();
+		skill.Start(ctx);
+		int hits = 0;
+		bool jumped = false;
+		for (int t = 0; t < 120; t++) {
+			g.Shots.Clear();
+			if (sx > -500f)
+				g.Shots.Add(new ShotInfo(100, 44, sx, sy, 16, 16, -6f, 0f, 36, false));
+			g.Refresh(ctx);
+			if (skill.Tick(ctx) != SkillStatus.Running)
+				break;
+			jumped |= ctx.Output.Jump;
+			g.Step(ctx);
+			sx -= 6f;
+			if (sx < ctx.Body.X + p.Width && sx + 16f > ctx.Body.X && sy < ctx.Body.Y + p.Height && sy + 16f > ctx.Body.Y) {
+				hits++;
+				sx = -1000f; // the sickle is spent
+			}
+		}
+		output.WriteLine($"hits {hits}, jumped {jumped}, dodges {skill.Dodges}: {skill.Describe()}");
+		Assert.True(skill.Dodges > 0, "no dodge planned");
+		Assert.Equal(0, hits);
+	}
+
 	[Fact]
 	public void BadlyHurt_WithoutPotions_RetreatsInsteadOfFighting()
 	{

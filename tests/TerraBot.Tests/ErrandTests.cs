@@ -216,6 +216,35 @@ public class ErrandTests
 		Assert.True(brain.Planner.UnderworldReachedOnce, brain.Describe());
 	}
 
+	/// <summary>world_wof E10 (2026-10-17): a chest in the deck's cell stopped the bridge three times and blocked the errand. Looted, then mined.</summary>
+	[Fact]
+	public void AChestInTheBridgesWay_IsLooted_ThenMined_AndNoFailureIsCounted()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 40000, () => access.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill);
+		var bridge = Assert.IsType<HellbridgeSkill>(brain.Work);
+		// A ruined house's chest 8 columns on, its bottom row in the deck's row (a chest is 2 by 2, its top-left a row up).
+		int cx = bridge.FromX + 8 * bridge.Dir;
+		var topLeft = new TilePos(cx, bridge.Row - 1);
+		g.Chests[topLeft] = new List<(int, int)> { (FakeGame.HealingPotion, 2) };
+		foreach (int x in new[] { cx, cx + 1 })
+			g.Furniture[new TilePos(x, bridge.Row)] = 21;
+		int potions = g.Count(FakeGame.HealingPotion);
+		// Looted (as an opportunity on the way, or by the errand when the bridge stops at it), then mined empty, and the bridge goes on.
+		Run(g, ctx, brain, 20000, () => ctx.OpenedChests.Contains(topLeft));
+		Assert.Contains(topLeft, ctx.OpenedChests);
+		Assert.Equal(potions + 2, g.Count(FakeGame.HealingPotion));
+		Assert.Contains(log.Lines, l => l.Contains("looting the chest at " + topLeft) || l.Contains("taking the Chest at " + topLeft));
+		Run(g, ctx, brain, 20000, () => HellbridgeSkill.Built(g.Grid, bridge.Row, cx + 1));
+		Assert.True(HellbridgeSkill.Built(g.Grid, bridge.Row, cx + 1), brain.Describe());
+		Assert.Same(access, brain.Errand);
+		Assert.Equal(0, access.PhaseFailures);
+		Assert.Empty(brain.Planner.ErrandOutcomes);
+	}
+
 	[Fact]
 	public void ArrowsShot_DoNotResupply_UntilTheFightsDemandIsShort()
 	{

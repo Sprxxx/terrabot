@@ -249,6 +249,10 @@ public sealed class GameIds
 	public int Wood { get; init; }
 	public int WorkBenchItem { get; init; }
 	public int WorkBenchTile { get; init; }
+	/// <summary>Chests (vanilla TileID.Containers, Containers2) and dressers: the game keeps one with items in it (WorldGen.KillTile: Chest.DestroyChest refuses).</summary>
+	public int ChestTile { get; init; } = 21;
+	public int ChestTile2 { get; init; } = 467;
+	public int DresserTile { get; init; } = 88;
 	public int WoodenSword { get; init; }
 	public int WoodenHammer { get; init; }
 	public int Acorn { get; init; }

@@ -48,6 +48,8 @@ public sealed class HellbridgeSkill : ISkill
 	public int End { get; private set; }
 	/// <summary>The cell the bridge stopped at because nothing it has mines it (hellstone, hellstone brick), once it has.</summary>
 	public TilePos? Blocker { get; private set; }
+	/// <summary>A chest in the deck's cell the bridge stopped at: the game keeps it until it is looted empty (the errand loots it, then the bridge goes on).</summary>
+	public TilePos? Chest { get; private set; }
 	/// <summary>Blocks placed and cells mined by this instance.</summary>
 	public int Placed { get; private set; }
 	public int Mined { get; private set; }
@@ -71,7 +73,7 @@ public sealed class HellbridgeSkill : ISkill
 
 	public void Start(BotContext ctx)
 	{
-		End = BridgeEnd(ctx.Grid, Row, FromX, ToX);
+		End = BridgeEnd(ctx.Grid, Row, FromX, ToX, ctx);
 		ctx.Log.Info($"Hellbridge start: row {Row} from x {FromX} to {ToX} ({Math.Abs(ToX - FromX)} tiles), built to {End}, "
 			+ $"{(ctx.Inventory != null ? ctx.Inventory.CountAny(ctx.Ids.BuildingBlocks) + ctx.Inventory.Count(ctx.Ids.AshBlock) : 0)} blocks carried");
 	}
@@ -90,12 +92,32 @@ public sealed class HellbridgeSkill : ISkill
 	/// The last column of the bridge going from <paramref name="fromX"/> toward <paramref name="toX"/> (the start itself if the next
 	/// is not): its cell in the row solid and the body's rows over it open (<see cref="Built"/>).
 	/// </summary>
-	public static int BridgeEnd(ITileGrid g, int row, int fromX, int toX)
+	public static int BridgeEnd(ITileGrid g, int row, int fromX, int toX, BotContext ctx = null)
 	{
 		int dir = toX >= fromX ? 1 : -1, x = fromX;
-		while (x != toX && Built(g, row, x + dir))
+		while (x != toX && (Built(g, row, x + dir) || Passable(ctx, g, row, x + dir)))
 			x += dir;
 		return x;
+	}
+
+	/// <summary>
+	/// A column the bridge passes over rather than builds: a locked chest in the deck's cell (a ruined house's Shadow Chest wants a
+	/// Shadow Key, and the game keeps a chest with items in it), standing on a floor one row down, the rows over it open. A chest is
+	/// not solid: the body drops the one row through it and steps up onto the deck beyond. Seen in game (world_wof E10, 2026-10-17):
+	/// "could not mine (3198,1042) (3 tries)", tile 21 at 1050 tiles out, and the errand blocked on it. An unlocked one is looted,
+	/// then mined (<see cref="Chest"/>).
+	/// </summary>
+	public static bool Passable(BotContext ctx, ITileGrid g, int row, int x)
+	{
+		if (ctx?.World == null || !IsContainer(ctx, new TilePos(x, row)) || !g.Get(x, row + 1).CanStandOn())
+			return false;
+		for (int y = row - ClearRows; y < row; y++)
+			if (InTheWay(g.Get(x, y)) && !(y == row - ClearRows && BlockRules.LetsLavaIn(g, new TilePos(x, y))))
+				return false;
+		foreach (ChestInfo c in ctx.World.SeenChests(new TilePos(x, row), 2))
+			if (x - c.TopLeft.X is 0 or 1 && row - c.TopLeft.Y is 0 or 1)
+				return c.Locked;
+		return false;
 	}
 
 	/// <summary>
@@ -117,7 +139,17 @@ public sealed class HellbridgeSkill : ISkill
 	private static bool InTheWay(CellKind k) => k.IsSolid() || k.IsShaped() || k.IsPlatform() || (k & CellKind.Hazard) != 0;
 
 	/// <summary>The node standing at the end with the body's front column on it (the body is 2 wide: going west, the end is its left column).</summary>
-	private TilePos StandAt(int end) => new((Dir > 0 ? end - 1 : end) - (standBack ? Dir : 0), Row - 1);
+	/// <summary>Where to stand to work on the column past <paramref name="end"/>: on the deck, or in the dip of a column passed over (<see cref="Passable"/>).</summary>
+	private TilePos StandAt(int end, BotContext ctx)
+	{
+		int x = (Dir > 0 ? end - 1 : end) - (standBack ? Dir : 0);
+		if (!Passable(ctx, ctx.Grid, Row, x))
+			return new TilePos(x, Row - 1);
+		// In a passed column's dip the body (20 px, over two columns) must be clear of the deck blocks either side: the run's left column.
+		while (Passable(ctx, ctx.Grid, Row, x - 1))
+			x--;
+		return new TilePos(x, Row);
+	}
 
 	/// <summary>
 	/// Placing the next block failed from the end (<see cref="MaxFailuresPerCell"/> tries): the next tries from a column back (the
@@ -150,8 +182,8 @@ public sealed class HellbridgeSkill : ISkill
 		if (!g.Get(FromX, Row).CanStandOn())
 			return Fail(ctx, $"no ground at the bridge's start ({FromX},{Row})");
 		// From where it ended last tick while that column still stands (a scan of up to 1700 columns a tick otherwise).
-		int scanFrom = End != FromX && (End - FromX) * Dir > 0 && Built(g, Row, End) ? End : FromX;
-		End = BridgeEnd(g, Row, scanFrom, ToX);
+		int scanFrom = End != FromX && (End - FromX) * Dir > 0 && (Built(g, Row, End) || Passable(ctx, g, Row, End)) ? End : FromX;
+		End = BridgeEnd(g, Row, scanFrom, ToX, ctx);
 		LogProgress(ctx);
 		if (End != lastEnd) {
 			standBack = false; // on: from the end again
@@ -162,8 +194,8 @@ public sealed class HellbridgeSkill : ISkill
 			ctx.Log.Info($"Hellbridge done: row {Row} from x {FromX} to {ToX}, {Placed} blocks placed and {Mined} cells mined here");
 			return SkillStatus.Succeeded;
 		}
-		TilePos stand = StandAt(End), n = ctx.Node;
-		bool onBridge = n.Y == Row - 1 && ctx.Body.Grounded && (Dir > 0 ? n.X >= Math.Min(FromX, End) - 1 && n.X <= stand.X : n.X <= Math.Max(FromX, End) && n.X >= stand.X);
+		TilePos stand = StandAt(End, ctx), n = ctx.Node;
+		bool onBridge = n.Y == stand.Y && ctx.Body.Grounded && (Dir > 0 ? n.X >= Math.Min(FromX, End) - 1 && n.X <= stand.X : n.X <= Math.Max(FromX, End) && n.X >= stand.X);
 		if (!onBridge || walk != null) {
 			// Off it (knocked down, a fight took us away, back from the house): a walk to the end.
 			if (walk == null) {
@@ -230,10 +262,17 @@ public sealed class HellbridgeSkill : ISkill
 					return Unmineable(ctx, deck);
 				return Act(ctx, deck, place: false);
 			}
+			// Past a column passed over (a locked chest's), the deck's cell has no block beside it to fix to (vanilla's rule; the chest is
+			// not solid): a support goes in under it first, fixed to the chest's floor, as a player builds out from a floor.
+			var support = new TilePos(c, Row + 1);
+			if (Passable(ctx, g, Row, End) && !g.Get(c, Row).IsSolid() && !g.Get(support.X, support.Y).CanStandOn() && !g.Get(support.X, support.Y).HasLava()
+				&& ctx.Blocks != null && ctx.Blocks.CanPlaceAt(support.X, support.Y))
+				return Act(ctx, support, place: true);
 			return Act(ctx, deck, place: true);
 		}
-		// 3. One tile on.
+		// 3. One tile on (a jump out of a passed column's dip onto the deck).
 		ctx.Output.Horizontal = Dir;
+		ctx.Output.Jump = n.Y >= Row;
 		State = "stepping on";
 		return SkillStatus.Running;
 	}
@@ -328,6 +367,14 @@ public sealed class HellbridgeSkill : ISkill
 			if (f == 1)
 				ctx.Log.Info($"Hellbridge: {(place ? "placing at" : "mining")} {cell} did nothing in {ActionTicks} ticks: the cell reads {ctx.Grid.Get(cell.X, cell.Y)}, "
 					+ $"tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}, us at {ctx.Node} ({ctx.Body.X:0},{ctx.Body.Y:0} px), {ctx.Blocks?.BlockCount ?? 0} blocks on the hotbar");
+			// A chest (a ruined house's) in the deck's cell: the game keeps it while it holds items (WorldGen.KillTile: Chest.DestroyChest
+			// refuses one with items), and the bot has a skill for that, so the errand loots it and the bridge comes back to a cell it
+			// can mine. Seen in game (world_wof E10, 2026-10-17): "could not mine (3198,1042) (3 tries)", tile 21, three times in a row
+			// at x 3197, 1050 tiles out, and the errand blocked on it.
+			if (!place && IsContainer(ctx, cell)) {
+				Chest = cell;
+				return Fail(ctx, $"a chest at {cell} in the bridge's way (tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}): the game keeps it until it is looted empty");
+			}
 			// Escalate rather than repeat: from a column back, then give up (standBack).
 			if (place && f == MaxFailuresPerCell && !standBack) {
 				standBack = true;
@@ -341,7 +388,7 @@ public sealed class HellbridgeSkill : ISkill
 		ctx.Output.Tool = place ? ToolRequest.Block : ToolRequest.Pickaxe;
 		ctx.Output.Aim(cell.X, cell.Y);
 		ctx.Output.UseItem = true;
-		ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(StandAt(End).X, ctx.Physics), ctx.Physics);
+		ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(StandAt(End, ctx).X, ctx.Physics), ctx.Physics);
 		if (occupant == null)
 			State = place ? $"placing {cell}" : $"mining {cell}";
 		return SkillStatus.Running;
@@ -356,6 +403,9 @@ public sealed class HellbridgeSkill : ISkill
 				ctx.Log.Info($"Hellbridge: {p} % (x {End} of {FromX}->{ToX})");
 			}
 	}
+
+	private static bool IsContainer(BotContext ctx, TilePos cell) =>
+		ctx.World?.TileTypeAt(cell.X, cell.Y) is int t && (t == ctx.Ids.ChestTile || t == ctx.Ids.ChestTile2 || t == ctx.Ids.DresserTile);
 
 	private SkillStatus Fail(BotContext ctx, string reason)
 	{

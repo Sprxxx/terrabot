@@ -478,6 +478,57 @@ public class HellTests
 		Assert.Equal(61, stuck.End);
 	}
 
+	/// <summary>
+	/// world_wof E10 (2026-10-17): "could not mine (3198,1042) (3 tries)", tile 21: a ruined house's chest in the deck's cell, which the
+	/// game keeps while it holds items. The bridge says so at the first try, names the cell, and goes on once it is looted empty.
+	/// </summary>
+	[Fact]
+	public void TheHellbridge_StopsAtAChestInItsDeck_SayingItIsLootedFirst_ThenMinesItEmpty()
+	{
+		var (g, ctx) = OnTheTower();
+		var chest = new TilePos(58, BridgeRow);
+		g.Furniture[chest] = 21; // the bottom-left cell of a chest with items: the pickaxe does nothing to it
+		g.Chests[new TilePos(58, BridgeRow - 1)] = new System.Collections.Generic.List<(int, int)> { (FakeGame.HealingPotion, 2) };
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, bridge, 20000));
+		output.WriteLine(bridge.FailureReason);
+		Assert.Equal(chest, bridge.Chest);
+		Assert.Contains("chest", bridge.FailureReason);
+		Assert.DoesNotContain("tries", bridge.FailureReason);
+		// Looted empty (the errand's LootChest): the pickaxe takes it, and the bridge goes on over its cell.
+		g.Chests[new TilePos(58, BridgeRow - 1)].Clear();
+		var again = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, again, 20000));
+		Assert.Null(again.Chest);
+		Assert.True(HellbridgeSkill.Built(g.Grid, BridgeRow, 58));
+	}
+
+	/// <summary>A ruined house's Shadow Chest (locked, kept by the game) in the deck's row, on its floor: passed over, not built, not a stop.</summary>
+	[Fact]
+	public void TheHellbridge_PassesOverALockedChestInItsDeck_StandingInItsDip()
+	{
+		var (g, ctx) = OnTheTower();
+		var topLeft = new TilePos(58, BridgeRow - 1);
+		g.Chests[topLeft] = new System.Collections.Generic.List<(int, int)> { (FakeGame.HealingPotion, 2) };
+		g.LockedChests.Add(topLeft);
+		foreach (int x in new[] { 58, 59 }) {
+			g.Furniture[new TilePos(x, BridgeRow)] = 21;
+			g.Furniture[new TilePos(x, BridgeRow - 1)] = 21;
+			g.Grid.Set(x, BridgeRow + 1, CellKind.Solid); // the house's floor it stands on
+		}
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, bridge, 20000);
+		output.WriteLine($"{s}: {bridge.Describe()} at {g.Sim.Node}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(g.Furniture.ContainsKey(new TilePos(58, BridgeRow)), "the chest left where it is");
+		Assert.Null(bridge.Chest);
+		Assert.False(HellbridgeSkill.Built(g.Grid, BridgeRow, 58));
+		Assert.True(HellbridgeSkill.Passable(ctx, g.Grid, BridgeRow, 58));
+		Assert.Equal(70, HellbridgeSkill.BridgeEnd(g.Grid, BridgeRow, TowerTo, 70, ctx));
+		for (int x = 60; x <= 70; x++)
+			Assert.True(HellbridgeSkill.Built(g.Grid, BridgeRow, x), $"column {x}");
+	}
+
 	[Fact]
 	public void TheHellbridge_ReplacesAHotDeckCell_MinesAHotOneInTheWay_AndSaysWhyItStopsAtHellstone()
 	{

@@ -643,6 +643,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	/// <summary>Chests by top-left tile, with their contents; looted ones are emptied.</summary>
 	public readonly Dictionary<TilePos, List<(int Item, int Stack)>> Chests = new();
+	/// <summary>No chest covering the cell (a chest is 2 by 2 from its top-left) holds an item.</summary>
+	public bool ChestEmptyAt(TilePos cell) => !Chests.Any(kv => cell.X - kv.Key.X is 0 or 1 && cell.Y - kv.Key.Y is 0 or 1 && kv.Value.Any(i => i.Stack > 0));
 	public readonly HashSet<TilePos> LockedChests = new();
 	/// <summary>Item types that are accessories (5 slots).</summary>
 	public readonly HashSet<int> Accessories = new();
@@ -796,8 +798,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				Drops.Add(new DropInfo(nextDropId++, ViciousMushroom, "Vicious Mushroom", 1, cell.X * 16f + 4, FallRow(cell.X, cell.Y) * 16f + 4, 8, 8));
 		}
 		// A pickaxe on a non-solid tile a test lets it take (a pot, a chain in the hellbridge's way): one hit removes it.
+		// A chest (tile 21) as the game has it: kept while it holds items (Chest.DestroyChest refuses), one hit takes it once empty.
 		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int any)
-			&& PickaxeRemoves.Contains(any) && Sim.InToolRange(new TilePos(o.AimX, o.AimY)))
+			&& (PickaxeRemoves.Contains(any) || any == 21 && ChestEmptyAt(new TilePos(o.AimX, o.AimY))) && Sim.InToolRange(new TilePos(o.AimX, o.AimY)))
 			Furniture.Remove(new TilePos(o.AimX, o.AimY));
 		// Using a life crystal: +20 max life up to 400.
 		if (o.Tool == ToolRequest.Item && o.ToolItem == LifeCrystal && o.UseItem && Count(LifeCrystal) > 0 && LifeMax < 400 && ++useTicks >= 30) {

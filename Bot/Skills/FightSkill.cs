@@ -222,6 +222,14 @@ public sealed class FightSkill : ISkill
 
 	public SkillStatus Tick(BotContext ctx)
 	{
+		SkillStatus s = Fight(ctx);
+		if (s == SkillStatus.Running && ctx.BodyIssue == null)
+			DodgeThreats(ctx);
+		return s;
+	}
+
+	private SkillStatus Fight(BotContext ctx)
+	{
 		ctx.Output = MoveInput.None;
 		if (ctx.BodyIssue != null) {
 			State = "paused: " + ctx.BodyIssue;
@@ -358,6 +366,16 @@ public sealed class FightSkill : ISkill
 			// corruption chasm's floor 26 rows and more down ("target (1780,315) -> StandAt(1780,341)"), and dug tunnels to them
 			// at rows 333-340 where no shot was ever clear (45 fights, 0 kills, 13 "out of sight and there is no way to it");
 			// over the chasm at x 1777, three falls to its floor at row 401 killed the bot (801-804 damage).
+			if (ctx.Combat.HasWeapon && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY))
+				HoldAndMeet(ctx, t, dx, dy, reachX, reachY);
+			else
+				WaitInTheOpen(ctx, t, dx);
+			KeepOffEdge(ctx);
+		}
+		else if (Deck is (int dx0, int dx1, _) && (int)MathF.Floor(t.CenterX / 16f) is int tc && (tc < dx0 - DeckSlack || tc > dx1 + DeckSlack)) {
+			// Past the deck's columns (a slime on the Underworld's floor beyond the bridge's end): never chased off it. Shot from the
+			// deck when the arc clears (UseRanged above), met if it comes, else left to the no-closer rule. Seen in game (world_wof E10,
+			// 2026-10-17): "Fight Lava Slime [chasing]" 550 columns past the bridge's end, and a Demon killed the bot on the floor there.
 			if (ctx.Combat.HasWeapon && ClearShot(ctx, cx, cy, t.CenterX, t.CenterY))
 				HoldAndMeet(ctx, t, dx, dy, reachX, reachY);
 			else
@@ -594,6 +612,73 @@ public sealed class FightSkill : ISkill
 			turnOnly = true;
 		}
 		State = "waiting for it in the open";
+	}
+
+	/// <summary>Shots within this many px are threats to the dodge.</summary>
+	public const float ShotThreatPx = 30 * 16f;
+	/// <summary>Hysteresis on the dodge: it starts when the chosen move comes within DodgeStartGap px of a threat, stops once it clears DodgeStopGap.</summary>
+	public const float DodgeStartGap = 16f, DodgeStopGap = 32f;
+	/// <summary>Dodges planned this fight (one per stretch of dodging).</summary>
+	public int Dodges { get; private set; }
+	private bool dodging;
+	private long lastDodgeLog = long.MinValue / 2;
+	private readonly List<Threat> threats = new();
+
+	/// <summary>
+	/// Shots about to hit, dodged by look-ahead: the boss fights' planner (<see cref="Dodge"/>) on the ordinary fight. The move the
+	/// fight chose is simulated <see cref="Dodge.Horizon"/> ticks through the real tiles against every hostile shot closing in (a
+	/// Demon's sickle, a Fire Imp's fireball, spit); about to be hit, the plan hit latest or not at all takes the keys, the weapon still
+	/// aimed and used. Bodies are not threats here: a sword fight meets them (the boss fights dodge bodies, with their own kiting). A
+	/// plan that ends below the deck's floor, or deeper than a safe fall, scores as a hit, so no dodge leaves the bridge. Seen in game
+	/// (world_wof E10, 2026-10-17): "Hurt 36 (projectile type 44) ... vel (0,0) ... [waiting for it in the open]", nine sickles taken
+	/// standing still, two deaths on the bridge.
+	/// </summary>
+	private void DodgeThreats(BotContext ctx)
+	{
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
+		threats.Clear();
+		foreach (ShotInfo s in ctx.Shots)
+			if (s.Damage > 0 && s.DistanceTo(cx, cy) <= ShotThreatPx && WallOfFleshPattern.Incoming(s, cx, cy, Dodge.Horizon))
+				threats.Add(new Threat(s.X, s.Y, s.Width, s.Height, s.VX, s.VY));
+		if (threats.Count == 0) {
+			dodging = false;
+			return;
+		}
+		float minX, maxX, maxBottom;
+		if (Deck is (int x0, int x1, int standY)) {
+			minX = x0 * 16f;
+			maxX = (x1 + 1) * 16f - p.Width;
+			maxBottom = (standY + 2) * 16f;
+		}
+		else {
+			minX = ctx.Body.X - LeashRadius;
+			maxX = ctx.Body.X + LeashRadius;
+			maxBottom = ctx.Body.Y + p.Height + p.SafeFallTiles * 16f;
+		}
+		int immune = (int)Math.Max(0L, BotContext.HurtImmunityTicks - (ctx.Tick - ctx.LastEnemyHitTick) - 1);
+		int chosen = ctx.Output.Horizontal;
+		DodgePlan kept = Dodge.Evaluate(ctx.Body, p, float.PositiveInfinity, minX, maxX, threats, chosen, ctx.Output.Jump ? 1 : 0, Dodge.Horizon, immune, ctx.Grid);
+		if (!kept.Hits && kept.Clearance >= (dodging ? DodgeStopGap : DodgeStartGap)) {
+			dodging = false;
+			return;
+		}
+		DodgePlan best = Dodge.Best(ctx.Body, p, float.PositiveInfinity, minX, maxX, threats, chosen, Dodge.Horizon, immune, ctx.Grid, maxBottom);
+		if (best.Hits && kept.Hits && best.HitTick <= kept.HitTick)
+			return; // nothing better than what the fight chose
+		if (!dodging) {
+			Dodges++;
+			if (ctx.Tick - lastDodgeLog >= 30) {
+				lastDodgeLog = ctx.Tick;
+				ctx.Log.Info($"Fight: dodge {(best.Dir > 0 ? "right" : best.Dir < 0 ? "left" : "stand")}{(best.JumpHold > 0 ? $" + jump {best.JumpHold}" : "")} "
+					+ $"({threats.Count} threat(s); {(kept.Hits ? $"the move chosen is hit in {kept.HitTick} ticks" : $"it passes {kept.Clearance:0} px off")}; "
+					+ $"the dodge {(best.Hits ? $"is hit in {best.HitTick}" : $"clears by {Math.Min(best.Clearance, 999f):0} px")})");
+			}
+		}
+		dodging = true;
+		ctx.Output.Horizontal = best.Dir;
+		ctx.Output.Jump = best.JumpHold > 0;
+		State = "dodging: " + State;
 	}
 
 	/// <summary>The key pressed this tick only turns the body to face the enemy (<see cref="HoldAndMeet"/>, <see cref="WaitInTheOpen"/>).</summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TerraBot.Bot.Brain;
 using TerraBot.Bot.Progression;
 using TerraBot.Bot.Skills;
@@ -187,8 +188,25 @@ public sealed class WallOfFleshErrand : Errand
 	}
 
 	/// <summary>Down there with the bridge known: a fight keeps to the bridge (knocked off it, it walks back first).</summary>
+	/// <summary>
+	/// While the bridge is built, the fight's deck is the part that stands (<see cref="ProgressionPlanner.HellbridgeStanding"/>); for the
+	/// fight and the loot, the whole bridge. Seen in game (world_wof E10, 2026-10-17): with the planned span as the deck, a fight chased
+	/// a Lava Slime 550 columns along the Underworld's floor past the bridge's end at x 2418, a Demon killed the bot there, and the
+	/// bridge made no progress for two game hours meanwhile (the watchdog blocked the errand for it).
+	/// </summary>
 	public override (int MinX, int MaxX, int StandY)? FightDeck(BotContext ctx) =>
-		Phase != PreparePhase && Phase != DescendPhase && DownThere(ctx) && planner is ProgressionPlanner p ? p.HellbridgeArena : null;
+		Phase != PreparePhase && Phase != DescendPhase && DownThere(ctx) && planner is ProgressionPlanner p
+			? Phase == BridgePhase ? p.HellbridgeStanding(ctx) : p.HellbridgeArena
+			: null;
+
+	/// <summary>A chest in the deck's way the bridge stopped at (<see cref="HellbridgeSkill.Chest"/>): looted next, once per cell.</summary>
+	private TilePos? lootChest;
+	private readonly HashSet<TilePos> chestsLooted = new();
+
+	/// <summary>The chest's top-left cell for <see cref="LootChestSkill"/>: the seen chest the cell belongs to (a chest is 2 by 2), else the cell.</summary>
+	private static TilePos ChestTopLeft(BotContext ctx, TilePos cell) =>
+		ctx.World?.SeenChests(cell, 2).Select(c => (TilePos?)c.TopLeft)
+			.FirstOrDefault(tl => cell.X - tl.Value.X is 0 or 1 && cell.Y - tl.Value.Y is 0 or 1) ?? cell;
 
 	/// <summary>
 	/// What each phase still needs: the way down and the bridge, the bridge's blocks; the fight, its arrows. Not the fight's arrows
@@ -296,6 +314,13 @@ public sealed class WallOfFleshErrand : Errand
 			phaseSkill = new BlastOutSkill(new GoalNearTile(past, 3, ctx.Physics));
 			return phaseSkill;
 		}
+		if (lootChest is TilePos ch) {
+			lootChest = null;
+			TilePos topLeft = ChestTopLeft(ctx, ch);
+			Status = $"looting the chest at {topLeft} in the bridge's way";
+			phaseSkill = new LootChestSkill(topLeft);
+			return phaseSkill;
+		}
 		ISkill s = planner.ResolveNeeds(PhaseNeeds(), ctx, out string phaseBlocked);
 		if (phaseBlocked != null) {
 			LastFailure = $"the {Phase} cannot go on: {phaseBlocked}";
@@ -390,6 +415,12 @@ public sealed class WallOfFleshErrand : Errand
 			if (planner is ProgressionPlanner p)
 				p.BridgeBlasted();
 			ctx.Log.Info($"Errand {Id}: the bridge cannot mine {wall} ({why}); a blast through it next ({BlastOutSkill.Carried(ctx).Count} kinds of explosive carried)");
+			return;
+		}
+		// A chest in the deck's way (E10, 2026-10-17): looted first, once per cell; a second stop at the same one is the failure it is.
+		if (skill is HellbridgeSkill { Chest: TilePos chestCell } && status == SkillStatus.Failed && chestsLooted.Add(chestCell)) {
+			lootChest = chestCell;
+			ctx.Log.Info($"Errand {Id}: {why}; looting it next");
 			return;
 		}
 		if (status == SkillStatus.Succeeded)

@@ -205,8 +205,8 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>Where the two halves of the bridge end now (toward the summon end, toward the flight end).</summary>
-	private (int To, int Back) BridgeEnds(BotContext ctx) => (HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo),
-		bridgeBack == bridgeFrom ? bridgeFrom : HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeBack));
+	private (int To, int Back) BridgeEnds(BotContext ctx) => (HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo, ctx),
+		bridgeBack == bridgeFrom ? bridgeFrom : HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeBack, ctx));
 
 	private string HellbridgeText => bridgeKnown ? $"row {bridgeRow}, x {Math.Min(bridgeBack, bridgeTo)}-{Math.Max(bridgeBack, bridgeTo)}" : "none";
 
@@ -552,6 +552,19 @@ public sealed partial class ProgressionPlanner
 
 	/// <summary>The hellbridge as a fight's deck (FightSkill.Deck): its columns and the feet row on it, once known.</summary>
 	public (int MinX, int MaxX, int StandY)? HellbridgeArena => HellbridgeBounds();
+
+	/// <summary>
+	/// The bridge as it stands: from its start to each end as the grid reads them (<see cref="BridgeEnds"/>), and the feet row on it.
+	/// The fight's deck while the bridge is built (WallOfFleshErrand.FightDeck), so no fight follows a target along the Underworld's
+	/// floor past the end.
+	/// </summary>
+	public (int MinX, int MaxX, int StandY)? HellbridgeStanding(BotContext ctx)
+	{
+		if (!bridgeKnown)
+			return null;
+		var (to, back) = BridgeEnds(ctx);
+		return (Math.Min(Math.Min(to, back), bridgeFrom), Math.Max(Math.Max(to, back), bridgeFrom), bridgeRow - 1);
+	}
 
 	/// <summary>The fight's arena: the bridge's columns and the feet row on it.</summary>
 	private (int MinX, int MaxX, int StandY)? HellbridgeBounds() =>

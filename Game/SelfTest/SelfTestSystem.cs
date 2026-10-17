@@ -50,7 +50,9 @@ public sealed class SelfTestSystem : ModSystem
 		// (docs M11_SPEC.md, the proposed scenario), without the walk and the build.
 		"Eater of Worlds defeated", "eow loot collected", "dungeon arena",
 		// Milestone 12's (docs M12_SPEC.md, the proposed scenario): the fight rerun in minutes from the doll at the bridge's end.
-		"underworld reached", "hellbridge", "guide voodoo doll", "Wall of Flesh defeated" };
+		// The bridge's quarter marks too (the user, 2026-10-17: "use checkpoints so testing doesn't take so long"): a run on the
+		// bridge's far half, or the fight, starts with most of the bridge standing.
+		"underworld reached", "hellbridge 25 %", "hellbridge 50 %", "hellbridge 75 %", "hellbridge", "guide voodoo doll", "Wall of Flesh defeated" };
 	/// <summary>
 	/// Where the player stood when a checkpoint was saved (node "x y"), in the checkpoint's folder; selftest.ps1 copies it into
 	/// the test save folder as <see cref="StartFile"/> for a run from that checkpoint (Scenario.ResumeAtCheckpoint).

@@ -32,7 +32,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public static GameIds CreateIds() => new() {
 		Wood = ItemID.Wood,
 		WorkBenchItem = ItemID.WorkBench,
-		WorkBenchTile = TileID.WorkBenches,
+		WorkBenchTile = TileID.WorkBenches, ChestTile = TileID.Containers, ChestTile2 = TileID.Containers2, DresserTile = TileID.Dressers,
 		WoodenSword = ItemID.WoodenSword,
 		WoodenHammer = ItemID.WoodenHammer,
 		Acorn = ItemID.Acorn,
