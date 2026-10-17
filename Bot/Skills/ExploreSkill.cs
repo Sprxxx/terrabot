@@ -94,6 +94,47 @@ public sealed class ExploreSkill : ISkill
 
 	private float BandCost(int y) =>
 		Band is not (int top, int bottom) ? 0f : y < top ? (top - y) * OutOfBandRowCost : y > bottom ? (y - bottom) * OutOfBandRowCost : 0f;
+
+	/// <summary>Exploring down, each row deeper scores this much better (<see cref="DepthScore"/>).</summary>
+	public const float DownPullPerRow = 1.5f;
+
+	/// <summary>
+	/// Each row below the gear's own floor (BotContext.DeepestRow) a leg would end at costs this much: as much as the downward
+	/// pull per row, the other way. A cost, not a ban: exploring a <see cref="Band"/> with a deeper floor of its own
+	/// (<see cref="DeepestRow"/>: a crystal's, MineSkill.ValuableDepthMargin), those rows are still explored when nothing
+	/// above is left, and a crystal there is still mined. Seen in game (measured run U26, the gear's floor row 626, a
+	/// crystal's 726): in the crystal phase 20 of 45 legs went below row 626, and there came 73 of its 81 hurts and all 4
+	/// deaths (rows 720-772, poison spit and a spider cave), but none of the 4 crystals mined (rows 449-567).
+	/// </summary>
+	public const float BelowGearFloorRowCost = DownPullPerRow;
+
+	/// <summary>
+	/// The depth part of a leg's score ending at row <paramref name="y"/> from row <paramref name="fromY"/>, exploring down:
+	/// deeper is better (<see cref="DownPullPerRow"/>) down to the gear's floor, and with a <see cref="Band"/> only down to
+	/// its top: in it what is looked for is as likely at every row (vanilla WorldGen "Life Crystals": each crystal's row drawn
+	/// evenly from the band, AddLifeCrystal setting it on the first solid tile below), so depth there buys nothing, while the
+	/// monsters get worse. Below the gear's own floor each row costs (<see cref="BelowGearFloorRowCost"/>). Seen in game
+	/// (measured run U26): from (2166,567) all 15 legs of one crystal exploration went down, to row 724, and the four deaths
+	/// were at rows 720-772.
+	/// </summary>
+	private float DepthScore(BotContext ctx, int fromY, int y)
+	{
+		int floor = ctx.DeepestRow;
+		int pullTo = Band is (int top, _) ? Math.Min(top, floor) : floor;
+		float score = -(Math.Min(y, pullTo) - Math.Min(fromY, pullTo)) * DownPullPerRow;
+		if (y > floor)
+			score += (y - floor) * BelowGearFloorRowCost;
+		return score;
+	}
+
+	/// <summary>
+	/// The row a leg to <paramref name="t"/> ends at: the walk stands on the first floor below a target in the open
+	/// (WalkToSkill, GoalResolver.StandNear), so digging on into a cave is a drop to its floor. Seen in game (measured run
+	/// U26): "leg 2 to (2101,726) (digging on)" from (2103,706) was a walk to StandAt(2101,760) in a spider cave, 34 rows below
+	/// a crystal's floor (726) and 134 below the gear's (626); wall creepers hurt the bot there 9 times and killed it at
+	/// (2138,748). Likewise (2102,739) to row 760 and (2083,706) to row 729.
+	/// </summary>
+	private static int LegEndRow(BotContext ctx, TilePos t) => GoalResolver.StandNear(ctx.Grid, t, ctx.Physics, ctx.Moves.CanBreak).Feet.Y;
 	public ExploreBias Bias { get; }
 	public int Legs => legs;
 	public string State { get; private set; } = "new";
@@ -389,11 +430,13 @@ public sealed class ExploreSkill : ISkill
 				score += SeenPenalty;
 			if (Math.Sign(o.X - n.X) != heading)
 				score += TurnPenalty;
-			score += BandCost(o.Y);
+			// The depth terms by where the leg ends: in the open, on the floor below (LegEndRow).
+			int endY = LegEndRow(ctx, o);
+			score += BandCost(endY);
 			if (tooDeep)
-				score -= (n.Y - o.Y) * 1.5f; // higher is better
+				score -= (n.Y - endY) * DownPullPerRow; // higher is better
 			else if (Bias == ExploreBias.Down)
-				score -= (o.Y - n.Y) * 1.5f; // deeper is better, as for frontiers
+				score += DepthScore(ctx, n.Y, endY); // as for frontiers
 			if (score < bestScore) {
 				bestScore = score;
 				best = new DigPick(o, visited && seen);
@@ -434,7 +477,7 @@ public sealed class ExploreSkill : ISkill
 					score += TurnPenalty;
 				score += BandCost(y);
 				if (Bias == ExploreBias.Down)
-					score -= (y - n.Y) * 1.5f; // deeper is better
+					score += DepthScore(ctx, n.Y, y); // deeper is better, down to the band (DepthScore)
 				else
 					score += Math.Abs(y - n.Y) * 0.5f; // stay near the surface's height
 				if (score < bestScore) {

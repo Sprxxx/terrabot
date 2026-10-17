@@ -436,18 +436,31 @@ public sealed class MineSkill : ISkill
 	}
 
 	/// <summary>
-	/// Where to walk back to before exploring for a crystal: the deepest spot the crystal search stood at lately
-	/// (BotContext.CrystalSearch; the latest of equals) that is farther than <see cref="ResumeBeyondTiles"/>, not deeper than a
-	/// crystal is gone for, not off limits (a danger zone round a death there: an earlier spot) and not found unreachable.
-	/// Null if none.
+	/// Where to walk back to before exploring for a crystal: the latest spot the crystal search stood at
+	/// (BotContext.CrystalSearch) that is not deeper than a crystal is gone for, not off limits, not found unreachable and not
+	/// within a leg (ExploreSkill.MaxLegTiles) of where the bot was killed lately (BotContext.KilledWithin); of those, one
+	/// at or above the gear's own floor (BotContext.DeepestRow) before one below it, the fewest rows below it first (a cost,
+	/// not a ban). Not the deepest: a crystal is as likely at any row of the band (ExploreSkill.DepthScore). Null if none, or
+	/// if it is within <see cref="ResumeBeyondTiles"/>: the search starts afresh from where the bot is.
+	/// <para>Seen in game (measured run U26, the gear's floor row 626): after each of four deaths at rows 720-772 the bot
+	/// walked back 396-424 tiles to the deepest spot, (2113,682), (2103,706), (2106,706), (2114,683), 39-42 tiles from the
+	/// latest death (outside its 30-tile zone, within one leg of it), and the first legs from there met the same wall
+	/// creepers again.</para>
 	/// </summary>
 	public static TilePos? SearchToResume(BotContext ctx)
 	{
 		int deepest = ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin ? ctx.DeepestRow + ValuableDepthMargin : ctx.DeepestRow;
 		TilePos? best = null;
-		foreach (TilePos c in ctx.CrystalSearch)
-			if ((best == null || c.Y >= best.Value.Y) && c.Y <= deepest && !ctx.OffLimits(c) && !ctx.UnreachableTiles.Contains(c))
+		int bestBelow = int.MaxValue;
+		foreach (TilePos c in ctx.CrystalSearch) { // oldest first: the latest of equals wins
+			if (c.Y > deepest || ctx.OffLimits(c) || ctx.UnreachableTiles.Contains(c) || ctx.KilledWithin(c, ExploreSkill.MaxLegTiles))
+				continue;
+			int below = c.Y > ctx.DeepestRow ? c.Y - ctx.DeepestRow : 0;
+			if (below <= bestBelow) {
 				best = c;
+				bestBelow = below;
+			}
+		}
 		return best is TilePos b && b.ChebyshevTo(ctx.Node) > ResumeBeyondTiles ? best : null;
 	}
 
