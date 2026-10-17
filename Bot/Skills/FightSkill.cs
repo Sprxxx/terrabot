@@ -40,6 +40,11 @@ public sealed class FightSkill : ISkill
 	/// tiles) [chasing]", "Fight Green Slime (37.8 tiles) [out of range]"), 27 kills and new ones falling all the while.
 	/// </summary>
 	public float ChaseWithin { get; init; } = EngageRadius;
+	/// <summary>
+	/// Hunting: enemies of this AI style (the prey) are chased wherever they are; the rest as when defending (ChaseWithin).
+	/// Seen in game (measured run U24): a lens hunt's fight "chasing" a zombie 37.6 tiles off.
+	/// </summary>
+	public int ChaseAiStyle { get; init; } = -1;
 	public const float DefendLeashTiles = 24f;
 	public const int CalmTicks = 90;
 	public const float HealBelow = 0.4f;
@@ -416,7 +421,7 @@ public sealed class FightSkill : ISkill
 			float d = e.DistanceTo(cx, cy);
 			// A ground enemy is engaged (walked to) only within ChaseWithin; farther off it is shot at if the arrow reaches.
 			bool flies = FlyingAiStyles.Contains(e.AiStyle);
-			float engageIt = flies ? engage : Math.Min(engage, ChaseWithin);
+			float engageIt = flies ? engage : e.AiStyle == ChaseAiStyle ? engage : Math.Min(engage, ChaseWithin);
 			if (d <= engageIt)
 				engaged.Add(e.Id); // once engaged, keep fighting it while it stays within the leash
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).

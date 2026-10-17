@@ -634,6 +634,34 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void Hunting_OnlyThePreyIsChasedFarOff_NotAZombieOnTheWay()
+	{
+		// Measured run U24: a lens hunt's fight "chasing" a zombie 37.6 tiles off. The hunt's fight chases its prey (demon eyes,
+		// AI 2) wherever they are; a slime 30 tiles off behind a wall is not it.
+		FakeGame g = EarlyGameTests.Field(80);
+		for (int y = 22; y <= 24; y++)
+			g.Grid.Set(20, y, CellKind.Solid);
+		g.AddSlime(7, 33, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var skill = new FightSkill { Leash = FightSkill.LeashRadius, ChaseAiStyle = FakeGame.DemonEyeAi };
+		g.Refresh(ctx);
+		ctx.Combat.HasRanged = true;
+		skill.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		int t = 0, farthest = ctx.Node.X;
+		for (; t < 60 * 30 && st == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			ctx.Combat.HasRanged = true;
+			st = skill.Tick(ctx);
+			g.Step(ctx);
+			farthest = Math.Max(farthest, ctx.Node.X);
+		}
+		output.WriteLine($"{st} after {t} ticks: {skill.Describe()}, walked to x {farthest}");
+		Assert.True(farthest < 10, $"walked to x {farthest}");
+	}
+
+	[Fact]
 	public void KillsEnemyAhead_OnFlatGround()
 	{
 		var g = ArrayTileGrid.Parse(

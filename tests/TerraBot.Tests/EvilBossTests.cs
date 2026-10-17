@@ -576,6 +576,36 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void AHunt_DoesNotKeepStartingFights_ForPreyTheFightGaveUpOn()
+	{
+		// Measured run U24: a demon eye left "no closer in 600 ticks" (ignored) kept the lens hunt starting fights with no
+		// target, "Fight over: 0 kill(s)" 23 times in 1.5 game hours, 0 of 6 lenses.
+		FakeGame g = EarlyGameTests.Field(80);
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		int bx = ctx.Node.X;
+		g.ExtraHostiles.Add(new EntityInfo(60, 2, "Demon Eye", (bx + 8) * 16f, 18 * 16f, 30, 32, 0, 0, 60, 60, 18, FakeGame.DemonEyeAi));
+		g.Refresh(ctx);
+		ctx.Ignore(60, FightSkill.IgnoreTicks);
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
+		hunt.Start(ctx);
+		int fights = 0;
+		string last = "";
+		for (int t = 0; t < 300; t++) {
+			g.Refresh(ctx);
+			hunt.Tick(ctx);
+			g.Step(ctx);
+			if (hunt.State == "fighting" && last != "fighting")
+				fights++;
+			last = hunt.State;
+		}
+		output.WriteLine($"{hunt.Describe()}; fights begun {fights}");
+		Assert.Equal(0, fights);
+	}
+
+	[Fact]
 	public void ALensHunt_StartedOnTheCorruption_WalksOutOfIt_AwayFromTheBiome()
 	{
 		// Measured run U23: the lens hunts of nights 6 and 7 wandered by the arena site in the corruption and fought eaters of

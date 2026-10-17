@@ -146,7 +146,7 @@ public sealed class HuntSkill : ISkill
 				Begin(ctx, new WalkToSkill(new Core.Pathfinding.GoalNearTile(open, Tolerance, ctx.Physics)) { Quiet = true }, ToOpenGround);
 				return SkillStatus.Running;
 			}
-			Begin(ctx, new FightSkill { Leash = FightSkill.LeashRadius, ChaseWithin = float.MaxValue }, "fighting"); // hunting: the prey is the point
+			Begin(ctx, new FightSkill { Leash = FightSkill.LeashRadius, ChaseAiStyle = AiStyle }, "fighting"); // hunting: the prey is the point
 			return SkillStatus.Running;
 		}
 		if (waitTicks-- > 0) {
@@ -256,7 +256,9 @@ public sealed class HuntSkill : ISkill
 	{
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
-		return ctx.Hostiles.Any(h => h.AiStyle == AiStyle && h.DistanceTo(cx, cy) <= SearchTiles * 16f);
+		// Not prey the fight gave up on (ignored, waited out): seen in game (measured run U24), a demon eye left "no closer in 600
+		// ticks" kept the hunt starting fights that had no target, "Fight over: 0 kill(s)" 23 times in 1.5 game hours.
+		return ctx.Hostiles.Any(h => h.AiStyle == AiStyle && h.DistanceTo(cx, cy) <= SearchTiles * 16f && ctx.Fightable(h.Id, h.DistanceTo(cx, cy)) && !ctx.WaitedOut(h.Id));
 	}
 
 	private void Begin(BotContext ctx, ISkill skill, string state)
