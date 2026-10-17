@@ -37,7 +37,9 @@ public sealed class SelfTestSystem : ModSystem
 	/// "Eye loot collected": after the Eye's demonite and unholy arrows are picked up (items on the ground are not saved with the
 	/// world), the start of the world_eow runs.
 	/// </summary>
-	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated", "Eye loot collected" };
+	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated", "Eye loot collected",
+		// Milestone 10's: the Eater fight measured from the Worm Food in hand, not after the chunk hunt and the mushrooms again.
+		"vile powder 30", "worm food" };
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
