@@ -70,6 +70,11 @@ public sealed class BlastOutSkill : ISkill
 	private int countBefore, throwTicks, nudgeTicks;
 	private long thrownAt;
 	private bool retreatReplanned;
+	/// <summary>Squared distance to the goal of the open cell nearest it that the bot can walk to (FindCandidates).</summary>
+	private float pocketNearest = float.MaxValue;
+	/// <summary>The first blast that only gets nearer the goal, kept in case none opens the way.</summary>
+	private BlastPlan fallback;
+	private int blasts;
 
 	public BlastOutSkill(IGoal goal) => Goal = goal;
 
@@ -92,6 +97,10 @@ public sealed class BlastOutSkill : ISkill
 		public PathResult Way { get; init; }
 		public GoalClearOfBlast Clear { get; set; }
 		public PathResult Retreat { get; set; }
+		/// <summary>Squared distance (tiles) to the goal's anchor of the cleared cell nearest it.</summary>
+		public float NearestCleared { get; init; }
+		/// <summary>No way past this blast yet, but it opens ground nearer the goal than any the bot can walk to now: a first blast.</summary>
+		public bool OnlyNearer { get; init; }
 	}
 
 	public string Describe() => $"BlastOut [{State}]" + (walk != null ? " > " + walk.Describe() : "");
@@ -103,7 +112,7 @@ public sealed class BlastOutSkill : ISkill
 	public void Start(BotContext ctx)
 	{
 		string bag = string.Join(", ", Carried(ctx).Select(e => $"{e.Name} x{ctx.Inventory.Count(e.ItemType)}"));
-		ctx.Log.Info($"BlastOut start: walks to {Goal} from {ctx.Node} find no way; carrying {bag}; looking for a wall the pickaxe ({ctx.PickPower}) cannot break and a blast can");
+		ctx.Log.Info($"BlastOut start: walks to {Goal} from {ctx.Node} find no way; carrying {bag}; looking for a wall the pickaxe cannot break and a blast can");
 		phase = Phase.Planning;
 		State = "planning";
 	}
@@ -175,6 +184,11 @@ public sealed class BlastOutSkill : ISkill
 				return Choose(ctx, chosen);
 			}
 			rejected.Add($"{pending.Explosive.Name} at {pending.Wall}: the walk past it is {r.Status}{(r.Status is PathStatus.Found or PathStatus.Partial ? " without the blast's cells" : "")}");
+			if (fallback == null && pending.NearestCleared < pocketNearest)
+				fallback = new BlastPlan {
+					Explosive = pending.Explosive, Wall = pending.Wall, Impact = pending.Impact, AimX = pending.AimX, AimY = pending.AimY, Front = pending.Front, Stance = pending.Stance,
+					Cleared = pending.Cleared, Way = r, Clear = pending.Clear, Retreat = pending.Retreat, NearestCleared = pending.NearestCleared, OnlyNearer = true,
+				};
 			pending = null;
 			Advance(carried.Count);
 		}
@@ -190,6 +204,14 @@ public sealed class BlastOutSkill : ISkill
 			Advance(carried.Count);
 		}
 		string all = string.Join("; ", rejected);
+		// A wall too thick for one blast: the one that opens ground nearest the goal first, then planned again from there (as a
+		// player blasts on through), while there is something to throw.
+		if (fallback != null) {
+			ctx.Log.Info($"BlastOut: no one blast opens the way ({all}); {fallback.Explosive.Name} at {fallback.Wall} opens ground "
+				+ $"{System.MathF.Sqrt(pocketNearest) - System.MathF.Sqrt(fallback.NearestCleared):0.#} tiles nearer the goal; blasting on from there");
+			rejected.Clear();
+			return Choose(ctx, fallback);
+		}
 		return Fail(ctx, $"no blast opens a way ({candidates.Count} wall(s) tried: {all})");
 	}
 
@@ -217,6 +239,7 @@ public sealed class BlastOutSkill : ISkill
 		}, ctx.Node, "pocket"), new SearchLimits { MaxExpansions = PocketNodes, SegmentAfter = 0 }, trustStart: ctx.Body.Grounded);
 		flood.Step(double.MaxValue);
 		var walls = new Dictionary<TilePos, TilePos>(); // wall -> impact (the open cell in front of it nearest the goal)
+		pocketNearest = open.Count > 0 ? open.Min(DistanceToGoal) : float.MaxValue;
 		foreach (TilePos o in open)
 			foreach (TilePos d in new[] { new TilePos(0, -1), new TilePos(0, 1), new TilePos(-1, 0), new TilePos(1, 0) }) {
 				var w = new TilePos(o.X + d.X, o.Y + d.Y);
@@ -291,10 +314,11 @@ public sealed class BlastOutSkill : ISkill
 		if (away.Cost > allowed)
 			return $"the way out of the blast takes {away.Cost:0} ticks, more than the {e.FuseTicks}-tick fuse less the {e.UseTicks}-tick throw";
 
-		OverlayGrid grid = BlastGrid(ctx, e, restX, restY, out int cleared);
+		OverlayGrid grid = BlastGrid(ctx, e, restX, restY, out int cleared, out float nearest);
 		var rest = new TilePos((int)System.MathF.Floor(restX / Body.TileSize), (int)System.MathF.Floor(restY / Body.TileSize));
 		pending = new BlastPlan {
 			Explosive = e, Wall = c.Wall, Impact = rest, AimX = aimX, AimY = aimY, Front = c.Impact, Stance = stance, Cleared = cleared, Clear = clear, Retreat = away,
+			NearestCleared = nearest,
 		};
 		wayGrid = grid;
 		// From where the bot will stand when it goes off: out of the blast's box, at the end of the way out.
@@ -304,17 +328,19 @@ public sealed class BlastOutSkill : ISkill
 	}
 
 	/// <summary>The grid as the blast at (restX, restY) leaves it: every solid cell in reach that a blast breaks, cleared.</summary>
-	private static OverlayGrid BlastGrid(BotContext ctx, ExplosiveInfo e, float restX, float restY, out int cleared)
+	private OverlayGrid BlastGrid(BotContext ctx, ExplosiveInfo e, float restX, float restY, out int cleared, out float nearest)
 	{
 		var grid = new OverlayGrid();
 		grid.Reset(ctx.Grid);
 		cleared = 0;
+		nearest = float.MaxValue;
 		int r = e.TileRadius + 1, bx = (int)System.MathF.Floor(restX / Body.TileSize), by = (int)System.MathF.Floor(restY / Body.TileSize);
 		for (int x = bx - r; x <= bx + r; x++)
 			for (int y = by - r; y <= by + r; y++)
 				if (ExplosiveFlight.InBlast(restX, restY, e, x, y) && ctx.Grid.Get(x, y).IsSolid() && ctx.World.CanExplode(x, y)) {
 					grid.Set(x, y, CellKind.Empty);
 					cleared++;
+					nearest = System.Math.Min(nearest, DistanceToGoal(new TilePos(x, y)));
 				}
 		return grid;
 	}
@@ -419,13 +445,21 @@ public sealed class BlastOutSkill : ISkill
 					why = $"from {ctx.Node} the way out of the blast is {away.Status} ({away.Cost:0}t)";
 					continue;
 				}
-				OverlayGrid blasted = BlastGrid(ctx, e, rx, ry, out _);
-				TilePos after = away.Steps.Count > 0 ? away.Steps[^1].To : ctx.Node;
-				var past = new PathSearch(ctx.Moves.WithGrid(blasted), after, Goal, SearchLimits.Default, trustStart: after == ctx.Node);
-				past.Step(double.MaxValue);
-				if (past.Result.Status is not (PathStatus.Found or PathStatus.Partial) || past.Result.Steps.Count == 0 || !UsesCleared(past.Result, blasted)) {
-					why = $"from {ctx.Node} as the body stands the walk past the blast is {past.Result.Status}";
-					continue;
+				OverlayGrid blasted = BlastGrid(ctx, e, rx, ry, out _, out float nearest);
+				if (Plan.OnlyNearer) {
+					if (nearest >= pocketNearest) {
+						why = $"from {ctx.Node} as the body stands the blast opens nothing nearer the goal";
+						continue;
+					}
+				}
+				else {
+					TilePos after = away.Steps.Count > 0 ? away.Steps[^1].To : ctx.Node;
+					var past = new PathSearch(ctx.Moves.WithGrid(blasted), after, Goal, SearchLimits.Default, trustStart: after == ctx.Node);
+					past.Step(double.MaxValue);
+					if (past.Result.Status is not (PathStatus.Found or PathStatus.Partial) || past.Result.Steps.Count == 0 || !UsesCleared(past.Result, blasted)) {
+						why = $"from {ctx.Node} as the body stands the walk past the blast is {past.Result.Status}";
+						continue;
+					}
 				}
 				if (!SameAim(ax, ay))
 					ctx.Log.Info($"BlastOut: from {ctx.Node} as the body stands, aiming at ({ax:0},{ay:0}) px instead");
@@ -525,7 +559,25 @@ public sealed class BlastOutSkill : ISkill
 
 	private SkillStatus Done(BotContext ctx)
 	{
-		ctx.Log.Info($"BlastOut: {Plan.Wall} is open {ctx.Tick - thrownAt} ticks after the throw; the walk to {Goal} is planned again");
+		blasts++;
+		if (Plan.OnlyNearer && Carried(ctx).Count > 0) {
+			ctx.Log.Info($"BlastOut: {Plan.Wall} is open {ctx.Tick - thrownAt} ticks after the throw (blast {blasts}); looking for the next wall from {ctx.Node}");
+			walk?.Stop(ctx);
+			walk = null;
+			retreat = null;
+			Plan = null;
+			candidates = null;
+			pending = null;
+			fallback = null;
+			way = null;
+			rejected.Clear();
+			nextCandidate = nextExplosive = throwTicks = nudgeTicks = 0;
+			retreatReplanned = false;
+			phase = Phase.Planning;
+			State = "planning the next blast";
+			return SkillStatus.Running;
+		}
+		ctx.Log.Info($"BlastOut: {Plan.Wall} is open {ctx.Tick - thrownAt} ticks after the throw ({blasts} blast(s)); the walk to {Goal} is planned again");
 		State = "done";
 		Stop(ctx);
 		return SkillStatus.Succeeded;

@@ -160,8 +160,19 @@ public sealed class MoveContext
 	/// <summary>The same context (moves, settings, costs) over another grid: planning ahead on the world as a plan will leave it.</summary>
 	public MoveContext WithGrid(ITileGrid grid) => Copy(grid, AllowBreak, AllowPlace);
 
-	/// <summary>The same context with no mining or placing: walks that must not stop to edit the world (away from a lit fuse).</summary>
-	public MoveContext WalkingOnly() => Copy(Grid, false, false);
+	/// <summary>
+	/// The same moves with no mining or placing, costed in the ticks the moves take: walks that must not stop to edit the world
+	/// and are timed against a clock (away from a lit fuse). The route's worth-avoiding extras are left out (off-limits ground,
+	/// the depth limit, steps that failed lately, precarious footing): they are no time. Seen in game (self-test
+	/// blast_out_ebonstone): in an ebonstone pocket the evil biome's 150 ticks a step made a 6-step way out "932 ticks", more
+	/// than a bomb's 180-tick fuse, and no throw was made.
+	/// </summary>
+	public MoveContext WalkingOnly() => new(Grid, Physics, Moves) {
+		Blocks = Blocks, AllowBreak = false, AllowPlace = false, DigAnyway = DigAnyway, BadEdges = BadEdges,
+		LiquidCostMultiplier = LiquidCostMultiplier, HeadUnderCostMultiplier = HeadUnderCostMultiplier,
+		BreakCostMultiplier = BreakCostMultiplier, BreakOverheadTicks = BreakOverheadTicks, PillarRiskTicks = PillarRiskTicks,
+		PrecariousTicks = 0f,
+	};
 
 	private MoveContext Copy(ITileGrid grid, bool allowBreak, bool allowPlace) => new(grid, Physics, Moves) {
 		Blocks = Blocks, AllowBreak = allowBreak, AllowPlace = allowPlace, DigAnyway = DigAnyway, BadEdges = BadEdges, EdgePenalty = EdgePenalty,
