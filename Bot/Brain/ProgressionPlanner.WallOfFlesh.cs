@@ -68,7 +68,7 @@ public sealed partial class ProgressionPlanner
 	private int bridgeDir;
 	/// <summary>The hellbridge: its row, first column and last (once the bot stood on its row).</summary>
 	private int bridgeRow, bridgeFrom, bridgeTo;
-	private bool bridgeKnown, hellbridgeDone, thrownByPlan, unplannedLogged, lootDone;
+	private bool bridgeKnown, hellbridgeDone, thrownByPlan, unplannedLogged, lootDone, huntOn;
 	private (float X, float Y)? wofDiedAt;
 
 	/// <summary>The Wall of Flesh's preparation (spec S1) was met: the plan got to the Guide, the shaft and the bridge.</summary>
@@ -99,7 +99,7 @@ public sealed partial class ProgressionPlanner
 		WofPrepMet = false;
 		shaftX = null;
 		bridgeDir = 0;
-		bridgeKnown = hellbridgeDone = thrownByPlan = unplannedLogged = lootDone = false;
+		bridgeKnown = hellbridgeDone = thrownByPlan = unplannedLogged = lootDone = huntOn = false;
 		wofDiedAt = null;
 	}
 
@@ -317,7 +317,10 @@ public sealed partial class ProgressionPlanner
 		if (bossHere) {
 			if (!thrownByPlan && !unplannedLogged) {
 				unplannedLogged = true;
-				ctx.Log.Warn($"Auto: unplanned wof: the Wall of Flesh is up with no doll thrown by the plan (a Voodoo Demon killed over lava?), us at {ctx.Node}");
+				if (huntOn)
+					ctx.Log.Info($"Auto: the Wall of Flesh summoned by the hunt (a Voodoo Demon died over the lava at the bridge's end, its doll burnt), us at {ctx.Node}");
+				else
+					ctx.Log.Warn($"Auto: unplanned wof: the Wall of Flesh is up with no doll thrown by the plan (a Voodoo Demon killed over lava?), us at {ctx.Node}");
 			}
 			return Do($"fighting the {b.Label} along the hellbridge", WallOfFleshFight(b, ctx));
 		}
@@ -333,6 +336,7 @@ public sealed partial class ProgressionPlanner
 				int lo = Math.Min(bridgeTo, bridgeTo - dir * HuntTiles), hi = Math.Max(bridgeTo, bridgeTo - dir * HuntTiles);
 				return Do($"to the hellbridge's far end to hunt a Voodoo Demon (x {bridgeTo})", new WalkToSkill(new GoalStandOnRow(stand, lo, hi - 1, ctx.Physics)) { Quiet = true });
 			}
+			huntOn = true;
 			return Do($"hunting a Voodoo Demon at the hellbridge's far end (x {bridgeTo}) for its Guide Voodoo Doll",
 				new WaitSkill("a Guide Voodoo Doll", c => c.Inventory.Count(doll) > 0 || BossUp(c, b.Npc) || c.Drops.Any(d => d.Type == doll), NightWaitTicks));
 		}
@@ -344,6 +348,10 @@ public sealed partial class ProgressionPlanner
 		}
 		if (!LavaBeyond(ctx, bridgeTo, dir, row)) {
 			int was = bridgeTo;
+			if (ctx.WorldWidth > 0 && (bridgeTo + dir * BridgeExtendTiles < BridgeEdgeRoom || bridgeTo + dir * BridgeExtendTiles > ctx.WorldWidth - BridgeEdgeRoom)) {
+				stuck = $"no lava under where the doll would land past the hellbridge's end at x {bridgeTo}, and no room to go on toward the world's edge";
+				return null;
+			}
 			bridgeTo += dir * BridgeExtendTiles;
 			hellbridgeDone = false;
 			ctx.Log.Info($"Auto: no lava under where the doll would land ({LandingFrom}-{LandingTo} columns past x {was}); the hellbridge goes on to {bridgeTo}");
@@ -422,7 +430,7 @@ public sealed partial class ProgressionPlanner
 			if (status == SkillStatus.Succeeded)
 				wofDiedAt = fight.WallLastSeen;
 			else
-				thrownByPlan = false; // the next Wall is a new summon (or an unplanned one)
+				thrownByPlan = huntOn = unplannedLogged = false; // the next Wall is a new summon (or an unplanned one)
 		}
 	}
 
