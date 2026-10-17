@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
@@ -350,6 +351,100 @@ public class BuildingTests
 		ISkill next = p.Next(ctx);
 		output.WriteLine($"{p.Status} -> {next?.Describe()}");
 		Assert.Contains($"item{FakeGame.IronOre}", p.Status); // iron again: it is being found
+	}
+
+	[Fact]
+	public void AFruitlessExploration_CountsForTheWholeTierGroup_AndThePlanKeepsToTheNearerTier()
+	{
+		// Measured run U22, d4 +5.5h: greaves, "Silver Ore x68 (have 28)" 40 short and "Iron Ore x60 (have 3)" 57 short.
+		// A silver job's fruitless count (t235652) stayed while iron's was cleared, silver ore cost twice iron's, and the
+		// plan dropped the 40-short job for the 57-short one; 15 switches in 47 game hours, 66 ore left over at full armour.
+		FakeGame g = ProgressionTests.Mine(oreRows: 0); // no ore in sight or on the map
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.Items[FakeGame.SilverOre] = 28;
+		g.Items[FakeGame.SilverBar] = 3; // 17 bars to go: 68 silver ore, 40 short
+		g.Items[FakeGame.IronOre] = 3; // 20 bars: 60 iron ore, 57 short
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		var greaves = new Wearing(new[] { FakeGame.IronGreaves, FakeGame.SilverGreaves }, "greaves");
+		var job = Assert.IsType<MineSkill>(p.ResolveForTest(greaves, ctx));
+		output.WriteLine($"{p.Status} -> {job.Describe()}");
+		Assert.Equal(FakeGame.SilverOre, job.ItemType);
+		Assert.Equal(68, job.Amount);
+		Assert.Contains(job.Also, a => a.Item == FakeGame.IronOre);
+
+		// Its explorations came to nothing; they looked for iron as well (the found check takes the Also ores).
+		ctx.ExploresWithoutOre[FakeGame.SilverOre] = MineSkill.MaxExplores;
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, job, 60));
+		output.WriteLine(job.FailureReason);
+		p.OnSkillFinished(job, SkillStatus.Failed, ctx);
+		var next = Assert.IsType<MineSkill>(p.ResolveForTest(greaves, ctx));
+		output.WriteLine($"{p.Status} -> {next.Describe()}");
+		Assert.Equal(FakeGame.SilverOre, next.ItemType); // still the 40-short silver, not the 57-short iron
+		Assert.Equal(68, next.Amount);
+
+		// The first exploration of the next job counts for iron too, so an iron job after it starts no count afresh.
+		next.Start(ctx);
+		g.Refresh(ctx);
+		next.Tick(ctx);
+		Assert.Equal(1, ctx.ExploresWithoutOre.GetValueOrDefault(FakeGame.SilverOre));
+		Assert.Equal(1, ctx.ExploresWithoutOre.GetValueOrDefault(FakeGame.IronOre));
+		next.Stop(ctx);
+	}
+
+	[Fact]
+	public void ExplorationsThatRanAtTheDepthFloor_StepDeeper_BeforeATrip()
+	{
+		// Measured run U22: the floor stayed at row 436 (CavernY 451 - 15) while the defence was under 8; the iron jobs'
+		// explorations ran at it (rows 419-436), then a 10.2-hour trip west found no ore, and the +25 step came only 28 hours
+		// later with "nowhere to travel". After it the bot had 33 iron in about 2.5 game hours.
+		FakeGame g = ProgressionTests.Mine(width: 400, oreRows: 0, sky: 45);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 44);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 44);
+		g.Stations[FakeGame.TileAnvil] = new TilePos(1, 44);
+		g.Items[FakeGame.WoodenSword] = 1;
+		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.IronBroadsword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(3, 44);
+		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage; // armed, no armour: the floor is CavernY + ArmedMargin
+
+		ISkill AfterAFruitlessIronJob(ProgressionPlanner p)
+		{
+			ctx.ExploresWithoutOre[FakeGame.IronOre] = MineSkill.MaxExplores; // its explorations came to nothing
+			var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 75);
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, mine, 60));
+			output.WriteLine($"{mine.FailureReason} (bot at {ctx.Node}, floor row {ctx.DeepestRow})");
+			p.OnSkillFinished(mine, SkillStatus.Failed, ctx);
+			p.NoteFruitless(FakeGame.SilverOre); // and silver came to nothing here before
+			ISkill next = p.Next(ctx);
+			output.WriteLine($"{p.Status} -> {next?.Describe()}");
+			return next;
+		}
+
+		// Explorations well above the floor: new ground along the surface, as before.
+		ctx.CavernY = 200 - BotContext.ArmedMargin;
+		var p1 = new ProgressionPlanner();
+		p1.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p1, ctx);
+		Assert.True(AfterAFruitlessIronJob(p1) is WalkToSkill { Travel: true });
+		Assert.Equal(0, ctx.DepthBonus);
+
+		// At the floor (row 50, 6 rows under the feet: no digging down a fallback's 20 rows from there): a step deeper first.
+		ctx.CavernY = 50 - BotContext.ArmedMargin;
+		var p2 = new ProgressionPlanner();
+		p2.Reset(ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, p2, ctx);
+		ISkill after = AfterAFruitlessIronJob(p2);
+		Assert.False(after is WalkToSkill { Travel: true }, "a trip to new ground with the ground below the floor not looked at");
+		Assert.Equal(BotContext.DepthBonusStep, ctx.DepthBonus);
+		Assert.Equal(50 + BotContext.DepthBonusStep, ctx.DeepestRow);
+		Assert.IsType<MineSkill>(after); // mining on from here, deeper
 	}
 
 	[Fact]

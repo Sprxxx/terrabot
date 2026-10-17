@@ -644,7 +644,10 @@ public sealed class BotContext
 	/// </summary>
 	public ExpiringSet<TilePos> UnreachableTiles { get; } = new(UnreachableTicks);
 	public const long UnreachableTicks = 3600; // a game hour
-	/// <summary>Per ore item: explorations in a row that found none (MineSkill), across restarts of the skill.</summary>
+	/// <summary>
+	/// Per ore item: explorations in a row that found none (MineSkill), across restarts of the skill. Counted for every ore
+	/// of the job's tier group (MineSkill.TierGroup): the exploration looked for all of them.
+	/// </summary>
 	public System.Collections.Generic.Dictionary<int, int> ExploresWithoutOre { get; } = new();
 	/// <summary>
 	/// Per item that grows back on the evil biome's surface: passes along it in a row that found none (MineSkill,
