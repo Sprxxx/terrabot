@@ -32,6 +32,8 @@ public sealed class TerraBotPlayer : ModPlayer
 	public TerrariaBlockActions Blocks { get; } = new();
 	/// <summary>World queries, inventory counts and crafting for the skills.</summary>
 	public TerrariaGameInfo GameInfo { get; } = new();
+	/// <summary>Journey Mode's research and duplication (on only for a Journey character in a Journey world).</summary>
+	public TerrariaJourney Journey { get; } = new();
 
 	/// <summary>Hits taken (any cause) and fall-damage hits, for the self-test harness. Reset by the harness.</summary>
 	public int HurtCount { get; set; }
@@ -67,6 +69,7 @@ public sealed class TerraBotPlayer : ModPlayer
 			Inventory = GameInfo,
 			Crafter = GameInfo,
 			Knowledge = GameInfo,
+			Journey = Journey,
 			Ids = TerrariaGameInfo.CreateIds(),
 			Log = new ModLog(Mod.Logger),
 		};
@@ -80,6 +83,9 @@ public sealed class TerraBotPlayer : ModPlayer
 		CachedTileGrid.Instance.Clear();
 		LastOutput = MoveInput.None;
 		Mod.Logger.Info($"Entered world '{Main.worldName}' ({Main.maxTilesX}x{Main.maxTilesY}) as '{Player.name}'. Physics: {LivePhysics}");
+		Journey.Bind(Player);
+		if (Player.whoAmI == Main.myPlayer && Player.difficulty == PlayerDifficultyID.Creative)
+			Mod.Logger.Info($"Journey: a Journey character in a {(Main.GameModeInfo.IsJourneyMode ? "Journey" : "non-Journey")} world: research and duplication {(Journey.Enabled ? "on" : "off")}");
 	}
 
 	public override void ProcessTriggers(TriggersSet triggersSet)
@@ -372,6 +378,7 @@ public sealed class TerraBotPlayer : ModPlayer
 	private void RefreshPerception()
 	{
 		GameInfo.Bind(Player);
+		Journey.Bind(Player);
 		Context.AxePower = Blocks.AxePower;
 		Context.PickPower = Blocks.PickPower;
 		Context.PickRangeBoost = Blocks.PickSlot >= 0 ? Player.inventory[Blocks.PickSlot].tileBoost : 0;
