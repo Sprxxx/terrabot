@@ -49,6 +49,18 @@ namespace TerraBot.Bot.Skills;
 /// 2000 px off (NPC.cs:22198-22205).</item>
 /// </list>
 /// </para>
+/// <para>
+/// The Wall of Flesh (<see cref="WallOfFleshPattern"/>, docs M12_SPEC.md sections 4-6) is summoned by another skill (the Guide
+/// Voodoo Doll thrown into lava, <see cref="ThrowItemSkill"/>) and fought along the hellbridge (<see cref="Arena"/>), one way:
+/// <list type="bullet">
+/// <item>move: keep a band ahead of the Wall, beyond the Hungry's reach (<see cref="WallOfFleshPattern.BandMinTiles"/>), running
+/// on when it closes in, standing while it comes; never toward it past the band's near edge, never behind it (The Tongue);</item>
+/// <item>shoot: a Hungry or a leech within <see cref="WallServantTiles"/>, else an eye with a clear arc (defence 0, the mouth's
+/// life), else the mouth;</item>
+/// <item>dodge: its lasers (perceived hostile projectiles, 27 px/tick) and its servants are the dodge planner's threats; no jump
+/// that could lift the body's top above the Underworld's first row (The Tongue).</item>
+/// </list>
+/// </para>
 /// </summary>
 public sealed class BossFightSkill : ISkill
 {
@@ -168,6 +180,17 @@ public sealed class BossFightSkill : ISkill
 	public bool IsWorm { get; }
 	/// <summary>Skeletron (<see cref="SkeletronPattern"/>): fought with its own rules (see the class).</summary>
 	public bool IsSkeletron { get; }
+	/// <summary>The Wall of Flesh (<see cref="WallOfFleshPattern"/>): fought with its own rules (see the class).</summary>
+	public bool IsWallOfFlesh { get; }
+	/// <summary>Wall of Flesh: servants (a Hungry, a leech) this near (tiles) are shot before the eyes (spec section 6: 12).</summary>
+	public const float WallServantTiles = 12f;
+	/// <summary>Wall of Flesh: where its mouth was last seen (centre, px), for its loot (the brick box it dies in, NPC.cs:85023-85057).</summary>
+	public (float X, float Y)? WallLastSeen { get; private set; }
+	/// <summary>Wall of Flesh: lasers that came within the dodge's look-ahead (seen), and the hits taken by them (if told).</summary>
+	public int LasersSeen { get; private set; }
+	private readonly System.Collections.Generic.HashSet<int> lasersCounted = new();
+	/// <summary>Wall of Flesh: running on ahead of it (else standing in the band and letting it come).</summary>
+	private bool wallRunning;
 	/// <summary>
 	/// The summon, when it is not an item to use (<see cref="SummonItem"/> 0): a skill made when the summon starts, such as the
 	/// Old Man's chat button for Skeletron (<see cref="ChatButtonSkill"/>). Null: use the summon item.
@@ -193,6 +216,7 @@ public sealed class BossFightSkill : ISkill
 		MinionTypes = minionTypes;
 		IsWorm = WormPattern.IsWormBoss(bossType);
 		IsSkeletron = SkeletronPattern.IsSkeletron(bossType);
+		IsWallOfFlesh = WallOfFleshPattern.IsWallOfFlesh(bossType);
 		segmentTypes = WormPattern.SegmentTypes(bossType);
 	}
 
@@ -244,7 +268,10 @@ public sealed class BossFightSkill : ISkill
 
 		// A worm: its nearest segment stands for it.
 		EntityInfo? boss = IsWorm ? segments.Cast<EntityInfo?>().FirstOrDefault()
+			: IsWallOfFlesh ? WallOfFleshPattern.Wall(ctx.Hostiles) // the mouth, or an eye in view at its x with its life
 			: ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault();
+		if (IsWallOfFlesh && boss is EntityInfo wall)
+			WallLastSeen = (wall.CenterX, wall.Type == BossType ? wall.CenterY : WallLastSeen?.Y ?? wall.CenterY);
 		// A worm's bar shows the life of all its segments, wherever they are (IWorldInfo.BossBarLife): one burrowed out of view
 		// is still up. A fight taken up again with the worm out of view (after a pause, or a new instance of this job) does not
 		// summon a second time: the Worm Food is used up, and the game allows no second head while one lives (SummonItemCheck).
@@ -332,11 +359,11 @@ public sealed class BossFightSkill : ISkill
 		// can hit): the ones about to bite besides are the zone's own spawns, eaters of souls (40 life, 22 contact damage,
 		// NPC.cs:3849; 2-3 arrows), which the boss fight shot none of. Seen in game (measured run M10k, world_eow from the
 		// worm_food checkpoint): held in a pocket at x 1720-1722, hit by segments and eaters of souls in turn, dead in the fight.
-		EntityInfo? servant = ctx.Hostiles.Where(h => (IsWorm ? !segmentTypes.Contains(h.Type) && h.Damage > 0 : MinionTypes.Contains(h.Type) && !IsSkeletron)
+		EntityInfo? servant = IsWallOfFlesh ? null : ctx.Hostiles.Where(h => (IsWorm ? !segmentTypes.Contains(h.Type) && h.Damage > 0 : MinionTypes.Contains(h.Type) && !IsSkeletron)
 				&& h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
 			.OrderBy(h => h.DistanceTo(cx, cy)).Cast<EntityInfo?>().FirstOrDefault();
 		// A worm: its nearest segment in reach (WormShot).
-		EntityInfo? target = servant ?? (IsWorm ? null : boss);
+		EntityInfo? target = servant ?? (IsWorm || IsWallOfFlesh ? null : boss);
 		// Skeletron: the head, the hands only when the head has no clear line (in Classic they add nothing to its defence,
 		// NPC.cs:22212-22265 is Expert only; unholy arrows pierce through a hand into the head anyway).
 		if (IsSkeletron)
@@ -353,11 +380,14 @@ public sealed class BossFightSkill : ISkill
 		}
 		else if (canShoot && IsWorm) // no servant, or none in a clear line: the worm
 			(aim, clear) = WormShot(ctx, cx, cy);
+		else if (canShoot && IsWallOfFlesh)
+			(aim, clear) = WallOfFleshShot(ctx, cx, cy);
 		if (aim is AimSolution a) {
 			ctx.Output.Tool = ToolRequest.Ranged;
 			ctx.Output.AimMouse(a.AimX, a.AimY);
 			ctx.Output.UseItem = clear;
-			State = !clear ? "no clear arc" : servant is EntityInfo sv && TargetId == sv.Id ? (IsWorm ? $"shooting the {sv.Name} by us" : "shooting a servant") : IsWorm ? "shooting a segment" : "shooting the boss";
+			State = !clear ? "no clear arc" : servant is EntityInfo sv && TargetId == sv.Id ? (IsWorm ? $"shooting the {sv.Name} by us" : "shooting a servant") : IsWorm ? "shooting a segment"
+				: IsWallOfFlesh ? $"shooting {wallTargetWhat}" : "shooting the boss";
 		}
 		else
 			State = "kiting";
@@ -450,7 +480,7 @@ public sealed class BossFightSkill : ISkill
 			// 5 rows under the floor and within 6 tiles of the middle, "off the arena, walking back" 6460 times while the Eye
 			// of Cthulhu killed the bot.
 			// A worm's: onto the part of it the zone holds over (ZoneBounds); there the kiting keeps within it.
-			var (zw, ze) = IsWorm ? ZoneBounds(ctx) : (int.MinValue, int.MaxValue);
+			var (zw, ze) = IsWorm ? ZoneBounds(ctx) : IsWallOfFlesh ? AheadOfTheWall() : (int.MinValue, int.MaxValue);
 			int gx0 = Math.Max(x0, zw), gx1 = Math.Min(x1, ze);
 			goal = () => gx0 <= gx1 ? new GoalStandOnRow(standY, gx0, gx1, ctx.Physics) : new GoalStandOnRow(standY, x0, x1, ctx.Physics);
 			place = "the arena";
@@ -576,6 +606,9 @@ public sealed class BossFightSkill : ISkill
 	private void Move(BotContext ctx, EntityInfo? boss)
 	{
 		MoveFreely(ctx, boss, out float minX, out float maxX);
+		// The Wall of Flesh: no jump that could lift the body's top above the Underworld's first row (The Tongue, Player.cs:20618).
+		if (IsWallOfFlesh && ctx.Output.Jump && TongueRisk(ctx))
+			ctx.Output.Jump = false;
 		if (Arena == null && !IsWorm) // a worm's fight keeps to its leash (MoveFreely) as to an arena
 			return;
 		// Brake before an end: never press towards it within the stopping distance (v² / 2a, braking is
@@ -622,6 +655,10 @@ public sealed class BossFightSkill : ISkill
 		}
 		else if (IsSkeletron)
 			KiteSkeletron(ctx, boss, minX, maxX);
+		else if (IsWallOfFlesh) {
+			(minX, maxX) = WallSideBound(ctx, boss, minX, maxX);
+			KiteWallOfFlesh(ctx, boss, minX, maxX);
+		}
 		else {
 			TrackDash(ctx, boss, cx, cy);
 			Kite(ctx, boss, floorY, minX, maxX);
@@ -641,6 +678,8 @@ public sealed class BossFightSkill : ISkill
 				: h.AiStyle is SkeletronPattern.HeadAiStyle or SkeletronPattern.HandAiStyle ? SkeletronPattern.Predict(h, ctx.Hostiles, ctx.Expert, cx, cy)
 				: new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
 		}
+		if (IsWallOfFlesh)
+			AddShots(ctx, cx, cy);
 		if (threats.Count == 0)
 			return;
 		// A worm's fight: the planner knows the immunity left from the last hit (a touch then does not hurt, so getting out of
@@ -650,7 +689,7 @@ public sealed class BossFightSkill : ISkill
 		ITileGrid terrain = IsWorm ? ctx.Grid : null;
 		float maxBottom = IsWorm ? LowestBottom(ctx) : float.PositiveInfinity;
 		// Skeletron's kiting may stand (under the hovering head): the plan judged is the one the kiting chose.
-		int kiteDir = IsSkeletron ? ctx.Output.Horizontal : runDir;
+		int kiteDir = IsSkeletron || IsWallOfFlesh ? ctx.Output.Horizontal : runDir;
 		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, kiteDir, 0, Dodge.Horizon, immune, terrain);
 		// Hysteresis: start dodging when the kite comes within DodgeStartGap, stop once it clears DodgeStopGap again.
 		if (!kite.Hits && kite.Clearance >= (dodging ? DodgeStopGap : DodgeStartGap) && kite.EndBottom <= maxBottom) {
@@ -930,6 +969,158 @@ public sealed class BossFightSkill : ISkill
 			}
 		}
 		ctx.Output.Horizontal = runDir;
+	}
+
+	// ---------- the Wall of Flesh (WallOfFleshPattern, docs M12_SPEC.md section 6) ----------
+
+	/// <summary>The way the Wall travels (-1 west, +1 east) as last seen; 0 before it was.</summary>
+	private int wallDir;
+	/// <summary>Where the Wall's centre was (px) when last seen, and its band's near edge then (px ahead of it).</summary>
+	private float wallX, wallNear;
+	private string wallTargetWhat = "the Wall";
+	private long lastBandLog = long.MinValue / 2;
+
+	/// <summary>
+	/// The Wall of Flesh's kiting: ahead of it by its band (<see cref="WallOfFleshPattern.BandMinTiles"/>, the Hungry's reach and a
+	/// margin), one way. Run on (the way it travels) once it is within <see cref="WallOfFleshPattern.RunFromTiles"/> of the band's
+	/// near edge, stand once the band's far part is reached (or as far as an arrow still reaches the eyes): never toward it. The
+	/// dodge planner's bound on the Wall's side is the band's near edge (<see cref="WallSideBound"/>).
+	/// </summary>
+	private void KiteWallOfFlesh(BotContext ctx, EntityInfo? wall, float minX, float maxX)
+	{
+		ctx.Output.Horizontal = 0;
+		if (wall is not EntityInfo w)
+			return; // not in view: the summon's wait, or lost sight; nothing to run from
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p);
+		wallDir = WallOfFleshPattern.Direction(w, cx);
+		float life = WallOfFleshPattern.LifeFraction(w);
+		float near = WallOfFleshPattern.BandMinTiles(life, ctx.Expert) * 16f, ahead = WallOfFleshPattern.Ahead(w, wallDir, cx);
+		wallX = w.CenterX;
+		wallNear = near;
+		// The far edge of the stand: the band's, but not where the eyes are beyond an arrow's reach (Ballistics.MaxTicks of flight).
+		float reach = ctx.Combat.Projectile.Speed * ctx.Combat.Projectile.UpdatesPerTick * Ballistics.MaxTicks * ArrowReachShare;
+		float far = Math.Max(near + WallOfFleshPattern.RunFromTiles * 16f + 16f,
+			Math.Min(near + (WallOfFleshPattern.BandWidthTiles - WallOfFleshPattern.StopShortTiles) * 16f, reach));
+		bool was = wallRunning;
+		if (ahead < near + WallOfFleshPattern.RunFromTiles * 16f)
+			wallRunning = true;
+		else if (ahead > far)
+			wallRunning = false;
+		bool room = wallDir > 0 ? maxX - ctx.Body.X >= 16f : ctx.Body.X - minX >= 16f;
+		if (wallRunning && room)
+			ctx.Output.Horizontal = wallDir;
+		if ((wallRunning != was || wallRunning && !room) && ctx.Tick - lastBandLog >= 60) {
+			lastBandLog = ctx.Tick;
+			ctx.Log.Info($"Boss fight: the Wall {WallOfFleshPattern.FromSide(wallDir)} {ahead / 16f:0} tiles off (band from {near / 16f:0}, life {w.Life}/{w.LifeMax}): "
+				+ (!wallRunning ? "standing, letting it come" : room ? $"running {(wallDir > 0 ? "east" : "west")}" : "no bridge left ahead: standing and shooting") + $" at {ctx.Node}");
+		}
+	}
+
+	/// <summary>The share of an arrow's flight in <see cref="Ballistics.MaxTicks"/> that is taken as its reach across (it rises and falls on the way).</summary>
+	public const float ArrowReachShare = 0.85f;
+
+	/// <summary>
+	/// The dodge planner's bound on the Wall's side (the hitbox's left edge, px): the band's near edge, or where the body is if it is
+	/// nearer the Wall than that already (then only away from it): a dodge never turns back toward the Wall past the band, nor
+	/// behind it (spec section 6).
+	/// </summary>
+	private (float MinX, float MaxX) WallSideBound(BotContext ctx, EntityInfo? wall, float minX, float maxX)
+	{
+		if (wall is not EntityInfo w)
+			return (minX, maxX);
+		PhysicsParams p = ctx.Physics;
+		int dir = WallOfFleshPattern.Direction(w, ctx.Body.CenterX(p));
+		float near = WallOfFleshPattern.BandMinTiles(WallOfFleshPattern.LifeFraction(w), ctx.Expert) * 16f;
+		float limit = w.CenterX + dir * near - p.Width * 0.5f;
+		if (dir < 0)
+			maxX = Math.Min(maxX, Math.Max(ctx.Body.X, limit));
+		else
+			minX = Math.Max(minX, Math.Min(ctx.Body.X, limit));
+		return (minX, maxX);
+	}
+
+	/// <summary>
+	/// Columns a walk back onto the bridge may end in: ahead of the Wall by its band's near edge, or
+	/// <see cref="WallOfFleshPattern.MinGapTiles"/> at least (int.MinValue / MaxValue where nothing bounds it, before the Wall was seen).
+	/// </summary>
+	private (int West, int East) AheadOfTheWall()
+	{
+		if (wallDir == 0)
+			return (int.MinValue, int.MaxValue);
+		int gap = (int)MathF.Ceiling(Math.Max(wallNear, WallOfFleshPattern.MinGapTiles * 16f) / 16f);
+		int wallTile = (int)MathF.Floor(wallX / 16f);
+		return wallDir < 0 ? (int.MinValue, wallTile - gap) : (wallTile + gap, int.MaxValue);
+	}
+
+	/// <summary>
+	/// The Wall's lasers (and any hostile shot) coming our way within the dodge's look-ahead, as threats: those the tiles stop
+	/// (the laser stops on tiles, Projectile.cs:1817-1830) only with a clear line to us: the bridge's blocks shield the body from the
+	/// lower eye (spec section 6).
+	/// </summary>
+	private void AddShots(BotContext ctx, float cx, float cy)
+	{
+		lasersCounted.RemoveWhere(id => !ctx.Shots.Any(sh => sh.Id == id));
+		foreach (ShotInfo shot in ctx.Shots) {
+			if (!WallOfFleshPattern.Incoming(shot, cx, cy, Dodge.Horizon))
+				continue;
+			if (shot.TileCollide && !FightSkill.ClearShot(ctx, shot.CenterX, shot.CenterY, cx, cy))
+				continue;
+			threats.Add(WallOfFleshPattern.ShotThreat(shot));
+			if (lasersCounted.Add(shot.Id))
+				LasersSeen++;
+		}
+	}
+
+	/// <summary>A jump now could lift the body's top above the Underworld's first row: twice a full jump's rise (a second one from a Cloud in a Bottle).</summary>
+	private static bool TongueRisk(BotContext ctx) =>
+		ctx.UnderworldRow > 0 && ctx.Body.Y - 2f * PlayerPhysics.ApexRise(ctx.Physics, ctx.Physics.JumpHeight) < ctx.UnderworldRow * 16f;
+
+	/// <summary>
+	/// The Wall's shot (spec section 6's order): a Hungry, Hungry II or leech within <see cref="WallServantTiles"/> (nearest first),
+	/// else an eye with a clear arc (the upper one first: over the bridge it is the one with a line to us), else the mouth. The lead
+	/// solves for a hit within the target's half size (the eyes and the mouth are 100 x 100). With no clear arc to any, aim at the
+	/// first in reach without shooting.
+	/// </summary>
+	private (AimSolution? Aim, bool Clear) WallOfFleshShot(BotContext ctx, float cx, float cy)
+	{
+		AimSolution? first = null;
+		int firstId = -1;
+		string firstWhat = "";
+		bool Try(EntityInfo e, string what, out AimSolution s)
+		{
+			s = default;
+			if (!FightSkill.ClearShot(ctx, cx, cy, e.CenterX, e.CenterY))
+				return false;
+			float tolerance = Math.Max(12f, Math.Min(e.Width, e.Height) * 0.5f - 8f);
+			s = Ballistics.Lead(cx, cy, e.CenterX, e.CenterY, e.VX, e.VY, ctx.Combat.Projectile, tolerance);
+			if (s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile) && !ctx.SparedInLine(cx, cy, s.AimX, s.AimY, FightSkill.RangedRange * 2f)) {
+				TargetId = e.Id;
+				wallTargetWhat = what;
+				return true;
+			}
+			if (first == null) {
+				first = s;
+				firstId = e.Id;
+				firstWhat = what;
+			}
+			return false;
+		}
+		foreach (EntityInfo e in ctx.Hostiles.Where(h => (h.Type is WallOfFleshPattern.Hungry or WallOfFleshPattern.HungryII || WallOfFleshPattern.IsLeech(h.Type))
+				&& h.DistanceTo(cx, cy) <= WallServantTiles * 16f).OrderBy(h => h.DistanceTo(cx, cy)))
+			if (Try(e, $"the {e.Name} by us", out AimSolution s))
+				return (s, true);
+		foreach (EntityInfo eye in ctx.Hostiles.Where(h => h.Type == WallOfFleshPattern.Eye).OrderByDescending(h => WallOfFleshPattern.UpperEye(h)))
+			if (Try(eye, WallOfFleshPattern.UpperEye(eye) ? "the upper eye" : "the lower eye", out AimSolution s))
+				return (s, true);
+		foreach (EntityInfo mouth in ctx.Hostiles.Where(h => h.Type == BossType))
+			if (Try(mouth, "the mouth", out AimSolution s))
+				return (s, true);
+		if (first != null) {
+			TargetId = firstId;
+			wallTargetWhat = firstWhat;
+		}
+		return (first, false);
 	}
 
 	/// <summary>Skeletron: the head if an arrow reaches it, else the nearest hand one reaches, else the head (aimed at, not shot).</summary>
