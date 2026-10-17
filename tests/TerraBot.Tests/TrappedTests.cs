@@ -190,6 +190,28 @@ public class TrappedTests
 		Assert.Equal(SkillStatus.Succeeded, Run(game, ctx, new WalkToSkill(goal), 3000));
 	}
 
+	/// <summary>
+	/// Measured run U30: at the corruption chasm's flooded foot, (1767..1773, 425..429), blasts out towards the DemonAltar were
+	/// refused "the way out of the blast takes 13005 ticks, more than the 180-tick fuse less the 25-tick throw" (and 9766,
+	/// 11405, 5205): a few steps out, each priced at the head-under-water 200x, a price on drowning, not the ticks the steps take.
+	/// </summary>
+	[Fact]
+	public void SealedPocketUnderWater_TheWayOutIsTimedAsTheBodyMoves_NotAtTheDrowningPrice()
+	{
+		string[] rows = SealedPocket.Select((r, y) => y >= 2 && y <= 6 ? new string(r.Select((c, x) => c == '.' && x < 16 ? '~' : c).ToArray()) : r).ToArray();
+		var game = new FakeGame(rows);
+		game.Items[FakeGame.Bomb] = 3;
+		BotContext ctx = game.CreateContext(output);
+		Assert.True(Body.HeadInLiquid(game.Grid, ctx.Node), "the head under");
+		var goal = new GoalStandAt(game.Grid.Markers['G'], ctx.Physics);
+		var blast = new BlastOutSkill(goal);
+		SkillStatus s = Run(game, ctx, blast, 2000);
+		output.WriteLine($"{s}: {blast.FailureReason}; way out {blast.Plan?.Retreat.Cost:0} ticks");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(blast.Plan.Retreat.Cost <= FakeGame.BombInfo.FuseTicks - FakeGame.BombInfo.UseTicks, $"way out {blast.Plan.Retreat.Cost:0} ticks");
+		Assert.Equal(0, game.BlastHits);
+	}
+
 	private void TooSmall()
 	{
 		// 6 wide: anywhere in it is inside the bomb's 128 px box round a blast at the wall.
