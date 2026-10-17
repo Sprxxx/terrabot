@@ -160,7 +160,37 @@ public class TrappedTests
 	}
 
 	[Fact]
-	public void PocketTooSmallToGetClear_ThrowsNothing()
+	public void PocketTooSmallToGetClear_ThrowsNothing() => TooSmall();
+
+	/// <summary>
+	/// Self-test blast_out_ebonstone (2026-10-17): the pocket is ebonstone, so the evil biome's off-limits extra (150 ticks a
+	/// step) was in the planner's cost of the way out, and "the way out of the blast takes 932 ticks" (6 steps of 5.3 + 150)
+	/// ruled out every throw. The fuse is measured in the ticks the moves take, not in what the route is worth avoiding.
+	/// </summary>
+	[Fact]
+	public void SealedPocketOfEbonstone_TheWayOutIsTimedInTicks_NotInTheBiomesPenalty()
+	{
+		// The self-test's own rows (Scenarios.cs blast_out_ebonstone), ebonstone as unbreakable ebonstone-typed cells.
+		string full = new('@', 34), row = "@@..............@@@.............@@", feet = "@@.S............@@@...........G.@@";
+		var game = new FakeGame(full, full, full, row, row, row, row, feet, full, full, full, full);
+		for (int y = 0; y < game.Grid.Height; y++)
+			for (int x = 0; x < game.Grid.Width; x++)
+				if (game.Grid.Get(x, y).IsSolid())
+					game.TileTypes[new TilePos(x, y)] = FakeGame.TileEbonstone;
+		game.Items[FakeGame.Bomb] = 3;
+		BotContext ctx = game.CreateContext(output);
+		Assert.True(ctx.OffLimitsForPaths(ctx.Node), "the pocket counts as the evil biome, off limits in weak gear");
+		var goal = new GoalStandAt(game.Grid.Markers['G'], ctx.Physics);
+		var blast = new BlastOutSkill(goal);
+		Assert.Equal(SkillStatus.Succeeded, Run(game, ctx, blast, 2000));
+		Assert.True(blast.Plan.Retreat.Cost < 100, $"way out {blast.Plan.Retreat.Cost:0} ticks");
+		Assert.Equal(2, game.Blasts); // the wall is 3 thick: one bomb opens ground nearer, a second the way
+		Assert.Equal(1, game.Count(FakeGame.Bomb));
+		Assert.Equal(0, game.BlastHits);
+		Assert.Equal(SkillStatus.Succeeded, Run(game, ctx, new WalkToSkill(goal), 3000));
+	}
+
+	private void TooSmall()
 	{
 		// 6 wide: anywhere in it is inside the bomb's 128 px box round a blast at the wall.
 		string[] rows = {
