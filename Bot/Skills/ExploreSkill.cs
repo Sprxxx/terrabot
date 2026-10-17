@@ -25,10 +25,11 @@ public enum ExploreBias
 /// <item>spots near earlier legs' targets are skipped;</item>
 /// <item>with no frontier in view, dig: <see cref="FallbackDepth"/> tiles straight down for <see cref="ExploreBias.Down"/>,
 /// <see cref="FallbackStep"/> tiles on in the heading for <see cref="ExploreBias.Sideways"/>, or the other way when that
-/// is ground already seen (<see cref="PickDig"/>);</item>
+/// is ground already seen (<see cref="PickDig"/>); short of off-limits ground, and up a dig when it cannot go deeper;</item>
 /// <item>the heading is kept on <see cref="BotContext.LastExplore"/> for the next exploration.</item>
 /// </list>
-/// Fails after <see cref="MaxLegs"/> legs or <see cref="MaxTicks"/> ticks without finding it.
+/// Fails after <see cref="MaxLegs"/> legs or <see cref="MaxTicks"/> ticks without finding it, and sooner when every way to
+/// dig on is barred or (exploring down) the best of them goes back to ground explored and seen already.
 /// </summary>
 public sealed class ExploreSkill : ISkill
 {
@@ -193,13 +194,31 @@ public sealed class ExploreSkill : ISkill
 			else {
 				int dy = tooDeep ? -FallbackDepth : down ? FallbackDepth : 0;
 				var ahead = new TilePos(node.X + heading * (dy != 0 ? FallbackSideways : FallbackStep), node.Y + dy);
-				TilePos? open = PickDig(ctx, node, ahead, tooDeep);
+				DigPick? open = PickDig(ctx, node, ahead, tooDeep);
 				// Every way off limits (inside a biome zone): give up rather than dig on into it. Seen in game (world_eye run
 				// 59): legs went on through the underground desert after an antlion charger was seen, and the bot died there.
 				// Not for a sighting's zone in full armour: that is a cost (BotContext.OffLimitsOutright).
 				if (open == null && ctx.OffLimitsOutright(ahead))
 					return Fail(ctx, "every way from here is off limits");
-				t = open ?? ahead;
+				// Every way barred, some of it found unreachable: this way is done, and no leg goes to a barred target after
+				// all. Seen in game (measured run U22): from (2155,425), with (2180,425) found unreachable and the other way in
+				// a crowd's zone, the unreachable one was taken anyway, 9 times across 4 explorations, each "no path" after
+				// 4001 nodes; those explorations used up all 16 legs.
+				if (open is not DigPick pick) {
+					ctx.Log.Info($"Explore: every way to dig on from {node} is barred (off limits, or found unreachable); nothing left this way after {legs} leg(s)");
+					return Fail(ctx, $"no {What}: every way to dig on from {node} is barred");
+				}
+				// The best way on is back to ground that legs went to and that has nothing unseen round it: going there shows
+				// nothing new, nor do the ways that score worse. End now as fruitless, so the caller (MineSkill's count of
+				// explorations, the planner's travel and depth steps) moves on, rather than using up the legs. Not when too
+				// deep (that leg up is for safety), and only exploring down: along the surface, seen ground is the way across.
+				// Seen in game (measured run U22): 7 explorations in a row bounced 16 legs each between (2004,472) and
+				// (2033,472), 0.7 game hours each; 126 of 395 legs went back within 5 tiles of the leg before last (U19: 13%).
+				if (pick.SeenAndVisited && Bias == ExploreBias.Down && !tooDeep) {
+					ctx.Log.Info($"Explore: the best way on from {node}, {pick.At}, goes back to ground explored and seen already; nothing new this way: ending after {legs} leg(s)");
+					return Fail(ctx, $"no {What}: every way on from {node} is over ground explored already");
+				}
+				t = pick.At;
 			}
 			legs++;
 			legTarget = t;
@@ -208,7 +227,7 @@ public sealed class ExploreSkill : ISkill
 				heading = Math.Sign(t.X - node.X);
 			ctx.LastExplore = (node, heading); // the next exploration from near here carries on this way (BotContext.ExploreSide)
 			ctx.Log.Info($"Explore: leg {legs} to {t} ({(frontier != null ? "frontier" : "digging on")}) from {node}");
-			walk = new WalkToSkill(t) { Quiet = true, Tolerance = 3, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
+			walk = new WalkToSkill(t) { Quiet = true, Tolerance = LegTolerance, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			walk.Start(ctx);
 			legStart = ticks;
 			legFrom = node;
@@ -267,7 +286,47 @@ public sealed class ExploreSkill : ISkill
 		return SkillStatus.Running;
 	}
 
-	private static bool Barred(BotContext ctx, TilePos t) => ctx.OffLimitsOutright(t) || ctx.UnreachableTiles.Contains(t);
+	/// <summary>
+	/// A leg's walk ends within this many tiles of its target (<see cref="WalkToSkill.Tolerance"/>), so a dig target this
+	/// close to one found unreachable is the same target. Seen in game (measured run U22): leg 1 to (2181,425) ended "no
+	/// path", and leg 5 of the same exploration went to (2180,425), one column off, and ended the same way.
+	/// </summary>
+	public const int LegTolerance = 3;
+
+	private static bool Barred(BotContext ctx, TilePos t) => ctx.OffLimitsOutright(t) || UnreachableNear(ctx, t);
+
+	private static bool UnreachableNear(BotContext ctx, TilePos t)
+	{
+		for (int dx = -LegTolerance; dx <= LegTolerance; dx++)
+			for (int dy = -LegTolerance; dy <= LegTolerance; dy++)
+				if (ctx.UnreachableTiles.Contains(new TilePos(t.X + dx, t.Y + dy)))
+					return true;
+		return false;
+	}
+
+	/// <summary>
+	/// The way from <paramref name="n"/> towards <paramref name="o"/> as far as the edge of the off-limits ground it runs
+	/// into, if that is a leg's worth (<see cref="MinLegTiles"/>, as for frontiers) and not barred itself; else null.
+	/// Seen in game (measured run U22): at (2029,472) the dig on, (2054,472), was in the zone of a death at (2073,487), which
+	/// starts at column 2043; with no step at all that way, every leg went back west through the 30-column tunnel.
+	/// </summary>
+	private static TilePos? ToZoneEdge(BotContext ctx, TilePos n, TilePos o)
+	{
+		int d = n.ChebyshevTo(o);
+		for (int k = 1; k <= d; k++) {
+			var p = new TilePos(n.X + (o.X - n.X) * k / d, n.Y + (o.Y - n.Y) * k / d);
+			if (!ctx.OffLimitsOutright(p))
+				continue;
+			if (k - 1 < MinLegTiles)
+				return null;
+			var edge = new TilePos(n.X + (o.X - n.X) * (k - 1) / d, n.Y + (o.Y - n.Y) * (k - 1) / d);
+			return Barred(ctx, edge) ? null : edge;
+		}
+		return null;
+	}
+
+	/// <summary>A dig target, and whether it is both near an earlier leg's target and has nothing unseen round it.</summary>
+	private readonly record struct DigPick(TilePos At, bool SeenAndVisited);
 
 	/// <summary>
 	/// A leg target at the centre of a zone where monsters were seen, in full armour, scores this much worse, less towards
@@ -288,25 +347,45 @@ public sealed class ExploreSkill : ISkill
 	/// from where the bot stood whatever lay there, and from a tunnel's far end facing back it went back through the open
 	/// tunnel, leg after leg. Not barred ground (off limits, or found unreachable: world_eye run 42, a fight every few
 	/// seconds restarted mining and with it the same unreachable first leg for 12 game hours). Null if every way is barred.
+	/// <para>A way into off-limits ground is cut short at its edge (<see cref="ToZoneEdge"/>). Exploring down and unable to
+	/// go deeper (the gear's depth floor, or down found blocked), up a dig is a way too, at the cost of the downward pull per
+	/// row: fresh ground level still wins, but ground dug and seen already loses to it. Seen in game (measured run U22): 89%
+	/// of the 395 legs were at rows 400-499, 0.39 ore targets a leg, while rows 325-399 had 5.6% of them and 2.6 a leg (58 of
+	/// 204); at the floor the bot tunnelled to and fro at row 472 for 7 explorations with no way up offered.</para>
 	/// </summary>
-	private TilePos? PickDig(BotContext ctx, TilePos n, TilePos ahead, bool tooDeep)
+	private DigPick? PickDig(BotContext ctx, TilePos n, TilePos ahead, bool tooDeep)
 	{
-		var options = new[] {
+		var ways = new List<TilePos> {
 			ahead,
 			new TilePos(n.X - (ahead.X - n.X), ahead.Y),
 			new TilePos(n.X + heading * FallbackStep, n.Y),
 			new TilePos(n.X - heading * FallbackStep, n.Y),
 		};
-		TilePos? best = null;
+		if (Bias == ExploreBias.Down && !tooDeep && ahead.Y == n.Y) {
+			ways.Add(new TilePos(n.X + heading * FallbackSideways, n.Y - FallbackDepth));
+			ways.Add(new TilePos(n.X - heading * FallbackSideways, n.Y - FallbackDepth));
+		}
+		// Each way followed by the same cut short at off-limits ground's edge, so too deep, a shortened way up still comes
+		// before the level ones.
+		var options = new List<TilePos>();
+		foreach (TilePos w in ways) {
+			if (options.Contains(w))
+				continue;
+			options.Add(w);
+			if (ctx.OffLimitsOutright(w) && ToZoneEdge(ctx, n, w) is TilePos edge && !options.Contains(edge))
+				options.Add(edge);
+		}
+		DigPick? best = null;
 		float bestScore = float.MaxValue;
 		foreach (TilePos o in options) {
 			// Too deep: up first, level only with both ways up barred (skeletons killed the bot tunnelling below the floor).
 			if (Barred(ctx, o) || tooDeep && o.Y == n.Y && best != null)
 				continue;
 			float score = o.ChebyshevTo(n) + ctx.SightingDepth(o) * SightingPenalty;
-			if (NearVisited(ctx, o.X, o.Y))
+			bool visited = NearVisited(ctx, o.X, o.Y), seen = !NearUnseen(ctx.World, o.X, o.Y);
+			if (visited)
 				score += VisitedPenalty;
-			if (!NearUnseen(ctx.World, o.X, o.Y))
+			if (seen)
 				score += SeenPenalty;
 			if (Math.Sign(o.X - n.X) != heading)
 				score += TurnPenalty;
@@ -317,7 +396,7 @@ public sealed class ExploreSkill : ISkill
 				score -= (o.Y - n.Y) * 1.5f; // deeper is better, as for frontiers
 			if (score < bestScore) {
 				bestScore = score;
-				best = o;
+				best = new DigPick(o, visited && seen);
 			}
 		}
 		return best;
