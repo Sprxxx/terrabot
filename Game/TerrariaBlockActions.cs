@@ -240,10 +240,11 @@ public sealed class TerrariaBlockActions : IBlockActions
 		// Not a plant (grass, flowers, mushrooms: cut by anything) or rubble (piles, stalactites: vanilla breaks them when
 		// placing over them): seen in game (measured run S10), grass under a pile or a flower counted as unbreakable, and
 		// ruled out 113 of 161 arena sites round the spawn. Nor a torch (it drops as an item): measured run S12, the bot's own
-		// torches on the grass ruled out 43.
+		// torches on the grass ruled out 43. Nor a minecart track: frame-important (Main.cs:7923) but it needs no support;
+		// measured run U23, a shelter on a track at row 457 "could not dig down" twice, and a black slime killed the bot.
 		Tile above = Main.tile[x, y - 1];
 		if (above.HasTile && Main.tileFrameImportant[above.TileType] && !TileID.Sets.IsATreeTrunk[above.TileType] && !Main.tileCut[above.TileType]
-			&& !TileID.Sets.BreakableWhenPlacing[above.TileType] && above.TileType != TileID.Torches)
+			&& !TileID.Sets.BreakableWhenPlacing[above.TileType] && above.TileType != TileID.Torches && above.TileType != TileID.MinecartTrack)
 			return float.PositiveInfinity;
 		if (!WorldGen.CanKillTile(x, y))
 			return float.PositiveInfinity;

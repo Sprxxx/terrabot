@@ -723,6 +723,18 @@ public sealed class Scenario
 				Check = r => r.Broken != 6 ? $"broke {r.Broken} blocks, expected 6" : r.FallDamageHits > 0 ? "took fall damage" : null,
 			},
 			new() {
+				// Measured run U23: a shelter at row 457 "could not dig down" twice, on a minecart track (a frame-important
+				// tile) whose blocks below read as "under furniture"; dug in nowhere, the bot was killed by a black slime.
+				Name = "dig_down_from_a_track",
+				Rows = new[] {
+					"..........", "..........", "..........", "rrSrrrrrrr",
+					"@@######@@", "@@######@@", "@@######@@",
+					"@........@", "@........@", "@..G.....@", "@@@@@@@@@@",
+				},
+				Dig = true,
+				Check = r => r.FallDamageHits > 0 ? "took fall damage" : null,
+			},
+			new() {
 				Name = "pillar_up_cliff",
 				Rows = Cliff,
 				Build = true,
