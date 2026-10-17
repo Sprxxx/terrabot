@@ -241,8 +241,20 @@ public sealed partial class ProgressionPlanner
 	private string stuck;
 	private long lastShelterEnd = long.MinValue / 2;
 	private long stayHomeFailedAt = long.MinValue / 2;
-	/// <summary>Labels of <see cref="HaveItem.RefillBelow"/> needs whose full count was reached (and not used up since).</summary>
+	/// <summary>
+	/// <see cref="HaveItem.RefillBelow"/> needs whose full count was reached (and not used up since), by label and count: the
+	/// Eye's 500 "arrows" and the worm's 1000 "arrows" are two needs, and the worm's unmet one (the day's work before the Eye's
+	/// night, <see cref="DayWorkBeforeTheNight"/>) must not take the Eye's met one off the list.
+	/// </summary>
 	private readonly HashSet<string> stocked = new();
+	private static string StockKey(HaveItem h) => $"{h.Label}/{h.Count}";
+	/// <summary>Set while a pass resolves a night-only need by day: its wait for night, or the walk to the arena to wait there.</summary>
+	private bool nightOnlyByDay;
+	/// <summary>
+	/// The last pass chose day work over a night-only stage waiting for dark (<see cref="DayWorkBeforeTheNight"/>): at nightfall
+	/// the brain plans again, whatever the work, so that the night-only stage goes first again.
+	/// </summary>
+	public bool DayWorkBeforeNight { get; private set; }
 	private long lastRestEnd = long.MinValue / 2;
 	private readonly List<TilePos> badSites = new();
 	private int siteFailures;
@@ -906,6 +918,7 @@ public sealed partial class ProgressionPlanner
 		ctx.EvilErrand = false;
 		// Likewise the Underworld's (the depth limit lifted for the shaft, the bridge and the fight), and the Wall of Flesh's rules.
 		ctx.DepthErrand = false;
+		DayWorkBeforeNight = false;
 		WallOfFleshRules(ctx);
 		RememberStations(ctx);
 		NoteDungeon(ctx);
@@ -946,19 +959,27 @@ public sealed partial class ProgressionPlanner
 		costEvaluations = 0;
 		stuck = null;
 		var claims = new Dictionary<int, int>();
-		foreach (Need stage in StagesFor(Plan, ctx.Ids)) {
+		IReadOnlyList<Need> stages = StagesFor(Plan, ctx.Ids);
+		for (int i = 0; i < stages.Count; i++) {
+			Need stage = stages[i];
 			if (SkeletronStage(stage))
 				SkeletronPrepMet = true; // every stage before met
 			if (stage is PrepFor { Inner: TownNpcAlive })
 				WofPrepMet = true; // S1 met: on to the Guide, the shaft and the bridge
+			nightOnlyByDay = false;
 			ISkill skill = Resolve(stage, claims, 0, ctx);
 			if (stuck != null) {
 				Status = $"stuck on {stage.Label}: {stuck}";
 				Complete = false;
 				return null;
 			}
-			if (skill != null)
-				return AtNight(skill, ctx);
+			if (skill == null)
+				continue;
+			if (nightOnlyByDay && DayWorkBeforeTheNight(stages, i + 1, ctx) is ISkill day) {
+				DayWorkBeforeNight = true;
+				return AtNight(day, ctx);
+			}
+			return AtNight(skill, ctx);
 		}
 		Status = Plan switch {
 			Plans.Early => "early-game chain complete: work bench placed, wooden sword, wood stockpiled",
@@ -975,6 +996,58 @@ public sealed partial class ProgressionPlanner
 		Complete = true;
 		return null;
 	}
+
+	/// <summary>
+	/// A night-only stage waiting for dark by day (the Eye's lenses from demon eyes, the Eye's summon: <see cref="nightOnlyByDay"/>):
+	/// the day goes to the plan's later stages, in their order, and after the plan's last one to the next milestone's prep
+	/// (<see cref="NextMilestonePrep"/>), as a player spends the day on the work the plan needs anyway. Null when none of it is
+	/// to be done by day: then the wait (or the walk to the arena to wait there) as before. At nightfall the brain plans again
+	/// (<see cref="DayWorkBeforeNight"/>) and the night-only stage, first in the plan's order, goes first again.
+	/// Not a boss of a later stage (the bosses in the plan's order: the Eye's demonite is the Demon Bow for the worm, M10 G2),
+	/// nor a stage that itself waits. Seen in game (measured runs U31 and U32, world_eye): 49 and 70 heartbeats of
+	/// "Wait for night", in U32 from t518400 to t568800 for the sixth lens, every other stage of the plan met.
+	/// The later stages count the bag afresh, not after the earlier stages' claims: what the night stage is fought with (the
+	/// bow, the arrows it does not shoot) is theirs too. With the earlier claims, the worm's bow stage went to mining iron for
+	/// a second iron bow while the Eye's waited (NightWaitTests).
+	/// </summary>
+	private ISkill DayWorkBeforeTheNight(IReadOnlyList<Need> stages, int from, BotContext ctx)
+	{
+		string waiting = Status;
+		var claims = new Dictionary<int, int>();
+		bool evilErrand = ctx.EvilErrand, depthErrand = ctx.DepthErrand;
+		foreach (Need later in stages.Skip(from).Concat(NextMilestonePrep(Plan, ctx.Ids))) {
+			if (later is BossDefeated or BossLoot)
+				continue;
+			nightOnlyByDay = false;
+			ctx.EvilErrand = evilErrand;
+			ctx.DepthErrand = depthErrand;
+			ISkill s = Resolve(later, claims, 0, ctx);
+			if (stuck != null) {
+				// Not the plan stuck: its next stage is the night's, and that one is not. The plan's order holds: nothing after it.
+				ctx.Log.Info($"Auto: nothing to do by day before the night: {later.Label} is stuck ({stuck})");
+				stuck = null;
+				break;
+			}
+			if (s == null || s is WaitSkill || nightOnlyByDay)
+				continue;
+			Status = $"by day, before the night ({waiting}): {Status}";
+			nightOnlyByDay = false;
+			return s;
+		}
+		Status = waiting;
+		ctx.EvilErrand = evilErrand;
+		ctx.DepthErrand = depthErrand;
+		nightOnlyByDay = true;
+		return null;
+	}
+
+	/// <summary>
+	/// The prep of the milestone after this plan's last boss, for the days its night-only boss waits (<see cref="DayWorkBeforeTheNight"/>):
+	/// after the Eye (the boss plan), the Eater of Worlds' (Milestone 10, the next one; its world_eow run starts from the Eye's
+	/// checkpoint). Prep only (<see cref="PrepFor"/>: moot once that boss is down), never its fight.
+	/// </summary>
+	private static IEnumerable<Need> NextMilestonePrep(string plan, GameIds ids) =>
+		plan == Plans.Boss && ids.EvilBoss > 0 && ids.WormFood > 0 ? EvilBossStages(ids).OfType<PrepFor>() : Enumerable.Empty<Need>();
 
 	/// <summary>
 	/// Where the feet stand inside the house (on the floor, by the left wall's inner side) when a house is built and
@@ -1160,12 +1233,12 @@ public sealed partial class ProgressionPlanner
 		int claimed = claims.GetValueOrDefault(h.Accepts[0]);
 		int available = ctx.Inventory.CountAny(h.Accepts) - claimed;
 		if (h.RefillBelow > 0 && available >= h.Count)
-			stocked.Add(h.Label);
-		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(h.Label)) {
+			stocked.Add(StockKey(h));
+		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(StockKey(h))) {
 			claims[h.Accepts[0]] = claimed + Math.Min(h.Count, available);
 			return null;
 		}
-		stocked.Remove(h.Label);
+		stocked.Remove(StockKey(h));
 		int more = h.Count - Math.Max(0, available);
 		int item = h.Accepts.Count > 1 ? CheapestToFinish(h.Accepts, more, ctx) : Cheapest(h.Accepts, ctx);
 		// The other tiers of a tiered need (iron or silver gear): their ores do as well, if this one is not to be found.
@@ -1204,8 +1277,10 @@ public sealed partial class ProgressionPlanner
 					return travel;
 				return Do($"need {more} more {name} (mining to {target})", new MineSkill(item, src.TileType, target) { Also = AltOres(item, ctx) });
 			case SourceKind.Hunt:
-				if (NocturnalAiStyles.Contains(src.NpcAiStyle) && !ctx.IsNight)
+				if (NocturnalAiStyles.Contains(src.NpcAiStyle) && !ctx.IsNight) {
+					nightOnlyByDay = true; // the day goes to the plan's later work, if it has any (DayWorkBeforeTheNight)
 					return Do($"waiting for night to hunt for {name}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
+				}
 				return Do($"need {more} more {name} (hunting to {target})",
 					new HuntSkill(item, src.NpcAiStyle, target) { SpawnsAboveRow = NocturnalAiStyles.Contains(src.NpcAiStyle) ? SurfaceSpawnRow(ctx) : null });
 		}
@@ -1663,6 +1738,9 @@ public sealed partial class ProgressionPlanner
 		if (b.InEvilBiome)
 			return ResolveEvilBoss(b, bossHere, claims, depth, ctx);
 		if (!bossHere) {
+			// The summon in hand, by day, a night boss: everything below by day is the wait for night (the walk to the arena to
+			// wait there, the wait), and the day goes to the plan's later work if it has any (DayWorkBeforeTheNight).
+			nightOnlyByDay = b.NightOnly && !ctx.IsNight;
 			// To the arena first, by day, then wait there for night: seen in game (measured run S14), the summon made at an
 			// altar 360 rows down, the bot waited there all day, set off at nightfall, and the walk took the night.
 			if (ArenaBounds(ctx) is (int bx0, int bx1, int by) && !InArena(ctx.Node, bx0, bx1, by)) {

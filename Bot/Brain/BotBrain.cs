@@ -697,6 +697,14 @@ public sealed class BotBrain
 		// The walk looking for the Dungeon is by day (docs M11_SPEC.md S2): at nightfall the planner digs in instead.
 		else if (Auto && night && !wasNight && (Work is TravelUntilSkill || Work is ExploreSkill { JobKey: string dk } && dk.StartsWith("Explore dungeon")))
 			RequestReplan("nightfall");
+		// The day's work before a night-only stage (the Eye's lenses or summon; ProgressionPlanner.DayWorkBeforeNight), whatever
+		// it is (a build, a hunt, a trip): planned again at nightfall, so the night-only stage goes first again, as by the plan's
+		// order. Without it, armoured with the summon in hand, a mine begun by day went on into the night.
+		else if (Auto && night && !wasNight && Work != null && Planner.DayWorkBeforeNight)
+			RequestReplan("nightfall");
+		// Daybreak: the hunt for night prey (demon eyes leave at dawn) is planned again, so the day goes to the day's work.
+		else if (Auto && !night && wasNight && Work is HuntSkill { AiStyle: int ai } && System.Array.IndexOf(ProgressionPlanner.NocturnalAiStyles, ai) >= 0)
+			RequestReplan("daybreak");
 		wasNight = night;
 		if (Auto && ctx.Tick % HabitEvery == 0)
 			WatchPlace(ctx);

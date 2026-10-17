@@ -146,7 +146,7 @@ public sealed partial class ProgressionPlanner
 	{
 		GameIds ids = ctx.Ids;
 		ctx.NeededItems.Clear();
-		foreach (Need n in StagesFor(Plan, ids))
+		foreach (Need n in StagesFor(Plan, ids).Concat(NextMilestonePrep(Plan, ids)))
 			NoteNeeded(n, ctx.NeededItems);
 		if (ids.GuideVoodooDoll > 0)
 			ctx.NeededItems.Add(ids.GuideVoodooDoll);
