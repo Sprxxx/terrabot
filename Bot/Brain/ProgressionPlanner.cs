@@ -2591,6 +2591,8 @@ public sealed partial class ProgressionPlanner
 	/// at rows 340-565, before the hunting ground (1900,263) was found.
 	/// </para>
 	/// </summary>
+	private TilePos? mappedEvilNoted;
+
 	public TilePos? EvilGround(BotContext ctx)
 	{
 		// Kept a while: a spot while the biome is still seen there, none until the bot stands in the biome (an exploration for
@@ -2632,6 +2634,28 @@ public sealed partial class ProgressionPlanner
 					best = above;
 					break;
 				}
+		}
+		// Evil ground the map has revealed anywhere, not only at the surface nor this session (a cave's crimstone seen on the way
+		// to an altar): the surface over the nearest, as a player heads for the biome their map shows. Seen in game (world_boc B1,
+		// The Aggressive Site from the J2 checkpoint): the map held the Crimson's stone round the altar at (2579,873) from J2, no
+		// surface spot of it was revealed and the remembered ground starts empty on a resume: "exploring for the crimson (none seen
+		// yet) to hunt for Vertebra", 16-leg explorations turning back at x 2838 and 2927, 18 game hours and more.
+		if (best == null) {
+			var around = new TilePos(originX, ctx.SpawnTile?.Y ?? ctx.Node.Y);
+			TilePos? nearest = null;
+			foreach (int t in ctx.Ids.EvilTiles)
+				foreach (TilePos e in ctx.World.FindTiles(t, around, MaxTravelTiles)) {
+					if (nearest is not TilePos n || Math.Abs(e.X - originX) < Math.Abs(n.X - originX))
+						nearest = e;
+					break; // the nearest of its kind
+				}
+			if (nearest is TilePos found && SurfaceAt(ctx.Grid, found.X) is TilePos over && !ZoneOutNear(ctx, over)) {
+				best = over;
+				if (mappedEvilNoted != found) {
+					mappedEvilNoted = found;
+					ctx.Log.Info($"Auto: evil ground on the map at {found} ({ctx.Knowledge?.TileName(ctx.World.TileTypeAt(found.X, found.Y))}); to the surface over it at {over}");
+				}
+			}
 		}
 		evilGround = best;
 		return best;

@@ -32,6 +32,33 @@ public class EvilBossTests
 		return g;
 	}
 
+	/// <summary>
+	/// world_boc B1 (The Aggressive Site, from the J2 checkpoint): the evil biome's stone on the map only underground (round an
+	/// altar seen on an earlier trip), its surface unrevealed, nothing remembered on a resume: the explorations for it turned
+	/// back 360 tiles out. The surface over the evil ground the map shows is the place to go.
+	/// </summary>
+	[Fact]
+	public void EvilGround_OnTheMapOnlyUnderground_IsGoneTo_NotExploredFor()
+	{
+		// 500 wide, ground from row 45 down to row 200; the ebonstone 120 rows under the surface, out of every surface look.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y <= Feet; y++)
+			rows.Add(y == Feet ? "...S" + new string('.', 496) : new string('.', 500));
+		for (int y = Feet + 1; y < 200; y++)
+			rows.Add(new string('s', 500));
+		rows.Add(new string('@', 500));
+		var g = new FakeGame(rows.ToArray());
+		for (int x = 400; x <= 420; x++)
+			for (int y = Feet + 120; y <= Feet + 121; y++)
+				g.TileTypes[new TilePos(x, y)] = FakeGame.TileEbonstone;
+		BotContext ctx = Armoured(g);
+		var p = new ProgressionPlanner();
+		TilePos? ground = p.EvilGround(ctx);
+		output.WriteLine($"evil ground {ground}");
+		Assert.True(ground is TilePos e && e.X >= 400 && e.X <= 420, $"{ground}");
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.StartsWith("Auto: evil ground on the map at"));
+	}
+
 	/// <summary>Iron armour worn (three pieces, defense 9 with the set bonus), the iron pickaxe (40: ebonstone wants 65).</summary>
 	private BotContext Armoured(FakeGame g)
 	{
