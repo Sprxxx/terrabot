@@ -28,6 +28,19 @@ public sealed class HellbridgeSkill : ISkill
 	public const int ClearRows = 4;
 	/// <summary>Ticks an action (a mine, a place) gets before it counts as failed; three failures on a cell fail the skill.</summary>
 	public const int ActionTicks = 90;
+	/// <summary>
+	/// Ticks a tree cell gets: an axe does axe-power / 5 × 1.2 a swing against a tree tile's 100 (Player.cs, the tileAxe branch of
+	/// ItemCheck_UseMiningTools_ActuallyUseMiningTool: a Copper Axe 8, thirteen swings of <see cref="AxeSwingTicks"/>), far more than
+	/// <see cref="ActionTicks"/>. Seen in game (world_wof E11 and E16, 2026-10-17): "could not mine (3967,1037) (3 tries)", tile 634,
+	/// the axe on the hotbar and swinging, nine swings in the 270 ticks of three tries, the tree at 72 of 100.
+	/// </summary>
+	public static int TreeTicks(BotContext ctx)
+	{
+		int aSwing = Math.Max(1, (int)(ctx.AxePower / 5 * 1.2f));
+		return (100 + aSwing - 1) / aSwing * AxeSwingTicks + 60;
+	}
+	/// <summary>Ticks between an axe's swings (vanilla useTime of the early axes: 30).</summary>
+	public const int AxeSwingTicks = 30;
 	public const int MaxFailuresPerCell = 3;
 	/// <summary>Ticks lava in the body's rows ahead is waited for to drain (a pocket runs down through the open bridge cell in a few seconds).</summary>
 	public const int LavaWaitTicks = 300;
@@ -422,14 +435,16 @@ public sealed class HellbridgeSkill : ISkill
 				ctx.Log.Info($"Hellbridge: {occupant} in the bridge's cell {cell}: waiting for it to go");
 			actionTicks = 0;
 		}
+		bool tree = !place && ctx.World?.IsTreeTrunk(cell.X, cell.Y) == true;
+		int budget = tree ? TreeTicks(ctx) : ActionTicks;
 		if (occupant != null)
 			State = $"waiting for {occupant} to leave {cell}";
-		else if (++actionTicks > ActionTicks) {
+		else if (++actionTicks > budget) {
 			int f = failures.TryGetValue(cell, out int was) ? was + 1 : 1;
 			failures[cell] = f;
 			actionTicks = 0;
 			if (f == 1)
-				ctx.Log.Info($"Hellbridge: {(place ? "placing at" : "mining")} {cell} did nothing in {ActionTicks} ticks: the cell reads {ctx.Grid.Get(cell.X, cell.Y)}, "
+				ctx.Log.Info($"Hellbridge: {(place ? "placing at" : "mining")} {cell} did nothing in {budget} ticks: the cell reads {ctx.Grid.Get(cell.X, cell.Y)}, "
 					+ $"tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}, us at {ctx.Node} ({ctx.Body.X:0},{ctx.Body.Y:0} px), {ctx.Blocks?.BlockCount ?? 0} blocks on the hotbar"
 					+ (!place && ctx.World?.IsTreeTrunk(cell.X, cell.Y) == true ? $", a tree: the axe{(ctx.Blocks?.HasAxe == true ? "" : " (none on the hotbar)")}" : ""));
 			// A chest (a ruined house's) in the deck's cell: the game keeps it while it holds items (WorldGen.KillTile: Chest.DestroyChest
@@ -448,7 +463,7 @@ public sealed class HellbridgeSkill : ISkill
 			else if (f >= (place ? 2 : 1) * MaxFailuresPerCell)
 				return Fail(ctx, $"could not {(place ? "place a block at" : "mine")} {cell} ({f} tries{(place ? ", from the end and a column back" : "")})");
 			else
-				ctx.Log.Info($"Hellbridge: {(place ? "placing" : "mining")} {cell} did nothing in {ActionTicks} ticks, try {f + 1}");
+				ctx.Log.Info($"Hellbridge: {(place ? "placing" : "mining")} {cell} did nothing in {budget} ticks, try {f + 1}");
 		}
 		// A tree in the way (an ash tree on a knoll: vanilla keeps the block under a trunk, WorldGen.CanKillTile, so the skill goes for
 		// the trunk first) is chopped, with the axe: a pickaxe does nothing to a tree. Seen in game (world_wof E11, 2026-10-17): "could

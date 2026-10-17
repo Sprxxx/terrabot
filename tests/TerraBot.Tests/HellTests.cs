@@ -570,6 +570,9 @@ public class HellTests
 		var tree = new TilePos(knoll, BridgeRow - 4); // its base on the knoll's top, the jump's spare row
 		g.Trees[tree] = 4;
 		g.Blocks.KeptByTheGame = (x, y) => g.Trees.ContainsKey(new TilePos(x, y - 1));
+		g.ChopTicks = 390; // a Copper Axe's thirteen swings (E16: three tries of 90 ticks were not enough)
+		ctx.AxePower = 35;
+		Assert.True(HellbridgeSkill.TreeTicks(ctx) >= 390, $"the tree's budget {HellbridgeSkill.TreeTicks(ctx)}");
 		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
 		var log = (TestLog)ctx.Log;
 		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, bridge, 20000);

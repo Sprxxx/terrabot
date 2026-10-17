@@ -123,6 +123,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly Dictionary<TilePos, int> Trees = new(); // base -> height
 	/// <summary>The tile type a trunk cell reads as (vanilla TileID.Trees).</summary>
 	public const int TileTree = 5;
+	/// <summary>Ticks of axe use a tree takes (a Copper Axe in the game: about 390 for one tile).</summary>
+	public int ChopTicks = 30;
 	/// <summary>The wood a tree drops (base -> item); Wood unless set.</summary>
 	public readonly Dictionary<TilePos, int> TreeWoods = new();
 	public readonly Dictionary<TilePos, int> TileTypes = new(); // solid cells that are not dirt
@@ -773,7 +775,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			if (baseOf is TilePos tree && Math.Abs(Sim.Node.X + 1 - aim.X) <= 4) {
 				int height = Trees[tree];
 				chopTicks[aim] = chopTicks.GetValueOrDefault(aim) + 1;
-				if (chopTicks[aim] >= 30) {
+				if (chopTicks[aim] >= ChopTicks) {
 					int wood = TreeWood(tree.X, tree.Y);
 					int taken = height - (tree.Y - aim.Y);
 					if (aim == tree)
