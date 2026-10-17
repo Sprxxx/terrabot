@@ -144,12 +144,19 @@ public sealed class HellbridgeSkill : ISkill
 	/// very end threw the bot off into the lava below (world_wof E11, 2026-10-17: two of three deaths, "Hurt 40 (projectile type 44)
 	/// ... at (3882,1041)" then "Fall: ... lava at (3887,1072), 31 rows down"). The reach (tileRangeX 5) covers the next column from here.
 	/// </summary>
-	public const int EdgeMargin = 2;
+	public const int EdgeMargin = 3;
+	/// <summary>Tiles within which a hostile (not a spared one) has the lip raised at the end (<see cref="ThreatNear"/>).</summary>
+	public const int LipRadiusTiles = 30;
+	/// <summary>Blocks the lip stands on the next column's deck block.</summary>
+	public const int LipHeight = 2;
+	/// <summary>The column the lip stands on (or is going up on) while a threat is near; null otherwise.</summary>
+	private int? lipAt;
 
 	/// <summary>Where to stand to work on the column past <paramref name="end"/>: on the deck, <see cref="EdgeMargin"/> columns short of it, or in the dip of a column passed over (<see cref="Passable"/>).</summary>
 	private TilePos StandAt(int end, BotContext ctx)
 	{
-		int x = (Dir > 0 ? end - 1 : end) - Dir * EdgeMargin - (standBack ? Dir : 0);
+		// The retry from "a column back" (standBack) is a column closer instead: the reach (tileRangeX 5) ends a column past the next.
+		int x = (Dir > 0 ? end - 1 : end) - Dir * (standBack ? EdgeMargin - 1 : EdgeMargin);
 		x = Dir > 0 ? Math.Max(x, FromX) : Math.Min(x, FromX); // never behind the start: the deck begins there
 		if (!Passable(ctx, ctx.Grid, Row, x))
 			return new TilePos(x, Row - 1);
@@ -192,12 +199,27 @@ public sealed class HellbridgeSkill : ISkill
 		// From where it ended last tick while that column still stands (a scan of up to 1700 columns a tick otherwise).
 		int scanFrom = End != FromX && (End - FromX) * Dir > 0 && (Built(g, Row, End) || Passable(ctx, g, Row, End)) ? End : FromX;
 		End = BridgeEnd(g, Row, scanFrom, ToX, ctx);
+		// The lip's column is the next deck block with two on top (below): the end is held short of it while the lip is wanted, so the
+		// two go on before the bridge moves on; the lip gone with the threat, the two come down as cells in the way.
+		bool threat = ThreatNear(ctx);
+		if (!threat)
+			lipAt = null;
+		else if (lipAt is int lip && (End - lip) * Dir >= 0)
+			End = lip - Dir;
 		LogProgress(ctx);
 		if (End != lastEnd) {
 			standBack = false; // on: from the end again
 			lastEnd = End;
 		}
 		if (End == ToX) {
+			// Done at the end, a cliff over lava: back from it first, out of a hit's knockback (about five tiles, FightSkill.KnockbackTiles),
+			// before the next skill works here. Seen in game (world_wof E12, 2026-10-17): the arrows crafted at the end as the bridge was
+			// done, a sickle's knockback carried the bot three tiles off it, 25 rows down, dead.
+			if (Math.Abs(ctx.Node.X - ToX) < FightSkill.KnockbackTiles + 2 && (Dir > 0 ? ctx.Node.X > FromX : ctx.Node.X < FromX)) {
+				ctx.Output.Horizontal = -Dir;
+				State = "stepping back from the end";
+				return SkillStatus.Running;
+			}
 			State = "done";
 			ctx.Log.Info($"Hellbridge done: row {Row} from x {FromX} to {ToX}, {Placed} blocks placed and {Mined} cells mined here");
 			return SkillStatus.Succeeded;
@@ -228,6 +250,25 @@ public sealed class HellbridgeSkill : ISkill
 			return SkillStatus.Running;
 		}
 		int c = End + Dir;
+		// 0. A hostile near while the end is a cliff over lava: a lip on the next column (its deck block and LipHeight on top) stops a
+		// hit's knockback; the bridge holds behind it (the fight reflex takes the hostile) and takes the two down again, as cells in
+		// the way, once it is gone. Standing back cannot do it: a knockback carries about five tiles (FightSkill.KnockbackTiles), more
+		// than the reach allows. Seen in game (world_wof E11 and E12, 2026-10-17): four deaths from a sickle's or a bite's knockback
+		// at the end, 20-35 rows down into lava.
+		if (threat) {
+			lipAt ??= c;
+			for (int y = Row; y >= Row - LipHeight; y--) {
+				CellKind lk = g.Get(c, y);
+				if (lk.IsSolid())
+					continue;
+				if (lk.HasLava() || ctx.World != null && ctx.World.TileTypeAt(c, y) >= 0 || ctx.Blocks == null || !ctx.Blocks.CanPlaceAt(c, y))
+					break; // no lip there: what is in the cell stays
+				return Act(ctx, new TilePos(c, y), place: true);
+			}
+			ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(stand.X, ctx.Physics), ctx.Physics);
+			State = $"holding behind the lip at x {c}: a hostile near";
+			return SkillStatus.Running;
+		}
 		// 1. The body's rows over the next column, top down.
 		for (int y = Row - ClearRows; y <= Row - 1; y++) {
 			var cell = new TilePos(c, y);
@@ -413,6 +454,19 @@ public sealed class HellbridgeSkill : ISkill
 				loggedPercent = p;
 				ctx.Log.Info($"Hellbridge: {p} % (x {End} of {FromX}->{ToX})");
 			}
+	}
+
+	/// <summary>A hostile that is not spared within <see cref="LipRadiusTiles"/>, or a shot flying at the body (a spared Voodoo Demon's sickle too).</summary>
+	private static bool ThreatNear(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		foreach (EntityInfo h in ctx.Hostiles)
+			if (h.Damage > 0 && !ctx.Spared(h) && h.DistanceTo(cx, cy) <= LipRadiusTiles * 16f)
+				return true;
+		foreach (ShotInfo s in ctx.Shots)
+			if (s.Damage > 0 && s.DistanceTo(cx, cy) <= ShotDodge.ShotThreatPx && WallOfFleshPattern.Incoming(s, cx, cy, Core.Physics.Dodge.Horizon))
+				return true;
+		return false;
 	}
 
 	private static bool IsContainer(BotContext ctx, TilePos cell) =>

@@ -219,6 +219,10 @@ public sealed class BotBrain
 	/// it runs as a reflex does (the errand's skill paused, resumed after); declined, it is remembered and offered again only once the
 	/// detour is less than half what it was. Never during a reflex. No other code path leaves an errand for it.
 	/// </summary>
+	private readonly ShotDodge deckDodge = new();
+	/// <summary>Dodges planned on the errand's deck outside a fight (<see cref="ShotDodge"/>).</summary>
+	public int DeckDodges => deckDodge.Dodges;
+
 	private void OfferOpportunities(BotContext ctx)
 	{
 		if (Override != null || Work == null || Errand == null)
@@ -1123,6 +1127,12 @@ public sealed class BotBrain
 			return;
 
 		SkillStatus status = Current.Tick(ctx);
+		// On the errand's deck (the hellbridge), shots are dodged whatever the work: the bridge and the crafting at its end took the
+		// sickles that threw the bot off it (E11, E12, 2026-10-17); only a fight dodged. The fights keep their own dodge.
+		if (status == SkillStatus.Running && ctx.Shots.Count > 0 && Current is not FightSkill && Current is not BossFightSkill
+			&& Errand?.FightDeck(ctx) is (int dx0, int dx1, int standY) && ctx.Node.Y == standY && ctx.Body.Grounded
+			&& ctx.Node.X >= dx0 - FightSkill.DeckSlack && ctx.Node.X <= dx1 + FightSkill.DeckSlack)
+			deckDodge.Apply(ctx, (dx0, dx1, standY), Current.Name);
 		if (status == SkillStatus.Running && WorkStuck(ctx)) {
 			ctx.Log.Warn($"Auto: no progress in {NoProgressTicks / 3600} game hours ({Work.Describe()} at {ctx.Node}); giving the job up");
 			stuckWork = true;

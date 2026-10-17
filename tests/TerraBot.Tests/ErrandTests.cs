@@ -239,6 +239,29 @@ public class ErrandTests
 		Assert.Equal(0, access.PhaseFailures);
 	}
 
+	/// <summary>E11 and E12 (2026-10-17): sickles taken while building and crafting at the bridge's end, where no fight ran, threw the bot off into lava.</summary>
+	[Fact]
+	public void OnTheBridge_AShotFlyingAtTheBot_IsDodged_WhateverTheWork()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 40000, () => access.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill && brain.Override == null);
+		Assert.NotNull(access.FightDeck(ctx));
+		float sx = ctx.Body.X + 9 * 16f, sy = ctx.Body.Y + ctx.Physics.Height - 20f;
+		for (int t = 0; t < 90 && brain.DeckDodges == 0; t++) {
+			g.Shots.Clear();
+			g.Shots.Add(new ShotInfo(100, 44, sx, sy, 16, 16, -6f, 0f, 36, false));
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+			sx -= 6f;
+		}
+		output.WriteLine($"{brain.Describe()}: deck dodges {brain.DeckDodges}");
+		Assert.True(brain.DeckDodges > 0, "no dodge on the deck outside a fight");
+		Assert.IsType<HellbridgeSkill>(brain.Work);
+	}
+
 	/// <summary>world_wof E10 (2026-10-17): a chest in the deck's cell stopped the bridge three times and blocked the errand. Looted, then mined.</summary>
 	[Fact]
 	public void AChestInTheBridgesWay_IsLooted_ThenMined_AndNoFailureIsCounted()

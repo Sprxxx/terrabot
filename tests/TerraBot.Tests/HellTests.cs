@@ -504,6 +504,50 @@ public class HellTests
 	}
 
 	/// <summary>
+	/// E11 and E12 (2026-10-17): four deaths from a sickle's or a bite's knockback at the bridge's end, 20-35 rows down into lava. While
+	/// a hostile is near, a lip (the next deck block and two on top) stops the knockback; the bridge holds behind it and takes the two
+	/// down once the hostile is gone.
+	/// </summary>
+	[Fact]
+	public void TheHellbridge_RaisesALipAtItsEnd_WhileAHostileIsNear_AndTakesItDownAfter()
+	{
+		var (g, ctx) = OnTheTower();
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		bridge.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		for (int t = 0; t < 20000 && s == SkillStatus.Running && bridge.End < TowerTo + 6; t++) {
+			g.Refresh(ctx);
+			s = bridge.Tick(ctx);
+			g.Step(ctx);
+		}
+		int end = bridge.End, lipX = end + 1;
+		// A Demon 20 tiles ahead, over the lava.
+		g.ExtraHostiles.Add(new EntityInfo(9, 62, "Demon", (end + 20) * 16f, (BridgeRow - 6) * 16f, 38, 54, 0f, 0f, 120, 120, 30, 22));
+		for (int t = 0; t < 900 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = bridge.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"with the Demon near: {bridge.Describe()} at {g.Sim.Node}; hostiles {ctx.Hostiles.Count}, lip cells {g.Grid.Get(lipX, BridgeRow)}/{g.Grid.Get(lipX, BridgeRow - 1)}/{g.Grid.Get(lipX, BridgeRow - 2)}");
+		Assert.Equal(SkillStatus.Running, s);
+		Assert.True(g.Grid.Get(lipX, BridgeRow).IsSolid() && g.Grid.Get(lipX, BridgeRow - 1).IsSolid() && g.Grid.Get(lipX, BridgeRow - 2).IsSolid(), "no lip");
+		Assert.Equal(end, bridge.End);
+		Assert.Contains("lip", bridge.Describe());
+		// It leaves: the lip's two blocks come down, and the bridge goes on to its end.
+		g.ExtraHostiles.Clear();
+		for (int t = 0; t < 20000 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = bridge.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"after: {bridge.Describe()} at {g.Sim.Node}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.False(g.Grid.Get(lipX, BridgeRow - 1).IsSolid(), "the lip left standing");
+		for (int x = TowerTo; x <= 70; x++)
+			Assert.True(HellbridgeSkill.Built(g.Grid, BridgeRow, x), $"column {x}");
+	}
+
+	/// <summary>
 	/// world_wof E11 (2026-10-17): "could not mine (3967,1037) (3 tries)", tile 634, an ash tree on a knoll in the bridge's way at 94 %.
 	/// The game keeps the block under a trunk (WorldGen.CanKillTile), so the bridge goes for the tree; a pickaxe does nothing to it.
 	/// </summary>
@@ -571,6 +615,8 @@ public class HellTests
 		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, bridge, 20000);
 		output.WriteLine($"{st}: {bridge.Describe()}, at {g.Sim.Node}, hot deck {g.Grid.Get(hotDeck.X, hotDeck.Y)}");
 		Assert.Equal(SkillStatus.Succeeded, st);
+		// E12 (2026-10-17): done, the bridge steps back from its end, out of a hit's knockback, before the next skill works there.
+		Assert.True(System.Math.Abs(g.Sim.Node.X - to) >= FightSkill.KnockbackTiles + 2, $"left at the end: {g.Sim.Node}");
 		Assert.True(g.Grid.Get(hotDeck.X, hotDeck.Y).CanStandOn(), "the hot deck cell was mined and a block put in its place");
 		Assert.False(g.Grid.Get(hotWay.X, hotWay.Y).IsSolid());
 		for (int x = TowerTo; x <= to; x++)
