@@ -206,6 +206,67 @@ public class WallOfFleshPlanTests
 		Assert.False(ctx.SparedInLine(cx, cy, cx, cy - 300f, 640f));
 	}
 
+	/// <summary>The bot on the tower's roof in the Underworld, the brain in auto mode on the plan "hellbridge" (60 tiles).</summary>
+	private (FakeGame, BotContext, BotBrain) OnTheTowerAuto(bool guide)
+	{
+		FakeGame g = HellTests.Hell();
+		var p = Core.Physics.PhysicsParams.Default;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(HellTests.TowerTo - 1, p), Y = Core.Pathfinding.Body.StandingTop(Row - 1, p), ReleaseJump = true };
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.HasRanged = true;
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = 13;
+		ctx.UnderworldRow = Row - ProgressionPlanner.BridgeRowsUnderTop;
+		g.Blocks.TicksPerBlock = 4;
+		g.Items[FakeGame.StoneBlock] = 300;
+		g.Items[FakeGame.IronBow] = 1;
+		g.Items[FakeGame.WoodenArrow] = 200;
+		if (guide)
+			g.AliveTownNpcs.Add(FakeGame.GuideNpc);
+		// A Voodoo Demon (AI style 14, a flier) hanging over the lava 3 tiles past the tower's end, level with the bot.
+		g.ExtraHostiles.Add(new EntityInfo(5, FakeGame.VoodooDemonNpc, "Voodoo Demon", (HellTests.TowerTo + 4) * 16f, (Row - 3) * 16f, 30, 40, 0f, 0f, 140, 140, 32, 14));
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Hellbridge);
+		brain.Planner.BridgeLength = 40;
+		g.Refresh(ctx);
+		return (g, ctx, brain);
+	}
+
+	[Fact]
+	public void TheVoodooRule_TheGuideAlive_TheDemonByTheBridgeIsNotFought_AndTheBridgeIsBuilt()
+	{
+		var (g, ctx, brain) = OnTheTowerAuto(guide: true);
+		bool fought = false;
+		int t = 0;
+		for (; t < 20000 && brain.Auto && !(brain.Planner.Complete && brain.Current == null); t++) {
+			g.Refresh(ctx);
+			ctx.Tick = t;
+			brain.Tick(ctx);
+			fought |= brain.Current is FightSkill;
+			g.Step(ctx);
+		}
+		output.WriteLine($"after {t}: {brain.Describe()} / {brain.Planner.Status}");
+		Assert.True(brain.Planner.Complete, brain.Planner.Status);
+		Assert.False(fought);
+		Assert.Contains(FakeGame.VoodooDemonNpc, ctx.SparedTypes);
+	}
+
+	[Fact]
+	public void TheVoodooRule_NoGuide_TheDemonIsFoughtAsAnyOther()
+	{
+		var (g, ctx, brain) = OnTheTowerAuto(guide: false);
+		bool fought = false;
+		for (int t = 0; t < 600 && !fought; t++) {
+			g.Refresh(ctx);
+			ctx.Tick = t;
+			brain.Tick(ctx);
+			fought |= brain.Current is FightSkill;
+			g.Step(ctx);
+		}
+		Assert.True(fought, brain.Describe());
+		Assert.Empty(ctx.SparedTypes);
+	}
+
 	[Fact]
 	public void KeepRoom_NeverTrashesTheDoll_NorTheShadowScales_NorAStagesItem()
 	{

@@ -145,12 +145,22 @@ public sealed partial class ProgressionPlanner
 	private void WallOfFleshRules(BotContext ctx)
 	{
 		GameIds ids = ctx.Ids;
-		ctx.SparedTypes.Clear();
 		ctx.NeededItems.Clear();
 		foreach (Need n in StagesFor(Plan, ids))
 			NoteNeeded(n, ctx.NeededItems);
 		if (ids.GuideVoodooDoll > 0)
 			ctx.NeededItems.Add(ids.GuideVoodooDoll);
+		SpareRules(ctx);
+	}
+
+	/// <summary>
+	/// The spared NPCs (G7), every tick in auto mode (BotBrain), before its danger check: a fight started on the tick before the
+	/// first planning pass, or between passes as the bot walks out of the hunt's stretch, would shoot the Voodoo Demon.
+	/// </summary>
+	public void SpareRules(BotContext ctx)
+	{
+		GameIds ids = ctx.Ids;
+		ctx.SparedTypes.Clear();
 		if (!WallOfFleshPlan(ids) || ctx.World == null || ids.VoodooDemon <= 0 || ctx.World.BossDefeated(ids.WallOfFlesh))
 			return;
 		if (ctx.World.TownNpcAlive(ids.Guide) && !VoodooHuntOn(ctx))
@@ -182,7 +192,7 @@ public sealed partial class ProgressionPlanner
 
 	/// <summary>The hunt for a Voodoo Demon is on: the bridge built, no doll carried, the bot on its last <see cref="HuntTiles"/>.</summary>
 	private bool VoodooHuntOn(BotContext ctx) =>
-		hellbridgeDone && ctx.Inventory.Count(ctx.Ids.GuideVoodooDoll) <= 0 && NearBridgeEnd(ctx, HuntTiles);
+		Plan == Plans.WallOfFlesh && hellbridgeDone && ctx.Inventory.Count(ctx.Ids.GuideVoodooDoll) <= 0 && NearBridgeEnd(ctx, HuntTiles);
 
 	/// <summary>On the bridge's row, within <paramref name="tiles"/> of its far end.</summary>
 	private bool NearBridgeEnd(BotContext ctx, int tiles)

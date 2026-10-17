@@ -662,8 +662,10 @@ public sealed class BotBrain
 			ctx.Explored.Add(ctx.Node);
 			BeginOverride(new SurfaceSkill(), ctx);
 		}
-		if (Auto)
+		if (Auto) {
 			GuardianReflex(ctx);
+			Planner.SpareRules(ctx); // the Voodoo Demon spared before the danger check below (docs M12_SPEC.md G7)
+		}
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
 		// A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place: home if it is near, else fight on.
