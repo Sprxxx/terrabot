@@ -80,6 +80,90 @@ public static class WormPattern
 	}
 
 	/// <summary>
+	/// Every segment in view as a <see cref="Threat"/> with its path over <paramref name="horizon"/> ticks worked out as the game
+	/// moves the chain: a head (or a segment whose leader is out of view) as <see cref="Predict"/> has it, on its velocity
+	/// (measured for a body, BossFightSkill.Measured); each other segment pulled along the line to the one ahead of it (its
+	/// ai[1], NPC.cs:54749) until it is as far from it as it is now (the game keeps it 38 px off, NPC.cs:55280-55327), the
+	/// leader moved first. A body does not go on in a straight line: it follows the chain ahead round the bends a head made.
+	/// Returned in the order of <paramref name="segs"/>.
+	/// </summary>
+	public static Threat[] PredictChain(System.Collections.Generic.IReadOnlyList<EntityInfo> segs, ITileGrid grid,
+		float playerX, float playerY, bool expert, int horizon = Dodge.Horizon)
+	{
+		int n = segs.Count;
+		var index = new System.Collections.Generic.Dictionary<int, int>(n);
+		for (int i = 0; i < n; i++)
+			index[segs[i].Id] = i;
+		var leader = new int[n];
+		for (int i = 0; i < n; i++)
+			leader[i] = segs[i].Type != EaterHead && index.TryGetValue((int)segs[i].Ai1, out int l) && l != i ? l : -1;
+		// Leaders before their followers: by how many links each is from a free segment (one in a loop counts as free).
+		var depth = new int[n];
+		for (int i = 0; i < n; i++) {
+			int d = 0;
+			for (int j = leader[i]; j >= 0 && d <= n; j = leader[j])
+				d++;
+			if (d > n) {
+				leader[i] = -1;
+				d = 0;
+			}
+			depth[i] = d;
+		}
+		var order = new int[n];
+		for (int i = 0; i < n; i++)
+			order[i] = i;
+		Array.Sort((int[])depth.Clone(), order);
+		var px = new float[n][];
+		var py = new float[n][];
+		var cx = new float[n];
+		var cy = new float[n];
+		var vx = new float[n];
+		var vy = new float[n];
+		var gravity = new float[n];
+		var spacing = new float[n];
+		float top = TopSpeed(expert);
+		for (int i = 0; i < n; i++) {
+			EntityInfo s = segs[i];
+			(cx[i], cy[i], vx[i], vy[i]) = (s.CenterX, s.CenterY, s.VX, s.VY);
+			px[i] = new float[horizon];
+			py[i] = new float[horizon];
+			if (leader[i] < 0)
+				gravity[i] = s.Type == EaterHead && Airborne(s, grid, playerX, playerY) ? AirGravity : 0f;
+			else {
+				EntityInfo l = segs[leader[i]];
+				float dx = l.CenterX - s.CenterX, dy = l.CenterY - s.CenterY;
+				spacing[i] = MathF.Sqrt(dx * dx + dy * dy);
+			}
+		}
+		for (int t = 0; t < horizon; t++)
+			foreach (int i in order) {
+				if (leader[i] < 0) {
+					if (gravity[i] != 0f)
+						vy[i] = MathF.Min(vy[i] + gravity[i], top);
+					cx[i] += vx[i];
+					cy[i] += vy[i];
+				}
+				else {
+					int l = leader[i];
+					float dx = cx[l] - cx[i], dy = cy[l] - cy[i], d = MathF.Sqrt(dx * dx + dy * dy);
+					if (d > 0f) {
+						float f = (d - spacing[i]) / d;
+						cx[i] += dx * f;
+						cy[i] += dy * f;
+					}
+				}
+				px[i][t] = cx[i] - segs[i].Width * 0.5f;
+				py[i][t] = cy[i] - segs[i].Height * 0.5f;
+			}
+		var threats = new Threat[n];
+		for (int i = 0; i < n; i++) {
+			EntityInfo s = segs[i];
+			threats[i] = new Threat(s.X, s.Y, s.Width, s.Height, s.VX, s.VY) { PathX = px[i], PathY = py[i] };
+		}
+		return threats;
+	}
+
+	/// <summary>
 	/// Where (centre x, px) a head will be when its centre comes to height <paramref name="y"/>: falling under gravity in
 	/// the air, for up to a whole arc (up and down at top speed, 2 × 10 / 0.11 ≈ 180 ticks); in the ground in a straight
 	/// line for the dodge planner's horizon (it steers there, so a line is good for no longer). Its x now if it does not

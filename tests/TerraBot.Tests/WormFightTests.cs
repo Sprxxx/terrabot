@@ -378,6 +378,138 @@ public class WormFightTests
 		Assert.Equal(1, fight.SegmentsInView);
 	}
 
+	/// <summary>
+	/// The Eater of Worlds as the game moves it, for closed-loop tests (NPC.AI_006_Worms): the head on its velocity, falling at
+	/// 0.11 px/tick² up to 10 in open air (NPC.cs:55366-55378; in the ground it goes straight on here, where the game steers it
+	/// at the player); each segment behind it pulled along the line to the one ahead until 38 px from it, its velocity zeroed
+	/// (NPC.cs:55280-55327). Ids 1, 2, ... from the head; each segment's ai[1] is the one ahead (NPC.cs:54749).
+	/// </summary>
+	private sealed class WormSim
+	{
+		public readonly float[] Cx, Cy;
+		public float HeadVX, HeadVY;
+		public const float Spacing = Size;
+
+		/// <summary><paramref name="n"/> segments in a line back from the head's centre, against (<paramref name="dx"/>, <paramref name="dy"/>), moving that way at <paramref name="speed"/>.</summary>
+		public WormSim(int n, float headCx, float headCy, float dx, float dy, float speed)
+		{
+			float d = System.MathF.Sqrt(dx * dx + dy * dy);
+			dx /= d;
+			dy /= d;
+			Cx = new float[n];
+			Cy = new float[n];
+			for (int k = 0; k < n; k++) {
+				Cx[k] = headCx - k * Spacing * dx;
+				Cy[k] = headCy - k * Spacing * dy;
+			}
+			(HeadVX, HeadVY) = (dx * speed, dy * speed);
+		}
+
+		public EntityInfo[] Perceived() => Enumerable.Range(0, Cx.Length).Select(k =>
+			Seg(k + 1, k == 0 ? Head : k == Cx.Length - 1 ? Tail : Bod, (Cx[k] - Size / 2f) / 16f, (Cy[k] - Size / 2f) / 16f,
+				k == 0 ? HeadVX : 0f, k == 0 ? HeadVY : 0f, ai1: k)).ToArray();
+
+		public void Step(Core.Grid.ITileGrid grid, Core.Physics.BodyState player)
+		{
+			if (WormPattern.Airborne(Perceived()[0], grid, player.X, player.Y))
+				HeadVY = System.MathF.Min(HeadVY + WormPattern.AirGravity, WormPattern.HeadTopSpeed);
+			Cx[0] += HeadVX;
+			Cy[0] += HeadVY;
+			for (int k = 1; k < Cx.Length; k++) {
+				float dx = Cx[k - 1] - Cx[k], dy = Cy[k - 1] - Cy[k], d = System.MathF.Sqrt(dx * dx + dy * dy);
+				if (d <= 0f)
+					continue;
+				float f = (d - Spacing) / d;
+				Cx[k] += dx * f;
+				Cy[k] += dy * f;
+			}
+		}
+
+		public bool Touches(Core.Physics.BodyState s) => Enumerable.Range(0, Cx.Length).Any(k =>
+			Core.Physics.Dodge.Gap(s.X, s.Y, P.Width, P.Height, Cx[k] - Size / 2f, Cy[k] - Size / 2f, Size, Size) < 0f);
+	}
+
+	/// <summary>
+	/// The fight against <paramref name="worm"/> for <paramref name="ticks"/> ticks, the body moved by the fake's tile collision:
+	/// the hits it takes, a touch hurting only once the 40 ticks of immunity after the last one are over (Player.Hurt, as
+	/// <see cref="BotContext.HurtImmunityTicks"/>). The bot has just been hit at tick 0.
+	/// </summary>
+	private int HitsTaken(FakeGame g, BotContext ctx, BossFightSkill fight, WormSim worm, int ticks)
+	{
+		int hits = 0;
+		long lastHit = 0;
+		ctx.Tick = 0;
+		ctx.NoteHit(13);
+		for (int t = 1; t <= ticks; t++) {
+			ctx.Tick = t;
+			ctx.Body = g.Sim.State;
+			ctx.Hostiles = worm.Perceived();
+			fight.Tick(ctx);
+			g.Sim.Step(ctx.Output);
+			worm.Step(ctx.Grid, g.Sim.State);
+			if (worm.Touches(g.Sim.State) && t - lastHit >= BotContext.HurtImmunityTicks) {
+				hits++;
+				lastHit = t;
+				ctx.NoteHit(13);
+				output.WriteLine($"t{t}: hit at {g.Sim.Node} {g.Sim.State}, state {fight.State}");
+			}
+		}
+		output.WriteLine($"{hits} hits in {ticks} ticks; at {g.Sim.Node} {g.Sim.State}; {fight.Dodges} dodges");
+		return hits;
+	}
+
+	[Fact]
+	public void BodiesStreamingUpThroughItsSpot_JustHit_ItMovesClearBeforeTheImmunityEnds()
+	{
+		// Measured runs M10o and M10p: hit after hit as the bodies behind a head that came up through the bot streamed on
+		// through its spot, "running past" the head into them (M10o fight 2: 8 hits in a row from x 1885 to 1879 on the gully's
+		// flat floor, each 40 ticks after the last, the bot running right at 2 px/tick into segments on its right). Every dodge
+		// plan touched the stream at once, so all tied at "hit in 1 tick" and the kiting's way won. Here a head rose out of
+		// the ground at the arena's west end, up and to the right, through the bot; its bodies come up after it along the same
+		// line, through the bot's lower right. Out of their way by the time the immunity wears off: no more hits.
+		var (g, ctx, fight) = Setup(53 * 16f, 0f, Arena);
+		g.Sim.State = ctx.Body = StandingAt(53, 0f);
+		float cx = ctx.Body.CenterX(P);
+		float dx = 0.35f, dy = -0.94f; // up and to the right, steeply
+		var worm = new WormSim(30, cx + 20f + 120f * dx, 400f + 120f * dy, dx, dy, 9f);
+		Assert.True(worm.Touches(ctx.Body)); // the hit at tick 0
+		int hits = HitsTaken(g, ctx, fight, worm, 160);
+		Assert.Equal(0, hits);
+	}
+
+	[Fact]
+	public void InANarrowPit_BodiesPassingThroughIt_ItJumpsOutOfThePit()
+	{
+		// Measured runs M10o and M10p: 23 and 15 hits at (1721,268), 11 at (1727,268), the body boxed in 2- and 3-column pits
+		// a few rows below the ground beside them (x 27520-27553 px), the worm in the ground going through the pit and the bot
+		// in it. The dodge planner took the pit's sides for walls as high as the sky, so no plan got out of it. Here a pit 2
+		// columns wide and 3 rows deep, the worm going through it level with the bot, head first (the hit at tick 0).
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 25; y++)
+			rows.Add(new string('.', 200));
+		for (int y = 25; y < 60; y++) {
+			char[] r = new string('#', 200).ToCharArray();
+			if (y <= 27)
+				r[96] = r[97] = '.';
+			if (y == 27)
+				r[96] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.HasRanged = true;
+		ctx.Combat.Projectile = new Core.Physics.ProjectileModel(9f, 15, 0.1f, 16f);
+		g.Sim.State = ctx.Body = new Core.Physics.BodyState { X = 96 * 16f + 6f, Y = 28 * 16f - P.Height, ReleaseJump = true };
+		var fight = new BossFightSkill(WormFood, Head);
+		fight.Start(ctx);
+		float cx = ctx.Body.CenterX(P), cy = ctx.Body.CenterY(P);
+		var worm = new WormSim(30, cx + 30f, cy, 1f, 0f, 9f);
+		Assert.True(worm.Touches(ctx.Body));
+		int hits = HitsTaken(g, ctx, fight, worm, 160);
+		Assert.Equal(0, hits);
+		Assert.True(g.Sim.Node.Y <= 24, $"still in the pit at {g.Sim.Node}");
+	}
+
 	private sealed class ListLog : IBotLog
 	{
 		private readonly System.Collections.Generic.List<string> lines;
@@ -423,5 +555,25 @@ public class WormPatternTests
 		float x = WormPattern.CrossingX(head, airborne: true, y, expert: false);
 		Assert.InRange(x - head.CenterX, 190f, 240f);
 		Assert.Equal(head.CenterX, WormPattern.CrossingX(head, airborne: false, y, expert: false)); // rising away in a line
+	}
+
+	[Fact]
+	public void ABodyAtABend_IsPredictedToFollowTheChainRoundIt_NotToGoOnStraight()
+	{
+		// A head in the ground (no tiles here, so off the grid: Airborne is false far from the player) turned up; the body behind
+		// it still moves right, as it last did. It follows the head up (NPC.cs:55280-55327), where a straight line takes it on
+		// right; 20 ticks on it is some 140 px above where it is, not 180 px to its right.
+		FakeGame g = EarlyGameTests.Field(200);
+		var head = new EntityInfo(1, WormPattern.EaterHead, "", 100 * 16f, 10 * 16f, 38, 38, 0f, -9f, 150, 150, 22, WormPattern.WormAiStyle);
+		var body = new EntityInfo(2, WormPattern.EaterBody, "", head.X - 38f, head.Y, 38, 38, 9f, 0f, 150, 150, 13, WormPattern.WormAiStyle, 0f, 1f);
+		Core.Physics.Threat[] chain = WormPattern.PredictChain(new[] { head, body }, g.Grid, 0f, 0f, expert: false);
+		float bx = chain[1].PathX[19], by = chain[1].PathY[19];
+		Assert.Equal(head.X, chain[0].PathX[19], 3);
+		Assert.Equal(head.Y - 20 * 9f, chain[0].PathY[19], 3);
+		Assert.InRange(bx - body.X, 0f, 45f);
+		Assert.InRange(body.Y - by, 120f, 180f);
+		// It keeps its distance behind the head.
+		float dx = chain[0].PathX[19] - bx, dy = chain[0].PathY[19] - by;
+		Assert.Equal(38f, System.MathF.Sqrt(dx * dx + dy * dy), 1);
 	}
 }

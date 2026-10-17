@@ -550,7 +550,7 @@ public sealed class BossFightSkill : ISkill
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
 		float floorY;
-		(floorY, minX, maxX) = Surroundings(ctx);
+		(floorY, minX, maxX) = Surroundings(ctx, IsWorm);
 		if (Arena is (int ax0, int ax1, _)) {
 			// Past the arena's ends the ground is unknown: the dodge planner treats them as walls.
 			minX = Math.Max(minX, ax0 * 16f);
@@ -580,24 +580,33 @@ public sealed class BossFightSkill : ISkill
 			Kite(ctx, boss, floorY, minX, maxX);
 		}
 		threats.Clear();
-		// A worm's segments with their measured motion (Measured), then anything else.
-		foreach (EntityInfo h in IsWorm ? segments.Concat(ctx.Hostiles.Where(o => !segmentTypes.Contains(o.Type))) : ctx.Hostiles) {
+		// A worm's segments along the chain (WormPattern.PredictChain, from their measured motion), then anything else.
+		if (IsWorm) {
+			Threat[] chain = WormPattern.PredictChain(segments, ctx.Grid, ctx.Body.X, ctx.Body.Y, ctx.Expert);
+			for (int i = 0; i < segments.Count; i++)
+				if (segments[i].Damage > 0 && segments[i].DistanceTo(cx, cy) <= ThreatRadiusTiles * 16f)
+					threats.Add(chain[i]);
+		}
+		foreach (EntityInfo h in IsWorm ? ctx.Hostiles.Where(o => !segmentTypes.Contains(o.Type)) : ctx.Hostiles) {
 			if (h.Damage <= 0 || h.DistanceTo(cx, cy) > ThreatRadiusTiles * 16f)
 				continue;
-			if (IsWorm && segmentTypes.Contains(h.Type))
-				threats.Add(WormPattern.Predict(h, h.Type == BossType && WormPattern.Airborne(h, ctx.Grid, ctx.Body.X, ctx.Body.Y), ctx.Expert));
-			else
-				threats.Add(h.AiStyle == EyePattern.EyeAiStyle ? EyePattern.Predict(h, ctx.Expert) : new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
+			threats.Add(h.AiStyle == EyePattern.EyeAiStyle ? EyePattern.Predict(h, ctx.Expert) : new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
 		}
 		if (threats.Count == 0)
 			return;
-		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, runDir, 0);
+		// A worm's fight: the planner knows the immunity left from the last hit (a touch then does not hurt, so getting out of
+		// a body streaming through is what counts, not that every way out touches it now), moves the body through the real
+		// tiles (a pit's sides end; a one-tile step is walked up), and keeps off where the fight would walk back from.
+		int immune = IsWorm ? ImmuneTicksLeft(ctx) : 0;
+		ITileGrid terrain = IsWorm ? ctx.Grid : null;
+		float maxBottom = IsWorm ? LowestBottom(ctx) : float.PositiveInfinity;
+		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, runDir, 0, Dodge.Horizon, immune, terrain);
 		// Hysteresis: start dodging when the kite comes within DodgeStartGap, stop once it clears DodgeStopGap again.
-		if (!kite.Hits && kite.Clearance >= (dodging ? DodgeStopGap : DodgeStartGap)) {
+		if (!kite.Hits && kite.Clearance >= (dodging ? DodgeStopGap : DodgeStartGap) && kite.EndBottom <= maxBottom) {
 			dodging = false;
 			return;
 		}
-		DodgePlan best = Dodge.Best(ctx.Body, p, floorY, minX, maxX, threats, runDir);
+		DodgePlan best = Dodge.Best(ctx.Body, p, floorY, minX, maxX, threats, runDir, Dodge.Horizon, immune, terrain, maxBottom);
 		if (!dodging) {
 			Dodges++;
 			if (ctx.Tick - lastDodgeLog >= 30) {
@@ -619,6 +628,22 @@ public sealed class BossFightSkill : ISkill
 		if (best.Dir != 0 && (best.Dir > 0 ? offset < softHalf : offset > -softHalf))
 			runDir = best.Dir;
 	}
+
+	/// <summary>
+	/// Ticks of immunity left from the last hit by an enemy (<see cref="BotContext.HurtImmunityTicks"/>), one taken off: the hit
+	/// may be noted on either side of the player's update in its tick, so the last tick counted could already be the first one
+	/// a touch hurts again.
+	/// </summary>
+	private static int ImmuneTicksLeft(BotContext ctx) =>
+		(int)Math.Max(0L, BotContext.HurtImmunityTicks - (ctx.Tick - ctx.LastEnemyHitTick) - 1);
+
+	/// <summary>
+	/// Worm: the body's bottom (px) below which a dodge would leave where the fight is held, and BackToArena walk it back:
+	/// under the arena's floor, or deeper than a safe fall under where the fight began.
+	/// </summary>
+	private float LowestBottom(BotContext ctx) => Arena is (_, _, int standY)
+		? (standY + 2) * 16f
+		: (centre.Value.Y + ctx.Physics.SafeFallTiles + 1) * 16f;
 
 	/// <summary>
 	/// Notes the tick a dash starts: the boss's velocity jumps (a hover only changes it by its small acceleration)
@@ -675,8 +700,14 @@ public sealed class BossFightSkill : ISkill
 		return (Math.Min(ArenaHalfWidth, half - ArenaSoftMargin), half - ArenaHardMargin);
 	}
 
-	/// <summary>Floor under the feet (px) and the walls left and right (bounds for the hitbox's left edge, px).</summary>
-	private static (float FloorY, float MinX, float MaxX) Surroundings(BotContext ctx)
+	/// <summary>
+	/// Floor under the feet (px) and the walls left and right (bounds for the hitbox's left edge, px). With
+	/// <paramref name="overJumps"/> (a worm's fight, whose planner moves the body through the tiles) a wall is only a column
+	/// too high to jump (<see cref="Unjumpable"/>): on uneven ground every step and pit side was a wall, so the kiting found
+	/// "no room to run from the worm's head" and ran past it into its body, again and again (measured runs M10o and M10p, at
+	/// x 1713-1729 by the chasm at x 1702), and braked short of steps it could have walked up.
+	/// </summary>
+	private static (float FloorY, float MinX, float MaxX) Surroundings(BotContext ctx, bool overJumps = false)
 	{
 		PhysicsParams p = ctx.Physics;
 		TilePos n = ctx.Node;
@@ -690,13 +721,15 @@ public sealed class BossFightSkill : ISkill
 					break;
 				}
 		float minX = float.NegativeInfinity, maxX = float.PositiveInfinity;
+		int jumpTiles = overJumps ? JumpTiles(p) : 0;
+		bool Wall(int x) => overJumps ? Unjumpable(ctx.Grid, x, n.Y, jumpTiles) : Blocked(ctx.Grid, x, n.Y);
 		for (int dx = 1; dx <= WallScanTiles; dx++)
-			if (Blocked(ctx.Grid, n.X - dx, n.Y)) {
+			if (Wall(n.X - dx)) {
 				minX = (n.X - dx + 1) * 16f;
 				break;
 			}
 		for (int dx = 1; dx <= WallScanTiles; dx++)
-			if (Blocked(ctx.Grid, n.X + dx, n.Y)) {
+			if (Wall(n.X + dx)) {
 				maxX = (n.X + dx) * 16f - p.Width;
 				break;
 			}
@@ -705,6 +738,18 @@ public sealed class BossFightSkill : ISkill
 
 	/// <summary>A wall at body height in this column (the two cells above the feet row's floor).</summary>
 	private static bool Blocked(ITileGrid g, int x, int feetY) => g.Get(x, feetY).IsSolid() || g.Get(x, feetY - 1).IsSolid();
+
+	/// <summary>Whole tiles a full jump lifts the feet (<see cref="PlayerPhysics.ApexRise"/>): steps up to this high are jumped onto.</summary>
+	private static int JumpTiles(PhysicsParams p) => (int)(PlayerPhysics.ApexRise(p, p.JumpHeight) / 16f);
+
+	/// <summary>A column solid from the feet row up past <paramref name="jumpTiles"/>: no jump gets over it.</summary>
+	private static bool Unjumpable(ITileGrid g, int x, int feetY, int jumpTiles)
+	{
+		for (int j = 0; j <= jumpTiles; j++)
+			if (!g.Get(x, feetY - j).IsSolid())
+				return false;
+		return true;
+	}
 
 	/// <summary>
 	/// Run to one end of the arena and back. Past <see cref="ArenaHalfWidth"/> turn when <see cref="SafeToTurn"/>;
@@ -786,7 +831,21 @@ public sealed class BossFightSkill : ISkill
 				runDir = -runDir;
 		}
 		ctx.Output.Horizontal = runDir;
+		// Over what is in the way (walls are only what no jump clears, Surroundings): a step two or more tiles high in front of
+		// the feet is jumped onto, the jump held to its top; one tile high the game walks up on its own (Collision.StepUp).
+		bool grounded = ctx.Body.Grounded;
+		int front = (int)MathF.Floor((runDir > 0 ? ctx.Body.X + p.Width + 1f : ctx.Body.X - 1f) / 16f);
+		bool stepAhead = ctx.Grid.Get(front, node.Y - 1).IsSolid() && ctx.Grid.Get(front, node.Y).IsSolid();
+		if (grounded && stepAhead && !hopping)
+			hopping = ctx.Output.Jump = true;
+		else if (hopping && !grounded)
+			ctx.Output.Jump = true;
+		else
+			hopping = false;
 	}
+
+	/// <summary>Worm kiting: jumping onto a step in front (held until the body is back on the ground).</summary>
+	private bool hopping;
 
 	private void Heal(BotContext ctx)
 	{

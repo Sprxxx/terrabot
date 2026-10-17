@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using TerraBot.Core.Physics;
 using Xunit;
 using Xunit.Abstractions;
@@ -106,6 +107,45 @@ public class DodgeTests
 		DodgePlan right = Dodge.Evaluate(s, P, Floor, -10000, 100f, new[] { dash }, 1, 0);
 		DodgePlan stand = Dodge.Evaluate(s, P, Floor, -10000, 100f, new[] { dash }, 0, 0);
 		Assert.Equal(stand.HitTick, right.HitTick);
+	}
+
+	[Fact]
+	public void InsideAThreat_WhileImmune_TheTouchIsNoHit_AndThePlanThatGetsOutWins()
+	{
+		// A body 40 px wide passing slowly right through the player, which was just hit: immune for 39 more ticks (Player.Hurt:
+		// immuneTime 40). Without the immunity every plan is "hit in 1 tick" and the tie goes to the preferred way, right, with
+		// the body; with it, the plan out to the left is not hit at all.
+		BodyState s = Standing(100f);
+		var body = new Threat(s.X - 10f, s.Y, 40, 40, 1f, 0f);
+		DodgePlan blind = Dodge.Best(s, P, Floor, -10000, 10000, new[] { body }, preferDir: 1);
+		DodgePlan immune = Dodge.Best(s, P, Floor, -10000, 10000, new[] { body }, preferDir: 1, immuneTicks: 39);
+		output.WriteLine($"blind {blind}, immune {immune}");
+		Assert.Equal(1, blind.HitTick);
+		Assert.Equal(1, blind.Dir);
+		Assert.False(immune.Hits);
+		Assert.Equal(-1, immune.Dir);
+		Assert.True(immune.ContactTicks > 0);
+	}
+
+	[Fact]
+	public void OnTerrain_ThePlanJumpsOutOfAPit_WhereWallsAsHighAsTheSkyHoldIt()
+	{
+		// A pit two columns wide and three rows deep (columns 10-11, floor at row 13), a worm's body level with the player
+		// streaming through it from the right, ten segments of 38 px. With the pit's sides as walls of the flat model no plan
+		// gets out (a jump in place comes down into the stream); on the tiles a jump out lands on the ground beside the pit.
+		var rows = new string[30];
+		for (int y = 0; y < 30; y++)
+			rows[y] = y < 10 ? new string('.', 40) : y <= 12 ? new string('#', 10) + ".." + new string('#', 28) : new string('#', 40);
+		var g = Core.Grid.ArrayTileGrid.Parse(rows);
+		var s = new BodyState { X = 10 * 16f + 6f, Y = 13 * 16f - P.Height, ReleaseJump = true };
+		Threat[] stream = System.Linq.Enumerable.Range(0, 10).Select(k => new Threat(s.X + 120f + 38f * k, s.Y + 2f, 38, 38, -6f, 0f)).ToArray();
+		DodgePlan flat = Dodge.Best(s, P, 13 * 16f, 10 * 16f, 12 * 16f - P.Width, stream, preferDir: 1);
+		DodgePlan tiles = Dodge.Best(s, P, float.PositiveInfinity, -10000, 10000, stream, preferDir: 1, terrain: g);
+		output.WriteLine($"flat {flat}, tiles {tiles}");
+		Assert.True(flat.Hits);
+		Assert.False(tiles.Hits);
+		Assert.True(tiles.JumpHold > 0);
+		Assert.True(tiles.EndBottom <= 10 * 16f + 0.5f, "on the ground beside the pit");
 	}
 
 	[Theory]
