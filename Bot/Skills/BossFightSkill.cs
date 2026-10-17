@@ -561,6 +561,9 @@ public sealed class BossFightSkill : ISkill
 	/// Off the arena (slid past an end, knocked off): walk back to its middle. Seen in game: the bot slid a tile past
 	/// the end of a floor built over open air and fell eight tiles, then ran into the wall down there for a minute.
 	/// </summary>
+	/// <summary>Rows above the Wall's deck the body may stand (a step, a block) before the fight walks back down onto it.</summary>
+	public const int AboveDeckRows = 2;
+
 	private bool BackToArena(BotContext ctx)
 	{
 		TilePos n = ctx.Node;
@@ -572,7 +575,11 @@ public sealed class BossFightSkill : ISkill
 			// nearest column, Body.NodeOf) then reads one column out; off the floor's end the body falls and the row test
 			// catches it. Seen in game (checkpoint run U16cp): "off the arena at (2030,266), walking back" four times, the
 			// floor from 2031, and the walks back (no dodging) let the Eye of Cthulhu kill the bot at (2028,272).
-			off = n.X < x0 - EndSlack || n.X > x1 + EndSlack || n.Y > standY + 1;
+			off = n.X < x0 - EndSlack || n.X > x1 + EndSlack || n.Y > standY + 1
+				// On the Wall's bridge, stood on the ground above the deck (a knoll the bridge tunnels through, jumped onto in a dodge):
+				// down onto the deck. Seen in game (world_wof E31, 2026-10-18): at (649,1035), six rows up, the knoll's rising side read as
+				// "no bridge left ahead", and the bot stood and shot until the Wall ran it over.
+				|| IsWallOfFlesh && ctx.Body.Grounded && n.Y < standY - AboveDeckRows;
 			// Onto the arena's floor anywhere, the same test as "off" above: a goal near its middle was "reached" from below
 			// the floor, and every tick the next walk began. Seen in game (measured run U11cp): knocked down to (2084,272),
 			// 5 rows under the floor and within 6 tiles of the middle, "off the arena, walking back" 6460 times while the Eye

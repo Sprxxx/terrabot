@@ -49,6 +49,21 @@ public class WallOfFleshFightTests
 		return (g, ctx, fight);
 	}
 
+	/// <summary>world_wof E31 (2026-10-18): stood on a knoll six rows over the deck, its rising side read as the bridge's end; the Wall ran it over.</summary>
+	[Fact]
+	public void StoodAboveTheDeck_TheFightWalksBackDownOntoIt()
+	{
+		var (g, ctx, fight) = Setup(Wall(50f));
+		for (int x = 148; x <= 153; x++)
+			for (int y = 20; y <= 24; y++)
+				g.Grid.Set(x, y, Core.Grid.CellKind.Solid); // a knoll on the deck
+		g.Sim.State = new BodyState { X = Core.Pathfinding.Body.CanonicalLeft(150, P), Y = Core.Pathfinding.Body.StandingTop(19, P), ReleaseJump = true };
+		g.Refresh(ctx);
+		ctx.Hostiles = Wall(50f);
+		fight.Tick(ctx);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("off the arena"));
+	}
+
 	[Fact]
 	public void ThePattern_HasTheDecompilesNumbers()
 	{
