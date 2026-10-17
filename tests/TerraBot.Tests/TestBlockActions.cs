@@ -28,6 +28,11 @@ public sealed class TestBlockActions : IBlockActions
 
 	public bool CanPlaceAt(int x, int y) => !grid.Get(x, y).CanStandOn() && !NoPlace.Contains(new TilePos(x, y));
 
+	/// <summary>Cells with a background wall (vanilla Tile.wall &gt; 0): a block placed into open air can be fixed to one.</summary>
+	public HashSet<TilePos> Walls { get; } = new();
+
+	public bool HasWall(int x, int y) => Walls.Contains(new TilePos(x, y));
+
 	public static (ArrayTileGrid grid, TestBlockActions blocks) Parse(params string[] rows)
 	{
 		ArrayTileGrid g = ArrayTileGrid.Parse(rows);

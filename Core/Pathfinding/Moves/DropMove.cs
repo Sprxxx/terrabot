@@ -35,13 +35,15 @@ public sealed class DropMove : IMoveType
 		int col = from.X + dir;
 		to = default;
 		k = 0;
-		if (!Body.IsClear(g, col, from.Y) || Body.HasSupport(g, col, from.Y))
+		// Support counts the blocks the path being searched places (MoveContext.PlacedOnPath): off an arrested drop's block
+		// and back over it is a walk, not a drop.
+		if (!Body.IsClear(g, col, from.Y) || ctx.HasSupport(col, from.Y))
 			return false; // blocked, or it is a plain walk
 
 		for (k = 1; k <= ctx.MaxDrop; k++) {
 			if (!Body.IsClear(g, col, from.Y + k))
 				return false;
-			if (Body.HasSupport(g, col, from.Y + k)) {
+			if (ctx.HasSupport(col, from.Y + k)) {
 				to = new TilePos(col, from.Y + k);
 				return true;
 			}

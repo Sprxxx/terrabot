@@ -23,6 +23,12 @@ public interface IBlockActions
 
 	/// <summary>Ticks for one placement swing.</summary>
 	float PlaceTicks { get; }
+
+	/// <summary>
+	/// A background wall in the cell (vanilla Tile.wall &gt; 0): what a block placed into open air can be fixed to, as a solid
+	/// tile beside it can (<see cref="BlockRules.Fixable"/>). None by default.
+	/// </summary>
+	bool HasWall(int x, int y) => false;
 }
 
 public enum ActionKind
@@ -109,6 +115,24 @@ public static class BlockRules
 		var above = new TilePos(cell.X, cell.Y - 1);
 		return g.Get(above.X, above.Y).IsFalling() && !Contains(sameMove, above);
 	}
+
+	/// <summary>
+	/// Vanilla's rule for a block into an open cell, where no move's own footing guarantees it: a solid tile (or a platform,
+	/// Main.tileSolid too) on a 4-neighbour, or a wall in the cell or on a 4-neighbour
+	/// (Player.PlaceThing_Tiles_BlockPlacementForAssortedThings, decompiled Player.cs 40510-40523).
+	/// </summary>
+	public static bool Fixable(MoveContext ctx, TilePos cell)
+	{
+		ITileGrid g = ctx.Grid;
+		if (Holds(g.Get(cell.X - 1, cell.Y)) || Holds(g.Get(cell.X + 1, cell.Y)) || Holds(g.Get(cell.X, cell.Y - 1)) || Holds(g.Get(cell.X, cell.Y + 1)))
+			return true;
+		IBlockActions b = ctx.Blocks;
+		return b != null && (b.HasWall(cell.X, cell.Y) || b.HasWall(cell.X - 1, cell.Y) || b.HasWall(cell.X + 1, cell.Y)
+			|| b.HasWall(cell.X, cell.Y - 1) || b.HasWall(cell.X, cell.Y + 1));
+	}
+
+	/// <summary>A tile a block can be fixed to: Main.tileSolid, which platforms and slopes are too.</summary>
+	public static bool Holds(CellKind k) => k.IsSolid() || k.IsPlatform();
 
 	private static bool Contains(IReadOnlyCollection<TilePos> cells, TilePos c)
 	{

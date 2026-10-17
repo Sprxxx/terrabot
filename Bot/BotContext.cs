@@ -148,6 +148,12 @@ public sealed class BotContext
 	/// <summary>Controls to press this tick. Reset to None by the brain before each tick.</summary>
 	public MoveInput Output;
 
+	/// <summary>
+	/// The block a walk's ArrestedDrop step lands on, while it can still go in (PathExecutor.CatchCell): set by the walk each
+	/// tick it drives, cleared by the brain before the skills tick. The fall reflex (FallArrest) leaves such a fall to the step.
+	/// </summary>
+	public TilePos? PlannedCatch { get; set; }
+
 	/// <summary>Hostile NPCs near the player this tick (nearest first).</summary>
 	public System.Collections.Generic.IReadOnlyList<EntityInfo> Hostiles { get; set; } = Array.Empty<EntityInfo>();
 	/// <summary>

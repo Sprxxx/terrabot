@@ -11,7 +11,7 @@ namespace TerraBot.Tests;
 /// and Collision.StepDown's snap. Not bit-exact with the game; the point is to exercise the executor's control
 /// loop on the same terrain the planner saw.
 /// With an editable grid and <see cref="TestBlockActions"/> it also mines (one hit counter per cell, broken after
-/// BreakTicks ticks of use) and places blocks with vanilla's rules: free cell, a solid 4-neighbour, and no
+/// BreakTicks ticks of use) and places blocks with vanilla's rules: free cell, a solid 4-neighbour or a wall, and no
 /// overlap with the player's integer hitbox. Like the game, item use happens after movement in the same tick.
 /// A cobweb (<see cref="CellKind.Web"/>) does not collide: the planner reads it solid (a block to cut), but the body falls
 /// through it (vanilla slows the body in one and breaks it; the fall below is what kills, measured run U22).
@@ -102,8 +102,11 @@ public sealed class SimWorld
 			return;
 		if (blocks is TestBlockActions tb && tb.NoPlace.Contains(cell))
 			return; // as the planner was told: nothing goes in there
+		// ...or a wall in the cell or beside it (Player.PlaceThing_Tiles_BlockPlacementForAssortedThings).
 		bool neighbour = SolidAt(cell.X - 1, cell.Y) || SolidAt(cell.X + 1, cell.Y)
-			|| SolidAt(cell.X, cell.Y - 1) || grid.Get(cell.X, cell.Y + 1).CanStandOn();
+			|| SolidAt(cell.X, cell.Y - 1) || grid.Get(cell.X, cell.Y + 1).CanStandOn()
+			|| blocks.HasWall(cell.X, cell.Y) || blocks.HasWall(cell.X - 1, cell.Y) || blocks.HasWall(cell.X + 1, cell.Y)
+			|| blocks.HasWall(cell.X, cell.Y - 1) || blocks.HasWall(cell.X, cell.Y + 1);
 		int left = (int)State.X, top = (int)State.Y;
 		bool overlaps = cell.X * T < left + p.Width && left < cell.X * T + T && cell.Y * T < top + p.Height && top < cell.Y * T + T;
 		if (!neighbour || overlaps)

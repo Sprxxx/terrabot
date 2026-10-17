@@ -105,7 +105,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly Dictionary<TilePos, int> TreeWoods = new();
 	public readonly Dictionary<TilePos, int> TileTypes = new(); // solid cells that are not dirt
 	public readonly Dictionary<TilePos, int> Furniture = new(); // cell -> tile type of placed furniture
-	public readonly HashSet<TilePos> Walls = new();
+	/// <summary>Background walls (the blocks' own set: a block in open air can be fixed to one, as in vanilla).</summary>
+	public HashSet<TilePos> Walls => Blocks.Walls;
 	public readonly HashSet<int> Equipped = new();
 	public readonly Dictionary<int, int> Items = new();
 	public readonly List<DropInfo> Drops = new();

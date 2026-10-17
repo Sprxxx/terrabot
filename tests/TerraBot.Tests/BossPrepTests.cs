@@ -373,6 +373,32 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void TheLensesInTheBag_AndAnAltarInSight_TheEyeIsMadeThere_BeforeTheStagesBeforeIt()
+	{
+		// Measured run U30: from t496800 to t516000, 7 lenses in the bag and max life 200, the bot climbed past the DemonAltar at
+		// (1748,411), 14 tiles off at (1734,398), "up to the surface before building the arena"; the walks back to that altar
+		// from home began at t534000, and the Suspicious Looking Eye was made at t722520.
+		FakeGame g = ProgressionTests.Mine();
+		g.AddAltar(18, 23); // on the grass, 15 tiles from the bot
+		g.Items[FakeGame.Lens] = 7;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Boss);
+		ISkill s = p.Next(ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		Assert.True(s is WalkToSkill || s is CraftSkill { ItemType: FakeGame.SuspiciousEye }, p.Status);
+		Assert.Contains("item43", p.Status); // the Suspicious Looking Eye (the fake names items by id)
+		// Not without the lenses: then the plan's own order (nothing to make there yet).
+		g.Items[FakeGame.Lens] = 5;
+		var q = new ProgressionPlanner();
+		q.Reset(ProgressionPlanner.Plans.Boss);
+		ISkill t = q.Next(ctx);
+		output.WriteLine($"{q.Status} -> {t?.Describe()}");
+		Assert.DoesNotContain("item43", q.Status);
+	}
+
+	[Fact]
 	public void AnAltarOnTheMap_FarBeyondTheSearchRound_IsWalkedTo_NotExploredFor()
 	{
 		// Measured run M10e (world_eow): at home with the vile powder, "exploring for a DemonAltar (none seen yet)", the altars
@@ -447,13 +473,121 @@ public class BossPlannerTests
 			ISkill s = p.ResolveForTest(Eye, ctx);
 			output.WriteLine($"{p.Status} -> {s?.Describe()}");
 			var walk = Assert.IsType<WalkToSkill>(s);
-			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 600));
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000)); // the walk goes as near as it can first (a partial plan), then fails
 			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
 		}
 		ISkill next = p.ResolveForTest(Eye, ctx);
 		output.WriteLine($"{p.Status} -> {next?.Describe()}; known {string.Join(", ", p.KnownStations)}");
 		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos altar), p.Status);
 		Assert.True(altar.X >= 80, $"the sealed altar again: {altar}");
+	}
+
+	[Fact]
+	public void AnAltarGivenUp_InSightAsAnotherOfItsCells_IsNotTakenBackOverTheOneChosen()
+	{
+		// Measured run U30: the altar at (1748,411) given up 42 times in 13 game hours, each time taken back from sight as
+		// (1750,411), (1749,412) or (1748,412) over the farther one just chosen.
+		FakeGame g = ProgressionTests.Mine(width: 120);
+		for (int x = 26; x <= 36; x++)
+			for (int y = 27; y <= 35; y++) {
+				bool inside = x > 27 && x < 35 && y > 28 && y < 34;
+				g.Grid.Set(x, y, inside ? CellKind.Empty : CellKind.Solid);
+				if (!inside)
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.AddAltar(30, 32);
+		g.AddAltar(80, 23);
+		g.Items[FakeGame.Lens] = 6;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		for (int i = 0; i < ProgressionPlanner.MaxStationWalkFailures; i++) {
+			var walk = Assert.IsType<WalkToSkill>(p.ResolveForTest(Eye, ctx));
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000));
+			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		}
+		Assert.IsType<WalkToSkill>(p.ResolveForTest(Eye, ctx));
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos chosen) && chosen.X >= 80, $"{chosen}");
+		// The next pass begins with what is in sight: the given-up altar, by another of its cells.
+		ctx.Seen = new Surroundings { Stations = new System.Collections.Generic.Dictionary<int, TilePos> { [FakeGame.TileDemonAltar] = new TilePos(32, 33) } };
+		p.SeeStationsForTest(ctx);
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos known) && known.X >= 80, $"taken back: {known}");
+	}
+
+	[Fact]
+	public void AnAltarNoWalkGetsTo_WithRecallPotionsCarried_IsNotWalkedToAgainFromHome_TheNextOneIs()
+	{
+		// Measured run U30 (world_eye): "no way back to the DemonAltar (2 walks failed); drinking a recall potion to go home",
+		// 5 times from d6 +18h (t538000-t561600), each walk from home back to the same lip at (1779,341) or pocket at
+		// (1792,324) under the corruption; only the 5th failure, no potion left, went on to "another one". A recall takes the
+		// bot home to stations it can make again; an altar nothing places is no nearer from home.
+		FakeGame g = ProgressionTests.Mine(width: 120);
+		for (int x = 26; x <= 36; x++)
+			for (int y = 27; y <= 35; y++) {
+				bool inside = x > 27 && x < 35 && y > 28 && y < 34;
+				g.Grid.Set(x, y, inside ? CellKind.Empty : CellKind.Solid);
+				if (!inside)
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.AddAltar(30, 32); // sealed in
+		g.AddAltar(80, 23); // out in the open, farther
+		g.Items[FakeGame.Lens] = 6;
+		g.Items[FakeGame.RecallPotion] = 5;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		for (int i = 0; i < ProgressionPlanner.MaxStationWalkFailures; i++) {
+			ISkill s = p.ResolveForTest(Eye, ctx);
+			output.WriteLine($"{p.Status} -> {s?.Describe()}");
+			var walk = Assert.IsType<WalkToSkill>(s);
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000)); // the walk goes as near as it can first (a partial plan), then fails
+			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		}
+		ISkill next = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}; known {string.Join(", ", p.KnownStations)}");
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos altar), p.Status);
+		Assert.True(altar.X >= 80, $"the sealed altar again: {altar}");
+	}
+
+	[Fact]
+	public void AnAltarBehindRockThePickaxeCannotBreak_WithBombsCarried_IsBlastedTo_NotGivenUp()
+	{
+		// Measured run U30: from the corruption chasm's foot the altar at (1748,412) lay behind ebonstone (pick 40); seven bombs,
+		// each "then the walk is Partial", took the bot to it at t721800, after 42 "not that one again for a day" from t673200.
+		FakeGame g = ProgressionTests.Mine(width: 120);
+		for (int x = 26; x <= 36; x++)
+			for (int y = 27; y <= 35; y++) {
+				bool inside = x > 27 && x < 35 && y > 28 && y < 34;
+				g.Grid.Set(x, y, inside ? CellKind.Empty : CellKind.Solid);
+				if (!inside)
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.AddAltar(30, 32); // sealed in, on the shell's floor (row 34)
+		g.AddAltar(80, 23); // out in the open, farther
+		g.Items[FakeGame.Lens] = 6;
+		g.Items[FakeGame.Bomb] = 5;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		var walk = Assert.IsType<WalkToSkill>(s);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000));
+		p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		ISkill next = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		var blast = Assert.IsType<BlastOutSkill>(next);
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos altar) && altar.X < 40, $"given up for {altar}");
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, blast, 3000));
+		p.OnSkillFinished(blast, SkillStatus.Succeeded, ctx);
+		ISkill after = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {after?.Describe()}; {g.Blasts} blast(s), {g.BlastHits} on the bot");
+		var again = Assert.IsType<WalkToSkill>(after);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, again, 6000));
+		Assert.True(ctx.Node.ChebyshevTo(new TilePos(31, 32)) <= ProgressionPlanner.StationReach, $"at {ctx.Node}");
 	}
 
 	[Fact]

@@ -304,6 +304,12 @@ public sealed class TerrariaBlockActions : IBlockActions
 		return !(t.LiquidAmount > 0 && t.LiquidType == LiquidID.Lava);
 	}
 
+	/// <summary>
+	/// A wall in the cell (Tile.WallType), what vanilla also fixes a block to (Player.PlaceThing_Tiles_BlockPlacementForAssortedThings).
+	/// The world as it is, as the paths' tile grid is.
+	/// </summary>
+	public bool HasWall(int x, int y) => WorldGen.InWorld(x, y, 1) && Main.tile[x, y].WallType > WallID.None;
+
 	/// <summary>Blocks the bot may spend: plain solid blocks, not ores/gems, not sand (falls), not seeds.</summary>
 	public static bool IsThrowawayBlock(Item it)
 	{

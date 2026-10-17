@@ -77,6 +77,18 @@ public sealed class MoveContext
 	public GridMask Mask { get; } = new();
 
 	/// <summary>
+	/// Cells the last <see cref="PathSearch.BrokenLookback"/> steps of the path to the node being expanded place blocks in (set by
+	/// <see cref="PathSearch"/> before each expansion; empty outside a search). The grid is the world as it is, so without
+	/// this a move from a node standing on a block its own path placed would read open air under it
+	/// (<see cref="Moves.ArrestedDropMove"/>).
+	/// </summary>
+	public HashSet<TilePos> PlacedOnPath { get; } = new();
+
+	/// <summary><see cref="Body.HasSupport"/>, counting the blocks the path being searched places (<see cref="PlacedOnPath"/>).</summary>
+	public bool HasSupport(int x, int y) =>
+		Body.HasSupport(Grid, x, y) || PlacedOnPath.Count > 0 && (PlacedOnPath.Contains(new TilePos(x, y + 1)) || PlacedOnPath.Contains(new TilePos(x + 1, y + 1)));
+
+	/// <summary>
 	/// Set by <see cref="PathSearch.Step"/> while it runs: break times and placeability are then remembered per cell for
 	/// the search (the game's answers walk the tile tables and WorldGen.CanKillTile; one search asks about the same cells
 	/// from every neighbouring node). Outside a search, as when a running step is checked, they are asked afresh.
@@ -149,6 +161,7 @@ public sealed class MoveContext
 		new WalkMove(),
 		new StepUpMove(),
 		new DropMove(),
+		new ArrestedDropMove(),
 		new DropThroughMove(),
 		new JumpMove(),
 		new DigMove(),
@@ -165,11 +178,15 @@ public sealed class MoveContext
 	/// and are timed against a clock (away from a lit fuse). The route's worth-avoiding extras are left out (off-limits ground,
 	/// the depth limit, steps that failed lately, precarious footing): they are no time. Seen in game (self-test
 	/// blast_out_ebonstone): in an ebonstone pocket the evil biome's 150 ticks a step made a 6-step way out "932 ticks", more
-	/// than a bomb's 180-tick fuse, and no throw was made.
+	/// than a bomb's 180-tick fuse, and no throw was made. Likewise the head under water: the body moves at the same half speed
+	/// in water whether the head is under or not (Player.WaterCollision moves it by half its velocity, decompiled Player.cs
+	/// 22087), so it costs what the body in liquid does (<see cref="LiquidCostMultiplier"/>), not the 200x price on drowning.
+	/// Seen in game (measured run U30): at the corruption chasm's flooded foot, "the way out of the blast takes 13005 ticks"
+	/// (and 11405, 9766, 5205) ruled out every throw towards the DemonAltar.
 	/// </summary>
 	public MoveContext WalkingOnly() => new(Grid, Physics, Moves) {
 		Blocks = Blocks, AllowBreak = false, AllowPlace = false, DigAnyway = DigAnyway, BadEdges = BadEdges, Deadly = Deadly,
-		LiquidCostMultiplier = LiquidCostMultiplier, HeadUnderCostMultiplier = HeadUnderCostMultiplier,
+		LiquidCostMultiplier = LiquidCostMultiplier, HeadUnderCostMultiplier = LiquidCostMultiplier,
 		BreakCostMultiplier = BreakCostMultiplier, BreakOverheadTicks = BreakOverheadTicks, PillarRiskTicks = PillarRiskTicks,
 		PrecariousTicks = 0f,
 	};

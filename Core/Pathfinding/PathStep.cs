@@ -19,10 +19,15 @@ public enum MoveKind
 	Pillar,
 	/// <summary>Stand on platforms only, hold Down to fall through them, land k rows lower in the same columns.</summary>
 	DropThrough,
+	/// <summary>
+	/// Walk off into a shaft deeper than a safe fall and place a block under the feet on the way down (Place action, done
+	/// mid-air), landing on it within a safe fall: the fall arrest of <c>Bot.Brain.FallArrest</c>, planned.
+	/// </summary>
+	ArrestedDrop,
 }
 
 /// <summary>One edge of a planned path. Cost is in game ticks.</summary>
-/// <param name="Actions">Ordered world changes done before the movement (null = none). For Pillar the Place is done mid-air.</param>
+/// <param name="Actions">Ordered world changes done before the movement (null = none). For Pillar and ArrestedDrop the Place is done mid-air.</param>
 /// <param name="Source">The move type that produced the step; used to re-validate it while executing.</param>
 public readonly record struct PathStep(
 	MoveKind Kind,

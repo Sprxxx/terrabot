@@ -29,4 +29,5 @@ public sealed class RebuiltBlocks : IBlockActions
 	public bool CanPlaceAt(int x, int y) => Inner.CanPlaceAt(x, y);
 	public int BlockCount => Inner.BlockCount;
 	public float PlaceTicks => Inner.PlaceTicks;
+	public bool HasWall(int x, int y) => Inner.HasWall(x, y);
 }

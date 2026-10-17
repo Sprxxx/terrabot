@@ -142,7 +142,7 @@ public sealed class DebugOverlaySystem : ModSystem
 
 	private static Color KindColor(MoveKind k) => k switch {
 		MoveKind.StepUp => StepColor,
-		MoveKind.Drop => DropColor,
+		MoveKind.Drop or MoveKind.ArrestedDrop => DropColor,
 		MoveKind.Jump => JumpColor,
 		MoveKind.Pillar => PillarColor,
 		_ => WalkColor,
