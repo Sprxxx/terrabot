@@ -606,6 +606,9 @@ public sealed class BotContext
 
 	public bool InEvilBiome(TilePos t) => World != null && Ids.EvilTiles.Length > 0 && Share(t, c => c.Evil) >= EvilShare;
 
+	/// <summary>Has the map shown enough of the ground round the tile to say what biome it is (the shares' own minimum)?</summary>
+	public bool SeenAround(TilePos t) => World != null && Share(t, c => c.Solid) > 0f;
+
 	/// <summary>
 	/// Share of seen solid tiles that makes the evil biome: lower than a desert's, as its surface is mostly plain dirt under
 	/// one layer of corrupt grass. At the desert's 15% the bot explored 70 tiles into the corruption from a trip's end at

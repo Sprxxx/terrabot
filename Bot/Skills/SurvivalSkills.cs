@@ -270,9 +270,34 @@ public sealed class HuntSkill : ISkill
 		return ctx.CorruptionAround(new TilePos(node.X + span, node.Y)) != ctx.CorruptionAround(new TilePos(node.X - span, node.Y));
 	}
 
-	/// <summary>The side (+1 east, -1 west) with less of the evil biome a wander's length off.</summary>
-	private static int AwayFromEvil(BotContext ctx, TilePos node) =>
-		ctx.CorruptionAround(new TilePos(node.X + WanderTiles, node.Y)) <= ctx.CorruptionAround(new TilePos(node.X - WanderTiles, node.Y)) ? 1 : -1;
+	/// <summary>
+	/// The side (+1 east, -1 west) out of the evil biome: the nearer of the seen ground off it along the surface either way
+	/// (<see cref="OutScanTiles"/>), else towards the spawn, else the side with less of it a wander's length off. Seen in game
+	/// (measured run U30): at x 1717 in the 700-tile corruption (x 1250-1960), the counts a wander off either way were alike
+	/// and the hunt went "walking out of it west", 470 tiles of corruption that way against 240 east; an eater of souls
+	/// killed the bot at (1676,256).
+	/// </summary>
+	private static int AwayFromEvil(BotContext ctx, TilePos node)
+	{
+		int? east = DistanceOut(ctx, node, 1), west = DistanceOut(ctx, node, -1);
+		if (east != null || west != null)
+			return (east ?? int.MaxValue) <= (west ?? int.MaxValue) ? 1 : -1;
+		if (ctx.SpawnTile is TilePos spawn && spawn.X != node.X)
+			return System.Math.Sign(spawn.X - node.X);
+		return ctx.CorruptionAround(new TilePos(node.X + WanderTiles, node.Y)) <= ctx.CorruptionAround(new TilePos(node.X - WanderTiles, node.Y)) ? 1 : -1;
+	}
+
+	/// <summary>How far along the surface the seen ground off the evil biome is, that way (null: none seen within <see cref="OutScanTiles"/>).</summary>
+	private static int? DistanceOut(BotContext ctx, TilePos node, int dir)
+	{
+		for (int d = OutScanStep; d <= OutScanTiles; d += OutScanStep)
+			if (Brain.ProgressionPlanner.SurfaceAt(ctx.Grid, node.X + dir * d) is TilePos c && ctx.SeenAround(c) && !ctx.InEvilBiome(c))
+				return d;
+		return null;
+	}
+
+	/// <summary>The look along the surface for the way out: a large world's corruption is up to about 800 tiles wide; half a chunk a step.</summary>
+	public const int OutScanTiles = 800, OutScanStep = 8;
 
 	/// <summary>The state of the walk out from under cover to the open ground (not broken off for prey in sight).</summary>
 	public const string ToOpenGround = "to open ground";

@@ -872,6 +872,39 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void ALensHunt_DeepInAWideCorruption_WalksOutTheNearerWay()
+	{
+		// Measured run U30: at x 1717 in the 700-tile corruption (x 1250-1960) the hunt went "walking out of it west", 470 tiles
+		// of it that way against 240 east (the counts a wander off either way alike); an eater of souls killed the bot.
+		// Here: 600 wide, corruption x 100-460, the bot at x 230 (130 tiles in from the west edge, 230 from the east one).
+		FakeGame g = ProgressionTests.Mine(width: 600, sky: Feet + 1);
+		for (int x = 100; x <= 460; x++)
+			for (int y = Feet + 1; y < Feet + 13; y++)
+				if (x < 300 || x > 320) // a strip of plain ground inside it, east of the bot: less of it that way a wander off, no way out
+					g.TileTypes[new TilePos(x, y)] = y == Feet + 1 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		BotContext ctx = Armoured(g);
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.IsNight = true;
+		MoveTo(g, ctx, 230, Feet);
+		g.Refresh(ctx);
+		Assert.True(ctx.InEvilBiome(ctx.Node));
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
+		hunt.Start(ctx);
+		int firstGoalX = -1;
+		for (int t = 0; t < 600 && firstGoalX < 0; t++) {
+			g.Refresh(ctx);
+			hunt.Tick(ctx);
+			g.Step(ctx);
+			var m = System.Text.RegularExpressions.Regex.Match(hunt.Describe(), @"\[wandering\] > WalkTo \((\d+),(\d+)\)");
+			if (m.Success)
+				firstGoalX = int.Parse(m.Groups[1].Value);
+		}
+		output.WriteLine($"{hunt.Describe()}; first wander to x {firstGoalX}, from x 230");
+		Assert.True(firstGoalX >= 0, "no wander");
+		Assert.True(firstGoalX < 230, $"walked out the far way, to x {firstGoalX}");
+	}
+
+	[Fact]
 	public void TheMushroomJob_PicksOnlyTheMushrooms_AmongTheCorruptPlants()
 	{
 		FakeGame g = CorruptWorld();
