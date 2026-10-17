@@ -689,8 +689,19 @@ public sealed class WalkToSkill : ISkill
 			limits = new SearchLimits { MaxExpansions = limits.MaxExpansions, MaxRadius = limits.MaxRadius, CheckBrokenSupport = false };
 		// To where the body, read where it stands, meets the goal (GoalAsStood), as Tick's arrival check reads it.
 		search = new PathSearch(moves, start, new GoalAsStood(Goal, moves.Grid), limits, trustStart: standing);
+		lastTrustStart = standing;
 		State = "planning";
 	}
+
+	private bool lastTrustStart, deepSearched;
+
+	/// <summary>
+	/// The deep search after an early "no node closer than the start": no segments (so no such end either), up to the default
+	/// search's own cap (<see cref="SearchLimits.MaxExpansions"/>); a partial plan to the best node if the goal is not met in it.
+	/// </summary>
+	public static SearchLimits DeepLimits(bool relaxed) => new() {
+		MaxExpansions = SearchLimits.Default.MaxExpansions, MaxRadius = SearchLimits.Default.MaxRadius, SegmentAfter = 0, CheckBrokenSupport = !relaxed,
+	};
 
 	/// <summary>
 	/// Steps of a plan written to the log: the first <see cref="LoggedSteps"/> and the last <see cref="LoggedTailSteps"/>, the
@@ -749,6 +760,23 @@ public sealed class WalkToSkill : ISkill
 		}
 		if (LastPlan.Status == PathStatus.NoPath && LastPlan.Why.Length > 0)
 			Info(ctx, $"WalkTo: no path from {LastPlan.Start}: {LastPlan.Why}");
+		// Ended early, "no node closer than the start": the start may be a dead end the way on first leads away from (a
+		// staircase a partial segment dug up into, under rock the pickaxe cannot break), not a walled-off goal. Search once
+		// more without that end, up to a whole search's nodes. Seen in game (measured runs M10j, M10k, world_eow): from (1872,366),
+		// the top of such a staircase, every walk ended "no node closer than the start in 6000 (rows 366..496)" for 12 game
+		// hours, while a tunnel east through mud led out (the region dump's replay: 91 steps). Once per start for a while
+		// (DeepSearchedFrom), and not for sub-skills with their own limits (they have alternatives).
+		if (LastPlan.Status == PathStatus.NoPath && LastPlan.EndedNoCloser && Limits == null && !deepSearched && !ctx.DeepSearchedFrom.Contains(LastPlan.Start)) {
+			deepSearched = true;
+			ctx.DeepSearchedFrom.Add(LastPlan.Start);
+			SearchLimits deep = DeepLimits(relaxed);
+			Info(ctx, $"WalkTo: searching once more from {LastPlan.Start} without ending at a dead end (up to {deep.MaxExpansions} nodes)");
+			plans++;
+			searchMoves = ctx.Moves;
+			search = new PathSearch(searchMoves, LastPlan.Start, new GoalAsStood(Goal, searchMoves.Grid), deep, trustStart: lastTrustStart);
+			State = "planning (deep)";
+			return false;
+		}
 		// A big search from here found nothing: another the same would too (seen in game, measured run J2: 31 searches of
 		// 40,000 nodes, 5 s each, from one cave). Fail now and let the job choose something else.
 		if (LastPlan.Status == PathStatus.NoPath && LastPlan.Expanded >= BigNoPath) {

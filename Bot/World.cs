@@ -60,6 +60,12 @@ public interface IWorldInfo
 
 	/// <summary>Light level at the cell, 0 (dark) to about 1 (vanilla Lighting.Brightness).</summary>
 	float LightAt(int x, int y);
+
+	/// <summary>
+	/// Would an explosive's blast break the tile in this cell (vanilla Projectile.CanExplodeTile: not dungeon bricks, chests,
+	/// altars, lihzahrd bricks or the hardmode ores; hellstone and meteorite only in hardmode)? False when there is no tile.
+	/// </summary>
+	bool CanExplode(int x, int y);
 }
 
 /// <summary>Read-only view of the player's items.</summary>
@@ -223,9 +229,23 @@ public sealed class GameIds
 	/// unless holding Down, and the paths walk flooded floors.
 	/// </summary>
 	public int[] FloatingAccessories { get; init; } = System.Array.Empty<int>();
+	/// <summary>Thrown explosives whose blast breaks tiles (the Bomb, Dynamite), smallest blast first; empty = none known.</summary>
+	public ExplosiveInfo[] TileExplosives { get; init; } = System.Array.Empty<ExplosiveInfo>();
 
 	public static readonly GameIds None = new();
 }
+
+/// <summary>
+/// A thrown explosive that breaks tiles, with the vanilla numbers a blast is planned by. The Game layer fills them in from
+/// the decompiled Projectile code (tML 2026.08): <see cref="TileRadius"/> is Projectile.Kill's ExplodeTiles radius (Bomb 4,
+/// Dynamite 7), <see cref="BlastHalfPx"/> and <see cref="Damage"/> come from Projectile.PrepareBombToBlow (Resize to 128 /
+/// 250 px, 100 / 250 damage, the thrower included), <see cref="ShootSpeed"/> and <see cref="UseTicks"/> from the item
+/// (Item.shootSpeed, useAnimation), <see cref="SizePx"/> from Projectile.SetDefaults (28: 22, 29: 10), the roll and bounce from the
+/// aiStyle 16 code (ground: velocity.X *= 0.97, Dynamite also *= 0.99; off a block: -0.4, Dynamite also *0.8), and the fuse from the wiki (Bomb 3 s, Dynamite 5 s: terraria.wiki.gg/wiki/Bomb and
+/// /wiki/Dynamite; the decompile sets no timeLeft for projectiles 28 and 29 that could be found).
+/// </summary>
+public sealed record ExplosiveInfo(int ItemType, string Name, int TileRadius, float BlastHalfPx, int Damage, int FuseTicks, float ShootSpeed, int UseTicks,
+	int SizePx, float GroundFriction, float Bounce);
 
 /// <summary>Things the bot noticed in the world this tick, beyond NPCs and drops.</summary>
 public sealed class Surroundings

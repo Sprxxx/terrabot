@@ -92,7 +92,30 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Bottle = ItemID.Bottle,
 		BottleTile = TileID.Bottles,
 		CorruptionWeights = CorruptionZoneWeights(),
+		TileExplosives = TileExplosiveInfos(),
 	};
+
+	/// <summary>
+	/// The Bomb (projectile 28) and Dynamite (29), the thrown explosives that break tiles; the Grenade's blast (30) only
+	/// breaks cracked bricks (Projectile.Kill: ExplodeCrackedTiles for 30, ExplodeTiles for 28 radius 4 and 29 radius 7).
+	/// Blast box and damage: Projectile.PrepareBombToBlow (Resize(128, 128), 100; Resize(250, 250), 250). Throw speed and
+	/// swing from the item (Item.SetDefaults 166: shootSpeed 5, useAnimation 25; 167: 4, 40). Fuse: the wiki's 3 s and 5 s.
+	/// </summary>
+	private static ExplosiveInfo[] TileExplosiveInfos()
+	{
+		// The item's own numbers when the samples are there (ModPlayer.Initialize can run before they are), else the decompile's.
+		ExplosiveInfo Of(int item, string name, int radius, float halfPx, int damage, int fuse, float speed, int use, int size, float friction, float bounce) =>
+			ContentSamples.ItemsByType.TryGetValue(item, out Item it) && it.shoot > ProjectileID.None
+				? new ExplosiveInfo(item, it.Name, radius, halfPx, damage, fuse, it.shootSpeed, it.useAnimation, size, friction, bounce)
+				: new ExplosiveInfo(item, name, radius, halfPx, damage, fuse, speed, use, size, friction, bounce);
+		return new[] {
+			Of(ItemID.Bomb, "Bomb", 4, 64f, 100, 180, 5f, 25, 22, 0.97f, 0.4f),
+			Of(ItemID.Dynamite, "Dynamite", 7, 125f, 250, 300, 4f, 40, 10, 0.97f * 0.99f, 0.4f * 0.8f),
+		};
+	}
+
+	/// <summary>A projectile only for asking Projectile.CanExplodeTile, which reads the tile alone (and TileLoader.CanExplode).</summary>
+	private static readonly Projectile explodeProbe = new();
 
 	/// <summary>
 	/// What each tile counts for Player.ZoneCorrupt, as tModLoader sums the scene scan (TileLoader.cs:1640-1652): the
@@ -472,6 +495,9 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public bool IsRevealed(int x, int y) => !WorldGen.InWorld(x, y, 1) || Main.Map.IsRevealed(x, y);
 
 	public float LightAt(int x, int y) => WorldGen.InWorld(x, y, 1) ? Lighting.Brightness(x, y) : 1f;
+
+	/// <summary>Vanilla's own check, as a blast runs it per tile (Projectile.ExplodeTiles -> CanExplodeTile).</summary>
+	public bool CanExplode(int x, int y) => WorldGen.InWorld(x, y, 2) && Main.tile[x, y].HasTile && explodeProbe.CanExplodeTile(x, y);
 
 	public bool BossDefeated(int npcType) => npcType switch {
 		NPCID.EyeofCthulhu => NPC.downedBoss1,

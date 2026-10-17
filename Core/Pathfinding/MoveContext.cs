@@ -158,8 +158,13 @@ public sealed class MoveContext
 	public int FallTicks(int tiles) => fallTicks[Math.Clamp(tiles, 0, MaxDrop)];
 
 	/// <summary>The same context (moves, settings, costs) over another grid: planning ahead on the world as a plan will leave it.</summary>
-	public MoveContext WithGrid(ITileGrid grid) => new(grid, Physics, Moves) {
-		Blocks = Blocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, DigAnyway = DigAnyway, BadEdges = BadEdges, EdgePenalty = EdgePenalty,
+	public MoveContext WithGrid(ITileGrid grid) => Copy(grid, AllowBreak, AllowPlace);
+
+	/// <summary>The same context with no mining or placing: walks that must not stop to edit the world (away from a lit fuse).</summary>
+	public MoveContext WalkingOnly() => Copy(Grid, false, false);
+
+	private MoveContext Copy(ITileGrid grid, bool allowBreak, bool allowPlace) => new(grid, Physics, Moves) {
+		Blocks = Blocks, AllowBreak = allowBreak, AllowPlace = allowPlace, DigAnyway = DigAnyway, BadEdges = BadEdges, EdgePenalty = EdgePenalty,
 		LiquidCostMultiplier = LiquidCostMultiplier, HeadUnderCostMultiplier = HeadUnderCostMultiplier,
 		BreakCostMultiplier = BreakCostMultiplier, BreakOverheadTicks = BreakOverheadTicks, PillarRiskTicks = PillarRiskTicks,
 		PrecariousTicks = PrecariousTicks, AvoidBelowRow = AvoidBelowRow, BelowRowTicks = BelowRowTicks, Avoid = Avoid, AvoidTicks = AvoidTicks,

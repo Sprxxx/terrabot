@@ -273,3 +273,60 @@ public static class GoalResolver
 		return new GoalStandAt(target, p);
 	}
 }
+
+/// <summary>
+/// Stand where the body's hitbox is clear of a square blast box of half-size <see cref="HalfPx"/> round <see cref="CenterX"/>/<see cref="CenterY"/> (pixels):
+/// out of reach of an explosion, whose damage is the box touching the hitbox (vanilla Projectile.Damage on the resized
+/// explosive), wherever in the node the body stands: <see cref="Body.NodeOf"/> rounds to the nearest node, so a body counted
+/// at a node is up to half a tile either way of <see cref="Body.CanonicalLeft"/> and <see cref="Body.StandingTop"/>. No heuristic:
+/// the search is a short Dijkstra round the throw spot.
+/// </summary>
+public sealed class GoalClearOfBlast : IGoal
+{
+	private readonly PhysicsParams p;
+	public float CenterX { get; }
+	public float CenterY { get; }
+	public float HalfPx { get; }
+	public TilePos Anchor { get; }
+
+	public GoalClearOfBlast(float centerX, float centerY, float halfPx, PhysicsParams p)
+	{
+		CenterX = centerX;
+		CenterY = centerY;
+		HalfPx = halfPx;
+		this.p = p;
+		Anchor = new TilePos((int)Math.Floor(centerX / Body.TileSize), (int)Math.Floor(centerY / Body.TileSize));
+	}
+
+	/// <summary>Is the hitbox standing at <paramref name="n"/> clear of the box?</summary>
+	public bool IsGoal(TilePos n)
+	{
+		const float Slop = Body.TileSize / 2f;
+		float left = Body.CanonicalLeft(n.X, p) - Slop, top = Body.StandingTop(n.Y, p) - Slop;
+		float right = left + p.Width + 2 * Slop, bottom = top + p.Height + 2 * Slop;
+		return right <= CenterX - HalfPx || left >= CenterX + HalfPx || bottom <= CenterY - HalfPx || top >= CenterY + HalfPx;
+	}
+
+	public float Heuristic(TilePos n) => 0f;
+	public override string ToString() => $"ClearOfBlast({CenterX:0},{CenterY:0})±{HalfPx:0}px";
+}
+
+/// <summary>Any node <see cref="Test"/> accepts, nearest by cost (no heuristic: a short Dijkstra). A test that always says no
+/// makes the search a flood fill that sees every node it reaches (<see cref="Test"/> is asked once per node, cheapest first).</summary>
+public sealed class GoalWhere : IGoal
+{
+	public Func<TilePos, bool> Test { get; }
+	public TilePos Anchor { get; }
+	private readonly string name;
+
+	public GoalWhere(Func<TilePos, bool> test, TilePos anchor, string name)
+	{
+		Test = test;
+		Anchor = anchor;
+		this.name = name;
+	}
+
+	public bool IsGoal(TilePos n) => Test(n);
+	public float Heuristic(TilePos n) => 0f;
+	public override string ToString() => name;
+}

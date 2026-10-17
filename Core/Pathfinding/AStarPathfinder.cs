@@ -36,6 +36,11 @@ public sealed class PathResult
 	/// ended "no path" with no node better than the start, which the dump's replay does not reproduce.
 	/// </summary>
 	public string Why { get; init; } = "";
+	/// <summary>
+	/// The search ended early because no node closer to the goal than the start turned up in two segments' worth of nodes
+	/// (<see cref="SearchLimits.SegmentAfter"/>): a guess that the goal is walled off, not a search of all there is.
+	/// </summary>
+	public bool EndedNoCloser { get; init; }
 
 	public override string ToString() =>
 		$"{Status}: {Steps.Count} steps, cost {Cost:0.#}t, expanded {Expanded} in {ElapsedMs:0.#} ms";
@@ -163,7 +168,7 @@ public sealed class PathSearch
 				// 26, rows 335..416", 40,000 nodes and seconds each time). Baritone ends a search that is getting nowhere too.
 				if (limits.SegmentAfter > 0 && expanded >= 2 * limits.SegmentAfter && lowestH >= goal.Heuristic(start) - 0.01f && bestTainted == start) {
 					Result = new PathResult { Status = PathStatus.NoPath, Start = start, Best = best, Expanded = expanded, ElapsedMs = elapsedMs + sw.Elapsed.TotalMilliseconds,
-						Why = $"no node closer than the start in {expanded} (start h {goal.Heuristic(start):0}, rows {topRow}..{bottomRow})" };
+						Why = $"no node closer than the start in {expanded} (start h {goal.Heuristic(start):0}, rows {topRow}..{bottomRow})", EndedNoCloser = true };
 					return true;
 				}
 				if (limits.SegmentAfter > 0 && expanded >= limits.SegmentAfter && best != start && best.ChebyshevTo(start) >= limits.SegmentMinTiles) {

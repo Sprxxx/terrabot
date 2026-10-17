@@ -797,9 +797,15 @@ public sealed class BotContext
 	/// <summary>Is the tile within <paramref name="reach"/> of <paramref name="from"/>, its failures lately counted as distance?</summary>
 	public bool InMiningReach(TilePos t, TilePos from, int reach) => from.ChebyshevTo(t) + MineFailureCost(t, reach) <= reach;
 
+	/// <summary>
+	/// Nodes a walk's deep search (WalkToSkill: no "nothing closer than the start" end) started from lately and found nothing:
+	/// not searched deep again from there for <see cref="VetoTicks"/> (each such search is up to a whole search's nodes).
+	/// </summary>
+	public ExpiringSet<TilePos> DeepSearchedFrom { get; } = new(VetoTicks);
+
 	public BotContext()
 	{
-		UnreachableTiles.Clock = NoPlace.Clock = NoBreak.Clock = () => Tick;
+		UnreachableTiles.Clock = NoPlace.Clock = NoBreak.Clock = DeepSearchedFrom.Clock = () => Tick;
 		BadEdges.Clock = () => Tick;
 	}
 	/// <summary>Failures so far per (cell, place?) before a veto.</summary>

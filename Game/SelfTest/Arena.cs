@@ -66,6 +66,7 @@ public sealed class Arena
 					case '#': t.ResetToType(TileID.Dirt); break;
 					case ',': t.ResetToType(TileID.Grass); break;
 					case '@': t.ResetToType(TileID.LihzahrdBrick); break;
+					case 'e': t.ResetToType(TileID.Ebonstone); break; // pickaxe power 65 to mine; a blast breaks it
 					case '%': t.ResetToType(TileID.Sand); break;
 					case 's': t.ResetToType(TileID.Stone); break;
 					case 'i': t.ResetToType((ushort)WorldGen.SavedOreTiers.Iron); break;
