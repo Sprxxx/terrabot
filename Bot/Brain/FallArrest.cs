@@ -71,7 +71,7 @@ public sealed class FallArrest
 			return;
 		}
 		Landing now = Predict(ctx.Grid, p, s, ctx.Output, fallStart);
-		if (now.Safe) {
+		if (now.Safe || PlannedCatchHolds(ctx, s)) {
 			Stop();
 			return;
 		}
@@ -95,6 +95,31 @@ public sealed class FallArrest
 			return;
 		}
 		Place(ctx, s, now);
+	}
+
+	private readonly OverlayGrid caught = new();
+
+	/// <summary>
+	/// A fall the walk planned (<see cref="BotContext.PlannedCatch"/>: an ArrestedDrop step placing its block on the way down)
+	/// that lands within a safe fall once that block is in: the step's to arrest, not the reflex's (which would put a block into
+	/// the first cell it could, rows above the plan's landing). Held keys as the step set them, or any other: the step steers
+	/// onto its block tick by tick (Arrive.Steer), which no one key held all the way down is (the keys this tick, pressing
+	/// towards the landing column, carry the body past it). Not once the step has let it go (placed, or passed): then the
+	/// reflex as for any fall.
+	/// </summary>
+	private bool PlannedCatchHolds(BotContext ctx, in BodyState s)
+	{
+		if (ctx.PlannedCatch is not TilePos c || ctx.Grid.Get(c.X, c.Y).CanStandOn())
+			return false;
+		caught.Reset(ctx.Grid);
+		caught.Set(c.X, c.Y, CellKind.Solid);
+		foreach (int key in new[] { ctx.Output.Horizontal, 0, -1, 1 }) {
+			MoveInput k = ctx.Output;
+			k.Horizontal = key;
+			if (Predict(caught, ctx.Physics, s, k, fallStart).Safe)
+				return true;
+		}
+		return false;
 	}
 
 	/// <summary>The techniques, one at a time; a change of technique is logged.</summary>

@@ -93,6 +93,12 @@ public sealed class PathExecutor
 
 	public PathStep? Current => StepIndex < steps.Count ? steps[StepIndex] : null;
 
+	/// <summary>
+	/// The block an <see cref="MoveKind.ArrestedDrop"/> in progress lands on, while it can still go in (not placed yet, the
+	/// body not past it): the fall it arrests is planned, so the brain's fall reflex leaves it to the step. Null otherwise.
+	/// </summary>
+	public TilePos? CatchCell { get; private set; }
+
 	public PathExecutor(MoveContext ctx, IReadOnlyList<PathStep> path)
 	{
 		this.ctx = ctx;
@@ -175,9 +181,11 @@ public sealed class PathExecutor
 
 			MoveInput input;
 			bool advanced;
+			CatchCell = null;
 			bool ok = step.Kind switch {
 				MoveKind.Jump => TickJump(s, step, out input, out advanced),
 				MoveKind.Pillar => TickPillar(s, step, out input, out advanced),
+				MoveKind.ArrestedDrop => TickArrestedDrop(s, step, out input, out advanced),
 				_ => TickGroundMove(s, step, out input, out advanced),
 			};
 			if (!ok)
@@ -303,7 +311,7 @@ public sealed class PathExecutor
 
 	private int Budget(in PathStep step) => step.Kind switch {
 		MoveKind.Jump => 150 + (step.Template?.Ticks ?? 60) * 2,
-		MoveKind.Drop or MoveKind.DropThrough => 120 + (int)(step.Cost * 3),
+		MoveKind.Drop or MoveKind.DropThrough or MoveKind.ArrestedDrop => 120 + (int)(step.Cost * 3),
 		MoveKind.Pillar => 180 + (int)(step.Cost * 3),
 		_ => 60 + (int)(step.Cost * 4),
 	};
@@ -538,6 +546,68 @@ public sealed class PathExecutor
 		}
 		return 1;
 	}
+
+	/// <summary>
+	/// ArrestedDrop: a block in hand from the start, walk off the lip towards the landing column (as a drop), and on the way
+	/// down place the step's block once vanilla takes it: after this tick's movement (item use comes after it), the cell no
+	/// more than tileRangeY - 2 rows past the hitbox's bottom and not in the hitbox (Player.PlaceThing_Tiles, decompiled
+	/// Player.cs 38999; Collision.EmptyTile), as <c>Bot.Brain.FallArrest</c> places one. Landed on it at the step's end: done. Not
+	/// placed by the time the feet pass it: the catch is off (<see cref="CatchCell"/> null, so the fall reflex takes over) and
+	/// the landing, wherever it is, re-plans.
+	/// </summary>
+	private bool TickArrestedDrop(in BodyState s, in PathStep step, out MoveInput input, out bool advanced)
+	{
+		PhysicsParams p = ctx.Physics;
+		input = new MoveInput { Tool = ToolRequest.Block };
+		advanced = false;
+		TilePos node = Body.NodeOf(s, p);
+		TilePos cell = step.Actions[0].Cell;
+		CurrentAction = step.Actions[0];
+		bool placed = ctx.Grid.Get(cell.X, cell.Y).CanStandOn();
+		if (settled && placed && At(node, step.To)) {
+			advanced = true;
+			return true;
+		}
+		if (ticksInStep <= 2 && RidingAboveStart(node, step))
+			return RideOff(step, node);
+		bool onLedge = grounded && node.ChebyshevTo(step.From) <= 1;
+		// Still on the lip: the catch must still be there to be made before the body steps off (as a drop's landing).
+		if (onLedge && !placed && !ctx.IsStepValid(step)) {
+			InvalidStepIndex = StepIndex;
+			Finish(ExecStatus.Blocked, $"step {StepIndex} {step}: the block at {cell} can no longer go in; not stepping off at {node}");
+			return false;
+		}
+		if (settled && ticksInStep > 3 && !onLedge) {
+			if (TryResync(node)) {
+				advanced = true;
+				return true;
+			}
+			Finish(ExecStatus.OffPath, $"step {StepIndex} {step}: landed at {node} ({(placed ? "the block placed" : "the block not placed")})");
+			return false;
+		}
+		input.Horizontal = Arrive.Steer(s.X, s.VX, Body.CanonicalLeft(step.To.X, p), p, 2f);
+		float cellTop = cell.Y * Body.TileSize;
+		bool past = s.Y + p.Height > cellTop;
+		if (!placed && !past) {
+			CatchCell = cell;
+			BodyState next = s;
+			PlayerPhysics.ApplyControls(ref next, input, p);
+			next.X += next.VX;
+			next.Y += next.VY;
+			bool inRange = cell.Y <= (next.Y + p.Height) / Body.TileSize + PlaceRangeRows - 2f
+				&& next.X / Body.TileSize - PlaceRangeColumns <= cell.X && (next.X + p.Width) / Body.TileSize + PlaceRangeColumns - 1f >= cell.X;
+			bool clear = MathF.Floor(next.Y) + p.Height <= cellTop - BuildMove.PillarClearance;
+			if (!grounded && inRange && clear) {
+				input.UseItem = true;
+				input.Aim(cell.X, cell.Y);
+			}
+		}
+		Phase = placed ? "ArrestedDrop landing" : past ? "ArrestedDrop: past the block, not placed" : grounded ? "ArrestedDrop edge" : "ArrestedDrop fall";
+		return true;
+	}
+
+	/// <summary>Vanilla Player.tileRangeX / tileRangeY (Player.cs:2859-2862): how far from the hitbox a block may be placed.</summary>
+	public const int PlaceRangeColumns = 5, PlaceRangeRows = 4;
 
 	/// <summary>
 	/// Pillar: settle centred on the start node with a block in hand, jump, place under the feet as soon as the

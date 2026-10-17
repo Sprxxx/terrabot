@@ -11,7 +11,7 @@ namespace TerraBot.Tests;
 
 /// <summary>
 /// Replays regions the game wrote when a big search found no path (WalkToSkill.DumpRegion, tModLoader-Logs/TerraBot):
-/// the map (F start, T goal anchor, X unbreakable, U unsafe), copied into Dumps/.
+/// the map (F start, T goal anchor, X unbreakable, U unsafe; then "bad" steps and a "walls" map, 'w' a wall), copied into Dumps/.
 /// </summary>
 public class DumpReplayTests
 {
@@ -22,7 +22,9 @@ public class DumpReplayTests
 	public static (ArrayTileGrid grid, TestBlockActions blocks, TilePos start, TilePos goal) Load(string file)
 	{
 		string[] lines = File.ReadAllLines(file);
-		string[] rows = lines.Skip(1).Where(l => l.Length > 0 && !l.StartsWith("bad ")).Select(l => l.Trim()).ToArray();
+		int wallsAt = Array.FindIndex(lines, l => l.Trim() == "walls");
+		string[] mapLines = wallsAt < 0 ? lines : lines.Take(wallsAt).ToArray();
+		string[] rows = mapLines.Skip(1).Where(l => l.Length > 0 && !l.StartsWith("bad ")).Select(l => l.Trim()).ToArray();
 		TilePos start = default, goal = default;
 		for (int y = 0; y < rows.Length; y++)
 			for (int x = 0; x < rows[y].Length; x++) {
@@ -37,6 +39,14 @@ public class DumpReplayTests
 			for (int x = 0; x < rows[y].Length; x++)
 				if (rows[y][x] == ',')
 					b.NoPlace.Add(new TilePos(x, y));
+		// The walls behind the cells (dumps since the arrested drop: 'w' a wall).
+		if (wallsAt >= 0) {
+			string[] walls = lines.Skip(wallsAt + 1).Where(l => l.Trim().Length > 0).Select(l => l.Trim()).ToArray();
+			for (int y = 0; y < walls.Length; y++)
+				for (int x = 0; x < walls[y].Length; x++)
+					if (walls[y][x] == 'w')
+						b.Walls.Add(new TilePos(x, y));
+		}
 		return (g, b, start, goal);
 	}
 

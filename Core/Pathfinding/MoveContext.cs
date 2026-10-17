@@ -77,6 +77,18 @@ public sealed class MoveContext
 	public GridMask Mask { get; } = new();
 
 	/// <summary>
+	/// Cells the last <see cref="PathSearch.BrokenLookback"/> steps of the path to the node being expanded place blocks in (set by
+	/// <see cref="PathSearch"/> before each expansion; empty outside a search). The grid is the world as it is, so without
+	/// this a move from a node standing on a block its own path placed would read open air under it
+	/// (<see cref="Moves.ArrestedDropMove"/>).
+	/// </summary>
+	public HashSet<TilePos> PlacedOnPath { get; } = new();
+
+	/// <summary><see cref="Body.HasSupport"/>, counting the blocks the path being searched places (<see cref="PlacedOnPath"/>).</summary>
+	public bool HasSupport(int x, int y) =>
+		Body.HasSupport(Grid, x, y) || PlacedOnPath.Count > 0 && (PlacedOnPath.Contains(new TilePos(x, y + 1)) || PlacedOnPath.Contains(new TilePos(x + 1, y + 1)));
+
+	/// <summary>
 	/// Set by <see cref="PathSearch.Step"/> while it runs: break times and placeability are then remembered per cell for
 	/// the search (the game's answers walk the tile tables and WorldGen.CanKillTile; one search asks about the same cells
 	/// from every neighbouring node). Outside a search, as when a running step is checked, they are asked afresh.
@@ -149,6 +161,7 @@ public sealed class MoveContext
 		new WalkMove(),
 		new StepUpMove(),
 		new DropMove(),
+		new ArrestedDropMove(),
 		new DropThroughMove(),
 		new JumpMove(),
 		new DigMove(),

@@ -459,6 +459,7 @@ public sealed class WalkToSkill : ISkill
 		}
 
 		MoveInput input = Executor.Tick(ctx.Body);
+		ctx.PlannedCatch = Executor.Status == ExecStatus.Running ? Executor.CatchCell : null;
 		if (Executor.PopNotice() is string notice)
 			ctx.Log.Info(notice);
 		if (ctx.Trace)
@@ -530,11 +531,12 @@ public sealed class WalkToSkill : ISkill
 		// nothing about them (seen in game: cells vetoed that were never tried).
 		if (Executor.Current is not PathStep step || !step.HasActions)
 			return;
-		// A pillar's block is placed mid-jump, outside the action list: a pillar that failed is its block not going in.
+		// A pillar's block is placed mid-jump (an arrested drop's mid-fall), outside the action list: a pillar that failed is its
+		// block not going in.
 		// Seen in game (runs 36-41): beside the work bench at the spawn the block never went in (nothing solid next to
 		// the cell to hold it, and no wall: vanilla PlaceThing_Tiles_BlockPlacementForAssortedThings), so every walk home
 		// after a death planned the same pillar.
-		BlockAction[] tried = step.Kind == MoveKind.Pillar ? step.Actions.Where(a => a.Kind == ActionKind.Place).ToArray()
+		BlockAction[] tried = step.Kind is MoveKind.Pillar or MoveKind.ArrestedDrop ? step.Actions.Where(a => a.Kind == ActionKind.Place).ToArray()
 			: Executor.CurrentAction is BlockAction current ? new[] { current } : System.Array.Empty<BlockAction>();
 		foreach (BlockAction a in tried) {
 			bool place = a.Kind == ActionKind.Place;
@@ -581,8 +583,8 @@ public sealed class WalkToSkill : ISkill
 	}
 
 	/// <summary>
-	/// A big search that found no path: write the region between start and goal (legend as <see cref="Around"/>) to a
-	/// file, so the case can be replayed in a unit test. Seen in game: the same cave, 57 tiles below spawn, never had a
+	/// A big search that found no path: write the region between start and goal (legend as <see cref="Around"/>, then the
+	/// "bad" steps, then a "walls" map) to a file, so the case can be replayed in a unit test. Seen in game: the same cave, 57 tiles below spawn, never had a
 	/// way back in three runs.
 	/// </summary>
 	private void DumpRegion(BotContext ctx, TilePos start)
@@ -600,6 +602,17 @@ public sealed class WalkToSkill : ISkill
 				if (from.X >= x0 && from.X <= x1 && from.Y >= y0 && from.Y <= y1)
 					bad.Append($"bad {from.X - x0} {from.Y - y0} {to.X - x0} {to.Y - y0}").Append(System.Environment.NewLine);
 			map += System.Environment.NewLine + bad;
+			// The walls behind the cells ('w'), what a block placed into open air is fixed to (an arrested drop's catch): the U30
+			// dumps of the corruption chasm had none, and the wall behind its shaft had to be inferred for the replay.
+			if (ctx.World != null) {
+				var walls = new System.Text.StringBuilder("walls");
+				for (int y = y0; y <= y1; y++) {
+					walls.Append(System.Environment.NewLine).Append("    ");
+					for (int x = x0; x <= x1; x++)
+						walls.Append(ctx.World.HasWall(x, y) ? 'w' : '.');
+				}
+				map += walls + System.Environment.NewLine;
+			}
 			string file = System.IO.Path.Combine(ctx.DumpDir, $"nopath_{start.X}_{start.Y}_to_{goal.X}_{goal.Y}.txt");
 			System.IO.File.WriteAllText(file, $"start {start} goal {Goal} origin ({x0},{y0}) blocks {ctx.Blocks?.BlockCount ?? 0} pick {ctx.PickPower}" + System.Environment.NewLine + map + System.Environment.NewLine);
 			ctx.Log.Info($"WalkTo: no path from {start} to {Goal}; region written to {file}");

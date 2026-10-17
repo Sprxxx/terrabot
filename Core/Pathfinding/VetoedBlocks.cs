@@ -26,4 +26,5 @@ public sealed class VetoedBlocks : IBlockActions
 	public bool CanPlaceAt(int x, int y) => !NoPlace.Contains(new TilePos(x, y)) && Inner.CanPlaceAt(x, y);
 	public int BlockCount => Inner.BlockCount;
 	public float PlaceTicks => Inner.PlaceTicks;
+	public bool HasWall(int x, int y) => Inner.HasWall(x, y);
 }

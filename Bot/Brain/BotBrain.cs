@@ -611,6 +611,7 @@ public sealed class BotBrain
 		// While the bot has the keys (auto mode, or a skill running): never a fall that hurts, whatever the skill did with them.
 		bool driving = Auto || Current != null;
 		ctx.NoteZone();
+		ctx.PlannedCatch = null;
 		TickSkills(ctx);
 		if (driving || Current != null)
 			Falls.Tick(ctx);

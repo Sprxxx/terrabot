@@ -447,7 +447,7 @@ public class BossPlannerTests
 			ISkill s = p.ResolveForTest(Eye, ctx);
 			output.WriteLine($"{p.Status} -> {s?.Describe()}");
 			var walk = Assert.IsType<WalkToSkill>(s);
-			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 600));
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000)); // the walk goes as near as it can first (a partial plan), then fails
 			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
 		}
 		ISkill next = p.ResolveForTest(Eye, ctx);
@@ -483,7 +483,7 @@ public class BossPlannerTests
 			ISkill s = p.ResolveForTest(Eye, ctx);
 			output.WriteLine($"{p.Status} -> {s?.Describe()}");
 			var walk = Assert.IsType<WalkToSkill>(s);
-			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 600));
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000)); // the walk goes as near as it can first (a partial plan), then fails
 			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
 		}
 		ISkill next = p.ResolveForTest(Eye, ctx);

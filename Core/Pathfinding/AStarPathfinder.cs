@@ -195,6 +195,16 @@ public sealed class PathSearch
 					return false;
 			}
 
+			// Every node reached and the goal not among them, but well on the way to it (as far as a segment's end must be): a
+			// walk's search goes there, as a player goes as near as the ground lets them and digs or blasts on from there, not a
+			// "no path" from where it stands. Seen in game (measured run U30): from the corruption chasm's lip at (1779,341) the
+			// walk to the DemonAltar at (1748,411) could get down the chasm to its foot at (1762,419), 1,381 nodes in all, and the
+			// altar lay behind ebonstone from there; "no path" kept the bot on the lip, where the blasts it tried opened nothing
+			// towards the altar. Searches with no segments (floods, the deep search, tests) still end NoPath.
+			if (limits.SegmentAfter > 0 && best != start && best.ChebyshevTo(start) >= limits.SegmentMinTiles) {
+				Result = Build(PathStatus.Partial, best, sw);
+				return true;
+			}
 			Result = new PathResult {
 				Status = PathStatus.NoPath,
 				Start = start,
@@ -206,19 +216,20 @@ public sealed class PathSearch
 		}
 		finally {
 			ctx.InSearch = false;
+			ctx.PlacedOnPath.Clear();
 			elapsedMs += sw.Elapsed.TotalMilliseconds;
 		}
 	}
 
 	private void Expand(TilePos pos, float g0)
 	{
+		BrokenOnPathTo(pos);
 		edges.Clear();
 		foreach (IMoveType move in ctx.Moves)
 			move.Expand(ctx, pos, edges);
 
 		long parent = pos.Key;
 		bool parentTainted = nodes[parent].Tainted;
-		BrokenOnPathTo(pos);
 		foreach (PathStep e in edges) {
 			if (e.To.ChebyshevTo(start) > limits.MaxRadius)
 				continue;
@@ -251,19 +262,23 @@ public sealed class PathSearch
 	private readonly HashSet<TilePos> brokenOnPath = new();
 
 	/// <summary>
-	/// Cells the last <see cref="BrokenLookback"/> steps of the path to <paramref name="pos"/> mine. The planner works
+	/// Cells the last <see cref="BrokenLookback"/> steps of the path to <paramref name="pos"/> mine (and, into
+	/// <see cref="MoveContext.PlacedOnPath"/>, place blocks in). The planner works
 	/// on the unedited grid, so without this a step could stand on a block an earlier step of the same plan digs
 	/// away. Seen in game: a zigzag staircase up through rock, each plan invalid a few steps in, 26 re-plans of 1 s each.
 	/// </summary>
 	private void BrokenOnPathTo(TilePos pos)
 	{
 		brokenOnPath.Clear();
+		ctx.PlacedOnPath.Clear();
 		long k = pos.Key;
 		for (int i = 0; i < BrokenLookback && nodes.TryGetValue(k, out NodeRec r) && r.HasParent; i++) {
 			if (r.Via.Actions != null)
 				foreach (BlockAction a in r.Via.Actions)
 					if (a.Kind == ActionKind.Break)
 						brokenOnPath.Add(a.Cell);
+					else if (!brokenOnPath.Contains(a.Cell))
+						ctx.PlacedOnPath.Add(a.Cell); // (walking back from the node: a later break of the cell wins)
 			k = r.Parent;
 		}
 	}
