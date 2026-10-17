@@ -2966,11 +2966,34 @@ public sealed class ProgressionPlanner
 	/// <summary>The first spot to stand on, coming down from the sky in column <paramref name="x"/>; null if none.</summary>
 	public static TilePos? SurfaceAt(ITileGrid g, int x)
 	{
-		for (int y = 40; y < 900; y++)
-			if (g.Get(x, y + 1).CanStandOn() && Core.Pathfinding.Body.IsStandable(g, new TilePos(x, y)))
+		TilePos? floating = null;
+		for (int y = 40; y < 900; y++) {
+			if (!g.Get(x, y + 1).CanStandOn() || !Core.Pathfinding.Body.IsStandable(g, new TilePos(x, y)))
+				continue;
+			// Over open air deeper than FloatingGapRows under its support: a sky island, a cloud, a leaf canopy or a bridge of
+			// placed blocks, not the ground; the ground is further down.
+			int under = y + 2;
+			while (under < 900 && g.Get(x, under).IsBlock())
+				under++;
+			int air = 0;
+			while (under + air < 900 && air < FloatingGapRows && !g.Get(x, under + air).IsBlock())
+				air++;
+			if (air < FloatingGapRows)
 				return new TilePos(x, y);
-		return null;
+			floating ??= new TilePos(x, y);
+			y = under + air - 1;
+		}
+		return floating; // nothing under it: what there is
 	}
+
+	/// <summary>
+	/// Open rows under a standing spot's support that make it floating rather than the ground (<see cref="SurfaceAt"/>): twice
+	/// the safe fall (PhysicsParams, 25 rows), as nothing a player walks the surface on hangs over that. Seen in game (measured
+	/// run M11a, world_skeletron): "along the surface west to (1213,61)", (1139,84), (1085,65) - rain clouds at rows 62-70 and a
+	/// sky island at rows 85-97 over ground at rows 184-218 (from the save); the bot climbed up, then bridged west at row ~100
+	/// on its own blocks (each next "surface") 600 tiles past the Dungeon at x 871, row 201, never in sight of it.
+	/// </summary>
+	public const int FloatingGapRows = 50;
 
 	private bool stationMissed;
 	private bool walkedUpToStation;
