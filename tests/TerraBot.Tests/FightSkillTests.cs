@@ -662,6 +662,37 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void AnEnemyUpAStep_JustOutsideTheApproachsTolerance_IsGoneUpTo_NotArrivedAtForEver()
+	{
+		// Measured run U25: a zombie 2 rows up a step; the approach walk (tolerance 2) "arrived" at once from 2 rows below,
+		// some 25 times in a row, while the fight closes in only within 1.5 rows; the zombie killed the bot standing there.
+		FakeGame g = EarlyGameTests.Field(60);
+		for (int x = 30; x <= 45; x++)
+			for (int y = 23; y <= 24; y++)
+				g.Grid.Set(x, y, CellKind.Solid); // a step 2 rows up from x 30
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p0 = PhysicsParams.Default;
+		g.Sim.State = new BodyState { X = Body.CanonicalLeft(29, p0), Y = Body.StandingTop(24, p0), ReleaseJump = true };
+		g.Refresh(ctx);
+		EntityInfo zombie = new(70, 3, "Zombie", 31 * 16f, 23 * 16f - 44f, 18, 40, 0, 0, 45, 45, 14, 3);
+		var skill = new FightSkill();
+		ctx.Hostiles = new[] { zombie };
+		skill.Start(ctx);
+		int highest = ctx.Node.Y;
+		for (int t = 0; t < 600; t++) {
+			g.Refresh(ctx);
+			ctx.Hostiles = new[] { zombie };
+			ctx.Combat.WeaponReach = 4f; // a short blade: 2 tiles off is out of reach, as the zombie up the step was in game
+			skill.Tick(ctx);
+			g.Step(ctx);
+			highest = Math.Min(highest, ctx.Node.Y);
+		}
+		output.WriteLine($"{skill.Describe()}; at {ctx.Node}, highest feet row {highest}");
+		Assert.True(highest <= 22, $"stayed below the step (feet row {highest})");
+	}
+
+	[Fact]
 	public void KillsEnemyAhead_OnFlatGround()
 	{
 		var g = ArrayTileGrid.Parse(

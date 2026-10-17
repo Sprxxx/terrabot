@@ -710,6 +710,7 @@ public sealed class FightSkill : ISkill
 		bool dropBetween = EdgeWithin(ctx, ctx.Node, towards) is int edge && edge > 0 && edge * 16f < Math.Abs(dx);
 		if (Math.Abs(dx) <= 4 * 16f && Math.Abs(dy) <= 1.5f * 16f && !dropBetween) {
 			approach = null;
+			approachTolerance = ApproachTolerance;
 			ctx.Output.Horizontal = Math.Sign(dx);
 			State = "closing in";
 			return;
@@ -720,7 +721,7 @@ public sealed class FightSkill : ISkill
 		// each new path began with a pillar step that never got finished (seen in game: a minute at the bottom of a shaft).
 		bool moved = approachAge > RetargetPathTicks && feet.ChebyshevTo(approachTarget) > RetargetDistance;
 		if (approach == null || moved || approachAge > RetargetAnywayTicks) {
-			approach = new WalkToSkill(feet) { Quiet = true, Tolerance = 2, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
+			approach = new WalkToSkill(feet) { Quiet = true, Tolerance = approachTolerance, MaxNoPathAttempts = 1, Limits = MineSkill.ReachLimits };
 			approach.Start(ctx);
 			approachTarget = feet;
 			approachAge = 0;
@@ -732,10 +733,19 @@ public sealed class FightSkill : ISkill
 			ctx.Log.Info($"Fight: {t.Name} is out of sight and there is no way to it; leaving it");
 			targetId = -1;
 		}
+		// Arrived within the walk's tolerance but still not close enough to close in (above): the next walk goes all the way.
+		// Seen in game (measured run U25): a zombie 2 rows up a step, "Arrived StandAt(2254,316) at (2256,318) after 0 plan(s)"
+		// some 25 times in a row, the bot standing still at 3/100 life until the zombie killed it.
+		if (s == SkillStatus.Succeeded)
+			approachTolerance = 0;
 		if (s != SkillStatus.Running)
 			approach = null;
 		State = "chasing";
 	}
+
+	/// <summary>How near the target's feet an approach walk ends (tiles); 0 once a walk arrived without the fight closing in.</summary>
+	private const int ApproachTolerance = 2;
+	private int approachTolerance = ApproachTolerance;
 
 	private void Heal(BotContext ctx)
 	{
