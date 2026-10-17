@@ -263,7 +263,7 @@ public sealed class WalkToSkill : ISkill
 				aheadMoves = ctx.Moves.WithGrid(aheadGrid);
 			}
 			aheadFrom = steps[steps.Count - 1].To;
-			ahead = new PathSearch(aheadMoves, aheadFrom, Goal, Limits ?? SearchLimits.Default);
+			ahead = new PathSearch(aheadMoves, aheadFrom, new GoalAsStood(Goal, aheadMoves.Grid), Limits ?? SearchLimits.Default);
 		}
 		if (!ahead.Done)
 			ahead.Step(PlanAheadMsPerTick);
@@ -473,9 +473,26 @@ public sealed class WalkToSkill : ISkill
 			case ExecStatus.Finished:
 				// Either the goal check above succeeds next tick, or this was a partial path: plan the next leg.
 				Info(ctx, $"Path finished at {node} ({LastPlan.Status})");
+				TilePos began = Executor.Steps.Count > 0 ? Executor.Steps[0].From : node;
 				Executor = null;
-				if (!Goal.IsGoal(node) && TrySplice(ctx, node))
+				if (Goal.IsGoal(node))
+					break;
+				if (TrySplice(ctx, node)) {
 					ctx.Output = MoveInput.None;
+					break;
+				}
+				// A whole plan done and the goal not met is no arrival: a re-plan, so a walk cannot plan for ever (Baritone: a
+				// plan that gets nowhere is a failure). Back where it began, the same search from the same place would give
+				// the same plan: fail now. Seen in game (measured run U23): 418 times "Path finished at (2076,356) (Found)",
+				// each plan the same two steps from there, 1.5 game hours.
+				if (LastPlan.Status == PathStatus.Found) {
+					Replans++;
+					ctx.Log.Warn($"Re-plan #{Replans}: the plan ended at {node} and {Goal} is not met there");
+					if (PathExecutor.SameNode(ctx.Grid, node, began) || PathExecutor.SameNode(ctx.Grid, began, node))
+						return Fail(ctx, $"a plan from {began} ended back there, at {node}, without {Goal}");
+					if (Replans > MaxReplans)
+						return Fail(ctx, $"too many re-plans ({Replans})");
+				}
 				break;
 			default:
 				if (Executor.Status == ExecStatus.Blocked && TryRepair(ctx, node))
@@ -670,7 +687,8 @@ public sealed class WalkToSkill : ISkill
 		SearchLimits limits = Limits ?? SearchLimits.Default;
 		if (relaxed)
 			limits = new SearchLimits { MaxExpansions = limits.MaxExpansions, MaxRadius = limits.MaxRadius, CheckBrokenSupport = false };
-		search = new PathSearch(moves, start, Goal, limits, trustStart: standing);
+		// To where the body, read where it stands, meets the goal (GoalAsStood), as Tick's arrival check reads it.
+		search = new PathSearch(moves, start, new GoalAsStood(Goal, moves.Grid), limits, trustStart: standing);
 		State = "planning";
 	}
 

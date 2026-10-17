@@ -726,4 +726,82 @@ public class ExecutorSimTests
 		Assert.True(longest <= PhysicsParams.Default.SafeFallTiles, $"fell {longest:0.0} rows (safe: {PhysicsParams.Default.SafeFallTiles})");
 		Assert.Equal(SkillStatus.Succeeded, status);
 	}
+
+	/// <summary>
+	/// Closed loop on a goal, with a plan grid and the "real" grid the body moves in. <paramref name="goal"/> gets the
+	/// simulator so it can depend on where the body is.
+	/// </summary>
+	private (SkillStatus status, WalkToSkill skill, SimWorld sim) RunGoal(ArrayTileGrid planGrid, ArrayTileGrid realGrid, Func<SimWorld, IGoal> goal, int maxTicks)
+	{
+		var sim = new SimWorld(realGrid, PhysicsParams.Default, planGrid.Markers['S']);
+		var ctx = new BotContext { Grid = planGrid, Log = new EchoLog(output, new System.Collections.Generic.List<string>()) };
+		var skill = new WalkToSkill(goal(sim));
+		ctx.Body = sim.State;
+		skill.Start(ctx);
+		SkillStatus status = SkillStatus.Running;
+		for (int t = 0; t < maxTicks && status == SkillStatus.Running; t++) {
+			ctx.Tick = t;
+			ctx.Body = sim.State;
+			status = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+		}
+		output.WriteLine($"{status} after {sim.Ticks} ticks at {sim.Node}, plans {skill.Plans}, replans {skill.Replans}: {skill.FailureReason}");
+		return (status, skill, sim);
+	}
+
+	/// <summary>
+	/// Measured run U23 (t10800-16200, 1.5 game hours): mining iron at (2075,358) with a copper pickaxe (tileBoost -1), the
+	/// plan ended at (2076,357), whose feet row holds a slope at (2077,357). The body rode up the slope and read (2076,356),
+	/// a row out of reach; the executor counted that as the plan's end (SameNode), the walk saw no goal and planned the same
+	/// "Drop (2076,356)->(2075,357) | Walk (2075,357)->(2076,357)" again: 418 "Path finished at (2076,356) (Found)" lines,
+	/// the ore count at 7/15 for 6 heartbeats. Here the slope is a full block in the world the body moves in (the simulator
+	/// steps up onto blocks, not slopes), so the body ends a row up, as in game. The walk must end where the body, read
+	/// where it stands, reaches the tile.
+	/// </summary>
+	[Fact]
+	public void AReachGoalBesideASlope_EndsWhereTheBodyAsReadReachesIt_NotInAReplanLoop()
+	{
+		string[] rows = {
+			".......#..",
+			".......#..",
+			".......#..",
+			".......#..",
+			"....S./#..",
+			"##########",
+		};
+		var planGrid = ArrayTileGrid.Parse(rows);
+		var realGrid = ArrayTileGrid.Parse(rows);
+		realGrid.Set(6, 4, CellKind.Solid); // the body rides on top of the slope
+		var tile = new TilePos(4, 5); // under the start: not a goal from there (standing on it)
+		var reach = new GoalReachTile(tile, PhysicsParams.Default, tileBoost: -1);
+		Assert.True(reach.IsGoal(new TilePos(5, 4)));  // beside the slope, as the grid has it
+		Assert.False(reach.IsGoal(new TilePos(5, 3))); // where the body standing there is read
+		var (status, skill, sim) = RunGoal(planGrid, realGrid, _ => reach, 3000);
+		Assert.Equal(SkillStatus.Succeeded, status);
+		Assert.True(reach.IsGoal(sim.Node), $"ended at {sim.Node}, out of reach of {tile}");
+		Assert.True(skill.Plans <= 2, $"{skill.Plans} plans");
+	}
+
+	/// <summary>
+	/// A plan followed to its end without the goal holding is no success: it counts as a re-plan, so the walk fails instead
+	/// of planning for ever (Baritone: a plan that gets nowhere is a failure). Here the goal never holds where the body
+	/// stands (a stand-in for any disagreement between a plan's end and the goal; measured run U23 planned 418 times).
+	/// </summary>
+	[Fact]
+	public void PlansThatEndWithoutTheGoal_FailTheWalk_InsteadOfLoopingForEver()
+	{
+		string[] rows = {
+			"....................",
+			"....................",
+			"....................",
+			"....................",
+			"..S.................",
+			"####################",
+		};
+		var grid = ArrayTileGrid.Parse(rows);
+		var (status, skill, _) = RunGoal(grid, ArrayTileGrid.Parse(rows),
+			sim => new GoalReachTile(new TilePos(10, 3), PhysicsParams.Default) { Exclude = n => n == sim.Node }, 20_000);
+		Assert.Equal(SkillStatus.Failed, status);
+		Assert.True(skill.Plans <= WalkToSkill.MaxReplans + 2, $"{skill.Plans} plans");
+	}
 }

@@ -242,10 +242,7 @@ public sealed class PathExecutor
 	/// Platforms (and table tops) likewise: passable for the grid, stood on by the body (measured run S0: 140 jumps and
 	/// actions waited for the bot to come down a row onto a node it already stood a row above).
 	public static bool SameNode(ITileGrid g, TilePos node, TilePos planned) =>
-		node == planned || node.X == planned.X && node.Y == planned.Y - 1 && (RiddenOn(g.Get(planned.X, planned.Y)) || RiddenOn(g.Get(planned.X + 1, planned.Y)));
-
-	/// <summary>A cell the grid lets feet stand in that the body rides on top of instead: a slope, a half block, a platform.</summary>
-	private static bool RiddenOn(CellKind k) => k.IsShaped() || k.IsPlatform() && !k.IsSolid();
+		node == planned || node.X == planned.X && node.Y == planned.Y - 1 && Body.ReadARowUp(g, planned);
 
 	private bool At(TilePos node, TilePos planned) => SameNode(ctx.Grid, node, planned);
 
