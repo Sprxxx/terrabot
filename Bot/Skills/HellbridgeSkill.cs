@@ -199,7 +199,7 @@ public sealed class HellbridgeSkill : ISkill
 			if (!InTheWay(k))
 				continue;
 			if (ctx.Blocks != null && float.IsPositiveInfinity(ctx.Blocks.BreakTicks(cell.X, cell.Y)))
-				return Fail(ctx, Unbreakable(ctx, cell));
+				return Unmineable(ctx, cell);
 			if (BlockRules.LetsLavaIn(g, cell)) {
 				if (y == Row - ClearRows)
 					continue; // the jump's spare row may stay: the body passes under it
@@ -223,7 +223,7 @@ public sealed class HellbridgeSkill : ISkill
 			// ruined houses' hot bricks, the bot burning ("run 1.665") until "reduced to charcoal" at (2442,1041).
 			if (ctx.World != null && ctx.World.TileTypeAt(c, Row) >= 0) {
 				if (ctx.Blocks != null && float.IsPositiveInfinity(ctx.Blocks.BreakTicks(c, Row)))
-					return Fail(ctx, Unbreakable(ctx, deck));
+					return Unmineable(ctx, deck);
 				return Act(ctx, deck, place: false);
 			}
 			return Act(ctx, deck, place: true);
@@ -242,6 +242,24 @@ public sealed class HellbridgeSkill : ISkill
 	/// </summary>
 	private static string Unbreakable(BotContext ctx, TilePos cell) =>
 		$"the cell {cell} in the bridge's way cannot be mined at pick power {ctx.PickPower} (tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}; hellstone wants 65 and burns on touch)";
+
+	/// <summary>
+	/// A cell in the way that the game will not mine: hellstone (pick-gated and hot) stops the bridge, saying what gets past it; a plain
+	/// block under furniture (a ruined house's floor under a pot, a Hellforge, a chair: WorldGen.CanKillTile refuses the block while the
+	/// furniture stands, TerrariaBlockActions.BreakTicks) has the furniture mined first, as a player does. Seen in game (X1B, X2B,
+	/// 2026-10-17): "the cell (2255,1040) in the bridge's way cannot be mined at pick power 45 (tile 1 ...)": stone under a ruined
+	/// house's furniture, and both runs stopped there, retrying in place.
+	/// </summary>
+	private SkillStatus Unmineable(BotContext ctx, TilePos cell)
+	{
+		var above = new TilePos(cell.X, cell.Y - 1);
+		bool hot = (ctx.Grid.Get(cell.X, cell.Y) & CellKind.Hazard) != 0;
+		if (!hot && ctx.World != null && ctx.World.TileTypeAt(above.X, above.Y) >= 0 && !ctx.Grid.Get(above.X, above.Y).IsSolid()) {
+			State = $"mining the tile on {cell} first ({above})";
+			return Act(ctx, above, place: false);
+		}
+		return Fail(ctx, Unbreakable(ctx, cell));
+	}
 
 	/// <summary>Mine or place at the cell: aim, use, and count the action's failures (three on a cell fail the skill).</summary>
 	private SkillStatus Act(BotContext ctx, TilePos cell, bool place)

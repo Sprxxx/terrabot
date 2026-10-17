@@ -291,6 +291,38 @@ public class HellTests
 		Assert.Equal(BridgeRow - 1, g.Sim.Node.Y);
 	}
 
+	/// <summary>
+	/// X1B and X2B (2026-10-17): the bridge stopped at "the cell (2255,1040) in the bridge's way cannot be mined at pick power 45 (tile 1)":
+	/// plain stone, a ruined house's floor with furniture on it, which the game refuses to mine while the furniture stands. The
+	/// furniture is mined first, then the floor, and the bridge goes on.
+	/// </summary>
+	[Fact]
+	public void TheHellbridge_MinesTheFurnitureOnABlockInItsWay_ThenTheBlock()
+	{
+		var (g, ctx) = OnTheTower();
+		var floor = new TilePos(60, BridgeRow - 2);
+		var pot = new TilePos(60, BridgeRow - 3);
+		g.Grid.Set(floor.X, floor.Y, CellKind.Solid);
+		g.Blocks.Unbreakable.Add(floor); // the game: CanKillTile is false under furniture
+		g.Furniture[pot] = 99;
+		g.PickaxeRemoves.Add(99);
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		bridge.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		for (int t = 0; t < 20000 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = bridge.Tick(ctx);
+			g.Step(ctx);
+			if (!g.Furniture.ContainsKey(pot))
+				g.Blocks.Unbreakable.Remove(floor); // the furniture gone, the floor is a block like any other
+		}
+		output.WriteLine($"{s}: {bridge.FailureReason}, end {bridge.End}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.False(g.Furniture.ContainsKey(pot), "the furniture mined first");
+		Assert.False(g.Grid.Get(floor.X, floor.Y).IsSolid(), "then the floor");
+		Assert.Equal(70, bridge.End);
+	}
+
 	[Fact]
 	public void TheHellbridge_NeverOpensACellWithLavaBeside_AndSaysWhy()
 	{
