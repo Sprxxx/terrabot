@@ -138,6 +138,13 @@ public sealed class ProgressionPlanner
 	public const int BossLife = 200;
 	/// <summary>Arrows to carry into a boss fight (the Eye took about 250 in testing, misses included).</summary>
 	public const int BossArrows = 500;
+	/// <summary>
+	/// Arrows (Wooden, besides the Unholy ones) to carry into the Eater of Worlds fight. Seen in game (measured run M10s, the
+	/// worm defeated): 319 arrows took the worm from 10050 to 4167, about 18 a arrow, so the whole worm takes about 550;
+	/// with 498 the fight ran "out of arrows" with 2 segments left. Twice that, for the misses of a longer fight (25 a craft
+	/// of 1 Wood and 1 Stone Block, Recipe.cs).
+	/// </summary>
+	public const int WormArrows = 1000;
 	/// <summary>Longest wait for nightfall: a whole Terraria day (15 minutes).</summary>
 	public const int NightWaitTicks = 54000 + 600;
 	/// <summary>Stations nothing can place (demon altars) are looked for this far around the bot.</summary>
@@ -321,7 +328,7 @@ public sealed class ProgressionPlanner
 		int boss = ids.EvilBoss;
 		var food = new[] { (ids.WormFood, 1) };
 		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.DemonBow), 1, "bow"));
-		yield return new PrepFor(boss, new HaveItem(ids.WoodenArrow, BossArrows, "arrows") { RefillBelow = BossArrows * 4 / 5 });
+		yield return new PrepFor(boss, new HaveItem(ids.WoodenArrow, WormArrows, "arrows") { RefillBelow = WormArrows * 4 / 5 });
 		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.DemonBow, 1, "demon bow")));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, UnholyArrows, "unholy arrows")));

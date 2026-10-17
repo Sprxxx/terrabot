@@ -60,7 +60,7 @@ public class EvilBossTests
 		g.Stations[FakeGame.TileAnvil] = new TilePos(1, Feet);
 		foreach (int item in new[] { FakeGame.WoodenSword, FakeGame.IronBroadsword, FakeGame.IronBow })
 			g.Items[item] = 1;
-		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.BossArrows;
+		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.WormArrows;
 		g.Equipped.UnionWith(new[] { FakeGame.IronHelmet, FakeGame.IronChainmail, FakeGame.IronGreaves });
 		g.LifeMax = ProgressionPlanner.BossLife;
 		g.BossesDefeated.Add(FakeGame.EyeNpc);
@@ -282,6 +282,19 @@ public class EvilBossTests
 		ctx.Combat.InEvilZone = true;
 		var fight = Assert.IsType<BossFightSkill>(Next(p, ctx));
 		Assert.Equal(p.EvilArenaBounds(ctx), fight.Arena);
+	}
+
+	[Fact]
+	public void TheWormPlan_WithTheEyesArrows_MakesMoreFirst()
+	{
+		// Measured run M10s: the worm defeated, but the fight ran "out of arrows" with 2 segments left; it began with 498.
+		FakeGame g = CorruptWorld();
+		var (ctx, p) = AfterTheEye(g);
+		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.BossArrows;
+		g.Refresh(ctx);
+		ISkill s = Next(p, ctx);
+		// Wood for 500 more arrows (25 a craft of 1 Wood and 1 Stone Block), or the craft itself: arrows before the rest.
+		Assert.True(s is GatherWoodSkill || (s?.Describe() ?? "").Contains("Arrow"), $"{p.Status} -> {s?.Describe()}");
 	}
 
 	[Fact]
