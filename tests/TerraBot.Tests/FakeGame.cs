@@ -445,7 +445,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	// ---------- IInventory / ICrafter ----------
 
 	public int Count(int itemType) => Items.TryGetValue(itemType, out int n) ? n : 0;
-	public bool HasRoomFor(int itemType) => true;
+	public bool HasRoomFor(int itemType) => FreeSlots > 0 || Stacks().Any(s => s.Type == itemType && s.Stack < StackOf(itemType));
 	public bool IsEquipped(int itemType) => Equipped.Contains(itemType);
 
 	/// <summary>Chests by top-left tile, with their contents; looted ones are emptied.</summary>

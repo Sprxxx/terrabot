@@ -164,7 +164,7 @@ public sealed class CollectDropsSkill : ISkill
 				skip.Add(d.Id);
 				ctx.Log.Info($"Collect: leaving {d.Name} x{d.Stack} at {d.Tile}, {d.Tile.Y - ctx.Node.Y} rows down (deeper than a safe fall, {p.SafeFallTiles})");
 			}
-		var candidates = ctx.Drops.Where(d => want(d) && !skip.Contains(d.Id)
+		var candidates = ctx.Drops.Where(d => want(d) && !skip.Contains(d.Id) && Fits(ctx, d)
 			&& Dist(d, cx, cy) <= radiusPx).OrderBy(d => Dist(d, cx, cy)).ToList();
 		if (candidates.Count == 0 || ++ticks > MaxTicks) {
 			State = "done";
@@ -209,8 +209,15 @@ public sealed class CollectDropsSkill : ISkill
 	{
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
-		return ctx.Drops.Any(d => want(d) && Dist(d, cx, cy) <= radiusTiles * 16f && !TooDeep(ctx, d));
+		return ctx.Drops.Any(d => want(d) && Dist(d, cx, cy) <= radiusTiles * 16f && !TooDeep(ctx, d) && Fits(ctx, d));
 	}
+
+	/// <summary>
+	/// The bag has room for it (a free slot, or a stack it joins): a drop that does not fit is not walked to, as a player with a
+	/// full bag does not go for it. Seen in game (measured run M10f, world_eow): 50 of 240 heartbeats Collect, "fetching
+	/// Goodie Bag x1 got 0" and "fetching Ancient Shadow Greaves x1 got 0" over and over beside a full bag.
+	/// </summary>
+	private static bool Fits(BotContext ctx, DropInfo d) => ctx.Inventory == null || ctx.Inventory.HasRoomFor(d.Type);
 
 	/// <summary>
 	/// A drop more rows under the feet than a fall the body takes unhurt (<see cref="PhysicsParams.SafeFallTiles"/>): at a

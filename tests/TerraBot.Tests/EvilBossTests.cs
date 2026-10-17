@@ -441,6 +441,27 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void WithTheBagFull_ADropThatDoesNotFit_IsNotGoneFor()
+	{
+		// Measured run M10f: 50 of 240 heartbeats Collect, "fetching Goodie Bag x1 got 0" over and over beside a full bag.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		MoveTo(g, ctx, 30, 24);
+		g.Items[FakeGame.Wood] = 10;
+		g.SlotLimit = g.Stacks().Count; // full: no free slot
+		g.Drops.Add(new DropInfo(920, 999, "Goodie Bag", 1, 36 * 16f + 4, 24 * 16f + 4, 8, 8)); // fits no stack
+		g.Drops.Add(new DropInfo(921, FakeGame.Wood, "Wood", 3, 24 * 16f + 4, 24 * 16f + 4, 8, 8)); // joins the wood
+		g.Refresh(ctx);
+		var collect = new CollectDropsSkill(_ => true);
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, collect, 60 * 30);
+		output.WriteLine($"{st}: {collect.Describe()}, at {ctx.Node}, drops left {string.Join(", ", g.Drops.Select(d => d.Name))}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.Contains(g.Drops, d => d.Id == 920); // left
+		Assert.DoesNotContain(g.Drops, d => d.Id == 921); // fetched
+		Assert.True(ctx.Node.X < 33, $"went towards the bag that does not fit, to x {ctx.Node.X}");
+	}
+
+	[Fact]
 	public void ACollect_KeepsToTheDropItSetOffFor_WhenTheBodyMovesNearerAnother()
 	{
 		// Measured run M10d (world_eow, t73800-81000): fetching coins at (1831,305), a jump took the body to row 300, where
