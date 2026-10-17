@@ -170,6 +170,45 @@ public sealed class TerrariaBlockActions : IBlockActions
 	}
 
 	/// <summary>
+	/// Ammo housekeeping, like a player dragging arrows between slots: the bow shoots the ammo Player.ChooseAmmo finds first
+	/// (slots 55-58, then the rest of the inventory), so the arrows wanted go where it looks first, swapped with the ones it
+	/// would use now. For a boss (<paramref name="best"/>) the best arrows (<see cref="Bot.AmmoOrder.BossValue"/>), else the
+	/// cheapest (<see cref="Bot.AmmoOrder.EverydayValue"/>). One swap per call; only between swings and with an empty cursor.
+	/// Returns a log line or null.
+	/// </summary>
+	public string OrderAmmo(Player p, bool best)
+	{
+		if (RangedSlot < 0 || p.itemAnimation != 0 || !Main.mouseItem.IsAir)
+			return null;
+		Item bow = p.inventory[RangedSlot];
+		Item used = p.ChooseAmmo(bow);
+		int now = used == null ? -1 : Array.IndexOf(p.inventory, used);
+		if (now < 0)
+			return null;
+		float Score(Item it) => best
+			? Bot.AmmoOrder.BossValue(it.damage, ContentSamples.ProjectilesByType.TryGetValue(it.shoot, out Projectile pr) ? pr.penetrate : 1)
+			: Bot.AmmoOrder.EverydayValue(it.value);
+		int want = now;
+		float wantScore = Score(used);
+		for (int i = 0; i < 58; i++) {
+			Item it = p.inventory[i];
+			if (i == now || it.IsAir || it.stack <= 0 || it.ammo != bow.useAmmo)
+				continue;
+			float s = Score(it);
+			if (s > wantScore) {
+				wantScore = s;
+				want = i;
+			}
+		}
+		if (want == now)
+			return null;
+		string moved = p.inventory[want].Name, swappedOut = used.Name;
+		Utils.Swap(ref p.inventory[want], ref p.inventory[now]);
+		Refresh(p);
+		return $"Ammo: {moved} first ({(best ? "the best arrows, a boss fight" : "the cheapest arrows")}), from slot {want + 1} to slot {now + 1}, swapping {swappedOut} out";
+	}
+
+	/// <summary>
 	/// Hotbar slot to put an item from the inventory into: an empty one, else the item it supersedes, else the
 	/// right-most slot that holds none of the tools the bot uses (best pickaxe, axe, weapon, block stack).
 	/// </summary>

@@ -46,6 +46,8 @@ public struct MoveInput
 	public float MouseY;
 	/// <summary>Press quick-heal (vanilla H): drink the best healing potion.</summary>
 	public bool QuickHeal;
+	/// <summary>Put the best arrows first in the ammo slots (a boss fight); otherwise the cheapest go first.</summary>
+	public bool BestAmmo;
 
 	public static MoveInput None => default;
 

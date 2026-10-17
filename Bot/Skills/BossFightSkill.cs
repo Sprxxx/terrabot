@@ -172,6 +172,13 @@ public sealed class BossFightSkill : ISkill
 
 	public SkillStatus Tick(BotContext ctx)
 	{
+		SkillStatus s = TickFight(ctx);
+		ctx.Output.BestAmmo = true; // the best arrows for the boss (AmmoOrder), whatever the tick did with the output
+		return s;
+	}
+
+	private SkillStatus TickFight(BotContext ctx)
+	{
 		ctx.Output = MoveInput.None;
 		TargetId = null;
 		PhysicsParams p = ctx.Physics;

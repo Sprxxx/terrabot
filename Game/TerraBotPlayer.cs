@@ -47,6 +47,12 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// <summary>How often (ticks) the bot moves better tools from the inventory onto the hotbar.</summary>
 	public const int StockHotbarInterval = 30;
 	private int stockTicks;
+	/// <summary>
+	/// Ticks the boss fight's ask for the best arrows (MoveInput.BestAmmo) still holds after it was last made: a tick whose
+	/// output another layer replaced (a fall caught) does not send the unholy arrows back to the bag's end for one tick.
+	/// </summary>
+	public const int BestAmmoHold = 120;
+	private int bestAmmoTicks;
 	/// <summary>Scan trees and stations on the next tick instead of waiting for the 20-tick cycle.</summary>
 	private bool rescanNow;
 
@@ -169,6 +175,9 @@ public sealed class TerraBotPlayer : ModPlayer
 				if (moved != null)
 					Context.Log.Info(moved);
 			}
+			string ammo = Blocks.OrderAmmo(Player, best: bestAmmoTicks > 0);
+			if (ammo != null)
+				Context.Log.Info(ammo);
 			BotTime.Start();
 			RefreshContext();
 			Brain.Tick(Context);
@@ -416,6 +425,7 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	private void Apply(in MoveInput o)
 	{
+		bestAmmoTicks = o.BestAmmo ? BestAmmoHold : System.Math.Max(0, bestAmmoTicks - 1);
 		Player.controlLeft = o.Left;
 		Player.controlRight = o.Right;
 		Player.controlUp = o.Up;
