@@ -467,4 +467,33 @@ public class WallOfFleshPlanTests
 		Assert.NotNull(p.ResolveForTest(need, ctx));
 		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("a death since it was let go"));
 	}
+
+	/// <summary>
+	/// world_wof M12e (Peppe): at row 852 of the shaft the arrows shot at cave bats fell under the 800 refill and the plan sent the
+	/// bot back up 570 rows for 2 wood. On the way down, the fight's own need (WofFightArrows) holds; after a death, at home, the
+	/// refill again.
+	/// </summary>
+	[Fact]
+	public void OnTheWayDown_ArrowsUnderTheRefill_ButEnoughForTheFight_DoNotSendTheBotBackUp()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.WofFightArrows - ProgressionPlanner.WofUnholyArrows + 50; // 650 in all
+		g.Refresh(ctx);
+		Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		ctx.Deaths++; // home again: the refill
+		g.Refresh(ctx);
+		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
+	}
+
+	/// <summary>On the way down with fewer arrows than the fight needs, they are made.</summary>
+	[Fact]
+	public void OnTheWayDown_FewerArrowsThanTheFightNeeds_AreMade()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		g.Items[FakeGame.WoodenArrow] = 100;
+		g.Refresh(ctx);
+		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
+	}
 }

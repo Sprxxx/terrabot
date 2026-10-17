@@ -14,6 +14,11 @@ public sealed partial class ProgressionPlanner
 	public const int WofArrows = 1000;
 	/// <summary>Healing potions into the fight (spec S1: 10, from the bag).</summary>
 	public const int WofPotions = 10;
+	/// <summary>
+	/// Arrows enough for the fight, the floor on the way down (<see cref="HaveItem.OnTheWayDownAtLeast"/>): the two Classic wins of
+	/// fight_wof_150 shot 496 and 512 (2148 carried, 1652 and 1636 left), the Unholy arrows among them.
+	/// </summary>
+	public const int WofFightArrows = 600;
 	/// <summary>Longest the Wall's plan works on max life past 200 (BestEffort): a game day.</summary>
 	public const int WofLifeTicks = 24 * 3600;
 	/// <summary>
@@ -90,6 +95,10 @@ public sealed partial class ProgressionPlanner
 
 	private int? shaftX;
 	private int bridgeDir;
+	/// <summary>The death count the way down began at (the hellevator given), -1 before: on the way down until the next death.</summary>
+	private int wayDownDeaths = -1;
+	/// <summary>The hellevator was begun since the last death (down the shaft, or the bridge's work, until a death sends the bot home).</summary>
+	private bool OnTheWayDown(BotContext ctx) => wayDownDeaths >= 0 && wayDownDeaths == ctx.Deaths;
 	/// <summary>
 	/// The hellbridge: its row, the column it is begun from (where the bot came down), its summon end (<see cref="bridgeTo"/>, the
 	/// far end the doll is thrown off, the Wall's side) and its flight end (<see cref="bridgeBack"/>, the far side of the shaft).
@@ -134,6 +143,7 @@ public sealed partial class ProgressionPlanner
 	{
 		WofPrepMet = false;
 		shaftX = null;
+		wayDownDeaths = -1;
 		bridgeDir = 0;
 		bridgeKnown = hellbridgeDone = thrownByPlan = unplannedLogged = lootDone = huntOn = false;
 		bridgeFailEnd = int.MinValue;
@@ -177,7 +187,7 @@ public sealed partial class ProgressionPlanner
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new FromBag(new HaveItem(ids.EvilPickaxe, 1, "evil pickaxe"))));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, WofArrows, "unholy arrows")));
 		yield return new PrepFor(boss, new BeforeTheUnderworld(new HaveItem(ids.UnholyArrow, WofUnholyArrows, "unholy arrows for the wall")));
-		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofArrows, "arrows") { RefillBelow = WofArrows * 4 / 5 });
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofArrows, "arrows") { RefillBelow = WofArrows * 4 / 5, OnTheWayDownAtLeast = WofFightArrows });
 		// The most life crystals give (400), not the earlier bosses' 200: self-test fight_wof_150 on Classic (Peppe, the Wall at 8000),
 		// at 200 life the bot died to an eye laser with the Wall at 1961, its damage 40.1 a second (enough), 19 hits for 336.
 		// Surface prep (BeforeTheUnderworld): a run resumed down there, or a bridge built, is not sent back up for crystals; a death
@@ -327,6 +337,7 @@ public sealed partial class ProgressionPlanner
 			shaftX = from + BridgeDirection(ctx, from) * ShaftOffsetTiles;
 			ctx.Log.Info($"Auto: the hellevator goes down at x {shaftX} ({ShaftOffsetTiles} tiles {(bridgeDir > 0 ? "east" : "west")} of the spawn), to row {stand}");
 		}
+		wayDownDeaths = ctx.Deaths;
 		return Do(bridgeKnown ? $"back down the hellevator at x {shaftX} to the hellbridge on row {row}" : $"down a hellevator at x {shaftX} to row {stand} in the Underworld",
 			new HellevatorSkill(shaftX.Value, stand));
 	}

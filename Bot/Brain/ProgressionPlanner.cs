@@ -20,6 +20,12 @@ public sealed record HaveItem(IReadOnlyList<int> Accepts, int Count, string Labe
 	/// last wood was gone and the plan sent the bot looking for trees in a world without any.
 	/// </summary>
 	public int RefillBelow { get; init; }
+	/// <summary>
+	/// On the way down to the Underworld (the Wall's hellevator begun, no death since), met at this many: the shaft is not left for
+	/// a refill the fight does not need (0: no such rule). Seen in game (world_wof M12e): at row 852 of the shaft, the arrows shot
+	/// at cave bats under the 800 refill, "need 2 more Wood (gathering to 9)", back up the 570 rows for the wood.
+	/// </summary>
+	public int OnTheWayDownAtLeast { get; init; }
 }
 
 /// <summary>A crafting station of this tile type is placed (and remembered).</summary>
@@ -1447,7 +1453,8 @@ public sealed partial class ProgressionPlanner
 		int available = ctx.Inventory.CountAny(h.Accepts) - claimed;
 		if (h.RefillBelow > 0 && available >= h.Count)
 			stocked.Add(StockKey(h));
-		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(StockKey(h))) {
+		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(StockKey(h))
+			|| h.OnTheWayDownAtLeast > 0 && available >= h.OnTheWayDownAtLeast && OnTheWayDown(ctx)) {
 			claims[h.Accepts[0]] = claimed + Math.Min(h.Count, available);
 			return null;
 		}
