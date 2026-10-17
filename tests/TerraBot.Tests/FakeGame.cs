@@ -52,6 +52,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	// Milestone 11 (docs M11_SPEC.md; NPCID, TileID and ItemID checked against the decompiled tML 2026.08).
 	public const int SkeletronHeadNpc = 35, SkeletronHandNpc = 36, OldManNpc = 37, GuardianNpc = 68;
 	public const int TileBlueBrick = 41, TileJungleGrass = 60, TileSnow = 147, HealingPotion = 188;
+	// Milestone 12 (docs M12_SPEC.md; NPCID, ItemID and TileID checked against the decompiled tML 2026.08).
+	public const int GuideNpc = 22, GuideVoodooDoll = 267, WofNpc = 113, WofEyeNpc = 114, HungryNpc = 115, HungryIINpc = 116;
+	public const int LeechHeadNpc = 117, LeechBodyNpc = 118, LeechTailNpc = 119, VoodooDemonNpc = 66;
+	public const int TileHellforge = 77, TileHellstone = 58, TileAsh = 57, Hellstone = 174, Obsidian = 173, AshBlock = 172, ShadowScale = 86;
 
 	public static readonly GameIds Ids = new() {
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
@@ -72,6 +76,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		SkeletronHead = SkeletronHeadNpc, SkeletronHand = SkeletronHandNpc, OldMan = OldManNpc, DungeonGuardian = GuardianNpc,
 		DungeonBrickTiles = new[] { TileBlueBrick }, SnowTiles = new[] { TileSnow }, JungleTiles = new[] { TileJungleGrass },
 		HealingPotion = HealingPotion, LesserHealingPotion = LesserHealingPotion,
+		Guide = GuideNpc, GuideVoodooDoll = GuideVoodooDoll, WallOfFlesh = WofNpc, WallOfFleshEye = WofEyeNpc, TheHungry = HungryNpc, TheHungryII = HungryIINpc,
+		LeechHead = LeechHeadNpc, LeechBody = LeechBodyNpc, LeechTail = LeechTailNpc, VoodooDemon = VoodooDemonNpc,
+		HellforgeTile = TileHellforge, HellstoneTile = TileHellstone, AshTile = TileAsh, Hellstone = Hellstone, Obsidian = Obsidian, AshBlock = AshBlock, ShadowScale = ShadowScale,
 		TileExplosives = new[] { new ExplosiveInfo(Bomb, "Bomb", 4, 64f, 100, 180, 5f, 25, 22, 0.97f, 0.4f),
 			new ExplosiveInfo(Dynamite, "Dynamite", 7, 125f, 250, 300, 4f, 40, 10, 0.97f * 0.99f, 0.4f * 0.8f) },
 	};
@@ -381,6 +388,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Grid.Set(x, y, CellKind.Hazard);
 		Furniture[new TilePos(x, y)] = TileCorruptThorns;
 	}
+	/// <summary>Town NPC types alive somewhere in the world besides those in <see cref="TownNpcs"/> (the Guide at home, off screen).</summary>
+	public readonly HashSet<int> AliveTownNpcs = new();
+	public bool TownNpcAlive(int npcType) => AliveTownNpcs.Contains(npcType) || TownNpcs.Any(n => n.Type == npcType);
 	public readonly System.Collections.Generic.HashSet<int> BossesDefeated = new();
 	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
 	/// <summary>The life each boss's health bar shows (none: 0).</summary>
@@ -688,6 +698,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			}
 		}
 		ThrowAndBlast(o, cx, cy);
+		ThrowKey(o, cx, cy);
 		if (swingTimer > 0)
 			swingTimer--;
 		Sim.Step(o);
@@ -750,6 +761,84 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		}
 	}
 
+	/// <summary>Items thrown with the Throw key and still in the air: top-left and velocity (px, px/tick).</summary>
+	public readonly List<(int Item, float X, float Y, float VX, float VY)> Flying = new();
+	/// <summary>Throw presses that dropped an item, items lost in lava, and the Wall of Flesh's spawns (the doll in lava, the Guide alive).</summary>
+	public int Throws, BurntItems, WofSpawns;
+	/// <summary>Where the Wall spawned (its mouth's top-left, px) and the way it travels (-1 west, +1 east).</summary>
+	public (float X, float Y, int Dir)? WofSpawn;
+	/// <summary>The world's width in columns for the Wall's side rule (NPC.SpawnWOF: maxTilesX / 2); the grid's width unless set.</summary>
+	public int WorldWidthTiles;
+	private bool throwHeld;
+
+	/// <summary>
+	/// The Throw key as the game has it: pressed (and up the tick before) between swings with one item held, that one drops from
+	/// the player's centre at 4 px/tick its way plus the body's speed and 2 px/tick up (Player.DropSelectedItem, Player.cs:6005-6006),
+	/// then falls at 0.1 a tick up to 7, slowing 5 % a tick across (Item.cs:50626-50632). An item that meets lava burns; the Guide
+	/// Voodoo Doll then kills the Guide and spawns the Wall of Flesh 1200 px from the player on the side of the nearer world edge
+	/// (Item.CheckLavaDeath, NPC.SpawnWOF: NPC.cs:90924-91017), its mouth 100 x 100 and its eyes at the quarter points. One that
+	/// lands on a solid cell or platform lies there (items rest on platforms, Item.cs:50828).
+	/// </summary>
+	private void ThrowKey(in MoveInput o, float cx, float cy)
+	{
+		bool press = o.Throw && !throwHeld;
+		throwHeld = o.Throw;
+		if (press && o.ThrowItem > 0 && swingTimer == 0 && Count(o.ThrowItem) > 0) {
+			Items[o.ThrowItem]--;
+			Throws++;
+			Flying.Add((o.ThrowItem, cx - 7f, cy - 13f, 4f * facing + Sim.State.VX, -2f));
+		}
+		for (int i = Flying.Count - 1; i >= 0; i--) {
+			var (item, x, y, vx, vy) = Flying[i];
+			vy = Math.Min(vy + 0.1f, 7f);
+			vx *= 0.95f;
+			if (Math.Abs(vx) < 0.1f)
+				vx = 0f;
+			x += vx;
+			y += vy;
+			int tx = (int)MathF.Floor((x + 7f) / 16f), ty = (int)MathF.Floor((y + 26f) / 16f);
+			if (!Grid.InBounds(tx, ty)) {
+				Flying.RemoveAt(i);
+				continue;
+			}
+			CellKind k = Grid.Get(tx, ty);
+			if (k.HasLava()) {
+				Flying.RemoveAt(i);
+				BurntItems++;
+				if (item == GuideVoodooDoll && TownNpcAlive(GuideNpc))
+					SpawnWof(x);
+				continue;
+			}
+			if (k.CanStandOn() && vy > 0f) {
+				Flying.RemoveAt(i);
+				Drops.Add(new DropInfo(nextDropId++, item, ItemName(item), 1, x, ty * 16f - 26f, 14, 26));
+				continue;
+			}
+			Flying[i] = (item, x, y, vx, vy);
+		}
+	}
+
+	/// <summary>The Guide dies and the Wall spawns (NPC.SpawnWOF), its parts as hostiles the test moves on its own.</summary>
+	private void SpawnWof(float dollX)
+	{
+		TownNpcs.RemoveAll(n => n.Type == GuideNpc);
+		AliveTownNpcs.Remove(GuideNpc);
+		if (ExtraHostiles.Any(h => h.Type == WofNpc))
+			return;
+		int width = WorldWidthTiles > 0 ? WorldWidthTiles : Grid.Width;
+		int num = dollX / 16f <= width / 2 ? 1 : -1;
+		float px = Sim.State.X, x = dollX;
+		while (px > x - 1200f && px < x + 1200f)
+			x -= num * 16f;
+		int dir = x < px ? 1 : -1; // TargetClosest on its first tick: toward the player, and it never turns
+		float mouthY = Sim.State.Y - 29f;
+		WofSpawns++;
+		WofSpawn = (x, mouthY, dir);
+		ExtraHostiles.Add(new EntityInfo(950, WofNpc, "Wall of Flesh", x, mouthY, 100, 100, 1.5f * dir, 0f, 8000, 8000, 50, 27));
+		ExtraHostiles.Add(new EntityInfo(951, WofEyeNpc, "Wall of Flesh", x, mouthY - 270f, 100, 100, 1.5f * dir, 0f, 8000, 8000, 50, 28, 1f));
+		ExtraHostiles.Add(new EntityInfo(952, WofEyeNpc, "Wall of Flesh", x, mouthY + 270f, 100, 100, 1.5f * dir, 0f, 8000, 8000, 50, 28, -1f));
+	}
+
 	/// <summary>Stations and tables are solid-top (Platform), doors solid, chairs and torches not in the way.</summary>
 	private void PlaceFurniture(int itemType, int x, int y)
 	{
@@ -796,12 +885,15 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		};
 		ctx.Drops = Drops.ToList();
 		ctx.TownNpcs = TownNpcs.ToList();
+		ctx.Shots = Shots.ToList();
 		ctx.Hostiles = Slimes.Select(s => new EntityInfo(s.id, 1, "Slime", s.x, s.y, 24, 24, 0, 0, s.life, 40, 7, SlimeAi)).Concat(ExtraHostiles).ToList();
 	}
 
 	/// <summary>Adds a slime standing on the floor under tile (x, y).</summary>
 	/// <summary>Hostiles other than slimes (a worm), as they are: not moved nor hurt by the fake.</summary>
 	public readonly List<EntityInfo> ExtraHostiles = new();
+	/// <summary>Hostile projectiles in sight (lasers), as they are: not moved by the fake.</summary>
+	public readonly List<ShotInfo> Shots = new();
 	public void AddSlime(int id, int x, int feetRow) => Slimes.Add((id, x * 16f, (feetRow + 1) * 16f - 24f, 40));
 }
 

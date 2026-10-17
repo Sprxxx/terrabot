@@ -445,7 +445,8 @@ public sealed class BotBrain
 			if (ctx.Inventory.IsEquipped(item) && ctx.Crafter.TryTakeOff(item))
 				ctx.Log.Info($"Gear: taking off {ctx.Knowledge.ItemName(item)} (it floats the body on water; the paths wade to the floor)");
 		foreach (int item in ctx.Inventory.UnwornAccessories())
-			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && ctx.Crafter.TryEquip(item))
+			// Not the Guide Voodoo Doll, an accessory (Item.cs:6839-6845): worn, it is not in the bag to be thrown (docs M12_SPEC.md S6).
+			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && item != ctx.Ids.GuideVoodooDoll && ctx.Crafter.TryEquip(item))
 				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)}");
 	}
 
@@ -557,7 +558,13 @@ public sealed class BotBrain
 		var kept = new HashSet<int> { ids.Wood, ids.Gel, ids.Torch, ids.WorkBenchItem, ids.WoodWall, ids.Door, ids.Chair, ids.Table, ids.Acorn,
 			ids.WoodenArrow, ids.Lens, ids.LifeCrystal, ids.RecallPotion, ids.Campfire, ids.HeartLantern, ids.SuspiciousEye,
 			// The evil boss plan's (Milestone 10): the summon's makings, the Eye's demonite, the teeth for unholy arrows.
-			ids.WormFood, ids.VilePowder, ids.VileMushroom, ids.RottenChunk, ids.WormTooth, ids.DemoniteOre, ids.DemoniteBar, ids.Bottle };
+			ids.WormFood, ids.VilePowder, ids.VileMushroom, ids.RottenChunk, ids.WormTooth, ids.DemoniteOre, ids.DemoniteBar, ids.Bottle,
+			// The Wall of Flesh's (Milestone 12, G10): the Guide Voodoo Doll (worth 1000 copper, cheap enough to be the stack trashed) and
+			// the Shadow Scales trashed in measured run M10u (log lines 7864-7876), the Shadow armour's.
+			ids.GuideVoodooDoll, ids.ShadowScale };
+		// Whatever a stage of the plan wants (the planner's pass, BotContext.NeededItems).
+		kept.UnionWith(ctx.NeededItems);
+		kept.Remove(0);
 		foreach (var s in stacks)
 			if (gearToo && ctx.Inventory.IsGear(s.Type))
 				kept.Add(s.Type);
@@ -655,8 +662,10 @@ public sealed class BotBrain
 			ctx.Explored.Add(ctx.Node);
 			BeginOverride(new SurfaceSkill(), ctx);
 		}
-		if (Auto)
+		if (Auto) {
 			GuardianReflex(ctx);
+			Planner.SpareRules(ctx); // the Voodoo Demon spared before the danger check below (docs M12_SPEC.md G7)
+		}
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
 		// A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place: home if it is near, else fight on.

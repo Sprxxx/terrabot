@@ -621,6 +621,11 @@ UI click would call:
   chat panel is drawn, which the fast self-test skips, so the handler runs with the game's guards: chat range
   (80 x 64 px round the player's centre), the Old Man's "Curse" button only at night and as
   `NPCLoader.SetChatButtons` leaves it, no Skeletron head up already (`TerrariaGameInfo.PressFirstChatButton`).
+* **Throwing an item** (Milestone 12, docs M12_SPEC.md section 2c) is the Throw control (`controlThrow`, held one tick:
+  `Player.dropItemCheck` drops the selected stack). A stack of one is first split off: one into an empty slot, as a
+  right-click on the stack and a click on an empty slot do, then onto the hotbar like dragging it; a favourite mark is
+  cleared as an alt-click does (`TerraBotPlayer.HoldOneToThrow`). A stack of N Guide Voodoo Dolls in lava kills N-1 more
+  town NPCs, so only one is ever thrown.
 
 ## Milestone 9: real-world play up to the Eye of Cthulhu (in progress)
 Scenario `world_eye`: the copied real world (Peppe on "Noxious Vision of Organs", a small Crimson world), the
@@ -653,8 +658,17 @@ Each mechanic is to be verified against the decompile and terraria.wiki.gg when 
   the hovering head, runs from its spin, dodges the hands' lunges from their wind-up, escapes dawn by recall
   potion. The Dungeon Guardian's ground (below the surface on a dungeon wall, until Skeletron is beaten) is never a
   path's node. After the win the dungeon opens (Muramasa, Water Bolt, golden keys): M11b.
-* **M12, the Wall of Flesh.** Hellstone with the Deathbringer, Molten armour, a hellbridge in the Underworld, the
-  Guide Voodoo Doll in lava. Optional on the way: Queen Bee (jungle), King Slime.
+* **M12, the Wall of Flesh** (built 2026-10-17, docs M12_SPEC.md; plan `wof`, scenario `world_wof`, not yet
+  measured). Prep from the boss plan's gear (a bow, 1000 arrows, 200 life, 10 potions from the bag, blocks for the
+  bridge); the Guide alive (his head on the map); a hellevator 60 tiles east of the spawn, dug in 20-row legs round
+  lava cells with a ledge block after each (later trips drop ledge to ledge), onto ground on row UnderworldLayer + 42
+  (the ruined tower's roof); a 1700-tile hellbridge laid block by block over the lava by a walking builder; Voodoo
+  Demons spared (not fought, shot or shot through) until the hunt on the bridge's last 100 tiles; the doll thrown off
+  the far end with the Throw key (one, a stack split first) into the lava below; the fight keeps a band ahead of the
+  Wall beyond the Hungry's reach, one way, shoots the upper eye, dodges the lasers, never jumps into The Tongue; the
+  loot from the brick box. Synthetic scenarios (by name): doll_lava_east/west/noguide/stack2, fight_wof(_unholy),
+  voodoo_rule. Molten Fury, Hellstone and Shadow armour (the spec's upgrades S1u, M12b) are not built.
+  Optional on the way: Queen Bee (jungle), King Slime.
 * **M13, early Hardmode.** The Pwnhammer smashes altars (Cobalt/Palladium, Mythril/Orichalcum,
   Adamantite/Titanium), a hardmode anvil and forge, and survival against the spreading evil biomes and new enemies.
 * **M14, the mechanical bosses.** The Destroyer, the Twins and Skeletron Prime (summons crafted from souls), an

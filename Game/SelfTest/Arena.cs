@@ -20,7 +20,9 @@ public sealed class Arena
 	/// <summary>Columns cleared for the grids: at least 120, more for wide grids (a grid starts <see cref="GridOffsetX"/> in).</summary>
 	public int Width { get; }
 	public const int MinWidth = 120;
-	public const int Height = 50;
+	/// <summary>Rows cleared above the floor row: 50, or a scenario's own (the Underworld's, docs M12_SPEC.md section 10).</summary>
+	public int Height { get; }
+	public const int DefaultHeight = 50;
 	public const int GridOffsetX = 20;
 
 	/// <summary>Top-left tile of the cleared region and the row the grids stand on (grid bottom row).</summary>
@@ -28,8 +30,9 @@ public sealed class Arena
 	public int Top { get; }
 	public int FloorY { get; }
 
-	public Arena(int spawnX, int spawnY, int widestGrid = 0)
+	public Arena(int spawnX, int spawnY, int widestGrid = 0, int height = DefaultHeight)
 	{
+		Height = Math.Max(DefaultHeight, height);
 		Width = Math.Max(MinWidth, widestGrid + 2 * GridOffsetX);
 		Left = spawnX - Width / 2;
 		FloorY = spawnY;

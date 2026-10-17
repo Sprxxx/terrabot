@@ -42,7 +42,9 @@ public sealed class SelfTestSystem : ModSystem
 		"vile powder 30", "worm food", "eow arena",
 		// After the Eater (the start of later runs), and Milestone 11's: the Skeletron fight rerun from its arena by the Dungeon
 		// (docs M11_SPEC.md, the proposed scenario), without the walk and the build.
-		"Eater of Worlds defeated", "eow loot collected", "dungeon arena" };
+		"Eater of Worlds defeated", "eow loot collected", "dungeon arena",
+		// Milestone 12's (docs M12_SPEC.md, the proposed scenario): the fight rerun in minutes from the doll at the bridge's end.
+		"underworld reached", "hellbridge", "guide voodoo doll", "Wall of Flesh defeated" };
 	/// <summary>
 	/// Where the player stood when a checkpoint was saved (node "x y"), in the checkpoint's folder; selftest.ps1 copies it into
 	/// the test save folder as <see cref="StartFile"/> for a run from that checkpoint (Scenario.ResumeAtCheckpoint).
@@ -67,7 +69,7 @@ public sealed class SelfTestSystem : ModSystem
 	private int phaseTicks;
 	private List<Scenario> queue;
 	private int index;
-	private Arena arena;
+	private Arena arena, sharedArena;
 	private RunResult result;
 	private bool[,] before;
 	private TeeLog tee;
@@ -162,7 +164,7 @@ public sealed class SelfTestSystem : ModSystem
 		string filter = Program.LaunchParameters[LaunchFlag];
 		var names = string.IsNullOrWhiteSpace(filter) || filter == "all" ? null : new HashSet<string>(filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 		// Real-world runs take up to an hour: only when asked for by name.
-		queue = Scenario.All.Where(s => names == null ? !s.RealWorld : names.Contains(s.Name)).ToList();
+		queue = Scenario.All.Where(s => names == null ? !s.RealWorld && !s.ByName : names.Contains(s.Name)).ToList();
 		Main.superFast = Program.LaunchParameters.TryGetValue(FastFlag, out string fast);
 		drawEvery = int.TryParse(fast, out int n) && n > 1 ? n : 1;
 		TerrariaGameInfo.XRay = Program.LaunchParameters.ContainsKey(XRayFlag);
@@ -205,7 +207,7 @@ public sealed class SelfTestSystem : ModSystem
 				if (phaseTicks < StartDelayTicks)
 					return;
 				Active = true;
-				arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2, queue.Max(q => q.Width));
+				sharedArena = arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2, queue.Where(q => q.ArenaFloorRow <= 0).Select(q => q.Width).DefaultIfEmpty(0).Max());
 				double fullGravityRow = 60 + 10 * Math.Pow(Main.maxTilesX / 4200.0, 2) + Main.worldSurface / 6.0;
 				Mod.Logger.Info($"SELFTEST world: surface row {Main.worldSurface:0}, caverns from row {Main.rockLayer:0}, {Main.maxTilesX}x{Main.maxTilesY}");
 				Mod.Logger.Info($"SELFTEST arena x {arena.Left}..{arena.Left + arena.Width} y {arena.Top}..{arena.FloorY}, " +
@@ -216,6 +218,7 @@ public sealed class SelfTestSystem : ModSystem
 			case Phase.Setup: {
 				Scenario s = queue[index];
 				resumedFrom = null;
+				arena = sharedArena;
 				bot.SetEnabled(false, "selftest setup");
 				bot.StopAll("selftest setup");
 				Main.dayTime = true;
@@ -239,6 +242,12 @@ public sealed class SelfTestSystem : ModSystem
 					Next(Phase.Settle);
 					return;
 				}
+				// A scenario of its own place (the Underworld's): its own arena there, else the shared one by the spawn.
+				arena = s.ArenaFloorRow > 0
+					? new Arena(s.ArenaCentreX > 0 ? s.ArenaCentreX : Main.spawnTileX, s.ArenaFloorRow, s.Width, s.ArenaHeight > 0 ? s.ArenaHeight : s.Rows.Length + 4)
+					: sharedArena;
+				if (s.ArenaFloorRow > 0)
+					Mod.Logger.Info($"SELFTEST {s.Name}: its own arena x {arena.Left}..{arena.Left + arena.Width} y {arena.Top}..{arena.FloorY} (the world's middle column {Main.maxTilesX / 2}, the Underworld from row {Main.UnderworldLayer})");
 				// Every NPC goes, town NPCs included: the Guide shoots arrows at hostiles and would help the bot.
 				// (This is the throw-away copy of the world in the self-test save folder.)
 				for (int i = 0; i < Main.maxNPCs; i++)
@@ -320,6 +329,17 @@ public sealed class SelfTestSystem : ModSystem
 						Summon = () => new Bot.Skills.ChatButtonSkill(NPCID.OldMan, "Old Man"),
 					}, bot.Context);
 				}
+				else if (s.Mode == "wof") {
+					// The Wall of Flesh (Milestone 12, docs M12_SPEC.md section 10): one Guide Voodoo Doll thrown east off the end of the
+					// floor the bot stands on (the bridge, its arena), then the fight along it.
+					// The node from the player as placed (the bot's context is refreshed only once it is on, below).
+					var bridge = BridgeUnder(Body.NodeOf(p.position.X, p.position.Y, bot.LivePhysics));
+					Mod.Logger.Info($"SELFTEST {s.Name}: the bridge x {bridge.MinX}..{bridge.MaxX}, feet row {bridge.StandY}; the doll goes east into the lava");
+					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.GuideVoodooDoll, NPCID.WallofFlesh, bot.Context.Ids.WallOfFleshMinions) {
+						Arena = bridge,
+						Summon = () => Bot.Skills.WallOfFleshPattern.Summon(bot.Context.Ids, 1),
+					}, bot.Context);
+				}
 				else if (s.Mode == "boss") {
 					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.SuspiciousLookingEye, NPCID.EyeofCthulhu, NPCID.ServantofCthulhu), bot.Context);
 				}
@@ -339,6 +359,7 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (s.Mode == "auto") {
 					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
+					bot.Brain.Planner.BridgeLength = s.BridgeLength > 0 ? s.BridgeLength : Bot.Brain.ProgressionPlanner.DefaultBridgeLength;
 					// Resumed away from the spawn: the stations in the house there, as the run that saved the checkpoint knew them
 					// (the planner's memory is not saved with the world). Else the plan's first stages made a work bench, a furnace
 					// and an anvil anew where the checkpoint was saved, 1,225 tiles from the house for the Skeletron runs.
@@ -439,6 +460,17 @@ public sealed class SelfTestSystem : ModSystem
 		}
 	}
 
+	/// <summary>The floor under the node, as far as it goes either way: an arena's (MinX, MaxX, StandY) for the boss fight.</summary>
+	private static (int MinX, int MaxX, int StandY) BridgeUnder(TilePos node)
+	{
+		int y = node.Y + 1, x0 = node.X, x1 = node.X + 1;
+		while (WorldGen.SolidTile(x0 - 1, y))
+			x0--;
+		while (WorldGen.SolidTile(x1 + 1, y))
+			x1++;
+		return (x0, x1, node.Y);
+	}
+
 	/// <summary>Spawns the scenario's enemy type at every 'E' marker (net-ID variants via SetDefaults).</summary>
 	private void SpawnEnemies(Scenario s)
 	{
@@ -450,6 +482,11 @@ public sealed class SelfTestSystem : ModSystem
 				Main.npc[idx].SetDefaults(s.EnemyType);
 			spawned.Add(idx);
 		}
+		if (s.SecondEnemyType > 0)
+			foreach (TilePos f in Arena.FindAll(s.Rows, 'F')) {
+				TilePos w = arena.ToWorld(f.X, f.Y, s.Rows.Length);
+				spawned.Add(NPC.NewNPC(new Terraria.DataStructures.EntitySource_DebugCommand("TerraBot selftest"), w.X * 16 + 8, (w.Y + 1) * 16, s.SecondEnemyType));
+			}
 		spawnFailed = spawned.Any(i => i < 0 || i >= Main.maxNPCs || !Main.npc[i].active);
 		Mod.Logger.Info($"SELFTEST spawned {string.Join(", ", spawned.Where(i => i >= 0 && i < Main.maxNPCs).Select(i => $"{Main.npc[i].FullName} #{i}"))}{(spawnFailed ? " (SPAWN FAILED)" : "")}");
 	}
@@ -584,9 +621,45 @@ public sealed class SelfTestSystem : ModSystem
 		Note("skeletron summoned", NPC.AnyNPCs(NPCID.SkeletronHead));
 		Note("skeletron fight", Main.npc.Any(n => n != null && n.active && n.type == NPCID.SkeletronHead && n.life < n.lifeMax));
 		Note("skeletron defeated", NPC.downedBoss3);
+		TrackWofMilestones(p, bot, Note, Count);
 		if (!milestoneSeen.Contains("skeletron loot") && NPC.downedBoss3 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill)) {
 			Mod.Logger.Info($"SELFTEST skeletron loot: {Count(ItemID.HealingPotion)} healing potions (had {healingAtStart}), deaths {bot.Context.Deaths - deathsAtStart}");
 			Note("skeletron loot", true);
+		}
+	}
+
+	/// <summary>Milestone 12 (docs M12_SPEC.md, the proposed scenario's list), in the plan's order.</summary>
+	private void TrackWofMilestones(Player p, TerraBotPlayer bot, Action<string, bool> note, Func<int, int> count)
+	{
+		var plan = bot.Brain.Planner;
+		if (plan.Plan != Bot.Brain.ProgressionPlanner.Plans.WallOfFlesh)
+			return;
+		note("wof prep", plan.WofPrepMet);
+		note("guide alive", plan.WofPrepMet && NPC.AnyNPCs(NPCID.Guide));
+		if (!milestoneSeen.Contains("underworld reached") && plan.UnderworldReachedOnce && plan.Hellbridge is (int row, int from, int to)) {
+			Mod.Logger.Info($"SELFTEST underworld reached at {bot.FeetTile()}: the shaft at x {plan.ShaftX}, the bridge on row {row} from x {from} to {to}");
+			note("underworld reached", true);
+		}
+		double built = plan.HellbridgeProgress(bot.Context);
+		foreach (int pct in Bot.Skills.HellbridgeSkill.ProgressPercents)
+			note($"hellbridge {pct} %", plan.UnderworldReachedOnce && built * 100 >= pct);
+		note("hellbridge", plan.HellbridgeDone);
+		note("voodoo demon seen", bot.Context.Hostiles.Any(h => h.Type == NPCID.VoodooDemon));
+		note("guide voodoo doll", count(ItemID.GuideVoodooDoll) > 0 && plan.HellbridgeDone);
+		if (!milestoneSeen.Contains("wall of flesh summoned") && Main.npc.FirstOrDefault(n => n != null && n.active && n.type == NPCID.WallofFlesh) is NPC wall) {
+			Mod.Logger.Info($"SELFTEST wall of flesh summoned at ({wall.Center.X / 16f:0},{wall.Center.Y / 16f:0}), travelling {(wall.velocity.X < 0 ? "west" : "east")}, us at {bot.FeetTile()}");
+			note("wall of flesh summoned", true);
+		}
+		note("wof fight", Main.npc.Any(n => n != null && n.active && n.type == NPCID.WallofFlesh && n.life < n.lifeMax));
+		if (!milestoneSeen.Contains("wof 50 %") && Main.npc.FirstOrDefault(n => n != null && n.active && n.type == NPCID.WallofFlesh && n.life <= n.lifeMax / 2) is NPC half) {
+			Mod.Logger.Info($"SELFTEST wof 50 %: the Wall at x {half.Center.X / 16f:0}, us at {bot.FeetTile()}, {bot.Blocks.AmmoCount} arrows");
+			note("wof 50 %", true);
+		}
+		note("Wall of Flesh defeated", Main.hardMode);
+		if (!milestoneSeen.Contains("wof loot collected") && Main.hardMode && plan.WofLootCollected) {
+			Mod.Logger.Info($"SELFTEST wof loot: Pwnhammer {count(ItemID.Pwnhammer)}, Ranger Emblem {count(ItemID.RangerEmblem)}, healing potions {count(ItemID.HealingPotion)} (had {healingAtStart}), "
+				+ $"deaths {bot.Context.Deaths - deathsAtStart}");
+			note("wof loot collected", true);
 		}
 	}
 
@@ -624,6 +697,9 @@ public sealed class SelfTestSystem : ModSystem
 		result.EyeDefeated = NPC.downedBoss1;
 		result.EvilBossDefeated = NPC.downedBoss2;
 		result.SkeletronDefeated = NPC.downedBoss3;
+		result.HardMode = Main.hardMode;
+		result.Dolls = bot.GameInfo.Count(ItemID.GuideVoodooDoll);
+		result.GuideAlive = NPC.AnyNPCs(NPCID.Guide);
 		result.Milestones = string.Join(", ", milestones);
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		// The hotbar is restocked every 30 ticks, one swap at a time: a pickaxe crafted on the last tick can still be in

@@ -66,8 +66,18 @@ public interface IWorldInfo
 	/// </summary>
 	bool CanMineTarget(int x, int y);
 
-	/// <summary>Has the world recorded this boss NPC type as defeated (NPC.downedBoss1 and friends)?</summary>
+	/// <summary>
+	/// Has the world recorded this boss NPC type as defeated (NPC.downedBoss1 and friends)? The Wall of Flesh (113): Main.hardMode,
+	/// which its death starts (NPC.cs:85505-85525, WorldGen.StartHardmode).
+	/// </summary>
 	bool BossDefeated(int npcType);
+
+	/// <summary>
+	/// Is a town NPC of this type alive anywhere in the world? A player reads it off the full-screen map, which draws the head of
+	/// every active town NPC with no exploration check (Main.cs:72101-72127): the Guide, whose Voodoo Doll is wasted without him
+	/// (Item.CheckLavaDeath, Item.cs:50409-50425; docs M12_SPEC.md section 2b).
+	/// </summary>
+	bool TownNpcAlive(int npcType);
 
 	/// <summary>
 	/// The life the boss's health bar at the foot of the screen shows, 0 when there is none: what a player reads to know the
@@ -294,6 +304,37 @@ public sealed class GameIds
 	public int LesserHealingPotion { get; init; }
 	/// <summary>Thrown explosives whose blast breaks tiles (the Bomb, Dynamite), smallest blast first; empty = none known.</summary>
 	public ExplosiveInfo[] TileExplosives { get; init; } = System.Array.Empty<ExplosiveInfo>();
+	/// <summary>
+	/// The Wall of Flesh (Milestone 12, docs M12_SPEC.md): the Guide (NPC 22), whose Voodoo Doll (item 267) dropped into lava
+	/// kills him and summons the Wall (Item.CheckLavaDeath, Item.cs:50396-50425); the Wall's mouth (113), its eyes (114, sharing
+	/// the mouth's life), The Hungry (115) and The Hungry II (116), the leeches (117-119: head, body, tail; NPC.cs:5483-5600);
+	/// the Voodoo Demon (66), the doll's only source (ItemDropDatabase.cs:1097). 0 = none.
+	/// </summary>
+	public int Guide { get; init; }
+	public int GuideVoodooDoll { get; init; }
+	public int WallOfFlesh { get; init; }
+	public int WallOfFleshEye { get; init; }
+	public int TheHungry { get; init; }
+	public int TheHungryII { get; init; }
+	public int LeechHead { get; init; }
+	public int LeechBody { get; init; }
+	public int LeechTail { get; init; }
+	public int VoodooDemon { get; init; }
+	/// <summary>
+	/// The Underworld's tiles: the Hellforge (TileID 77), Hellstone (58; pick 65, Player.cs:55038-55041) and Ash (57), and the
+	/// items Hellstone (174), Obsidian (173) and the Ash Block (172), the block the hellbridge's digging gives. 0 = none.
+	/// </summary>
+	public int HellforgeTile { get; init; }
+	public int HellstoneTile { get; init; }
+	public int AshTile { get; init; }
+	public int Hellstone { get; init; }
+	public int Obsidian { get; init; }
+	public int AshBlock { get; init; }
+	/// <summary>Shadow Scales (the Eater of Worlds' drop, item 86): kept for the Shadow armour of the spec's S1u (KeepRoom, G10).</summary>
+	public int ShadowScale { get; init; }
+
+	/// <summary>The Wall of Flesh's servants and other parts (114-119), the minions BossFightSkill fights with the mouth (113).</summary>
+	public int[] WallOfFleshMinions => new[] { WallOfFleshEye, TheHungry, TheHungryII, LeechHead, LeechBody, LeechTail };
 
 	public static readonly GameIds None = new();
 }

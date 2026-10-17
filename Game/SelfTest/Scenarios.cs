@@ -38,6 +38,11 @@ public sealed class RunResult
 	public bool EvilBossDefeated;
 	/// <summary>NPC.downedBoss3 at the end (Skeletron).</summary>
 	public bool SkeletronDefeated;
+	/// <summary>Main.hardMode at the end: the Wall of Flesh was defeated (docs M12_SPEC.md section 7).</summary>
+	public bool HardMode;
+	/// <summary>Guide Voodoo Dolls carried at the end, and whether a Guide (NPC 22) is alive.</summary>
+	public int Dolls;
+	public bool GuideAlive;
 	/// <summary>Real-world runs: the milestones reached, in order, with the tick each came at.</summary>
 	public string Milestones = "";
 	/// <summary>The planner's arena: null = finished (floor, open air, torches, campfire), else why not.</summary>
@@ -66,6 +71,10 @@ public sealed class Scenario
 	public Action<Terraria.Player> Inventory { get; init; }
 	/// <summary>NPC type spawned at each 'E' marker once the scenario starts.</summary>
 	public int EnemyType { get; init; }
+	/// <summary>A second NPC type, spawned at each 'F' marker with the first (the Guide beside a Voodoo Demon, voodoo_rule).</summary>
+	public int SecondEnemyType { get; init; }
+	/// <summary>The hellbridge's length for the plan (ProgressionPlanner.BridgeLength); 0 = the plan's own (1700).</summary>
+	public int BridgeLength { get; init; }
 	/// <summary>Running tick at which the 'E' enemies spawn (0 = at the start).</summary>
 	public int SpawnAtTick { get; init; }
 	/// <summary>"walk" (to 'G'), "fight" (FightSkill), "chop" (gather 5 wood), "build" (a small house near 'S') or "auto" (the planner).</summary>
@@ -99,6 +108,16 @@ public sealed class Scenario
 	/// the walk of 1,225 tiles to the Dungeon again.
 	/// </summary>
 	public bool ResumeAtCheckpoint { get; init; }
+	/// <summary>
+	/// Where the scenario's own arena goes (world column of its middle, world row of the grid's bottom row) and how many rows it
+	/// clears; 0 = by the spawn, as the others share. For the Underworld's scenarios (docs M12_SPEC.md section 10): the Wall of
+	/// Flesh spawns only for a doll below row maxTilesY - 205, and its side is the doll's half of the world (NPC.SpawnWOF).
+	/// </summary>
+	public int ArenaCentreX { get; init; }
+	public int ArenaFloorRow { get; init; }
+	public int ArenaHeight { get; init; }
+	/// <summary>Run only when asked for by name (not in "all"): long, or changing the world for the rest (Hardmode).</summary>
+	public bool ByName { get; init; }
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
 	public Action<Arena, int> During { get; init; }
 	/// <summary>The run also ends once the bot logs a line containing this (for skills that never finish on their own).</summary>
@@ -188,6 +207,80 @@ public sealed class Scenario
 		p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.RecallPotion, 1);
 	}
 
+	/// <summary>
+	/// The Underworld's synthetic ground (docs M12_SPEC.md section 10), as grid rows 0-60 for the world's rows UnderworldLayer + 15
+	/// to + 75 (1015-1075 in a 1200-row world): a stone ceiling on the first, a stone floor (the ledge, the bridge) on row + 42 from
+	/// column 0 to <paramref name="floorTo"/>, open air east of it, lava on rows + 66 to + 74 under it all, the arena's unbreakable
+	/// base below. The bot ('S') two columns short of the floor's east end, the Guide ('E') penned at its west end.
+	/// </summary>
+	private static string[] Underworld(int width, int floorTo, bool guide = true)
+	{
+		var rows = new char[UnderworldRows][];
+		for (int y = 0; y < UnderworldRows; y++) {
+			rows[y] = new string(y == 0 ? 's' : y == UnderworldRows - 1 ? '@' : y >= UnderworldLavaRow ? '!' : '.', width).ToCharArray();
+			if (y == UnderworldFloorRow)
+				for (int x = 0; x <= floorTo; x++)
+					rows[y][x] = 's';
+		}
+		// The Guide's pen at the floor's west end: walls 5 high (a town NPC does not jump out of it), the Guide inside.
+		for (int y = UnderworldFloorRow - 5; y < UnderworldFloorRow; y++)
+			rows[y][0] = rows[y][8] = '#';
+		if (guide)
+			rows[UnderworldFloorRow - 1][4] = 'E';
+		rows[UnderworldFloorRow - 1][floorTo - 2] = 'S';
+		return rows.Select(r => new string(r)).ToArray();
+	}
+
+	/// <summary>Grid rows of <see cref="Underworld"/>: 61 in all, the floor on row 27 (+ 42), lava from row 51 (+ 66).</summary>
+	private const int UnderworldRows = 61, UnderworldFloorRow = 27, UnderworldLavaRow = 51;
+	/// <summary>The world row of <see cref="Underworld"/>'s last grid row: Main.UnderworldLayer + 75 (the arena's floor row).</summary>
+	private static int UnderworldFloor => Terraria.Main.UnderworldLayer + 75;
+	/// <summary>The world's middle column (NPC.SpawnWOF's maxTilesX / 2: the doll's side of it is the Wall's).</summary>
+	private static int WorldMiddle => Terraria.Main.maxTilesX / 2;
+
+	/// <summary>
+	/// voodoo_rule's ground (spec section 10): <see cref="Underworld"/> 140 wide with its floor (the bridge's start) to x 40, the bot
+	/// at its end, the Guide penned at its west end ('E'), a Voodoo Demon ('F') over the lava 6 columns past the floor's end.
+	/// </summary>
+	private static string[] VoodooRuleGround()
+	{
+		string[] rows = Underworld(140, 40);
+		char[] r = rows[UnderworldFloorRow - 6].ToCharArray();
+		r[46] = 'F';
+		rows[UnderworldFloorRow - 6] = new string(r);
+		return rows;
+	}
+
+	/// <summary>The Wall of Flesh's synthetic scenarios: no Guide Voodoo Doll thrown by day or night matters (spec S5); the bow kit.</summary>
+	private static Action<Terraria.Player> DollKit(int dolls) => p => {
+		p.inventory[3] = new Terraria.Item(Terraria.ID.ItemID.DemonBow);
+		p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 999);
+		p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.HealingPotion, 10);
+		p.inventory[24] = new Terraria.Item(Terraria.ID.ItemID.GuideVoodooDoll, dolls);
+	};
+
+	/// <summary>
+	/// The S1 kit for the Wall of Flesh (spec S1, the bot's own at M10u's eow_arena): the Demon Bow, about 2000 wooden arrows (and
+	/// <paramref name="unholy"/> unholy ones), 10 healing potions, one doll; Hermes Boots, a Cloud in a Bottle and an Aglet worn.
+	/// </summary>
+	private static Action<Terraria.Player> WofKit(int unholy) => p => {
+		DollKit(1)(p);
+		p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 999);
+		if (unholy > 0)
+			p.inventory[23] = new Terraria.Item(Terraria.ID.ItemID.UnholyArrow, unholy);
+		p.armor[3] = new Terraria.Item(Terraria.ID.ItemID.HermesBoots);
+		p.armor[4] = new Terraria.Item(Terraria.ID.ItemID.CloudinaBottle);
+		p.armor[5] = new Terraria.Item(Terraria.ID.ItemID.Aglet);
+	};
+
+	/// <summary>The doll scenarios' check: the Wall summoned from <paramref name="side"/>, the Guide dead, <paramref name="dollsLeft"/> dolls left.</summary>
+	private static string DollChecks(RunResult r, string side, int dollsLeft) =>
+		!r.LogHas("wall of flesh summoned") ? "no Wall of Flesh after the throw"
+		: !r.LogHas(side) ? $"the Wall did not come {side}"
+		: r.GuideAlive ? "the Guide is alive after the doll burnt"
+		: r.Dolls != dollsLeft ? $"{r.Dolls} dolls left, not {dollsLeft}"
+		: null;
+
 	private static string Max(RunResult r, int expected, int actual, string what) =>
 		actual > expected ? $"{what} {actual} > {expected}" : null;
 
@@ -245,6 +338,27 @@ public sealed class Scenario
 			// dusk, the fight under 5 minutes), and two nights more for failed tries (one summon a night).
 			TimeoutTicks = 3 * 86400,
 			Check = r => !r.SkeletronDefeated ? "Skeletron was not defeated" : null,
+		},
+		new() {
+			// Milestone 12: the Wall of Flesh (docs M12_SPEC.md section 9), /bot auto wof: the prep, the Guide, a hellevator down to the
+			// Underworld, a hellbridge of 1700 tiles over its lava, a Guide Voodoo Doll from a Voodoo Demon at its far end, the summon
+			// there, the fight along it, the loot. Started from the checkpoint after the Eater's arena (selftest.ps1 -FromCheckpoint
+			// ...\checkpoints\M10u\eow_arena: the Demon Bow, about 1185 arrows, 2290 blocks, 29 healing potions, the Guide at home);
+			// from its own "underworld reached", "hellbridge" or "guide voodoo doll" checkpoints it starts where those were saved
+			// (ResumeAtCheckpoint). Run it by name.
+			Name = "world_wof",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "auto",
+			AutoPlan = Bot.Brain.ProgressionPlanner.Plans.WallOfFlesh,
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			ResumeAtCheckpoint = true,
+			// 6 in-game days, the spec's budget: about 2.5 expected (the top-up 0.3, the shaft 0.5, the bridge 0.7-1, the doll hunt
+			// 0.3-1 with a long tail, the fight under 5 minutes), the rest the margin for one failed fight (a new doll, the Guide back by day).
+			TimeoutTicks = 6 * 86400,
+			Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
 		},
 		new() {
 			// Times path searches on the real world from the spawn (PathBench). Run it by name.
@@ -625,6 +739,124 @@ public sealed class Scenario
 				Inventory = SkeletronKit,
 				TimeoutTicks = 60 * 60 * 9,
 				Check = r => !r.SkeletronDefeated ? "Skeletron was not defeated" : null,
+			},
+			new() {
+				// Milestone 12 (docs M12_SPEC.md section 10, S0): one Guide Voodoo Doll thrown east off a stone ledge at row 1042 into the
+				// lava below, the Guide alive, in the world's east half (x 2400 > 2100): the Wall comes from the east. Passes once it is up.
+				Name = "doll_lava_east",
+				Rows = Underworld(60, 30),
+				ArenaCentreX = WorldMiddle + 300,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				Mode = "wof",
+				EnemyType = Terraria.ID.NPCID.Guide,
+				Inventory = DollKit(1),
+				ExpectSuccess = false,
+				FinishOnLog = "wall of flesh summoned",
+				TimeoutTicks = 60 * 30,
+				Check = r => DollChecks(r, "from the east", 0),
+			},
+			new() {
+				// The same in the west half (x 1800 < 2100): from the west (NPC.SpawnWOF, NPC.cs:90937-90962).
+				Name = "doll_lava_west",
+				Rows = Underworld(60, 30),
+				ArenaCentreX = WorldMiddle - 300,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				Mode = "wof",
+				EnemyType = Terraria.ID.NPCID.Guide,
+				Inventory = DollKit(1),
+				ExpectSuccess = false,
+				FinishOnLog = "wall of flesh summoned",
+				TimeoutTicks = 60 * 30,
+				Check = r => DollChecks(r, "from the west", 0),
+			},
+			new() {
+				// No Guide alive: the doll would only burn (Item.cs:50409-50425): it is not thrown, nothing spawns.
+				Name = "doll_lava_noguide",
+				Rows = Underworld(60, 30, guide: false),
+				ArenaCentreX = WorldMiddle + 300,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				Mode = "wof",
+				Inventory = DollKit(1),
+				ExpectSuccess = false,
+				TimeoutTicks = 60 * 30,
+				Check = r => !r.LogHas("doll wasted, no Guide") ? "no \"doll wasted, no Guide\" refusal" : r.LogHas("wall of flesh summoned") ? "a Wall with no Guide"
+					: r.Dolls != 1 ? $"{r.Dolls} dolls left, not 1 (thrown?)" : null,
+			},
+			new() {
+				// A stack of two: one is split off and thrown (a stack of N kills N - 1 more town NPCs, Item.cs:50426-50460), one is left.
+				Name = "doll_lava_stack2",
+				Rows = Underworld(60, 30),
+				ArenaCentreX = WorldMiddle + 300,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				Mode = "wof",
+				EnemyType = Terraria.ID.NPCID.Guide,
+				Inventory = DollKit(2),
+				ExpectSuccess = false,
+				FinishOnLog = "wall of flesh summoned",
+				TimeoutTicks = 60 * 30,
+				Check = r => DollChecks(r, "from the east", 1),
+			},
+			new() {
+				// The Wall of Flesh fought on a 1750-tile flat stone bridge at row 1042 over lava, a ceiling at row 1015, the bot at its
+				// east end (x 3817, in the east half) with the S1 kit, iron armour and 200 life: the doll thrown east, the Wall from the
+				// east, the fight west along the bridge. Measures the DPS (the fight's ticks), the distance, the laser hits and dodges,
+				// the potions (spec S0: its numbers set the bridge's length L = 1.25 x 62,175 / DPS). Hardmode after it: by name only.
+				Name = "fight_wof",
+				Rows = Underworld(1760, 1749),
+				ArenaCentreX = WorldMiddle + 850,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				Mode = "wof",
+				EnemyType = Terraria.ID.NPCID.Guide,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Inventory = WofKit(0),
+				TimeoutTicks = 60 * 60 * 10,
+				Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
+			},
+			new() {
+				// The same with 75 unholy arrows (the 15 worm teeth's, spec 5a), shot first in a boss fight (AmmoOrder).
+				Name = "fight_wof_unholy",
+				Rows = Underworld(1760, 1749),
+				ArenaCentreX = WorldMiddle + 850,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				Mode = "wof",
+				EnemyType = Terraria.ID.NPCID.Guide,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Inventory = WofKit(75),
+				TimeoutTicks = 60 * 60 * 10,
+				Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
+			},
+			new() {
+				// A Voodoo Demon over the lava by the hellbridge while it is being built, the Guide alive (spec section 10, G7): it is
+				// never fought nor shot (one killed over lava summons the Wall at once), and a 60-tile bridge is built from the floor's
+				// end. The plan "hellbridge" (the bridge alone) with the fights of auto mode. Passes once built with no Wall.
+				Name = "voodoo_rule",
+				Rows = VoodooRuleGround(),
+				ArenaCentreX = WorldMiddle + 300,
+				ArenaFloorRow = UnderworldFloor,
+				ByName = true,
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Hellbridge,
+				BridgeLength = 60,
+				Dig = true,
+				Build = true,
+				Blocks = 400,
+				EnemyType = Terraria.ID.NPCID.Guide,
+				SecondEnemyType = Terraria.ID.NPCID.VoodooDemon,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Inventory = DollKit(0),
+				TimeoutTicks = 60 * 60 * 6,
+				Check = r => r.LogHas("wall of flesh summoned") ? "the Wall was summoned (a Voodoo Demon killed over lava)"
+					: r.LogHas("shooting Voodoo Demon") ? "the Voodoo Demon was shot at"
+					: !r.LogHas("Hellbridge done") ? "the bridge was not finished" : null,
 			},
 			new() {
 				// Milestone 7: max life 100 -> 200 from five life crystals in stone pockets below the surface.

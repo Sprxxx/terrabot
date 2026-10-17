@@ -45,9 +45,10 @@ public static class Ballistics
 	/// For each arrival tick, the angle that crosses the predicted target column at the right moment is refined
 	/// by bisection on the vertical miss; the tick with the smallest miss wins. <see cref="AimSolution.Hits"/> is
 	/// false when nothing gets within <paramref name="tolerance"/> px (out of range): the aim then simply points
-	/// straight at the target.
+	/// straight at the target. Arrivals up to <paramref name="maxTicks"/> are tried (<see cref="MaxTicks"/> unless a fight asks
+	/// for longer flights: the Wall of Flesh's eyes, 30-77 tiles off).
 	/// </summary>
-	public static AimSolution Lead(float ox, float oy, float tx, float ty, float tvx, float tvy, ProjectileModel m, float tolerance = 12f)
+	public static AimSolution Lead(float ox, float oy, float tx, float ty, float tvx, float tvy, ProjectileModel m, float tolerance = 12f, int maxTicks = MaxTicks)
 	{
 		// Solve as if the target were to the right (then "higher" always means a smaller angle) and mirror back.
 		bool left = tx < ox;
@@ -58,7 +59,7 @@ public static class Ballistics
 		AimSolution best = new(left ? 2 * ox - tx : tx, ty, 0, false);
 		float bestMiss = float.MaxValue;
 		float perTick = m.Speed * m.UpdatesPerTick;
-		for (int t = 1; t <= MaxTicks; t++) {
+		for (int t = 1; t <= maxTicks; t++) {
 			float px = tx + tvx * t, py = ty + tvy * t;
 			float dist = MathF.Sqrt((px - ox) * (px - ox) + (py - oy) * (py - oy));
 			if (dist > perTick * t * 1.05f)
