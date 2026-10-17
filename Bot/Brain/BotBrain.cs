@@ -410,13 +410,31 @@ public sealed class BotBrain
 	/// ammo), not one of the plan's items, not an ingredient of the gear still to make. Seen in game (measured run S11): 50 kinds
 	/// of item, each worth a little (gems, seeds, pumpkins, copper tools), and no slot for the bow for 167 heartbeats.
 	/// </summary>
-	public static void KeepRoom(BotContext ctx)
+	public static void KeepRoom(BotContext ctx) => KeepRoom(ctx, -1);
+
+	/// <summary>
+	/// <see cref="KeepRoom(BotContext)"/>, for a craft of <paramref name="craftFor"/> that found no room (-1: the habit). For a
+	/// craft, when nothing is trashable by the habit's rules, what is kept only for being gear (spare tools and weapons, food,
+	/// throwables, vanity) is trashable too, the least worth (value times stack) first; the plan's items and their ingredients
+	/// and the craft's own ingredients stay. Seen in game (measured run M10i, world_eow): "crafting 30 Vile Powder (Vile
+	/// Mushroom 6/6)" refused "crafting stayed blocked" for 6 game hours and more, no slot free and nothing trashed: the bag's
+	/// 50 stacks all "gear" (a copper shortsword, a wooden sword, a copper pickaxe beside the silver one, shuriken, glowsticks,
+	/// a lemon, a flare gun...) or makings.
+	/// </summary>
+	public static void KeepRoom(BotContext ctx, int craftFor)
 	{
 		if (ctx.Inventory == null || ctx.Knowledge == null || ctx.Crafter == null)
 			return;
 		for (int guard = 0; guard < MinFreeSlots && ctx.Inventory.FreeSlots < MinFreeSlots; guard++) {
 			IReadOnlyList<(int Type, int Stack)> stacks = ctx.Inventory.Stacks();
 			HashSet<int> kept = KeptItems(ctx, stacks);
+			if (craftFor >= 0 && guard > 0 || craftFor >= 0 && !stacks.Any(s => !kept.Contains(s.Type))) {
+				kept = KeptItems(ctx, stacks, gearToo: false);
+				foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(craftFor))
+					foreach (Ingredient ing in r.Ingredients)
+						foreach (int a in ing.Accepts)
+							kept.Add(a);
+			}
 			int junk = -1, junkStacks = 0;
 			long cheapest = long.MaxValue;
 			int cheap = -1;
@@ -452,7 +470,7 @@ public sealed class BotBrain
 	}
 
 	/// <summary>What the bag must keep: gear (tools, weapons, armour, potions, ammo), the plan's own items, and the ingredients (two recipes deep) of the gear to make.</summary>
-	private static HashSet<int> KeptItems(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks)
+	private static HashSet<int> KeptItems(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks, bool gearToo = true)
 	{
 		GameIds ids = ctx.Ids;
 		var kept = new HashSet<int> { ids.Wood, ids.Gel, ids.Torch, ids.WorkBenchItem, ids.WoodWall, ids.Door, ids.Chair, ids.Table, ids.Acorn,
@@ -460,7 +478,7 @@ public sealed class BotBrain
 			// The evil boss plan's (Milestone 10): the summon's makings, the Eye's demonite, the teeth for unholy arrows.
 			ids.WormFood, ids.VilePowder, ids.VileMushroom, ids.RottenChunk, ids.WormTooth, ids.DemoniteOre, ids.DemoniteBar, ids.Bottle };
 		foreach (var s in stacks)
-			if (ctx.Inventory.IsGear(s.Type))
+			if (gearToo && ctx.Inventory.IsGear(s.Type))
 				kept.Add(s.Type);
 		// The Bottle in the list for its glass (two recipes deep: glass, sand), as a station the summon's powder is made at.
 		int[] gear = { ids.IronTierPickaxe, ids.IronTierBroadsword, ids.IronTierHelmet, ids.IronTierChainmail, ids.IronTierGreaves, ids.IronTierBow,

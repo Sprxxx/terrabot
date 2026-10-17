@@ -460,6 +460,29 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void WithTheBagFullOfGearAndMakings_ACraftStillMakesRoom_TheCheapestGearGoes()
+	{
+		// Measured run M10i: "crafting 30 Vile Powder" refused for 6+ game hours, no slot free and nothing trashed: all 50
+		// stacks "gear" (spare tools, shuriken, glowsticks, a lemon...) or makings.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.Stations[FakeGame.TileBench] = ctx.Node;
+		g.Items[FakeGame.Wood] = 30;
+		for (int junk = 900; junk < 905; junk++) {
+			g.Items[junk] = 1;
+			g.Gear.Add(junk); // all gear (a lemon, a flare gun...)
+		}
+		g.Values[900] = 5; // the cheapest
+		g.SlotLimit = g.Stacks().Count; // full
+		g.Refresh(ctx);
+		var craft = new CraftSkill(FakeGame.WoodenSword);
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, craft, 600);
+		output.WriteLine($"{st}: {craft.Describe()} {craft.FailureReason}; junk left {string.Join(",", Enumerable.Range(900, 5).Where(j => g.Count(j) > 0))}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.Equal(30 - 7, g.Count(FakeGame.Wood)); // the craft's own makings stay
+	}
+
+	[Fact]
 	public void WithTheBagFull_ADropThatDoesNotFit_IsNotGoneFor()
 	{
 		// Measured run M10f: 50 of 240 heartbeats Collect, "fetching Goodie Bag x1 got 0" over and over beside a full bag.

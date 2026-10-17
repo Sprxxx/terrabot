@@ -57,7 +57,7 @@ public sealed class CraftSkill : ISkill
 				// runs only now and then, and pickups fill what it frees). Seen in game (measured runs M10f, M10g): crafts refused
 				// "crafting stayed blocked" for 12-20 game hours with the 50 slots full of gel, glowsticks, acorns and the like.
 				if (busy == 0)
-					Brain.BotBrain.KeepRoom(ctx);
+					Brain.BotBrain.KeepRoom(ctx, ItemType);
 				if (++busy > MaxBusyTicks)
 					return Fail(ctx, "crafting stayed blocked (cursor item / full inventory)");
 				return SkillStatus.Running;
