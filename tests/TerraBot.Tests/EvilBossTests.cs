@@ -876,6 +876,39 @@ public class EvilBossTests
 		Assert.Equal(FakeGame.TileCorruptPlants, g.TileTypeAt(354, Feet)); // the plain plant is left
 	}
 
+	[Fact]
+	public void AMushroomCutFarAhead_ByAStrayArrow_IsFetchedWhereItLay()
+	{
+		// Measured run M10p: vile mushrooms on the map gone each time the bot neared them, none picked in 1.75 game days;
+		// diagnostic run D1mush: "Vile Mushroom at (1814,286) destroyed by the bot's projectile Wooden Arrow; the bot -66,-3
+		// tiles off". A plant cut by a projectile drops its item where it was (Projectile.CutTilesAt, WorldGen.KillTile).
+		FakeGame g = CorruptWorld();
+		BotContext ctx = Armoured(g);
+		MoveTo(g, ctx, 310, Feet);
+		ctx.EvilErrand = true;
+		var at = new TilePos(370, Feet);
+		g.AddPlant(at.X, at.Y, mushroom: true);
+		var pick = new MineSkill(FakeGame.VileMushroom, FakeGame.TileCorruptPlants, 1) { FrameX = FakeGame.VileMushroomFrame, Bias = ExploreBias.Sideways };
+		pick.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		bool cut = false;
+		for (int t = 0; t < 60 * 60 && st == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			st = pick.Tick(ctx);
+			g.Step(ctx);
+			if (!cut && t == 30) {
+				// A stray arrow through it, the bot still about 60 tiles off: the plant gone, its mushroom on the ground there.
+				cut = true;
+				g.Furniture.Remove(at);
+				g.FrameXs.Remove(at);
+				g.Drops.Add(new DropInfo(9001, FakeGame.VileMushroom, "Vile Mushroom", 1, at.X * 16f + 4, at.Y * 16f + 4, 8, 8));
+			}
+		}
+		output.WriteLine($"{st}: {pick.Describe()}, mushrooms {g.Count(FakeGame.VileMushroom)}, bot at {ctx.Node}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.Equal(1, g.Count(FakeGame.VileMushroom));
+	}
+
 	/// <summary>The wide world's corruption columns: x 400-580 of 900, the ground either side of it not seen yet.</summary>
 	private const int WideFrom = 400, WideTo = 580;
 

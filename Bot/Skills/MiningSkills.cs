@@ -467,6 +467,21 @@ public sealed class MineSkill : ISkill
 	private SkillStatus TickTarget(BotContext ctx, TilePos t)
 	{
 		if (!StillThere(ctx, t)) {
+			// Gone before the pickaxe touched it, out of collecting's reach: its drop, if it left one, lies where it was. A plant
+			// is cut by any friendly projectile through it (Projectile.CutTilesAt), the bot's own missed arrows too, and drops its
+			// item there. Seen in game (measured run M10p): four vile mushrooms on the map gone each time the bot neared them,
+			// none picked in 1.75 game days; diagnostic run D1mush: "Vile Mushroom at (1814,286) destroyed by the bot's
+			// projectile Wooden Arrow; the bot -66,-3 tiles off". So the walk goes on to where it was, and the drop there is
+			// in collecting's reach (a player sees it lying there on arrival).
+			if (mineTicks == 0 && t.ChebyshevTo(ctx.Node) > CollectRadius / 2) {
+				ctx.Log.Info($"Mine: the {Label(ctx)} at {t} is gone before we got to it (now tile {ctx.World.TileTypeAt(t.X, t.Y)}), "
+					+ $"{t.ChebyshevTo(ctx.Node)} tiles off; going on there for its drop");
+				target = null;
+				sub?.Stop(ctx);
+				Begin(ctx, new WalkToSkill(new GoalNearTile(t, CollectRadius / 2, ctx.Physics)) { Quiet = true, MaxNoPathAttempts = 1, Limits = ReachLimits },
+					$"to where the {Label(ctx)} at {t} was");
+				return SkillStatus.Running;
+			}
 			// Mined (or changed under us): the drop falls nearby; pick it up before the next tile.
 			Mined++;
 			lastMined = t;
