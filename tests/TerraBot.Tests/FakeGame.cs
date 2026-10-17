@@ -61,6 +61,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int BloodySpine = 1331, ViciousPowder = 2886, ViciousMushroom = 2887, Vertebrae = 1330, CrimtaneOre = 880, CrimtaneBar = 1257;
 	public const int TendonBow = 796, TissueSample = 1329, BrainNpc = 266, CreeperNpc = 267, ViciousMushroomFrame = 270;
 	public const int TileCrimsonGrass = 199, TileCrimsonPlants = 201, TileCrimstone = 203, TileCrimtane = 204, TileCrimsonThorns = 352;
+	/// <summary>The evil pickaxes (ItemID.cs 2058, 3448): the Nightmare Pickaxe (pick 65) and the Deathbringer Pickaxe (pick 70).</summary>
+	public const int NightmarePickaxe = 103, DeathbringerPickaxe = 798;
 
 	public static readonly GameIds Ids = NewIds(crimson: false);
 	/// <summary>The same in a Crimson world (<see cref="UseCrimson"/>): the Crimson's evil tiles and zone weights, and GameIds.Crimson.</summary>
@@ -83,6 +85,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Crimson = crimson, BrainOfCthulhu = BrainNpc, Creeper = CreeperNpc, BloodySpine = BloodySpine, ViciousPowder = ViciousPowder,
 		ViciousMushroom = ViciousMushroom, Vertebrae = Vertebrae, CrimsonGrass = TileCrimsonGrass, CrimsonThorns = TileCrimsonThorns,
 		CrimtaneOre = CrimtaneOre, CrimtaneBar = CrimtaneBar, TendonBow = TendonBow, TissueSample = TissueSample,
+		NightmarePickaxe = NightmarePickaxe, DeathbringerPickaxe = DeathbringerPickaxe,
 		EvilBoss = EowHead, EvilBossBody = EowBody, EvilBossTail = EowTail, WormFood = WormFood, VilePowder = VilePowder,
 		VileMushroom = VileMushroom, CorruptGrass = TileCorruptGrass, CorruptThorns = TileCorruptThorns, RottenChunk = RottenChunk, WormTooth = WormTooth, UnholyArrow = UnholyArrow,
 		DemoniteOre = DemoniteOre, DemoniteBar = DemoniteBar, DemonBow = DemonBow, Bottle = Bottle, BottleTile = TileBottles,
@@ -233,6 +236,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = DemoniteBar, Ingredients = new[] { new Ingredient(3, DemoniteOre) }, Stations = new[] { TileFurnace } });
 		Add(new RecipeInfo { Result = DemonBow, Ingredients = new[] { new Ingredient(8, DemoniteBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = UnholyArrow, ResultStack = 5, Ingredients = new[] { new Ingredient(5, WoodenArrow), new Ingredient(1, WormTooth) }, Stations = new[] { TileAnvil } });
+		// The Nightmare Pickaxe: 12 demonite bars and 6 shadow scales at an anvil (Recipe.cs:10296-10302).
+		Add(new RecipeInfo { Result = NightmarePickaxe, Ingredients = new[] { new Ingredient(12, DemoniteBar), new Ingredient(6, ShadowScale) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = WormFood, Ingredients = new[] { new Ingredient(30, VilePowder), new Ingredient(15, RottenChunk) }, Stations = new[] { TileDemonAltar } });
 		Add(new RecipeInfo { Result = VilePowder, ResultStack = 5, Ingredients = new[] { new Ingredient(1, VileMushroom) }, Stations = new[] { TileBottles } });
 		Add(new RecipeInfo { Result = Bottle, ResultStack = 2, Ingredients = new[] { new Ingredient(1, Glass) }, Stations = new[] { TileFurnace } });
@@ -257,6 +262,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = BloodySpine, Ingredients = new[] { new Ingredient(30, ViciousPowder), new Ingredient(15, Vertebrae) }, Stations = new[] { TileDemonAltar } });
 		Add(new RecipeInfo { Result = ViciousPowder, ResultStack = 5, Ingredients = new[] { new Ingredient(1, ViciousMushroom) }, Stations = new[] { TileBottles } });
 		Add(new RecipeInfo { Result = UnholyArrow, ResultStack = 5, Ingredients = new[] { new Ingredient(5, WoodenArrow), new Ingredient(1, Vertebrae) }, Stations = new[] { TileAnvil } });
+		// The Deathbringer Pickaxe: 12 crimtane bars and 6 tissue samples at an anvil (Recipe.cs:10369-10375).
+		Add(new RecipeInfo { Result = DeathbringerPickaxe, Ingredients = new[] { new Ingredient(12, CrimtaneBar), new Ingredient(6, TissueSample) }, Stations = new[] { TileAnvil } });
 		return this;
 	}
 
@@ -360,7 +367,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 	public readonly List<int> Trashed = new();
 	/// <summary>Gear for inventory tests (tools, weapons, potions...).</summary>
-	public readonly HashSet<int> Gear = new() { WoodenSword, IronPickaxe, IronBroadsword, IronBow };
+	public readonly HashSet<int> Gear = new() { WoodenSword, IronPickaxe, IronBroadsword, IronBow, NightmarePickaxe, DeathbringerPickaxe };
 	public bool IsGear(int itemType) => Gear.Contains(itemType);
 	public string TileName(int tileType) => $"tile{tileType}";
 
@@ -996,7 +1003,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		ctx.Body = Sim.State;
 		ctx.Tick = refreshes;
 		ctx.IsNight = IsNight;
-		ctx.PickPower = Count(IronPickaxe) > 0 ? 40 : 35;
+		ctx.PickPower = Count(DeathbringerPickaxe) > 0 ? 70 : Count(NightmarePickaxe) > 0 ? 65 : Count(IronPickaxe) > 0 ? 40 : 35;
 		ctx.Combat.ItemAnimation = swingTimer;
 		ctx.Combat.HeldItemType = heldItem;
 		ctx.Combat.Facing = facing;

@@ -677,14 +677,19 @@ Each mechanic is to be verified against the decompile and terraria.wiki.gg when 
   path's node. After the win the dungeon opens (Muramasa, Water Bolt, golden keys): M11b.
 * **M12, the Wall of Flesh** (built 2026-10-17, docs M12_SPEC.md; plan `wof`, scenario `world_wof`, not yet
   measured). Prep from the boss plan's gear (a bow, 1000 arrows, 200 life, 10 potions from the bag, blocks for the
-  bridge); the Guide alive (his head on the map); a hellevator 60 tiles east of the spawn, dug in 20-row legs round
+  bridge), and on the surface before the descent only: the evil bow and the evil pickaxe (Nightmare/Deathbringer, pick
+  65/70) from the bag, and 150 unholy arrows, worm teeth or vertebrae hunted for (an unholy arrow took 41.6 of the
+  Wall's life in game, a wooden one 10.1: 150 make the Classic fight about 160 s at 50 a second, where wooden arrows
+  gave 21); the Guide alive (his head on the map); a hellevator 60 tiles east of the spawn, dug in 20-row legs round
   lava cells with a ledge block after each (later trips drop ledge to ledge), onto ground on row UnderworldLayer + 42
   (the ruined tower's roof); a hellbridge laid block by block over the lava by a walking builder (L = 1.25 x 62,175 / DPS: 3829 tiles from fight_wof's 20.3 a second, both ways from the shaft, its summon end 120 tiles from the edge); Voodoo
   Demons spared (not fought, shot or shot through) until the hunt on the bridge's last 100 tiles; the doll thrown off
   the far end with the Throw key (one, a stack split first) into the lava below; the fight keeps a band ahead of the
   Wall beyond the Hungry's reach, one way, shoots the upper eye, dodges the lasers, never jumps into The Tongue; the
-  loot from the brick box. Synthetic scenarios (by name): doll_lava_east/west/noguide/stack2, fight_wof(_unholy),
-  voodoo_rule. Molten Fury, Hellstone and Shadow armour (the spec's upgrades S1u, M12b) are not built.
+  loot from the brick box. Synthetic scenarios (by name): doll_lava_east/west/noguide/stack2, fight_wof(_unholy, _150),
+  voodoo_rule. Hellstone is generated only from 140 rows over the world's bottom, 18 under the bridge's row (on both
+  test worlds' saves the highest is 13-15 rows under it); the bridge's hot cells are the ruined houses' hellstone bricks,
+  mined and replaced. Molten Fury, hellstone bars and Shadow armour (the spec's upgrades S1u, M12b) are not built.
   Optional on the way: Queen Bee (jungle), King Slime.
 * **M13, early Hardmode.** The Pwnhammer smashes altars (Cobalt/Palladium, Mythril/Orichalcum,
   Adamantite/Titanium), a hardmode anvil and forge, and survival against the spreading evil biomes and new enemies.

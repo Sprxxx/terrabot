@@ -342,6 +342,14 @@ public sealed class GameIds
 	public int TendonBow { get; init; }
 	/// <summary>Tissue Samples (1329): the Creepers' drop, 2 in 3 for 2-5 each in Classic (ItemDropDatabase.cs:514), the shadow scale's twin.</summary>
 	public int TissueSample { get; init; }
+	/// <summary>
+	/// The evil pickaxes, the first pre-Hardmode pickaxes that mine hellstone (TileID 58, pick 65), obsidian (56, pick 55) and a
+	/// Hellforge in the Underworld (77, pick 65; Player.GetPickaxeDamage, Player.cs:55024-55045): the Nightmare Pickaxe (103: pick 65,
+	/// useTime 15, Item.cs:4840-4856) of 12 demonite bars and 6 shadow scales, and the Deathbringer Pickaxe (798: pick 70, useTime 14,
+	/// Item.cs:13545-13560) of 12 crimtane bars and 6 tissue samples, at an anvil (Recipe.cs:10296-10302, 10369-10375). 0 = none.
+	/// </summary>
+	public int NightmarePickaxe { get; init; }
+	public int DeathbringerPickaxe { get; init; }
 
 	/// <summary>This world's evil boss (NPC type): the Brain of Cthulhu in a Crimson world, else the Eater of Worlds' head.</summary>
 	public int WorldEvilBoss => Crimson ? BrainOfCthulhu : EvilBoss;
@@ -349,6 +357,8 @@ public sealed class GameIds
 	public int WorldEvilSummon => Crimson ? BloodySpine : WormFood;
 	/// <summary>This world's evil-ore bow: the Tendon Bow in a Crimson world, else the Demon Bow.</summary>
 	public int EvilBow => Crimson ? TendonBow : DemonBow;
+	/// <summary>This world's evil-ore pickaxe: the Deathbringer Pickaxe in a Crimson world, else the Nightmare Pickaxe.</summary>
+	public int EvilPickaxe => Crimson ? DeathbringerPickaxe : NightmarePickaxe;
 	/// <summary>The grass this world's evil mushrooms grow on, and the thorns that grow on it (crimson or corrupt).</summary>
 	public int EvilGrass => Crimson ? CrimsonGrass : CorruptGrass;
 	public int EvilThorns => Crimson ? CrimsonThorns : CorruptThorns;

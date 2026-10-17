@@ -109,6 +109,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		CrimtaneBar = ItemID.CrimtaneBar,
 		TendonBow = ItemID.TendonBow,
 		TissueSample = ItemID.TissueSample,
+		NightmarePickaxe = ItemID.NightmarePickaxe,
+		DeathbringerPickaxe = ItemID.DeathbringerPickaxe,
 		TileExplosives = TileExplosiveInfos(),
 		// Milestone 11 (docs M11_SPEC.md): Skeletron, the Old Man, the Dungeon Guardian; the Dungeon's bricks, and the snow and
 		// jungle surfaces that tell its side (WorldGen.cs:8209-8259).

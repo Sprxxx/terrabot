@@ -14,6 +14,11 @@ public sealed class HuntSkill : ISkill
 	public const int WanderTiles = 30;
 	public const int WaitTicks = 60 * 5;
 	public const int MaxWanders = 12;
+	/// <summary>
+	/// Wanders without the prey in sight before the hunt gives up (<see cref="MaxWanders"/> unless the planner allows more for a
+	/// rare prey: a devourer is 1 in 65 of the Corruption's spawns, ProgressionPlanner.RareHuntWanders).
+	/// </summary>
+	public int WanderLimit { get; init; } = MaxWanders;
 	/// <summary>Wander steps out of town before the wanders count (town range is 120 tiles: vanilla NPC.townRangeX, 1920 px).</summary>
 	public const int MaxTownWalks = 10;
 	private int townWalks;
@@ -169,8 +174,8 @@ public sealed class HuntSkill : ISkill
 				Begin(ctx, new WalkToSkill(new Core.Pathfinding.GoalNearTile(ground, Tolerance, ctx.Physics)) { Quiet = true }, "going to the hunting ground");
 				return SkillStatus.Running;
 			}
-			if (++wanders > MaxWanders)
-				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {MaxWanders} wanders round {ground}");
+			if (++wanders > WanderLimit)
+				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {WanderLimit} wanders round {ground}");
 			int side = wanders % 2 == 1 ? 1 : -1;
 			int step = (wanders - 1) / 2 % GroundWanderSteps + 1;
 			int wx = ground.X + side * WanderTiles * step;
@@ -198,8 +203,8 @@ public sealed class HuntSkill : ISkill
 			goal = new TilePos(node.X + wanderDir * WanderTiles, node.Y - 10);
 		}
 		else {
-			if (++wanders > MaxWanders)
-				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {MaxWanders} wanders");
+			if (++wanders > WanderLimit)
+				return Fail(ctx, $"no NPC with AI style {AiStyle} found after {WanderLimit} wanders");
 			// Outward from where the wanders began, the two sides in turn and further each time (+30, -30, +60, -60...), as
 			// GatherWood explores. Seen in game (measured runs U2, U3): 30 tiles from where the bot stood, alternately, went to
 			// and fro between the same two places, and no new ground (nor its spawns) was reached.
