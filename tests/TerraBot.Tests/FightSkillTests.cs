@@ -107,6 +107,39 @@ public class FightSkillTests
 		Assert.False(FightSkill.BeyondTheDeck(null, At(150, 60)), "no deck: any ground");
 	}
 
+	/// <summary>world_wof E16 (2026-10-17): three Bone Serpents on the bridge, bites of 25-35 taken standing still and swinging a glove; dead at 76/240.</summary>
+	[Fact]
+	public void AWormsHead_FlyingAtTheBot_IsDodged_InAnOrdinaryFight()
+	{
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		PhysicsParams p = ctx.Physics;
+		float bx = ctx.Body.X, by = ctx.Body.Y;
+		// A serpent's head 8 tiles off at the feet, coming at 6 px a tick through the ground (a worm: through blocks).
+		float hx = bx + 8 * 16f, hy = by + p.Height - 22f;
+		var skill = new FightSkill();
+		skill.Start(ctx);
+		int hits = 0;
+		for (int t = 0; t < 120; t++) {
+			g.ExtraHostiles.Clear();
+			if (hx > -500f)
+				g.ExtraHostiles.Add(new EntityInfo(9, 39, "Bone Serpent", hx, hy, 22, 22, -6f, 0f, 300, 300, 30, ShotDodge.WormAi, NoTileCollide: true));
+			g.Refresh(ctx);
+			if (skill.Tick(ctx) != SkillStatus.Running)
+				break;
+			g.Step(ctx);
+			hx -= 6f;
+			if (hx < ctx.Body.X + p.Width && hx + 22f > ctx.Body.X && hy < ctx.Body.Y + p.Height && hy + 22f > ctx.Body.Y) {
+				hits++;
+				hx = -1000f; // the head passed
+			}
+		}
+		output.WriteLine($"hits {hits}, dodges {skill.Dodges}: {skill.Describe()}");
+		Assert.True(skill.Dodges > 0, "no dodge planned");
+		Assert.Equal(0, hits);
+	}
+
 	/// <summary>world_wof E10 (2026-10-17): nine Demon sickles taken standing still ("[waiting for it in the open]"), two deaths on the bridge.</summary>
 	[Fact]
 	public void AShotFlyingAtTheBot_IsDodged_InAnOrdinaryFight()

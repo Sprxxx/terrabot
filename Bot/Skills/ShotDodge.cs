@@ -16,8 +16,9 @@ namespace TerraBot.Bot.Skills;
 /// </summary>
 public sealed class ShotDodge
 {
-	/// <summary>Shots within this many px are threats.</summary>
-	public const float ShotThreatPx = 30 * 16f;
+	/// <summary>Shots within this many px are threats; a worm's segments (vanilla NPCAIStyleID.Worm) within <see cref="WormThreatPx"/>.</summary>
+	public const float ShotThreatPx = 30 * 16f, WormThreatPx = 15 * 16f;
+	public const int WormAi = 6;
 	/// <summary>Hysteresis: the dodge starts when the chosen move comes within DodgeStartGap px of a threat, stops once it clears DodgeStopGap.</summary>
 	public const float DodgeStartGap = 16f, DodgeStopGap = 32f;
 	/// <summary>Half-width (px) of the ground the dodge may use when no deck bounds it.</summary>
@@ -40,6 +41,12 @@ public sealed class ShotDodge
 		foreach (ShotInfo s in ctx.Shots)
 			if (s.Damage > 0 && s.DistanceTo(cx, cy) <= ShotThreatPx && WallOfFleshPattern.Incoming(s, cx, cy, Dodge.Horizon))
 				threats.Add(new Threat(s.X, s.Y, s.Width, s.Height, s.VX, s.VY));
+		// A worm's segments too (a Bone Serpent through the deck: bites of 25-35 while the fight swings a glove at it, the body
+		// standing still; world_wof E16, 2026-10-17, dead at 76/240 with three serpents on the bridge), as the Eater's fight dodges
+		// them; a slime or a bat is met with the sword, not dodged.
+		foreach (EntityInfo h in ctx.Hostiles)
+			if (h.Damage > 0 && h.AiStyle == WormAi && h.DistanceTo(cx, cy) <= WormThreatPx)
+				threats.Add(new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
 		if (threats.Count == 0) {
 			dodging = false;
 			return false;
