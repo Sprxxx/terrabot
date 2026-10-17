@@ -138,6 +138,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// </summary>
 	public FakeGame(params string[] rows)
 	{
+		Journey = new FakeJourney(this);
 		var plain = new string[rows.Length];
 		for (int y = 0; y < rows.Length; y++) {
 			var chars = rows[y].ToCharArray();
@@ -221,10 +222,14 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		var ctx = new BotContext {
 			Grid = Grid, Log = new TestLog(output), World = this, Inventory = this, Crafter = this, Knowledge = this,
 			Ids = Ids, AxePower = 35, Blocks = Blocks, Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword" },
+			Journey = Journey,
 		};
 		Refresh(ctx);
 		return ctx;
 	}
+
+	/// <summary>Journey Mode's research and duplication (off unless a test turns it on: <see cref="FakeJourney.On"/>).</summary>
+	public FakeJourney Journey { get; private set; }
 
 	// ---------- IGameKnowledge ----------
 
@@ -276,7 +281,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int MaxStack = 999;
 	/// <summary>Items that stack less than <see cref="MaxStack"/> (accessories, tools: 1).</summary>
 	public readonly Dictionary<int, int> StackSize = new();
-	private int StackOf(int type) => StackSize.TryGetValue(type, out int s) ? s : MaxStack;
+	public int StackOf(int type) => StackSize.TryGetValue(type, out int s) ? s : MaxStack;
 	public int FreeSlots => SlotLimit == int.MaxValue ? 50 : SlotLimit - Stacks().Count;
 	public IReadOnlyList<(int Type, int Stack)> Stacks()
 	{

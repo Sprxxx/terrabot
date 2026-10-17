@@ -542,6 +542,26 @@ public sealed partial class ProgressionPlanner
 
 	public static bool LifeCrystalUseful(BotContext ctx) => ctx.Ids.LifeCrystal > 0 && ctx.Combat.LifeMaxBase > 0 && ctx.Combat.LifeMaxBase < MaxCrystalLife;
 
+	/// <summary>Max life one life crystal adds (vanilla Player.ItemCheck_UseLifeCrystal: UseHealthMaxIncreasingItem(20) while ConsumedLifeCrystals &lt; 15, Player.cs:45568-45576).</summary>
+	public const int LifePerCrystal = 20;
+
+	/// <summary>Life crystals still to use for max life <paramref name="life"/> (at most <see cref="MaxCrystalLife"/>), at least 1.</summary>
+	public static int CrystalsFor(int life, BotContext ctx) =>
+		Math.Max(1, (Math.Min(life, MaxCrystalLife) - ctx.Combat.LifeMaxBase + LifePerCrystal - 1) / LifePerCrystal);
+
+	/// <summary>
+	/// Journey: the life crystals carried are as many as research still takes (10, Sacrifices.tsv's "H"): they are researched,
+	/// not used, since researched they are duplicated without end and every crystal to max life 400 comes from the menu (with
+	/// 10 at 100 life: 400 instead of 300). Fewer carried are used as on Classic: holding them back for research would leave the
+	/// bot at 100 life while it looks for the rest. Always false with Journey off.
+	/// </summary>
+	public static bool CrystalsForResearch(BotContext ctx)
+	{
+		int crystal = ctx.Ids.LifeCrystal;
+		int left = ctx.Journey.ResearchLeft(crystal);
+		return left > 0 && ctx.Inventory.Count(crystal) >= left;
+	}
+
 	/// <summary>
 	/// The nearest life crystal (heart tile) the player has seen within <see cref="CrystalRadius"/> that can be mined, the
 	/// times mining gave up on it lately counted as distance (BotContext.InMiningReach). Seen in game (audit of the 10-day
@@ -944,9 +964,17 @@ public sealed partial class ProgressionPlanner
 			return Do($"looting the chest at {chest.TopLeft}", new LootChestSkill(chest.TopLeft));
 		// Likewise a life crystal: mined and used on sight, whatever stage the plan is at.
 		if (LifeCrystalUseful(ctx)) {
+			// Journey: as many as research takes are carried: researched, and then duplicated to max life (below).
+			if (CrystalsForResearch(ctx))
+				return Do($"researching {ctx.Inventory.Count(ctx.Ids.LifeCrystal)} life crystals (max life {ctx.Combat.LifeMaxBase})", new ResearchSkill(ctx.Ids.LifeCrystal));
 			// Life first; a crystal is kept for the heart lantern only once max life is in (see LanternFromASpareCrystal).
-			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > (LanternStillNeeded(ctx) && ctx.Combat.LifeMaxBase >= BossLife ? 1 : 0))
+			int keep = LanternStillNeeded(ctx) && ctx.Combat.LifeMaxBase >= BossLife ? 1 : 0;
+			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > keep)
 				return Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase})", new UseItemSkill(ctx.Ids.LifeCrystal));
+			// Journey, researched: a click in the duplication menu, and every use up to the most crystals give (a stack is 9999).
+			if (ctx.Infinite(ctx.Ids.LifeCrystal))
+				return Do($"duplicating life crystals for max life {MaxCrystalLife} (max life {ctx.Combat.LifeMaxBase}, researched)",
+					new DuplicateSkill(ctx.Ids.LifeCrystal, keep + CrystalsFor(MaxCrystalLife, ctx)));
 			if (SeenLifeCrystal(ctx) is TilePos heart)
 				return Do($"mining the life crystal seen at {heart}",
 					new MineSkill(ctx.Ids.LifeCrystal, ctx.Knowledge.SourceOf(ctx.Ids.LifeCrystal).TileType, ctx.Inventory.Count(ctx.Ids.LifeCrystal) + 1));
@@ -1156,7 +1184,11 @@ public sealed partial class ProgressionPlanner
 			StepToward st => st.Made.Any(m => m.Item > 0 && ctx.Inventory.Count(m.Item) >= m.Count) ? null
 				: Resolve(st.Inner, new Dictionary<int, int>(claims), depth, ctx),
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
+				// Journey: crystals carried in the number research takes are researched first (then duplicated to the life wanted).
+				: CrystalsForResearch(ctx) ? Do($"researching {ctx.Inventory.Count(ctx.Ids.LifeCrystal)} life crystals (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new ResearchSkill(ctx.Ids.LifeCrystal))
 				: ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 ? Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new UseItemSkill(ctx.Ids.LifeCrystal))
+				: ctx.Infinite(ctx.Ids.LifeCrystal) ? Do($"duplicating life crystals for max life {la.Life} (max life {ctx.Combat.LifeMaxBase}, researched)",
+					new DuplicateSkill(ctx.Ids.LifeCrystal, CrystalsFor(la.Life, ctx)))
 				: Resolve(new HaveItem(ctx.Ids.LifeCrystal, 1, "life crystal"), claims, depth + 1, ctx),
 			Wearing wr => wr.Items.Any(ctx.Inventory.IsEquipped) ? null
 				: wr.Items.FirstOrDefault(i => ctx.Inventory.Count(i) > 0) is int carried and > 0 ? Do($"putting on the {wr.Label}", new EquipSkill(carried))
@@ -1240,6 +1272,13 @@ public sealed partial class ProgressionPlanner
 		}
 		stocked.Remove(StockKey(h));
 		int more = h.Count - Math.Max(0, available);
+		// Journey: a researched item the need takes is duplicated, not gathered or crafted: a click in the duplication menu for a
+		// full stack (stations, blocks, arrows, potions, ingredients of a craft alike). Never on Classic (Infinite is false).
+		foreach (int a in h.Accepts)
+			if (ctx.Infinite(a)) {
+				int to = ctx.Inventory.Count(a) + more;
+				return Do($"need {more} more {k.ItemName(a)} (researched: duplicating to {to})", new DuplicateSkill(a, to));
+			}
 		int item = h.Accepts.Count > 1 ? CheapestToFinish(h.Accepts, more, ctx) : Cheapest(h.Accepts, ctx);
 		// The other tiers of a tiered need (iron or silver gear): their ores do as well, if this one is not to be found.
 		if (h.Accepts.Count > 1 && item >= 0)
@@ -1347,6 +1386,10 @@ public sealed partial class ProgressionPlanner
 		int carried = items.FirstOrDefault(i => ctx.Inventory.Count(i) > 0, -1);
 		if (carried >= 0)
 			return Do($"placing a {k.ItemName(carried)} here (the one at {at} is {at.ChebyshevTo(ctx.Node)} tiles away)", new PlaceItemSkill(carried));
+		// Journey: a researched station item is a click away wherever the bot is (duplicated, then placed here).
+		int researched = items.FirstOrDefault(ctx.Infinite, -1);
+		if (researched >= 0)
+			return Resolve(new HaveItem(researched, 1, k.ItemName(researched)), claims, depth + 1, ctx);
 		RecipeInfo r = BestRecipe(items[0], ctx);
 		if (r == null || !r.Ingredients.All(i => ctx.Inventory.CountAny(i.Accepts) >= i.Stack))
 			return null; // not without fetching things: the walk then
@@ -2436,6 +2479,12 @@ public sealed partial class ProgressionPlanner
 		int have = ctx.Inventory.CountAny(h.Accepts);
 		if (item <= 0 || have >= h.Count)
 			return null;
+		// Journey: researched, it is in the duplication menu as surely as in the bag (healing potions, a recall potion...).
+		foreach (int a in h.Accepts)
+			if (ctx.Infinite(a)) {
+				int to = ctx.Inventory.Count(a) + h.Count - have;
+				return Do($"need {h.Count - have} more {ctx.Knowledge.ItemName(a)} (researched: duplicating to {to})", new DuplicateSkill(a, to));
+			}
 		int step = ctx.Knowledge.RecipesFor(item).Select(r => Math.Max(1, r.ResultStack)).DefaultIfEmpty(1).Min();
 		int carried = ctx.Inventory.Count(item);
 		for (int want = h.Count - have; want > 0; want = want > step ? want - step : 0)
@@ -2488,6 +2537,11 @@ public sealed partial class ProgressionPlanner
 
 	private const float TreeCost = 30f, MineCost = 60f, HuntCost = 300f;
 	private const float CraftStepCost = 5f;
+	/// <summary>
+	/// Journey: a researched item, a click in the duplication menu (DuplicateSkill, CraftSkill.ClickInterval ticks): cheaper than
+	/// any gathering (<see cref="TreeCost"/>) and than a craft step, so a recipe of researched ingredients beats one to gather for.
+	/// </summary>
+	private const float DuplicateCost = 1f;
 
 	/// <summary>The other tiers of the tiered need being resolved (set in ResolveItem), for <see cref="AltOres"/>.</summary>
 	private int[] tierAlternatives = Array.Empty<int>();
@@ -2590,6 +2644,8 @@ public sealed partial class ProgressionPlanner
 		int missing = n - take;
 		if (missing <= 0)
 			return 0f;
+		if (ctx.Infinite(item))
+			return DuplicateCost; // Journey: one click for the lot
 		if (ctx.Knowledge.SourceOf(item).Kind != SourceKind.None || depth >= MaxShortfallDepth || BestRecipe(item, ctx) is not RecipeInfo r)
 			return missing * Cost(item, ctx);
 		int crafts = (missing + Math.Max(1, r.ResultStack) - 1) / Math.Max(1, r.ResultStack);
@@ -2657,6 +2713,11 @@ public sealed partial class ProgressionPlanner
 			int i = todo.Pop();
 			if (costs.ContainsKey(i) || current.ContainsKey(i))
 				continue;
+			// Journey: a researched item costs a click, whatever made it; its recipes and sources are not looked into.
+			if (ctx.Infinite(i)) {
+				current[i] = DuplicateCost;
+				continue;
+			}
 			ItemSource src = k.SourceOf(i);
 			current[i] = src.Kind switch {
 				// An ore that mining keeps coming back without costs more each time, so an item with another tier (armour)

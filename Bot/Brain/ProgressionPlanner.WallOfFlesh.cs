@@ -210,7 +210,7 @@ public sealed partial class ProgressionPlanner
 
 	/// <summary>The hunt for a Voodoo Demon is on: the bridge built, no doll carried, the bot on its last <see cref="HuntTiles"/>.</summary>
 	private bool VoodooHuntOn(BotContext ctx) =>
-		Plan == Plans.WallOfFlesh && hellbridgeDone && ctx.Inventory.Count(ctx.Ids.GuideVoodooDoll) <= 0 && NearBridgeEnd(ctx, HuntTiles);
+		Plan == Plans.WallOfFlesh && hellbridgeDone && ctx.Inventory.Count(ctx.Ids.GuideVoodooDoll) <= 0 && !ctx.Infinite(ctx.Ids.GuideVoodooDoll) && NearBridgeEnd(ctx, HuntTiles);
 
 	/// <summary>On the bridge's row, within <paramref name="tiles"/> of its far end.</summary>
 	private bool NearBridgeEnd(BotContext ctx, int tiles)
@@ -394,6 +394,9 @@ public sealed partial class ProgressionPlanner
 			return Do("picking up the Guide Voodoo Doll lying in sight", new CollectDropsSkill(d => d.Type == doll, BotBrain.LootRadiusTiles));
 		int dir = bridgeDir != 0 ? bridgeDir : 1, row = bridgeRow, stand = row - 1;
 		var endStand = new TilePos(dir > 0 ? bridgeTo - 1 : bridgeTo, stand);
+		// Journey: the doll researched (1 is its research, Sacrifices.tsv "D"), one is duplicated for each try, no hunt.
+		if (ctx.Inventory.Count(doll) <= 0 && ctx.Infinite(doll))
+			return Do("duplicating a Guide Voodoo Doll (researched)", new DuplicateSkill(doll, 1));
 		if (ctx.Inventory.Count(doll) <= 0) {
 			if (!NearBridgeEnd(ctx, HuntTiles)) {
 				int lo = Math.Min(bridgeTo, bridgeTo - dir * HuntTiles), hi = Math.Max(bridgeTo, bridgeTo - dir * HuntTiles);

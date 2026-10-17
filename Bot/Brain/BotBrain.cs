@@ -552,7 +552,7 @@ public sealed class BotBrain
 	}
 
 	/// <summary>What the bag must keep: gear (tools, weapons, armour, potions, ammo), the plan's own items, and the ingredients (two recipes deep) of the gear to make.</summary>
-	private static HashSet<int> KeptItems(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks, bool gearToo = true)
+	internal static HashSet<int> KeptItems(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks, bool gearToo = true)
 	{
 		GameIds ids = ctx.Ids;
 		var kept = new HashSet<int> { ids.Wood, ids.Gel, ids.Torch, ids.WorkBenchItem, ids.WoodWall, ids.Door, ids.Chair, ids.Table, ids.Acorn,
@@ -708,6 +708,9 @@ public sealed class BotBrain
 		wasNight = night;
 		if (Auto && ctx.Tick % HabitEvery == 0)
 			WatchPlace(ctx);
+		// Journey Mode: research what the bag holds enough of (nothing at all on Classic).
+		if (Auto)
+			ResearchHabit.Tick(ctx, Current);
 		if (Auto && ctx.Tick % HabitEvery == 0) {
 			DropPickupBlockers(ctx);
 			KeepRoom(ctx);
