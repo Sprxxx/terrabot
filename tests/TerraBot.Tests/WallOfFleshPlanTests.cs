@@ -326,6 +326,21 @@ public class WallOfFleshPlanTests
 	}
 
 	[Fact]
+	public void OnTheErrand_LootUnderTheBridge_IsNotFetched()
+	{
+		// Seen in game (measured run M12b): after a fight on the bridge the pickup walked down to row 1049, among the hot hellstone.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		ctx.UnderworldRow = 10;
+		var below = new DropInfo(1, FakeGame.Gel, "Gel", 1, 5 * 16f, 30 * 16f, 8, 8);
+		var level = new DropInfo(2, FakeGame.Gel, "Gel", 1, 8 * 16f, 24 * 16f, 8, 8);
+		Assert.False(CollectDropsSkill.TooDeep(ctx, below));
+		ctx.DepthErrand = true;
+		Assert.True(CollectDropsSkill.TooDeep(ctx, below));
+		Assert.False(CollectDropsSkill.TooDeep(ctx, level));
+	}
+
+	[Fact]
 	public void KilledInTheUnderworldOnItsErrand_NoDangerZone_OverTheBridge()
 	{
 		FakeGame g = EarlyGameTests.Field(60);

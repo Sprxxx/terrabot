@@ -157,4 +157,22 @@ public class FallArrestTests
 		Assert.Equal(10 + maxDrop - 1, sim.Node.Y);
 		Assert.True(worst <= PhysicsParams.Default.SafeFallTiles);
 	}
+	[Fact]
+	public void ALandingOnAHotTile_IsNoSafeLanding()
+	{
+		// Seen in game (measured run M12b): knocked off the hellbridge, the reflex steered to land on the Underworld's hellstone, 23
+		// rows down, and the bot burnt there. A tile that hurts on touch (the grid's hazard: TileID.Sets.TouchDamageHot) is no landing.
+		var (g, _) = Shaft(10, 13, 6, 11);
+		var p = PhysicsParams.Default;
+		var body = new BodyState { X = Core.Pathfinding.Body.CanonicalLeft(11, p), Y = Core.Pathfinding.Body.StandingTop(9, p) + 4f, VY = 2f };
+		FallArrest.Landing plain = FallArrest.Predict(g, p, body, MoveInput.None, 9);
+		output.WriteLine(plain.Why);
+		Assert.True(plain.Safe);
+		for (int x = 10; x <= 13; x++)
+			g.Set(x, 16, CellKind.Solid | CellKind.Hazard);
+		FallArrest.Landing hot = FallArrest.Predict(g, p, body, MoveInput.None, 9);
+		output.WriteLine(hot.Why);
+		Assert.False(hot.Safe);
+		Assert.Contains("hurts", hot.Why);
+	}
 }

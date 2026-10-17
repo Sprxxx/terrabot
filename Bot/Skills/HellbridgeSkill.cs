@@ -112,7 +112,7 @@ public sealed class HellbridgeSkill : ISkill
 	}
 
 	/// <summary>A cell over the bridge the body cannot pass: a block, a slope or half block, a platform (mined: a jump would stop on it).</summary>
-	private static bool InTheWay(CellKind k) => k.IsSolid() || k.IsShaped() || k.IsPlatform();
+	private static bool InTheWay(CellKind k) => k.IsSolid() || k.IsShaped() || k.IsPlatform() || (k & CellKind.Hazard) != 0;
 
 	/// <summary>The node standing at the end with the body's front column on it (the body is 2 wide: going west, the end is its left column).</summary>
 	private TilePos StandAt(int end) => new((Dir > 0 ? end - 1 : end) - (standBack ? Dir : 0), Row - 1);
@@ -198,6 +198,8 @@ public sealed class HellbridgeSkill : ISkill
 			}
 			if (!InTheWay(k))
 				continue;
+			if (ctx.Blocks != null && float.IsPositiveInfinity(ctx.Blocks.BreakTicks(cell.X, cell.Y)))
+				return Fail(ctx, Unbreakable(ctx, cell));
 			if (BlockRules.LetsLavaIn(g, cell)) {
 				if (y == Row - ClearRows)
 					continue; // the jump's spare row may stay: the body passes under it
@@ -216,9 +218,14 @@ public sealed class HellbridgeSkill : ISkill
 				return SkillStatus.Running;
 			}
 			// A tile there that is neither stood on nor solid (a pot, a chain, a banner: placing a block over it fails, Player.PlaceThing):
-			// mined first.
-			if (ctx.World != null && ctx.World.TileTypeAt(c, Row) >= 0)
+			// mined first; so is a hot one (hellstone brick: it burns whoever stands on it, Collision.HurtTiles; the grid reads it
+			// as a hazard, not to stand on), and a block goes in its place. Seen in game (measured run M12b): the deck ran over the
+			// ruined houses' hot bricks, the bot burning ("run 1.665") until "reduced to charcoal" at (2442,1041).
+			if (ctx.World != null && ctx.World.TileTypeAt(c, Row) >= 0) {
+				if (ctx.Blocks != null && float.IsPositiveInfinity(ctx.Blocks.BreakTicks(c, Row)))
+					return Fail(ctx, Unbreakable(ctx, deck));
 				return Act(ctx, deck, place: false);
+			}
 			return Act(ctx, deck, place: true);
 		}
 		// 3. One tile on.
@@ -226,6 +233,15 @@ public sealed class HellbridgeSkill : ISkill
 		State = "stepping on";
 		return SkillStatus.Running;
 	}
+
+	/// <summary>
+	/// Why a cell in the bridge's way cannot be mined: hellstone (TileID 58) wants pick power 65 (Player.cs:55038-55041) and burns on
+	/// touch; the ways past it a player has are a better pickaxe (Molten from hellstone itself, or the Nightmare Pickaxe: 12
+	/// demonite bars and 6 shadow scales, Recipe.cs:10296-10302), or fire immunity to walk round it (an Obsidian Skin Potion, its
+	/// fireWalk: Waterleaf, Fireblossom, Obsidian and Bottled Water at a placed bottle, Recipe.cs:1806-1812).
+	/// </summary>
+	private static string Unbreakable(BotContext ctx, TilePos cell) =>
+		$"the cell {cell} in the bridge's way cannot be mined at pick power {ctx.PickPower} (tile {ctx.World?.TileTypeAt(cell.X, cell.Y) ?? -1}; hellstone wants 65 and burns on touch)";
 
 	/// <summary>Mine or place at the cell: aim, use, and count the action's failures (three on a cell fail the skill).</summary>
 	private SkillStatus Act(BotContext ctx, TilePos cell, bool place)

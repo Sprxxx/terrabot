@@ -245,7 +245,15 @@ public sealed class CollectDropsSkill : ISkill
 	/// surface the fight was on (rows 269-273); that time the bot was already falling there, knocked off the lip ("Died (665
 	/// damage" on landing), but nothing kept a collect from going down for it, and the boss's loot is looked for 40 tiles round.
 	/// </summary>
-	public static bool TooDeep(BotContext ctx, DropInfo d) => d.Tile.Y - ctx.Node.Y > ctx.Physics.SafeFallTiles;
+	public static bool TooDeep(BotContext ctx, DropInfo d) => d.Tile.Y - ctx.Node.Y > ctx.Physics.SafeFallTiles || UnderTheBridge(ctx, d);
+
+	/// <summary>
+	/// On the Underworld's errand, a drop under the bot's feet row (more than a tile down: on the band's floor over the lava, among its
+	/// hot hellstone) is not fetched: the hellbridge is the way. Seen in game (measured run M12b): after a fight on the bridge the
+	/// pickup walked down to row 1049, and the bot burnt there.
+	/// </summary>
+	public static bool UnderTheBridge(BotContext ctx, DropInfo d) =>
+		ctx.DepthErrand && ctx.UnderworldRow > 0 && ctx.Node.Y >= ctx.UnderworldRow && d.Tile.Y > ctx.Node.Y + 1;
 
 	private static float Dist(DropInfo d, float x, float y) => MathF.Sqrt((d.CenterX - x) * (d.CenterX - x) + (d.CenterY - y) * (d.CenterY - y));
 }

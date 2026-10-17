@@ -87,7 +87,7 @@ public sealed class SimWorld
 			hits[cell] = ++n;
 			if (n >= blocks.BreakTicks(cell.X, cell.Y)) {
 				Mined?.Invoke(cell);
-				editable.Set(cell.X, cell.Y, k & ~(CellKind.Solid | CellKind.Falling | CellKind.Web));
+				editable.Set(cell.X, cell.Y, k & ~(CellKind.Solid | CellKind.Falling | CellKind.Web | CellKind.Hazard)); // a mined hot brick is gone, its burn with it
 				hits.Remove(cell);
 				Broken++;
 				if (grid.Get(cell.X, cell.Y - 1).IsFalling())

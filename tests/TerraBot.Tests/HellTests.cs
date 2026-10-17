@@ -170,6 +170,41 @@ public class HellTests
 	}
 
 	[Fact]
+	public void TheHellbridge_ReplacesAHotDeckCell_MinesAHotOneInTheWay_AndSaysWhyItStopsAtHellstone()
+	{
+		// Seen in game (measured run M12b): the deck ran over a ruined house's hot bricks (hellstone brick, TileID.Sets.TouchDamageHot),
+		// and the bot burnt to death walking along it. A hot cell is the grid's hazard: never stood on, so never deck.
+		var (g, ctx) = OnTheTower();
+		var hotDeck = new TilePos(55, BridgeRow);
+		g.Grid.Set(hotDeck.X, hotDeck.Y, CellKind.Solid | CellKind.Hazard);
+		g.TileTypes[hotDeck] = 76;
+		var hotWay = new TilePos(58, BridgeRow - 2);
+		g.Grid.Set(hotWay.X, hotWay.Y, CellKind.Solid | CellKind.Hazard);
+		g.TileTypes[hotWay] = 76;
+		const int to = 70;
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, to);
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, bridge, 20000);
+		output.WriteLine($"{st}: {bridge.Describe()}, at {g.Sim.Node}, hot deck {g.Grid.Get(hotDeck.X, hotDeck.Y)}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.True(g.Grid.Get(hotDeck.X, hotDeck.Y).CanStandOn(), "the hot deck cell was mined and a block put in its place");
+		Assert.False(g.Grid.Get(hotWay.X, hotWay.Y).IsSolid());
+		for (int x = TowerTo; x <= to; x++)
+			Assert.True(HellbridgeSkill.Built(g.Grid, BridgeRow, x), $"column {x}");
+
+		// Hellstone itself (pick power 65; the bot's 40 here): no mining it, and the skill says what would.
+		var (g2, ctx2) = OnTheTower();
+		var hellstone = new TilePos(52, BridgeRow);
+		g2.Grid.Set(hellstone.X, hellstone.Y, CellKind.Solid | CellKind.Hazard);
+		g2.TileTypes[hellstone] = 58;
+		g2.Blocks.Unbreakable.Add(hellstone);
+		var stopped = new HellbridgeSkill(BridgeRow, TowerTo, to);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g2, ctx2, stopped, 20000));
+		output.WriteLine(stopped.FailureReason);
+		Assert.Contains("hellstone", stopped.FailureReason);
+		Assert.Equal(51, stopped.End);
+	}
+
+	[Fact]
 	public void TheHellbridge_OutOfBlocks_Fails_AndKnockedOff_WalksBackToTheEnd()
 	{
 		var (g, ctx) = OnTheTower(blocks: 10);

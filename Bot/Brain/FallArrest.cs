@@ -273,6 +273,11 @@ public sealed class FallArrest
 						if (k.IsSolid() || k.IsPlatform() && !keys.Down && oldBottom <= r * T + 0.001f) { // Down falls through platforms
 							int rows = (int)((r * T - p.Height) / (float)T) - fallStart;
 							var at = new TilePos(c, r - 1);
+							// Not onto what hurts on touch: a hot tile (hellstone and its bricks burn the player who stands on them,
+							// Collision.HurtTiles, TileID.Sets.TouchDamageHot). Seen in game (measured run M12b): knocked off the
+							// hellbridge, "steering right to land at (2464,1064), 23 rows down", and burnt to death there.
+							if ((k & CellKind.Hazard) != 0)
+								return new Landing(false, rows, at, $"would land on a tile that hurts at {new TilePos(c, r)}, {rows} rows down");
 							return rows <= p.SafeFallTiles
 								? new Landing(true, rows, at, $"lands at {at}, {rows} rows down")
 								: new Landing(false, rows, at, $"would land at {at}, {rows} rows down (more than a safe fall, {p.SafeFallTiles})");
