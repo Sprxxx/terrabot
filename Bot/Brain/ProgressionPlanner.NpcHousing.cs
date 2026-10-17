@@ -91,14 +91,27 @@ public sealed partial class ProgressionPlanner
 			yield return (o, Blueprint.NpcRoom(ctx.Ids, s));
 	}
 
-	private static bool InPlan(Blueprint bp, TilePos origin, TilePos t) =>
-		t.X >= origin.X && t.X < origin.X + bp.Width && t.Y >= origin.Y && t.Y < origin.Y + bp.Height;
+	/// <summary>
+	/// Every room of the bot's as a cell for the game's housing check and the tiles it covers: the house and the NPC rooms by their
+	/// plans, a house that stood by its rooms' bounds (<see cref="FoundRooms"/>, a row of frame round them for the floor an NPC
+	/// is given).
+	/// </summary>
+	private IEnumerable<(TilePos Check, TilePos Min, TilePos Max)> RoomCells(BotContext ctx)
+	{
+		foreach (var (o, bp) in OurRooms(ctx))
+			yield return (new TilePos(o.X + bp.Inside.X, o.Y + bp.Inside.Y), o, new TilePos(o.X + bp.Width - 1, o.Y + bp.Height - 1));
+		if (HouseSite == null)
+			foreach (var (min, max, inside) in foundRooms)
+				yield return (new TilePos(inside.X, inside.Y - 1), new TilePos(min.X - 1, min.Y - 1), new TilePos(max.X + 1, max.Y + 1));
+	}
 
-	/// <summary>Town NPCs whose home the game put in one of the bot's rooms (the floor tile it gave them lies in the plan).</summary>
+	private static bool InRoom(TilePos min, TilePos max, TilePos t) => t.X >= min.X && t.X <= max.X && t.Y >= min.Y && t.Y <= max.Y;
+
+	/// <summary>Town NPCs whose home the game put in one of the bot's rooms (the floor tile it gave them lies in the room).</summary>
 	private int HousedInOurRooms(BotContext ctx)
 	{
-		var rooms = OurRooms(ctx).ToList();
-		return ctx.World.TownNpcHomes().Count(n => !n.Homeless && rooms.Any(r => InPlan(r.Plan, r.Origin, n.Home)));
+		var rooms = RoomCells(ctx).ToList();
+		return ctx.World.TownNpcHomes().Count(n => !n.Homeless && rooms.Any(r => InRoom(r.Min, r.Max, n.Home)));
 	}
 
 	private NpcSurvey Survey(BotContext ctx)
@@ -107,14 +120,14 @@ public sealed partial class ProgressionPlanner
 			return last.Survey;
 		var s = new NpcSurvey();
 		IReadOnlyList<TownNpcHome> homes = ctx.World.TownNpcHomes();
-		foreach (var (origin, bp) in OurRooms(ctx)) {
+		foreach (var (check, min, max) in RoomCells(ctx)) {
 			s.Rooms++;
 			// A room someone lives in passes the check as well (TerrariaGameInfo.CheckHousing: ScoreRoom's -1 is "occupied").
-			string why = ctx.World.CheckHousing(origin.X + bp.Inside.X, origin.Y + bp.Inside.Y);
-			var living = homes.Where(n => !n.Homeless && InPlan(bp, origin, n.Home)).Select(n => n.Name).ToList();
+			string why = ctx.World.CheckHousing(check.X, check.Y);
+			var living = homes.Where(n => !n.Homeless && InRoom(min, max, n.Home)).Select(n => n.Name).ToList();
 			s.Occupants.AddRange(living);
 			if (why != null) {
-				s.Invalid.Add($"{origin}: {why}");
+				s.Invalid.Add($"{min}: {why}");
 				continue;
 			}
 			s.Valid++;
@@ -160,6 +173,14 @@ public sealed partial class ProgressionPlanner
 	/// </summary>
 	private ISkill ResolveNpcHousing(Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
+		// A house that stood (a mod's base): its rooms are the NPCs'; rooms are built onto a house of the bot's own only.
+		if (ctx.World != null && HouseSite == null && FoundHomeValid(ctx) != null && !NpcHousingOff(ctx)) {
+			NpcSurvey found = Survey(ctx);
+			NoteNpcHousing(ctx, $"the house that stood: {Describe(found)}");
+			if (found.Empty < found.Want)
+				LeaveNpcHousing(ctx, $"the house that stood has {found.Empty} empty rooms of the {found.Want} wanted; NPC rooms are built onto a house of the bot's own");
+			return null;
+		}
 		// The bot's own house first (its stage comes before this one): the rooms are built onto it, and it is a room too.
 		if (ctx.World == null || HouseSite is not TilePos house || HomeInside(ctx) == null || NpcHousingOff(ctx))
 			return null;

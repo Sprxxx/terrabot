@@ -342,7 +342,10 @@ public sealed class WalkToSkill : ISkill
 		}
 
 		TilePos node = ctx.Node;
-		if (ctx.Body.Grounded && Goal.IsGoal(node)) {
+		// Not hanging on a rope (still, vy 0, it reads as grounded): the climb goes on to its top and the jump off. Seen in game
+		// (Journey Test, 2026-10-17): "WalkTo reached AtOrAboveRow424 at (3201,416)" halfway up the rope, the climb let go of,
+		// and the body fell back 18 rows to the spawn.
+		if (ctx.Body.Grounded && !ctx.Body.OnRope && Goal.IsGoal(node)) {
 			Info(ctx, $"WalkTo reached {Goal} at {node} after {plans} plan(s), {Replans} replan(s)");
 			State = "arrived";
 			return SkillStatus.Succeeded;

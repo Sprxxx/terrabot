@@ -514,6 +514,28 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 
 	/// <summary>Simplified WorldGen.StartRoomCheck + RoomNeeds.</summary>
+	/// <summary>The open cells of the closed room round (x, y), as the housing check floods them; null if it is no closed room.</summary>
+	public (TilePos Min, TilePos Max)? RoomAt(int x, int y)
+	{
+		string why = CheckHousing(x, y);
+		if (why != null && !why.StartsWith("missing"))
+			return null;
+		bool Frame(int i, int j) => Grid.Get(i, j).IsSolid() || Furniture.TryGetValue(new TilePos(i, j), out int d) && d == TileDoor;
+		var seen = new HashSet<TilePos>();
+		var stack = new Stack<TilePos>();
+		stack.Push(new TilePos(x, y));
+		int x0 = x, y0 = y, x1 = x, y1 = y;
+		while (stack.Count > 0) {
+			TilePos c = stack.Pop();
+			if (Frame(c.X, c.Y) || !seen.Add(c))
+				continue;
+			x0 = Math.Min(x0, c.X); y0 = Math.Min(y0, c.Y); x1 = Math.Max(x1, c.X); y1 = Math.Max(y1, c.Y);
+			foreach (var (dx, dy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+				stack.Push(new TilePos(c.X + dx, c.Y + dy));
+		}
+		return (new TilePos(x0, y0), new TilePos(x1, y1));
+	}
+
 	public string CheckHousing(int x, int y)
 	{
 		bool Frame(int i, int j) => Grid.Get(i, j).IsSolid() || Furniture.TryGetValue(new TilePos(i, j), out int d) && d == TileDoor;

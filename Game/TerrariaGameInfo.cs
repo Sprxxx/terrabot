@@ -813,6 +813,9 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return WorldGen.hiScore > 0 ? null : WorldGen.hiScore <= -250 ? "too much corruption/crimson around" : "no spot an NPC can stand on";
 	}
 
+	public (TilePos Min, TilePos Max)? RoomAt(int x, int y) =>
+		WorldGen.InWorld(x, y, 10) && WorldGen.StartRoomCheck(x, y) ? (new TilePos(WorldGen.roomX1, WorldGen.roomY1), new TilePos(WorldGen.roomX2, WorldGen.roomY2)) : null;
+
 	public bool IsEquipped(int itemType)
 	{
 		for (int i = 0; i < AccessoryEnd; i++)

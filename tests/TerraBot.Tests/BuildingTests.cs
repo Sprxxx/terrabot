@@ -1161,6 +1161,54 @@ public class BuildingTests
 	}
 
 	/// <summary>Builds a valid house next to the start through the fake's own placement, and tells the planner about it.</summary>
+	/// <summary>
+	/// A house of no blueprint of the bot's standing by the bench (the user's world Journey Test, 2026-10-17: the base the mod
+	/// StartWithBase builds over the spawn): a room 14 by 6 inside its frame at x 20-35, rows 18-24, door, chair, table, torch.
+	/// </summary>
+	private static void ForeignHouse(FakeGame g)
+	{
+		for (int x = 20; x <= 35; x++)
+			g.Grid.Set(x, 18, CellKind.Solid);
+		for (int y = 18; y <= 24; y++) {
+			g.Grid.Set(35, y, CellKind.Solid);
+			if (y < 22)
+				g.Grid.Set(20, y, CellKind.Solid);
+			else
+				g.Furniture[new TilePos(20, y)] = FakeGame.TileDoor;
+		}
+		for (int x = 21; x <= 34; x++)
+			for (int y = 19; y <= 24; y++)
+				g.Walls.Add(new TilePos(x, y));
+		g.Furniture[new TilePos(26, 24)] = FakeGame.TileTable;
+		g.Furniture[new TilePos(30, 24)] = FakeGame.TileChair;
+		g.Furniture[new TilePos(33, 20)] = FakeGame.TileTorch;
+		g.Stations[FakeGame.TileBench] = new TilePos(23, 24);
+	}
+
+	/// <summary>
+	/// Journey Test (2026-10-17): auto mode stopped "stuck on house: no building site within 40 tiles of (3214,417)", a work
+	/// bench in the base and no room round it for the bot's own house. A house that stands, of any shape, is the house: its rooms
+	/// are what the game takes for housing.
+	/// </summary>
+	[Fact]
+	public void AHouseOfAnyShape_StandingByTheBench_IsTheHouse_NotBuiltAgain()
+	{
+		FakeGame g = EarlyGameTests.Field(60);
+		ForeignHouse(g);
+		BotContext ctx = g.CreateContext(output);
+		Assert.Null(g.CheckHousing(25, 22));
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		p.SeeStationsForTest(ctx);
+		ISkill s = p.ResolveForTest(new HouseBuilt("house"), ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe() ?? "null"}; home {p.FoundHome}");
+		Assert.Null(s);
+		Assert.Null(p.HouseSite);
+		Assert.True(p.FoundHome is TilePos h && h.X >= 21 && h.X <= 33 && h.Y == 24, $"{p.FoundHome}");
+		Assert.Single(p.FoundRooms);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.StartsWith("Auto: a house already stands round"));
+	}
+
 	internal static void HouseAlreadyThere(FakeGame g, ProgressionPlanner p, BotContext ctx)
 	{
 		GiveHouseKit(g);

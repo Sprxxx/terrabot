@@ -491,6 +491,7 @@ public sealed partial class ProgressionPlanner
 		homePlace = null;
 		lastRestEnd = long.MinValue / 2;
 		HouseSite = null;
+		ResetFoundHome();
 		eyeArena.Reset();
 		evilArena.Reset();
 		dungeonArena.Reset();
@@ -540,6 +541,8 @@ public sealed partial class ProgressionPlanner
 				if (it.ItemType == ctx.Ids.HeartLantern && BuildSkill.IsPlaced(ctx, bp, built, it))
 					return false;
 		}
+		if (HouseSite == null && FoundHome is TilePos home && LanternNear(ctx, home))
+			return false;
 		return true;
 	}
 
@@ -1118,7 +1121,7 @@ public sealed partial class ProgressionPlanner
 	private TilePos? HomeInside(BotContext ctx)
 	{
 		if (HouseSite is not TilePos site)
-			return null;
+			return FoundHomeValid(ctx);
 		Blueprint bp = Blueprint.SmallHouse(ctx.Ids);
 		if (ctx.World.CheckHousing(site.X + bp.Inside.X, site.Y + bp.Inside.Y) != null)
 			return null;
@@ -1520,7 +1523,11 @@ public sealed partial class ProgressionPlanner
 	/// A valid house, or: pick a site (near the work bench), get the materials it still needs (blocks for the
 	/// missing frame cells, walls for the bare ones, each furniture item not yet placed), then build.
 	/// </summary>
-	/// <summary>A house of this blueprint standing near <paramref name="anchor"/>: its door where the plan puts one, valid housing.</summary>
+	/// <summary>
+	/// A house of this blueprint standing near <paramref name="anchor"/>: its door where the plan puts one, valid housing, and the
+	/// room the plan's own (its bounds the plan's inside, IWorldInfo.RoomAt). Without that last a house of another shape with a door
+	/// in the same place passed for the bot's own (a found house, ProgressionPlanner.FoundHome, is lived in by its rooms instead).
+	/// </summary>
 	private static TilePos? BuiltHouseNear(BotContext ctx, Blueprint bp, TilePos anchor)
 	{
 		int doorTile = ctx.Knowledge?.TilePlacedBy(ctx.Ids.Door) ?? -1;
@@ -1531,7 +1538,9 @@ public sealed partial class ProgressionPlanner
 		foreach (TilePos d in ctx.World.FindTiles(doorTile, anchor, SiteFinder.SearchRadius))
 			for (int dy = 0; dy < door.Height; dy++) {
 				var origin = new TilePos(d.X - door.X, d.Y - dy - door.Y);
-				if (tried.Add(origin) && ctx.World.CheckHousing(origin.X + bp.Inside.X, origin.Y + bp.Inside.Y) == null)
+				if (tried.Add(origin) && ctx.World.CheckHousing(origin.X + bp.Inside.X, origin.Y + bp.Inside.Y) == null
+					&& (ctx.World.RoomAt(origin.X + bp.Inside.X, origin.Y + bp.Inside.Y) is not var (min, max)
+						|| min == new TilePos(origin.X + 1, origin.Y + 1) && max == new TilePos(origin.X + bp.Width - 2, origin.Y + bp.Height - 2)))
 					return origin;
 			}
 		return null;
@@ -1543,6 +1552,8 @@ public sealed partial class ProgressionPlanner
 		if (HouseSite is TilePos built && ctx.World.CheckHousing(built.X + bp.Inside.X, built.Y + bp.Inside.Y) == null
 			&& bp.Items.All(it => BuildSkill.IsPlaced(ctx, bp, built, it)))
 			return null;
+		if (HouseSite == null && FoundHomeValid(ctx) is TilePos home)
+			return heartLantern ? LanternInFoundHome(home, claims, depth, ctx) : null;
 		if (HouseSite == null) {
 			// By the work bench, unless that is far from where the bot respawns: a bench put up 120 tiles off underground (no
 			// way back to the old one) left no site within reach, and auto mode stopped. Then near the spawn, like a player.
@@ -1556,6 +1567,9 @@ public sealed partial class ProgressionPlanner
 				ctx.Log.Info($"Auto: a house already stands at {standing}; living in it");
 				return ResolveHouse(heartLantern, claims, depth, ctx);
 			}
+			// Else a house of any kind standing there, its rooms what the game takes for housing (a mod's base for a new world).
+			if (LookForFoundHome(ctx, anchor))
+				return ResolveHouse(heartLantern, claims, depth, ctx);
 			HouseSite = SiteFinder.Find(ctx, bp, anchor, badSites);
 			if (HouseSite == null) {
 				stuck = $"no building site within {SiteFinder.SearchRadius} tiles of {anchor}";
@@ -1639,6 +1653,9 @@ public sealed partial class ProgressionPlanner
 				keepOut.Add((new TilePos(h.X - ArenaHouseGap, h.Y - ArenaHouseGap),
 					new TilePos(h.X + house.Width - 1 + ArenaHouseGap, h.Y + house.Height - 1 + ArenaHouseGap)));
 			}
+			// Nor over a house that stood: its rooms, the same gap as the house's.
+			foreach (var (min, max, _) in foundRooms)
+				keepOut.Add((new TilePos(min.X - 1 - ArenaHouseGap, min.Y - 1 - ArenaHouseGap), new TilePos(max.X + 1 + ArenaHouseGap, max.Y + 1 + ArenaHouseGap)));
 			// Nor over the NPC rooms: the same gap as the house's.
 			foreach (var (r, _) in npcRooms)
 				keepOut.Add((new TilePos(r.X - ArenaHouseGap, r.Y - ArenaHouseGap),
@@ -1710,6 +1727,7 @@ public sealed partial class ProgressionPlanner
 	}
 
 	private (TilePos?, TilePos?, bool, TilePos?, bool, int, TilePos?, bool, (int, int, int)) protectedFor = (null, null, false, null, false, 0, null, false, (0, 0, 0));
+	private int protectedFoundRooms;
 	private int protectedNpcRooms;
 
 	/// <summary>
@@ -1726,10 +1744,11 @@ public sealed partial class ProgressionPlanner
 		bool evilReady = evilArena.Site is TilePos evilSite && ArenaReady(ctx, arena, evilSite);
 		bool dungeonReady = dungeonArena.Site is TilePos dungeonSite && ArenaReady(ctx, dungeon, dungeonSite);
 		var key = (HouseSite, eyeArena.Site, eyeReady, evilArena.Site, evilReady, Bridges.Count, dungeonArena.Site, dungeonReady, HellbridgeKey(ctx));
-		if (protectedFor == key && protectedNpcRooms == npcRooms.Count && ctx.Protected != null)
+		if (protectedFor == key && protectedNpcRooms == npcRooms.Count && protectedFoundRooms == foundRooms.Count && ctx.Protected != null)
 			return;
 		protectedFor = key;
 		protectedNpcRooms = npcRooms.Count;
+		protectedFoundRooms = foundRooms.Count;
 		var cells = new HashSet<TilePos>();
 		if (HouseSite is TilePos h) {
 			Blueprint house = Blueprint.SmallHouse(ctx.Ids);
@@ -1746,6 +1765,11 @@ public sealed partial class ProgressionPlanner
 					if (room.At(x, y) != PlanCell.None)
 						cells.Add(new TilePos(r.X + x, r.Y + y));
 		}
+		// A house that stood: its rooms and the frame round them (walls, floors, ceilings, doors), as the bot's own house.
+		foreach (var (min, max, _) in foundRooms)
+			for (int x = min.X - 1; x <= max.X + 1; x++)
+				for (int y = min.Y - 1; y <= max.Y + 1; y++)
+					cells.Add(new TilePos(x, y));
 		foreach ((bool isReady, TilePos? at) in new[] { (eyeReady, eyeArena.Site), (evilReady, evilArena.Site) })
 			if (isReady && at is TilePos a)
 				for (int x = 0; x < arena.Width; x++)

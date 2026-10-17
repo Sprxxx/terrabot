@@ -67,6 +67,12 @@ public interface IWorldInfo
 	string CheckHousing(int x, int y);
 
 	/// <summary>
+	/// The room round (x, y) as the game's housing check bounds it (WorldGen.StartRoomCheck's roomX1..roomX2, roomY1..roomY2: its
+	/// open cells), or null when it is no closed room.
+	/// </summary>
+	(TilePos Min, TilePos Max)? RoomAt(int x, int y) => null;
+
+	/// <summary>
 	/// Can a mining skill break this tile on purpose although path moves never would? For multi-tile objects worth
 	/// mining for their drop (a life crystal): the current pickaxe can break it and the game allows it.
 	/// </summary>
