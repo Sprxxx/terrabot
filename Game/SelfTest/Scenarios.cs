@@ -1463,6 +1463,24 @@ public sealed class Scenario
 				Check = r => r.Deaths > 0 ? $"died {r.Deaths} time(s)" : null,
 			},
 			new() {
+				// Seen in game (world_eye J5 and J3 on Journey Test): a flooded jungle cave, water rows 732-745 with air over it, no
+				// walls behind; pillaring up from the floor, jump after jump from 745 to 737 and back (vy -5.81 / +5.01), no row
+				// gained in 260 ticks again and again, and the bot drowned 5-11 rows under air. Open deep water, no ceiling: the
+				// blocks stack under the rising body (Core/Execution/WaterPillar), the head out within half a breath.
+				Name = "flooded_deep_open",
+				Rows = Grid(
+					Repeat("@....................@", 3),
+					Repeat("@~~~~~~~~~~~~~~~~~~~~@", 13),
+					"@~~~~~~~~~S~~~~~~~~~~@",
+					"@@@@@@@@@@@@@@@@@@@@@@"),
+				Mode = "surface",
+				Dig = true,
+				Build = true,
+				Blocks = 60,
+				TimeoutTicks = 60 * 30,
+				Check = r => r.Deaths > 0 ? $"died {r.Deaths} time(s)" : null,
+			},
+			new() {
 				// Lava under the wall stays put when the wall is dug (liquid never flows up): dug through, unhurt.
 				Name = "lava_below_dug_over",
 				Rows = WithCell(Corridor, 10, 4, '!'),

@@ -887,8 +887,10 @@ public sealed class BotBrain
 			status = SkillStatus.Failed;
 		}
 		// Not while building (the house and arena place their own torches, and the keeper's took the arena's: boss_auto
-		// then hunted gel for an hour) or in a boss fight.
-		if (Auto && Current is not Building.BuildSkill && Current is not BossFightSkill)
+		// then hunted gel for an hour) or in a boss fight. Nor while surfacing: the hand is the water pillar's, a block every useTime as the
+		// body rises (WaterPillar), and a torch taken in hand mid-jump (seen in game, world_eye J5: "Light: torch #100" during a
+		// Surface) costs that jump's blocks, a slot switch each way.
+		if (Auto && Current is not Building.BuildSkill && Current is not BossFightSkill && Current is not SurfaceSkill)
 			Light.Tick(ctx);
 		if (status == SkillStatus.Running)
 			return;

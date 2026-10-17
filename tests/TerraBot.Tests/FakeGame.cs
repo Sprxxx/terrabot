@@ -146,6 +146,11 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// <summary>The item in hand: what the controls ask for, switched between swings only (Player.HeldItem).</summary>
 	private int heldItem;
 	/// <summary>
+	/// The hotbar slot's kind in hand, as TerraBotPlayer.Apply switches it: a tick that changes Player.selectedItem does not also
+	/// use the item, and no switch happens during a swing. Only blocks wait on it here (the sim's placements).
+	/// </summary>
+	private ToolRequest heldTool;
+	/// <summary>
 	/// Upgraded Research's "researched consumables are infinite": a used life crystal, a placed station, a thrown bomb stay in the
 	/// bag (its GlobalItem.ConsumeItem returns false); the effect still comes.
 	/// </summary>
@@ -819,7 +824,14 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		ThrowKey(o, cx, cy);
 		if (swingTimer > 0)
 			swingTimer--;
-		Sim.Step(o);
+		MoveInput simInput = o;
+		if (o.Tool != ToolRequest.None && o.Tool != heldTool) {
+			if (o.Tool == ToolRequest.Block)
+				simInput.UseItem = false; // this tick switches the slot
+			if (swingTimer == 0)
+				heldTool = o.Tool;
+		}
+		Sim.Step(simInput);
 		if (Unrevealed.Count > 0) {
 			TilePos n = Sim.Node;
 			for (int x = n.X - RevealRadius; x <= n.X + RevealRadius; x++)

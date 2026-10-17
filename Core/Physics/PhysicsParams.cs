@@ -35,6 +35,31 @@ public sealed record PhysicsParams
 
 	public static readonly PhysicsParams Default = new();
 
+	/// <summary>
+	/// The values vanilla swaps in while wet in water without gear (Player.cs:23406-23409: gravity 0.2, maxFallSpeed 5, jumpHeight
+	/// 30, jumpSpeed 6.01; then maxFallSpeed += 0.01, Player.cs:23416). UpdateJumpHeight runs after them (Player.cs:24970) and adds
+	/// the jump speed boosts on top, so a boost over the dry 5.01 carries over; a balloon's jumpBoost sets 20 / 6.51 whatever the
+	/// water, which shows as a dry jump height other than 15, and is kept. The live params stay dry while wet
+	/// (TerraBotPlayer.PostUpdateRunSpeeds), so what moves in water derives these from them. Seen in game (world_eye J5): a water
+	/// jump logs vy -5.81 (6.01 less a tick of gravity) and the fall 5.01.
+	/// </summary>
+	public PhysicsParams InWater()
+	{
+		bool jumpBoost = JumpHeight != Default.JumpHeight;
+		return this with {
+			Gravity = 0.2f,
+			MaxFallSpeed = 5.01f,
+			JumpHeight = jumpBoost ? JumpHeight : 30,
+			JumpSpeed = jumpBoost ? JumpSpeed : 6.01f + (JumpSpeed - Default.JumpSpeed),
+		};
+	}
+
+	/// <summary>
+	/// In water the body moves half its velocity a tick (Player.WaterCollision, Player.cs:22067-22082: position += velocity * 0.5,
+	/// but the full collided velocity on an axis where a tile stopped it).
+	/// </summary>
+	public const float WaterMoveFactor = 0.5f;
+
 	/// <summary>Upper bound on horizontal speed (max-speed oscillation overshoots by one acceleration step).</summary>
 	public float MaxHorizontalSpeed => Math.Max(MaxRunSpeed, AccRunSpeed) + RunAcceleration;
 

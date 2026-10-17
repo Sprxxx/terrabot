@@ -43,6 +43,15 @@ with tile collision).
   (not solid-top) tile if the 3 cells above it and the head cell above the leading body column are free.
 * `StepDown`: walking off a ledge with ground 7–17 px below snaps down (smooth 1-tile step down).
 * Fall damage: on landing, `tilesFallen = (int)(pos.Y/16) - fallStart`; damage if `> 25 + extraFall`.
+* Water (verified 2026-10-17, `Player.cs:23406-23416`, `WaterCollision` 22067): wet without gear `gravity 0.2`,
+  `maxFallSpeed 5.01`, `jumpHeight 30`, `jumpSpeed 6.01` (`PhysicsParams.InWater`); the body moves **half** its velocity a
+  tick (the full collided velocity on an axis a tile stopped). A held water jump rises ≈ 130 px (8 rows) at ≈ 2.9 px/tick.
+  No swimming up: a new jump still needs `velocity.Y == 0` (or sliding, an extra jump, a slime mount, Merman/flippers).
+  Blocks place in water (only lava blocks solid tiles, `PlaceThing_Tiles_CheckLavaBlocking`), every `useTime` (10 for
+  blocks) while the swing is held, wherever vanilla takes them: out of every player/NPC hitbox (`Collision.EmptyTile`),
+  `(Y + height)/16 + tileRangeY(4) - 2 >= row`, on a solid 4-neighbour or a wall. ⇒ a water pillar stacks several blocks
+  per jump (`Core/Execution/WaterPillar`). Breath: −1 every 7 ticks with the head under, +3 a tick out of it, 2 life a
+  tick at 0 (`Player.cs:21768-21800`).
 * Hitbox: `width 20`, `height 42` px → 2×3 tiles when standing. Collision treats a tile as blocking if
   `tileSolid`, or `tileSolidTop && frameY == 0`; solid-top tiles (platforms) only collide from above.
 
