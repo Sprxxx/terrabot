@@ -655,10 +655,18 @@ underground desert counts as unsafe (sand on top), and mining near the depth lim
 
 ## Milestones after the Eye (planned in progression order, as a normal player plays)
 Each mechanic is to be verified against the decompile and terraria.wiki.gg when its milestone starts.
-* **M10, the evil biome boss.** This world is Crimson, so the Brain of Cthulhu. Summon with a Bloody Spine
-  (Vertebrae from Crimson enemies plus Crimtane Bars; the Eye drops Crimtane Ore in Crimson worlds), or by smashing
-  3 Crimson Hearts. Needs travel to the Crimson, fighting its Creepers, and a hammer. Crimstone needs pick power 65,
-  so use the chasms or explosives. After the win: Crimtane gear and the Deathbringer Pickaxe.
+* **M10, the evil biome boss**, by the world's evil (`GameIds.Crimson`, WorldGen.crimson). Corruption: the Eater of
+  Worlds by Worm Food (docs M10_SPEC.md; plan `evilboss`, scenario `world_eow`). Crimson (built 2026-10-17, branch
+  `boc-crimson`; same plan `evilboss`, scenarios `world_boc`, `fight_boc`, `fight_boc_ironbow`, not yet measured): the
+  Brain of Cthulhu by a Bloody Spine (30 Vicious Powder + 15 Vertebrae at an altar, Recipe.cs:14414). Stages: the Tendon
+  Bow from the Eye's crimtane (from the bag), 15 vertebrae hunted from crimeras on the crimson's ground, vicious mushrooms
+  (crimson plants of frame 270) at a placed bottle into 30 powder, the spine at a (crimson) altar, unholy arrows from the
+  vertebrae left over (after the spine: they share the vertebrae), an arena where the Crimson zone holds, the fight there
+  by day or night. The fight (`BrainPattern`): the Creepers shot first (those dashing at us before the rest: a hit ends a
+  dash), the Brain once it can be hurt; kite away from its swarm (it drifts at 1 px/tick) and from its chase (8 px/tick,
+  eased by 50); the dodge planner models the Creepers' orbit round where the Brain will be. The Brain is perceived while it
+  hides (dontTakeDamage), for its contact damage. Crimson Hearts (3 smashed summon it) are not used.
+  After the win: Crimtane gear and the Deathbringer Pickaxe (12 bars + 6 Tissue Samples, Recipe.cs:10369), not built.
 * **M11, Skeletron** (built 2026-10-17, docs M11_SPEC.md; plan `skeletron`, scenario `world_skeletron`, not yet
   measured). Prep from the boss plan's gear (a bow, 500 arrows, 200 life, potions and a recall potion from the bag);
   the Dungeon found along the surface by the snow/jungle rule, stopping when the Old Man shows; a 160-wide arena

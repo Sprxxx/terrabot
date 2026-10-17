@@ -61,6 +61,17 @@ namespace TerraBot.Bot.Skills;
 /// that could lift the body's top above the Underworld's first row (The Tongue).</item>
 /// </list>
 /// </para>
+/// <para>
+/// The Brain of Cthulhu (<see cref="BrainPattern"/>), the Crimson's boss, is fought in the Crimson zone as the worm is in the
+/// Corruption's (summoned only there, it sinks away once we leave it; the zone's bounds, the leash, the walk back are the worm's):
+/// <list type="bullet">
+/// <item>shoot: while it hides behind its Creepers (it takes no damage then), the Creepers, those dashing at us first (a hit ends a
+/// dash), then the nearest; once they are dead, the Brain;</item>
+/// <item>move: away from the Brain while it is within <see cref="BrainPattern.SwarmKeepPx"/> across (the Creepers' swarm; it drifts at
+/// 1 px/tick), and within <see cref="BrainPattern.ChaseKeepPx"/> once it chases (8 px/tick), past it when an end leaves no room; else
+/// to and fro; the dodge planner sees the dashes, the Creepers' orbit round where the Brain will be, and its chase.</item>
+/// </list>
+/// </para>
 /// </summary>
 public sealed class BossFightSkill : ISkill
 {
@@ -188,6 +199,22 @@ public sealed class BossFightSkill : ISkill
 	public bool IsSkeletron { get; }
 	/// <summary>The Wall of Flesh (<see cref="WallOfFleshPattern"/>): fought with its own rules (see the class).</summary>
 	public bool IsWallOfFlesh { get; }
+	/// <summary>The Brain of Cthulhu (<see cref="BrainPattern"/>): fought in the Crimson zone with its own rules (see the class).</summary>
+	public bool IsBrain { get; }
+	/// <summary>
+	/// A boss of the evil biome, held to its zone: the worm (it dives and despawns once no player is in the Corruption or the
+	/// Crimson, NPC.cs:55436) and the Brain (it sinks away once its target is out of the Crimson, NPC.cs:33385-33397).
+	/// </summary>
+	private bool InZone => IsWorm || IsBrain;
+	/// <summary>The zone the fight is held to, by the game's name for it (the Brain's AI reads ZoneCrimson only).</summary>
+	private string ZoneName => IsBrain ? "Crimson" : "Corruption";
+	/// <summary>Brain: the Brain this tick (null out of view) and its Creepers in view, nearest first.</summary>
+	private EntityInfo? brain;
+	private System.Collections.Generic.List<EntityInfo> creepers = new();
+	/// <summary>Brain: its Creepers in view this tick.</summary>
+	public int CreepersInView => creepers.Count;
+	private int maxCreepersSeen;
+	private bool brainExposedLogged;
 	/// <summary>
 	/// Wall of Flesh: quick-heal below this share of life, as soon as the potion sickness allows. Its damage comes in bursts: below
 	/// a quarter of its life an eye fires 7 lasers of 26 a burst (NPC.cs:26616-26697), with The Hungry and the leeches on top, and
@@ -232,10 +259,12 @@ public sealed class BossFightSkill : ISkill
 		IsWorm = WormPattern.IsWormBoss(bossType);
 		IsSkeletron = SkeletronPattern.IsSkeletron(bossType);
 		IsWallOfFlesh = WallOfFleshPattern.IsWallOfFlesh(bossType);
+		IsBrain = BrainPattern.IsBrain(bossType);
 		segmentTypes = WormPattern.SegmentTypes(bossType);
 	}
 
 	public string Describe() => $"Boss {BossType} [{State}]" + (IsWorm ? $" {segments.Count} segments in view"
+		: IsBrain ? $" {creepers.Count} creepers in view" + (brain is EntityInfo b ? $", brain {b.Life}/{b.LifeMax}" : "")
 		: bossLifeSeen < int.MaxValue ? $" boss life {bossLifeSeen}" : "");
 
 	public void Start(BotContext ctx) => ctx.Log.Info($"Boss fight start: boss {BossType}, summon item {SummonItem}, {ctx.Combat.RangedName} with {ctx.Combat.AmmoCount} arrows, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}");
@@ -263,6 +292,10 @@ public sealed class BossFightSkill : ISkill
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
 		if (IsWorm)
 			segments = ctx.Hostiles.Where(h => segmentTypes.Contains(h.Type)).Select(h => Measured(ctx, h)).OrderBy(h => h.DistanceTo(cx, cy)).ToList();
+		if (IsBrain) {
+			brain = ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault();
+			creepers = ctx.Hostiles.Where(h => h.Type == BrainPattern.Creeper).OrderBy(h => h.DistanceTo(cx, cy)).ToList();
+		}
 		RememberPositions(ctx);
 		// A worm is defeated with its last segment (the flag is set as it dies); one still in view is another worm.
 		// Defeated before the fight began (Hardmode on before this Wall of Flesh: there is no downed flag of its own) is no win: the
@@ -272,7 +305,7 @@ public sealed class BossFightSkill : ISkill
 		bool wonBefore = IsWallOfFlesh && defeatedAtStart == true;
 		if (ctx.World.BossDefeated(BossType) && segments.Count == 0 && !wonBefore) {
 			ctx.Log.Info($"Boss fight: boss {BossType} defeated after {fightTicks} ticks, {Dodges} dodges, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}"
-				+ (IsWorm ? $", up to {maxSegmentsSeen} segments seen at once" : ""));
+				+ (IsWorm ? $", up to {maxSegmentsSeen} segments seen at once" : IsBrain ? $", up to {maxCreepersSeen} creepers seen at once, {Heals} heals" : ""));
 			State = "won";
 			if (IsWallOfFlesh)
 				LogWallSummary(ctx, "defeated");
@@ -285,12 +318,13 @@ public sealed class BossFightSkill : ISkill
 			return SkillStatus.Running;
 		// A worm's fight on the arena from where the Worm Food is used, the planner's spot where the zone holds
 		// (ProgressionPlanner.EvilSummonSpot), not necessarily the arena's middle.
-		centre ??= Arena is (int ax0, int ax1, int ay) && !(IsWorm && ctx.Node.Y == ay && ctx.Node.X >= ax0 && ctx.Node.X <= ax1)
+		centre ??= Arena is (int ax0, int ax1, int ay) && !(InZone && ctx.Node.Y == ay && ctx.Node.X >= ax0 && ctx.Node.X <= ax1)
 			? new TilePos((ax0 + ax1) / 2, ay) : ctx.Node;
 
-		// A worm: its nearest segment stands for it.
+		// A worm: its nearest segment stands for it. The Brain: itself, or a Creeper while it is out of view.
 		EntityInfo? boss = IsWorm ? segments.Cast<EntityInfo?>().FirstOrDefault()
 			: IsWallOfFlesh ? WallOfFleshPattern.Wall(ctx.Hostiles) // the mouth, or an eye in view at its x with its life
+			: IsBrain ? brain ?? creepers.Cast<EntityInfo?>().FirstOrDefault()
 			: ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault();
 		if (IsWallOfFlesh && boss is EntityInfo wall) {
 			WallLastSeen = (wall.CenterX, wall.Type == BossType ? wall.CenterY : WallLastSeen?.Y ?? wall.CenterY);
@@ -302,10 +336,11 @@ public sealed class BossFightSkill : ISkill
 		// A worm's bar shows the life of all its segments, wherever they are (IWorldInfo.BossBarLife): one burrowed out of view
 		// is still up. A fight taken up again with the worm out of view (after a pause, or a new instance of this job) does not
 		// summon a second time: the Worm Food is used up, and the game allows no second head while one lives (SummonItemCheck).
-		int barLife = IsWorm ? ctx.World.BossBarLife(BossType) : 0;
+		// The Brain's bar is its life and its Creepers' (BrainOfCthuluBigProgressBar.cs:29-41).
+		int barLife = InZone ? ctx.World.BossBarLife(BossType) : 0;
 		if (boss == null && !seenBoss && barLife > 0) {
 			seenBoss = true;
-			ctx.Log.Info($"Boss fight: the worm is up (its bar shows {barLife} life) but none of it is in view; waiting for it");
+			ctx.Log.Info($"Boss fight: the {(IsBrain ? "brain" : "worm")} is up (its bar shows {barLife} life) but none of it is in view; waiting for it");
 		}
 
 		if (boss == null && !seenBoss) {
@@ -323,8 +358,9 @@ public sealed class BossFightSkill : ISkill
 				return Fail(ctx, "no summon item");
 			// Worm Food does nothing out of the Corruption zone (Player.cs:43462), and the worm would not stay (NPC.cs:55436):
 			// the planner finds where it holds (the bot's look at it here is kept, BotContext.Zone).
-			if (summon == null && IsWorm && ctx.Combat.InEvilZone == false)
-				return Fail(ctx, $"not in the Corruption zone at {ctx.Node}: the summon would do nothing here");
+			// The Bloody Spine likewise out of the Crimson zone (Player.cs:43549-43552), and the Brain would sink away (NPC.cs:33385).
+			if (summon == null && InZone && ctx.Combat.InEvilZone == false)
+				return Fail(ctx, $"not in the {ZoneName} zone at {ctx.Node}: the summon would do nothing here");
 			summon ??= Start(ctx, Summon?.Invoke() ?? new UseItemSkill(SummonItem));
 			SkillStatus s = summon.Tick(ctx);
 			if (s == SkillStatus.Failed)
@@ -345,6 +381,8 @@ public sealed class BossFightSkill : ISkill
 			goneTicks = 0;
 			if (IsWorm)
 				LogWorm(ctx);
+			else if (IsBrain)
+				LogBrain(ctx);
 			else {
 				if (b.Life <= lifeLogged - b.LifeMax / 10 || b.Life <= b.LifeMax / 2 && lifeLogged > b.LifeMax / 2) {
 					lifeLogged = b.Life;
@@ -371,14 +409,15 @@ public sealed class BossFightSkill : ISkill
 			// it (NPC.cs:55436-55481), and then its bar empties as it despawns. Seen in game (measured run M10j): "no segment of
 			// the worm in view" at (1914,361), in a chasm's water, the worm at 8597 of 10050, and the fight was over.
 			if (barLife <= 0)
-				return Fail(ctx, IsWorm ? $"the worm left: no segment in view for {WormPattern.GoneTicks} ticks, not defeated, its bar empty" : "the boss left");
+				return Fail(ctx, IsWorm ? $"the worm left: no segment in view for {WormPattern.GoneTicks} ticks, not defeated, its bar empty"
+					: IsBrain ? $"the brain left: out of view for {GoneTicks} ticks, not defeated, its bar empty" : "the boss left");
 			if (ctx.Tick - lastWormLog >= WormLogTicks) {
 				lastWormLog = ctx.Tick;
-				ctx.Log.Info($"Boss fight: no segment of the worm in view for {goneTicks} ticks, but its bar shows {barLife} life: "
+				ctx.Log.Info($"Boss fight: no {(IsBrain ? "part of the brain" : "segment of the worm")} in view for {goneTicks} ticks, but its bar shows {barLife} life: "
 					+ $"waiting for it {(Arena != null ? "on the arena" : $"round {centre}")}, us at {ctx.Node}");
 			}
 		}
-		int maxTicks = IsWorm ? WormMaxFightTicks : IsWallOfFlesh ? WallMaxFightTicks : MaxFightTicks;
+		int maxTicks = IsWorm ? WormMaxFightTicks : IsWallOfFlesh ? WallMaxFightTicks : IsBrain ? BrainMaxFightTicks : MaxFightTicks;
 		if (++fightTicks > maxTicks)
 			return Fail(ctx, $"still fighting after {maxTicks} ticks");
 		if (!ctx.Combat.HasRanged)
@@ -386,7 +425,7 @@ public sealed class BossFightSkill : ISkill
 		if (IsSkeletron && Escape(ctx, boss) is SkillStatus escaping)
 			return escaping;
 
-		if (IsWorm)
+		if (InZone)
 			TrackZone(ctx);
 		bool walkingBack = BackToArena(ctx);
 		if (!walkingBack)
@@ -395,11 +434,13 @@ public sealed class BossFightSkill : ISkill
 		// can hit): the ones about to bite besides are the zone's own spawns, eaters of souls (40 life, 22 contact damage,
 		// NPC.cs:3849; 2-3 arrows), which the boss fight shot none of. Seen in game (measured run M10k, world_eow from the
 		// worm_food checkpoint): held in a pocket at x 1720-1722, hit by segments and eaters of souls in turn, dead in the fight.
-		EntityInfo? servant = IsWallOfFlesh ? null : ctx.Hostiles.Where(h => (IsWorm ? !segmentTypes.Contains(h.Type) && h.Damage > 0 : MinionTypes.Contains(h.Type) && !IsSkeletron)
+		// The Brain's fight likewise: the Crimson's crimeras and face monsters by us; its Creepers are BrainShot's.
+		EntityInfo? servant = IsWallOfFlesh ? null : ctx.Hostiles.Where(h => (IsWorm ? !segmentTypes.Contains(h.Type) && h.Damage > 0
+				: IsBrain ? !BrainPattern.IsPart(h.Type) && h.Damage > 0 && BrainPattern.Hittable(h) : MinionTypes.Contains(h.Type) && !IsSkeletron)
 				&& h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
 			.OrderBy(h => h.DistanceTo(cx, cy)).Cast<EntityInfo?>().FirstOrDefault();
-		// A worm: its nearest segment in reach (WormShot).
-		EntityInfo? target = servant ?? (IsWorm || IsWallOfFlesh ? null : boss);
+		// A worm: its nearest segment in reach (WormShot). The Brain: BrainShot's order.
+		EntityInfo? target = servant ?? (IsWorm || IsWallOfFlesh || IsBrain ? null : boss);
 		// Skeletron: the head, the hands only when the head has no clear line (in Classic they add nothing to its defence,
 		// NPC.cs:22212-22265 is Expert only; unholy arrows pierce through a hand into the head anyway).
 		if (IsSkeletron)
@@ -418,12 +459,14 @@ public sealed class BossFightSkill : ISkill
 			(aim, clear) = WormShot(ctx, cx, cy);
 		else if (canShoot && IsWallOfFlesh)
 			(aim, clear) = WallOfFleshShot(ctx, cx, cy);
+		else if (canShoot && IsBrain)
+			(aim, clear) = BrainShot(ctx, cx, cy);
 		if (aim is AimSolution a) {
 			ctx.Output.Tool = ToolRequest.Ranged;
 			ctx.Output.AimMouse(a.AimX, a.AimY);
 			ctx.Output.UseItem = clear;
-			State = !clear ? "no clear arc" : servant is EntityInfo sv && TargetId == sv.Id ? (IsWorm ? $"shooting the {sv.Name} by us" : "shooting a servant") : IsWorm ? "shooting a segment"
-				: IsWallOfFlesh ? $"shooting {wallTargetWhat}" : "shooting the boss";
+			State = !clear ? "no clear arc" : servant is EntityInfo sv && TargetId == sv.Id ? (IsWorm || IsBrain ? $"shooting the {sv.Name} by us" : "shooting a servant") : IsWorm ? "shooting a segment"
+				: IsWallOfFlesh ? $"shooting {wallTargetWhat}" : IsBrain ? $"shooting {brainTargetWhat}" : "shooting the boss";
 		}
 		else
 			State = "kiting";
@@ -516,18 +559,18 @@ public sealed class BossFightSkill : ISkill
 			// 5 rows under the floor and within 6 tiles of the middle, "off the arena, walking back" 6460 times while the Eye
 			// of Cthulhu killed the bot.
 			// A worm's: onto the part of it the zone holds over (ZoneBounds); there the kiting keeps within it.
-			var (zw, ze) = IsWorm ? ZoneBounds(ctx) : IsWallOfFlesh ? AheadOfTheWall() : (int.MinValue, int.MaxValue);
+			var (zw, ze) = InZone ? ZoneBounds(ctx) : IsWallOfFlesh ? AheadOfTheWall() : (int.MinValue, int.MaxValue);
 			int gx0 = Math.Max(x0, zw), gx1 = Math.Min(x1, ze);
 			goal = () => gx0 <= gx1 ? new GoalStandOnRow(standY, gx0, gx1, ctx.Physics) : new GoalStandOnRow(standY, x0, x1, ctx.Physics);
 			place = "the arena";
 		}
-		else if (IsWorm && zoneLostAt != null && lastInZone is TilePos held && n.ChebyshevTo(held) > ZoneSlack) {
+		else if (InZone && zoneLostAt != null && lastInZone is TilePos held && n.ChebyshevTo(held) > ZoneSlack) {
 			// No arena, out of the zone: back to where it last held, by a walk (the ground may not be flat).
 			off = true;
 			goal = () => new GoalNearTile(held, ZoneSlack, ctx.Physics);
 			place = $"the zone (it last held at {held})";
 		}
-		else if (IsWorm) {
+		else if (InZone) {
 			// No arena: the worm's leash (MoveFreely), and no deeper than a safe fall under where the fight began: a walk never
 			// drops further on its own (the paths' Drop moves), so lower down means knocked or slid down a chasm. Seen in game
 			// (measured run M10j): from (1874,291), on the corruption's open ground, down a chasm to (1921,358), under water.
@@ -579,7 +622,7 @@ public sealed class BossFightSkill : ISkill
 			if (ctx.Body.Grounded)
 				lastInZone = n;
 			if (zoneLostAt is long lost) {
-				ctx.Log.Info($"Boss fight: back in the Corruption zone at {n} after {ctx.Tick - lost} ticks");
+				ctx.Log.Info($"Boss fight: back in the {ZoneName} zone at {n} after {ctx.Tick - lost} ticks");
 				zoneLostAt = null;
 			}
 			return;
@@ -590,7 +633,7 @@ public sealed class BossFightSkill : ISkill
 		// on the way back in it still reads "out" a little inside where it was lost.
 		TilePos held = lastInZone ?? centre.Value;
 		zoneLostAt = ctx.Tick;
-		ctx.Log.Info($"Boss fight: out of the Corruption zone at {n} (it last held at {held}): back towards it");
+		ctx.Log.Info($"Boss fight: out of the {ZoneName} zone at {n} (it last held at {held}): back towards it");
 		int side = Math.Sign(n.X - held.X);
 		if (side == 0)
 			side = Math.Sign(n.X - centre.Value.X);
@@ -645,7 +688,7 @@ public sealed class BossFightSkill : ISkill
 		// The Wall of Flesh: no jump that could lift the body's top above the Underworld's first row (The Tongue, Player.cs:20618).
 		if (IsWallOfFlesh && ctx.Output.Jump && TongueRisk(ctx))
 			ctx.Output.Jump = false;
-		if (Arena == null && !IsWorm) // a worm's fight keeps to its leash (MoveFreely) as to an arena
+		if (Arena == null && !InZone) // a worm's or the Brain's fight keeps to its leash (MoveFreely) as to an arena
 			return;
 		// Brake before an end: never press towards it within the stopping distance (v² / 2a, braking is
 		// slowdown + acceleration) plus a few pixels. Pressing towards an end only once at it still slid a tile past.
@@ -664,7 +707,7 @@ public sealed class BossFightSkill : ISkill
 		PhysicsParams p = ctx.Physics;
 		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p);
 		float floorY;
-		(floorY, minX, maxX) = Surroundings(ctx, IsWorm);
+		(floorY, minX, maxX) = Surroundings(ctx, InZone);
 		if (Arena is (int ax0, int ax1, _)) {
 			// Past the arena's ends the ground is unknown: the dodge planner treats them as walls. The hellbridge's ends are over
 			// lava: kept a hit's knockback short of them (ArenaHardMargin). Seen in game (fight_wof, m12_synthetic_classic): at the
@@ -673,14 +716,14 @@ public sealed class BossFightSkill : ISkill
 			minX = Math.Max(minX, (ax0 + margin) * 16f);
 			maxX = Math.Min(maxX, (ax1 + 1 - margin) * 16f - p.Width);
 		}
-		else if (IsWorm) {
+		else if (InZone) {
 			// No arena: a leash round where the fight started, its ends walls to the planner like an arena's. The worm
 			// despawns once we leave the Corruption; ZoneCorrupt counts evil tiles over about 169 tiles across round the
 			// player (Main.buffScanAreaWidth, Main.cs:882), so 40 tiles from a spot in it keeps most of that ground.
 			minX = Math.Max(minX, (centre.Value.X - HardHalfWidth) * 16f);
 			maxX = Math.Min(maxX, (centre.Value.X + HardHalfWidth + 1) * 16f - p.Width);
 		}
-		if (IsWorm) {
+		if (InZone) {
 			// Within the zone (ZoneBounds), its ends walls to the planner as the arena's are. Out past one (the zone lost there):
 			// a wall where the body is, so the only way on is back in (the planner would put a body past a wall back at it).
 			var (zw, ze) = ZoneBounds(ctx);
@@ -690,7 +733,10 @@ public sealed class BossFightSkill : ISkill
 				maxX = Math.Min(maxX, (ze + 1) * 16f - p.Width);
 			minX = Math.Min(minX, ctx.Body.X);
 			maxX = Math.Max(maxX, ctx.Body.X);
-			KiteWorm(ctx, minX, maxX);
+			if (IsBrain)
+				KiteBrain(ctx, minX, maxX);
+			else
+				KiteWorm(ctx, minX, maxX);
 		}
 		else if (IsSkeletron)
 			KiteSkeletron(ctx, boss, minX, maxX);
@@ -715,6 +761,7 @@ public sealed class BossFightSkill : ISkill
 				continue;
 			threats.Add(h.AiStyle == EyePattern.EyeAiStyle ? EyePattern.Predict(h, ctx.Expert)
 				: h.AiStyle is SkeletronPattern.HeadAiStyle or SkeletronPattern.HandAiStyle ? SkeletronPattern.Predict(h, ctx.Hostiles, ctx.Expert, cx, cy)
+				: BrainPattern.IsPart(h.Type) ? BrainPattern.Predict(h, ctx.Hostiles, ctx.Expert, cx, cy)
 				: new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
 		}
 		if (IsWallOfFlesh)
@@ -724,9 +771,9 @@ public sealed class BossFightSkill : ISkill
 		// A worm's fight: the planner knows the immunity left from the last hit (a touch then does not hurt, so getting out of
 		// a body streaming through is what counts, not that every way out touches it now), moves the body through the real
 		// tiles (a pit's sides end; a one-tile step is walked up), and keeps off where the fight would walk back from.
-		int immune = IsWorm ? ImmuneTicksLeft(ctx) : 0;
-		ITileGrid terrain = IsWorm ? ctx.Grid : null;
-		float maxBottom = IsWorm ? LowestBottom(ctx) : float.PositiveInfinity;
+		int immune = InZone ? ImmuneTicksLeft(ctx) : 0;
+		ITileGrid terrain = InZone ? ctx.Grid : null;
+		float maxBottom = InZone ? LowestBottom(ctx) : float.PositiveInfinity;
 		// Skeletron's kiting may stand (under the hovering head): the plan judged is the one the kiting chose.
 		int kiteDir = IsSkeletron || IsWallOfFlesh ? ctx.Output.Horizontal : runDir;
 		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, kiteDir, 0, Dodge.Horizon, immune, terrain);
@@ -960,8 +1007,17 @@ public sealed class BossFightSkill : ISkill
 				runDir = -runDir;
 		}
 		ctx.Output.Horizontal = runDir;
-		// Over what is in the way (walls are only what no jump clears, Surroundings): a step two or more tiles high in front of
-		// the feet is jumped onto, the jump held to its top; one tile high the game walks up on its own (Collision.StepUp).
+		Hop(ctx);
+	}
+
+	/// <summary>
+	/// Over what is in the way (walls are only what no jump clears, Surroundings): a step two or more tiles high in front of the
+	/// feet is jumped onto, the jump held to its top; one tile high the game walks up on its own (Collision.StepUp).
+	/// </summary>
+	private void Hop(BotContext ctx)
+	{
+		PhysicsParams p = ctx.Physics;
+		TilePos node = ctx.Node;
 		bool grounded = ctx.Body.Grounded;
 		int front = (int)MathF.Floor((runDir > 0 ? ctx.Body.X + p.Width + 1f : ctx.Body.X - 1f) / 16f);
 		bool stepAhead = ctx.Grid.Get(front, node.Y - 1).IsSolid() && ctx.Grid.Get(front, node.Y).IsSolid();
@@ -1008,6 +1064,121 @@ public sealed class BossFightSkill : ISkill
 			}
 		}
 		ctx.Output.Horizontal = runDir;
+	}
+
+	// ---------- the Brain of Cthulhu (BrainPattern, Milestone 10 in a Crimson world) ----------
+
+	/// <summary>
+	/// The Brain's fight lasts longer than the Eye's: its 1250 life (defence 14) behind 20 Creepers of 100 (defence 10), 3250 in all,
+	/// is 460 hits of an Iron Bow's wooden arrow (13 - 5 = 8 a Creeper, 13 - 7 = 6 the Brain in Classic), some 3.6 minutes at its 2.1
+	/// shots a second if every one lands; at half of them landing, 7: the worm's 15 minutes. The Tendon Bow (19 + 5) takes a third.
+	/// </summary>
+	public const int BrainMaxFightTicks = WormMaxFightTicks;
+	private string brainTargetWhat = "the brain";
+
+	/// <summary>
+	/// The Brain's shot: the Brain once it can be hurt (<see cref="BrainPattern.Hittable"/>, its Creepers dead), else the Creepers in
+	/// <see cref="BrainPattern.ShotOrder"/> (dashing at us first: a hit ends the dash), the first with a clear arc among the first
+	/// <see cref="WormShotTries"/> in a clear line; with none, aim at the first in line without shooting. The lead solves for a hit
+	/// within the target's half size (the Brain is 160 x 110).
+	/// </summary>
+	private (AimSolution? Aim, bool Clear) BrainShot(BotContext ctx, float cx, float cy)
+	{
+		var order = new System.Collections.Generic.List<EntityInfo>();
+		if (brain is EntityInfo b && BrainPattern.Hittable(b))
+			order.Add(b);
+		order.AddRange(BrainPattern.ShotOrder(creepers.Where(BrainPattern.Hittable), cx, cy));
+		AimSolution? first = null;
+		int firstId = 0, tries = 0;
+		string firstWhat = "";
+		foreach (EntityInfo e in order) {
+			if (!FightSkill.ClearShot(ctx, cx, cy, e.CenterX, e.CenterY))
+				continue;
+			string what = e.Type == BossType ? "the brain" : BrainPattern.ComingAt(e, cx, cy) >= 0 ? "a creeper dashing at us" : "a creeper";
+			float tolerance = Math.Max(12f, Math.Min(e.Width, e.Height) * 0.5f - 8f);
+			AimSolution s = Ballistics.Lead(cx, cy, e.CenterX, e.CenterY, e.VX, e.VY, ctx.Combat.Projectile, tolerance);
+			if (s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile)) {
+				TargetId = e.Id;
+				brainTargetWhat = what;
+				return (s, true);
+			}
+			if (first == null) {
+				first = s;
+				firstId = e.Id;
+				firstWhat = what;
+			}
+			if (++tries >= WormShotTries)
+				break;
+		}
+		if (first != null) {
+			TargetId = firstId;
+			brainTargetWhat = firstWhat;
+		}
+		return (first, false);
+	}
+
+	/// <summary>
+	/// A line on the Brain's state every <see cref="WormLogTicks"/>: its Creepers in view and their life, the Brain's life and phase;
+	/// and one when its Creepers are all dead and it can be hurt.
+	/// </summary>
+	private void LogBrain(BotContext ctx)
+	{
+		maxCreepersSeen = Math.Max(maxCreepersSeen, creepers.Count);
+		if (brain is EntityInfo b && BrainPattern.Hittable(b) && !brainExposedLogged) {
+			brainExposedLogged = true;
+			ctx.Log.Info($"Boss fight: the brain's creepers are dead: it can be hurt now, life {b.Life}/{b.LifeMax}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax}, "
+				+ $"{ctx.Combat.AmmoCount} arrows, {Dodges} dodges, after {fightTicks} ticks");
+		}
+		if (ctx.Tick - lastWormLog < WormLogTicks)
+			return;
+		lastWormLog = ctx.Tick;
+		int dashing = creepers.Count(BrainPattern.Dashing);
+		ctx.Log.Info($"Boss fight: {creepers.Count} creepers in view ({creepers.Sum(c => c.Life)} life, {dashing} dashing), brain "
+			+ (brain is EntityInfo br ? $"{br.Life}/{br.LifeMax} {(BrainPattern.Hittable(br) ? "open to arrows" : "hiding")} at {br.FeetTile}" : "out of view")
+			+ $", us {ctx.Combat.Life}/{ctx.Combat.LifeMax} at {ctx.Node}, {ctx.Combat.AmmoCount} arrows, {Dodges} dodges, {Heals} heals");
+	}
+
+	/// <summary>
+	/// The Brain's kiting. While it hides behind its Creepers it drifts at 1 px/tick, a third of a run: keep its swarm off (run away
+	/// from it while its centre is within <see cref="BrainPattern.SwarmKeepPx"/> across); once they are dead it chases at 8 (run from it
+	/// within <see cref="BrainPattern.ChaseKeepPx"/>; it turns slowly, so it overshoots a body that turned). When the way from it is
+	/// out of room, run past it until it is behind (as the worm's kiting, <see cref="KiteWorm"/>); with it farther off, to and fro
+	/// between the soft ends, which makes the Creepers' dashes, aimed at where we were, miss.
+	/// </summary>
+	private void KiteBrain(BotContext ctx, float minX, float maxX)
+	{
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p);
+		int offset = ctx.Node.X - centre.Value.X;
+		var (soft, hard) = HalfWidths();
+		bool Room(int dir) => dir > 0 ? offset < hard && maxX - ctx.Body.X >= 16f : offset > -hard && ctx.Body.X - minX >= 16f;
+		float keep = brain is EntityInfo k && BrainPattern.Hittable(k) ? BrainPattern.ChaseKeepPx : BrainPattern.SwarmKeepPx;
+		if (brain is EntityInfo b && Math.Abs(b.CenterX - cx) < keep) {
+			int ahead = Math.Sign(b.CenterX - cx);
+			int away = ahead != 0 ? -ahead : runDir;
+			if (pastHeadDir != 0 && ahead == pastHeadDir && Room(pastHeadDir))
+				runDir = pastHeadDir;
+			else if (Room(away)) {
+				runDir = away;
+				pastHeadDir = 0;
+			}
+			else {
+				runDir = -away;
+				pastHeadDir = runDir;
+				if (ctx.Tick - lastForcedTurnLog > 60) {
+					lastForcedTurnLog = ctx.Tick;
+					ctx.Log.Info($"Boss fight: no room to run from the brain at {ctx.Node}: running past it");
+				}
+			}
+		}
+		else {
+			pastHeadDir = 0;
+			bool outward = runDir > 0 ? offset >= soft : offset <= -soft;
+			if (outward || !Room(runDir))
+				runDir = -runDir;
+		}
+		ctx.Output.Horizontal = runDir;
+		Hop(ctx);
 	}
 
 	// ---------- the Wall of Flesh (WallOfFleshPattern, docs M12_SPEC.md section 6) ----------

@@ -574,6 +574,9 @@ public sealed class BotBrain
 			// The Wall of Flesh's (Milestone 12, G10): the Guide Voodoo Doll (worth 1000 copper, cheap enough to be the stack trashed) and
 			// the Shadow Scales trashed in measured run M10u (log lines 7864-7876), the Shadow armour's.
 			ids.GuideVoodooDoll, ids.ShadowScale };
+		// In a Crimson world its twins: the Bloody Spine's makings, the Eye's crimtane, and the Creepers' Tissue Samples.
+		if (ids.Crimson)
+			kept.UnionWith(new[] { ids.BloodySpine, ids.ViciousPowder, ids.ViciousMushroom, ids.Vertebrae, ids.CrimtaneOre, ids.CrimtaneBar, ids.TissueSample });
 		// Whatever a stage of the plan wants (the planner's pass, BotContext.NeededItems).
 		kept.UnionWith(ctx.NeededItems);
 		kept.Remove(0);
@@ -583,7 +586,7 @@ public sealed class BotBrain
 		// The Bottle in the list for its glass (two recipes deep: glass, sand), as a station the summon's powder is made at.
 		int[] gear = { ids.IronTierPickaxe, ids.IronTierBroadsword, ids.IronTierHelmet, ids.IronTierChainmail, ids.IronTierGreaves, ids.IronTierBow,
 			ids.SilverTierPickaxe, ids.SilverTierBroadsword, ids.SilverTierHelmet, ids.SilverTierChainmail, ids.SilverTierGreaves, ids.SuspiciousEye,
-			ids.HeartLantern, ids.Campfire, ids.WoodenArrow, ids.WormFood, ids.DemonBow, ids.UnholyArrow, ids.Bottle };
+			ids.HeartLantern, ids.Campfire, ids.WoodenArrow, ids.WorldEvilSummon, ids.EvilBow, ids.UnholyArrow, ids.Bottle };
 		var frontier = new List<int>(gear.Where(g => g > 0));
 		for (int depth = 0; depth < 2; depth++) {
 			var next = new List<int>();

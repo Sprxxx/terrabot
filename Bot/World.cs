@@ -298,11 +298,64 @@ public sealed class GameIds
 	public int Bottle { get; init; }
 	public int BottleTile { get; init; }
 	/// <summary>
-	/// What each tile type counts for the game's Corruption zone (vanilla TileID.Sets.CorruptBiome, summed by
-	/// TileLoader.cs:1642 over the scene scan: corrupt grass, ebonstone, ebonsand... 1 each, a sunflower -10). Worm Food
-	/// works only while that sum is 300 or more (Player.ZoneCorrupt, SceneMetrics.CorruptionTileThreshold).
+	/// What each tile type counts for the game's zone of this world's evil. In a Corruption world the Corruption's (vanilla
+	/// TileID.Sets.CorruptBiome, summed by TileLoader.cs:1642 over the scene scan: corrupt grass, ebonstone, ebonsand... 1 each, a
+	/// sunflower -10): Worm Food works only while that sum is 300 or more (Player.ZoneCorrupt, SceneMetrics.CorruptionTileThreshold).
+	/// In a Crimson world (<see cref="Crimson"/>) the Crimson's (TileID.Sets.CrimsonBiome, TileID.cs:653, TileLoader.cs:1643: crimson
+	/// grass, crimstone, crimsand, crimson plants and thorns... 1 each, a sunflower -10): the Bloody Spine works only while that sum
+	/// is 300 or more (Player.ZoneCrimson, SceneMetrics.CrimsonTileThreshold 300, SceneMetrics.cs:18; Player.cs:43549-43552).
 	/// </summary>
 	public IReadOnlyDictionary<int, int> CorruptionWeights { get; init; } = new Dictionary<int, int>();
+	/// <summary>
+	/// The world's evil is the Crimson (WorldGen.crimson), not the Corruption: its boss is the Brain of Cthulhu, summoned with a
+	/// Bloody Spine, and the evil boss plan takes the Crimson's path (ProgressionPlanner's crimson stages) with the ids below.
+	/// The Corruption's ids above stay what they are; its boss's path is not taken.
+	/// </summary>
+	public bool Crimson { get; init; }
+	/// <summary>
+	/// The Crimson's boss (Milestone 10 in a Crimson world): the Brain of Cthulhu (NPC 266) and its 20 Creepers (267; NPC.cs:7590-7622,
+	/// 33103-33113, 54162-54169), summoned with a Bloody Spine (1331: 30 Vicious Powder + 15 Vertebrae at a Demon or Crimson Altar,
+	/// tile 26, Recipe.cs:14414-14420; usable only in the Crimson zone, Player.cs:43549-43552). 0 = none.
+	/// </summary>
+	public int BrainOfCthulhu { get; init; }
+	public int Creeper { get; init; }
+	public int BloodySpine { get; init; }
+	/// <summary>Vicious Powder (2886): 5 from 1 Vicious Mushroom at a placed Bottle (Recipe.cs:2512-2516), the vile powder's twin.</summary>
+	public int ViciousPowder { get; init; }
+	/// <summary>Vicious Mushroom (2887): a crimson plant (TileID.CrimsonPlants) of frame column 270 drops it (WorldGen.cs:59644-59648).</summary>
+	public int ViciousMushroom { get; init; }
+	/// <summary>
+	/// Vertebrae (1330): 1 in 3 from a Crimera, a Face Monster, a Blood Crawler or a Floaty Gross (ItemDropDatabase.cs:1111), the
+	/// Crimson's rotten chunk; with 5 wooden arrows also 5 Unholy Arrows (Recipe.cs:2283-2290).
+	/// </summary>
+	public int Vertebrae { get; init; }
+	/// <summary>
+	/// Crimson grass (TileID.CrimsonGrass), the ground vicious mushrooms grow on, and crimson thorns (TileID.CrimsonThorns), which
+	/// grow there in place of a plant 1 in 13 (WorldGen.cs:54344-54348). 0 = none.
+	/// </summary>
+	public int CrimsonGrass { get; init; }
+	public int CrimsonThorns { get; init; }
+	/// <summary>Crimtane Ore and Bar (880, 1257: 3 ore at a Furnace, Recipe.cs:10323), the Crimson's demonite; the Eye drops 30-90 ore in a Crimson world (ItemDropDatabase.cs:496).</summary>
+	public int CrimtaneOre { get; init; }
+	public int CrimtaneBar { get; init; }
+	/// <summary>The Tendon Bow (796: damage 19, useTime 30, Item.cs:13511-13527): 8 Crimtane Bars at an Anvil (Recipe.cs:10333), the Demon Bow's twin.</summary>
+	public int TendonBow { get; init; }
+	/// <summary>Tissue Samples (1329): the Creepers' drop, 2 in 3 for 2-5 each in Classic (ItemDropDatabase.cs:514), the shadow scale's twin.</summary>
+	public int TissueSample { get; init; }
+
+	/// <summary>This world's evil boss (NPC type): the Brain of Cthulhu in a Crimson world, else the Eater of Worlds' head.</summary>
+	public int WorldEvilBoss => Crimson ? BrainOfCthulhu : EvilBoss;
+	/// <summary>This world's evil boss's summon item: the Bloody Spine in a Crimson world, else Worm Food.</summary>
+	public int WorldEvilSummon => Crimson ? BloodySpine : WormFood;
+	/// <summary>This world's evil-ore bow: the Tendon Bow in a Crimson world, else the Demon Bow.</summary>
+	public int EvilBow => Crimson ? TendonBow : DemonBow;
+	/// <summary>The grass this world's evil mushrooms grow on, and the thorns that grow on it (crimson or corrupt).</summary>
+	public int EvilGrass => Crimson ? CrimsonGrass : CorruptGrass;
+	public int EvilThorns => Crimson ? CrimsonThorns : CorruptThorns;
+	/// <summary>The world's evil biome by name, for the log: "crimson" or "corruption".</summary>
+	public string EvilName => Crimson ? "crimson" : "corruption";
+	/// <summary>Its zone by name, as the game's ZoneCrimson or ZoneCorrupt are: "Crimson" or "Corruption".</summary>
+	public string EvilZoneName => Crimson ? "Crimson" : "Corruption";
 	/// <summary>
 	/// Accessories that hold the body at the water's surface (the Inner Tube): with one on, nobody sinks to a flooded floor
 	/// unless holding Down, and the paths walk flooded floors.

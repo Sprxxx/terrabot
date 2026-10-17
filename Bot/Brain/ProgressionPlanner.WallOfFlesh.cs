@@ -139,7 +139,7 @@ public sealed partial class ProgressionPlanner
 	private static IEnumerable<Need> WallOfFleshStages(GameIds ids)
 	{
 		int boss = ids.WallOfFlesh;
-		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.DemonBow), 1, "bow"));
+		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.EvilBow), 1, "bow"));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, WofArrows, "unholy arrows")));
 		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofArrows, "arrows") { RefillBelow = WofArrows * 4 / 5 });
 		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));

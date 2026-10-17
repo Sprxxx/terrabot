@@ -7,11 +7,14 @@ namespace TerraBot.Bot;
 
 /// <summary>
 /// An NPC as the bot perceives it (world pixels, top-left position like Entity.position). <see cref="NoTileCollide"/>: vanilla
-/// NPC.noTileCollide, it moves through blocks (worms, ghosts).
+/// NPC.noTileCollide, it moves through blocks (worms, ghosts). <see cref="DontTakeDamage"/>: vanilla NPC.dontTakeDamage, nothing
+/// hurts it (the Brain of Cthulhu while a Creeper lives, NPC.cs:7592 and 33157); such an NPC is perceived only as a boss's part, for
+/// its contact damage.
 /// </summary>
 public readonly record struct EntityInfo(
 	int Id, int Type, string Name, float X, float Y, int Width, int Height, float VX, float VY,
-	int Life, int LifeMax, int Damage, int AiStyle = 0, float Ai0 = 0, float Ai1 = 0, float Ai2 = 0, float Ai3 = 0, bool NoTileCollide = false)
+	int Life, int LifeMax, int Damage, int AiStyle = 0, float Ai0 = 0, float Ai1 = 0, float Ai2 = 0, float Ai3 = 0, bool NoTileCollide = false,
+	bool DontTakeDamage = false)
 {
 	public float CenterX => X + Width * 0.5f;
 	public float CenterY => Y + Height * 0.5f;

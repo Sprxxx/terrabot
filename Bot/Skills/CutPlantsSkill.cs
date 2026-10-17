@@ -11,7 +11,9 @@ namespace TerraBot.Bot.Skills;
 /// corrupt thorns rooted on the grass, is walked to (nearest first) and cut with one swing of the pickaxe, so its grass top
 /// is free and grows again, some of it mushrooms; as a player keeps a patch of grass cut. Succeeds when none is left to cut
 /// (or as soon as <see cref="Found"/> holds: a mushroom on the map); fails after <see cref="MineSkill.MaxUnreachableInARow"/>
-/// plants in a row could not be got to.
+/// plants in a row could not be got to. In a Crimson world the same on crimson grass (<see cref="GameIds.EvilGrass"/>): crimson
+/// plants that are not vicious mushrooms, and crimson thorns (<see cref="GameIds.EvilThorns"/>), as the same plant growth puts them
+/// there (WorldGen.cs:54335-54380: the plant of the grass under it, thorns 1 in 13, a mushroom 1 in 50 or 1 in 40 for both evils).
 /// <para>
 /// Why the plants, not the stretch: vanilla grows a plant only on a free grass top, and a grass top with a plant or thorns
 /// on it grows nothing until they are cut (WorldGen.UpdateWorld_GrassGrowth, WorldGen.cs:68890: "!Main.tile[i, minJ].active()").
@@ -224,7 +226,7 @@ public sealed class CutPlantsSkill : ISkill
 		int type = ctx.World.TileTypeAt(c.X, c.Y);
 		if (type == plantTile && plantTile >= 0)
 			return keepFrameX < 0 || ctx.World.TileFrameX(c.X, c.Y) != keepFrameX;
-		return type == ctx.Ids.CorruptThorns && ctx.Ids.CorruptThorns > 0 && ctx.World.TileTypeAt(c.X, c.Y + 1) == ctx.Ids.CorruptGrass;
+		return type == ctx.Ids.EvilThorns && ctx.Ids.EvilThorns > 0 && ctx.World.TileTypeAt(c.X, c.Y + 1) == ctx.Ids.EvilGrass;
 	}
 
 	/// <summary>The cells to cut the map shows within <paramref name="radius"/> of <paramref name="around"/>, nearest first.</summary>
@@ -233,8 +235,8 @@ public sealed class CutPlantsSkill : ISkill
 		var all = new List<TilePos>();
 		if (plantTile >= 0)
 			all.AddRange(ctx.World.FindTiles(plantTile, around, radius));
-		if (ctx.Ids.CorruptThorns > 0)
-			all.AddRange(ctx.World.FindTiles(ctx.Ids.CorruptThorns, around, radius));
+		if (ctx.Ids.EvilThorns > 0)
+			all.AddRange(ctx.World.FindTiles(ctx.Ids.EvilThorns, around, radius));
 		all.Sort((a, b) => a.ChebyshevTo(around).CompareTo(b.ChebyshevTo(around)));
 		foreach (TilePos c in all)
 			if (Cuttable(ctx, c, plantTile, keepFrameX))
@@ -274,9 +276,9 @@ public sealed class CutPlantsSkill : ISkill
 	public static (int ToCut, int Mushrooms, int Free) Survey(BotContext ctx, TilePos around, int plantTile, int keepFrameX)
 	{
 		int toCut = 0, mushrooms = 0, free = 0;
-		if (ctx.Ids.CorruptGrass <= 0)
+		if (ctx.Ids.EvilGrass <= 0)
 			return (0, 0, 0);
-		foreach (TilePos g in ctx.World.FindTiles(ctx.Ids.CorruptGrass, around, Radius)) {
+		foreach (TilePos g in ctx.World.FindTiles(ctx.Ids.EvilGrass, around, Radius)) {
 			var top = new TilePos(g.X, g.Y - 1);
 			int type = ctx.World.TileTypeAt(top.X, top.Y);
 			if (type == -1) {

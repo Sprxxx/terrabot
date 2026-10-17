@@ -56,8 +56,17 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int GuideNpc = 22, GuideVoodooDoll = 267, WofNpc = 113, WofEyeNpc = 114, HungryNpc = 115, HungryIINpc = 116;
 	public const int LeechHeadNpc = 117, LeechBodyNpc = 118, LeechTailNpc = 119, VoodooDemonNpc = 66;
 	public const int TileHellforge = 77, TileHellstone = 58, TileAsh = 57, Hellstone = 174, Obsidian = 173, AshBlock = 172, ShadowScale = 86;
+	// Milestone 10 in a Crimson world (ItemID, TileID and NPCID checked against the decompiled tML 2026.08: ItemID.cs 3444, 3612, 4366,
+	// 4510-4514, 7624-7626; TileID.cs 1133-1143, 1439; NPCID.cs 12111-12113).
+	public const int BloodySpine = 1331, ViciousPowder = 2886, ViciousMushroom = 2887, Vertebrae = 1330, CrimtaneOre = 880, CrimtaneBar = 1257;
+	public const int TendonBow = 796, TissueSample = 1329, BrainNpc = 266, CreeperNpc = 267, ViciousMushroomFrame = 270;
+	public const int TileCrimsonGrass = 199, TileCrimsonPlants = 201, TileCrimstone = 203, TileCrimtane = 204, TileCrimsonThorns = 352;
 
-	public static readonly GameIds Ids = new() {
+	public static readonly GameIds Ids = NewIds(crimson: false);
+	/// <summary>The same in a Crimson world (<see cref="UseCrimson"/>): the Crimson's evil tiles and zone weights, and GameIds.Crimson.</summary>
+	public static readonly GameIds CrimsonIds = NewIds(crimson: true);
+
+	private static GameIds NewIds(bool crimson) => new() {
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
 		Gel = Gel, Torch = Torch, FurnaceTile = TileFurnace, AnvilTile = TileAnvil, IronTierPickaxe = IronPickaxe,
 		IronTierBroadsword = IronBroadsword, IronTierHelmet = IronHelmet, IronTierChainmail = IronChainmail, IronTierGreaves = IronGreaves,
@@ -68,8 +77,12 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
 		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion, FloatingAccessories = new[] { InnerTube }, PickupBlockers = new[] { EncumberingStone }, Coins = new[] { CopperCoin },
 		DesertTiles = new[] { TileSand }, // only cells a test marks with it (TileTypes) count
-		EvilTiles = new[] { TileCorruptGrass, TileEbonstone }, // likewise
-		CorruptionWeights = new Dictionary<int, int> { [TileCorruptGrass] = 1, [TileCorruptPlants] = 1, [TileEbonstone] = 1 },
+		EvilTiles = crimson ? new[] { TileCrimsonGrass, TileCrimstone } : new[] { TileCorruptGrass, TileEbonstone }, // likewise
+		CorruptionWeights = crimson ? new Dictionary<int, int> { [TileCrimsonGrass] = 1, [TileCrimsonPlants] = 1, [TileCrimstone] = 1 }
+			: new Dictionary<int, int> { [TileCorruptGrass] = 1, [TileCorruptPlants] = 1, [TileEbonstone] = 1 },
+		Crimson = crimson, BrainOfCthulhu = BrainNpc, Creeper = CreeperNpc, BloodySpine = BloodySpine, ViciousPowder = ViciousPowder,
+		ViciousMushroom = ViciousMushroom, Vertebrae = Vertebrae, CrimsonGrass = TileCrimsonGrass, CrimsonThorns = TileCrimsonThorns,
+		CrimtaneOre = CrimtaneOre, CrimtaneBar = CrimtaneBar, TendonBow = TendonBow, TissueSample = TissueSample,
 		EvilBoss = EowHead, EvilBossBody = EowBody, EvilBossTail = EowTail, WormFood = WormFood, VilePowder = VilePowder,
 		VileMushroom = VileMushroom, CorruptGrass = TileCorruptGrass, CorruptThorns = TileCorruptThorns, RottenChunk = RottenChunk, WormTooth = WormTooth, UnholyArrow = UnholyArrow,
 		DemoniteOre = DemoniteOre, DemoniteBar = DemoniteBar, DemonBow = DemonBow, Bottle = Bottle, BottleTile = TileBottles,
@@ -226,6 +239,27 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = Glass, Ingredients = new[] { new Ingredient(2, SandBlock) }, Stations = new[] { TileFurnace } });
 	}
 
+	/// <summary>A Crimson world (<see cref="UseCrimson"/>): its ids (<see cref="CrimsonIds"/>), plants and recipes.</summary>
+	public bool Crimson { get; private set; }
+
+	/// <summary>
+	/// Makes this a Crimson world, before <see cref="CreateContext"/>: its ids, its plants (<see cref="AddPlant"/>: crimson plants,
+	/// vicious mushrooms at frame 270; <see cref="AddThorn"/>: crimson thorns), and the Crimson's recipes, vanilla Recipe.cs: crimtane
+	/// bar 3 ore at a furnace (10323), Tendon Bow 8 bars at an anvil (10333), the Bloody Spine 30 vicious powder and 15 vertebrae at a
+	/// demon altar (14414), vicious powder 5 from a vicious mushroom at a placed bottle (2512), unholy arrows 5 from 5 wooden arrows
+	/// and a vertebra at an anvil (2283).
+	/// </summary>
+	public FakeGame UseCrimson()
+	{
+		Crimson = true;
+		Add(new RecipeInfo { Result = CrimtaneBar, Ingredients = new[] { new Ingredient(3, CrimtaneOre) }, Stations = new[] { TileFurnace } });
+		Add(new RecipeInfo { Result = TendonBow, Ingredients = new[] { new Ingredient(8, CrimtaneBar) }, Stations = new[] { TileAnvil } });
+		Add(new RecipeInfo { Result = BloodySpine, Ingredients = new[] { new Ingredient(30, ViciousPowder), new Ingredient(15, Vertebrae) }, Stations = new[] { TileDemonAltar } });
+		Add(new RecipeInfo { Result = ViciousPowder, ResultStack = 5, Ingredients = new[] { new Ingredient(1, ViciousMushroom) }, Stations = new[] { TileBottles } });
+		Add(new RecipeInfo { Result = UnholyArrow, ResultStack = 5, Ingredients = new[] { new Ingredient(5, WoodenArrow), new Ingredient(1, Vertebrae) }, Stations = new[] { TileAnvil } });
+		return this;
+	}
+
 	public void Add(RecipeInfo r)
 	{
 		if (!recipes.TryGetValue(r.Result, out List<RecipeInfo> list))
@@ -237,7 +271,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	{
 		var ctx = new BotContext {
 			Grid = Grid, Log = new TestLog(output), World = this, Inventory = this, Crafter = this, Knowledge = this,
-			Ids = Ids, AxePower = 35, Blocks = Blocks, Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword" },
+			Ids = Crimson ? CrimsonIds : Ids, AxePower = 35, Blocks = Blocks, Combat = new CombatInfo { WeaponReach = 30f, WeaponName = "test sword" },
 			Journey = Journey,
 		};
 		Refresh(ctx);
@@ -264,9 +298,12 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		SilverOre => new ItemSource(SourceKind.Mine, TileSilver),
 		LifeCrystal => new ItemSource(SourceKind.Mine, TileHeart),
 		Lens => new ItemSource(SourceKind.Hunt, NpcAiStyle: DemonEyeAi),
-		RottenChunk => new ItemSource(SourceKind.Hunt, NpcAiStyle: FlyingAi, EvilBiome: true),
-		WormTooth => new ItemSource(SourceKind.Hunt, NpcAiStyle: WormAi, EvilBiome: true),
-		VileMushroom => new ItemSource(SourceKind.Mine, TileCorruptPlants, FrameX: VileMushroomFrame, EvilBiome: true),
+		RottenChunk when !Crimson => new ItemSource(SourceKind.Hunt, NpcAiStyle: FlyingAi, EvilBiome: true),
+		WormTooth when !Crimson => new ItemSource(SourceKind.Hunt, NpcAiStyle: WormAi, EvilBiome: true),
+		VileMushroom when !Crimson => new ItemSource(SourceKind.Mine, TileCorruptPlants, FrameX: VileMushroomFrame, EvilBiome: true),
+		Vertebrae when Crimson => new ItemSource(SourceKind.Hunt, NpcAiStyle: FlyingAi, EvilBiome: true),
+		ViciousMushroom when Crimson => new ItemSource(SourceKind.Mine, TileCrimsonPlants, FrameX: ViciousMushroomFrame, EvilBiome: true),
+		CrimtaneOre => new ItemSource(SourceKind.Mine, TileCrimtane),
 		DemoniteOre => new ItemSource(SourceKind.Mine, TileDemonite),
 		SandBlock => new ItemSource(SourceKind.Mine, TileSand),
 		_ => ItemSource.None, // lead ore: not in this world
@@ -400,21 +437,22 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 
 	/// <summary>Life crystals (2×2 heart objects) are the only frame-important targets worth mining.</summary>
-	public bool CanMineTarget(int x, int y) => TileTypeAt(x, y) == TileHeart || TileTypeAt(x, y) == TileCorruptPlants && TileFrameX(x, y) == VileMushroomFrame;
+	public bool CanMineTarget(int x, int y) => TileTypeAt(x, y) == TileHeart || TileTypeAt(x, y) == TileCorruptPlants && TileFrameX(x, y) == VileMushroomFrame
+		|| TileTypeAt(x, y) == TileCrimsonPlants && TileFrameX(x, y) == ViciousMushroomFrame;
 
 	/// <summary>A corrupt plant (a cut tile, open to walk through) at the cell, a vile mushroom if <paramref name="mushroom"/>.</summary>
 	public void AddPlant(int x, int y, bool mushroom)
 	{
 		Grid.Set(x, y, CellKind.Empty);
-		Furniture[new TilePos(x, y)] = TileCorruptPlants;
-		FrameXs[new TilePos(x, y)] = mushroom ? VileMushroomFrame : 0;
+		Furniture[new TilePos(x, y)] = Crimson ? TileCrimsonPlants : TileCorruptPlants;
+		FrameXs[new TilePos(x, y)] = mushroom ? (Crimson ? ViciousMushroomFrame : VileMushroomFrame) : 0;
 	}
 
 	/// <summary>Corrupt thorns at the cell (hurt on touch, not passable: CellKind.Hazard), cut by one hit of a pickaxe.</summary>
 	public void AddThorn(int x, int y)
 	{
 		Grid.Set(x, y, CellKind.Hazard);
-		Furniture[new TilePos(x, y)] = TileCorruptThorns;
+		Furniture[new TilePos(x, y)] = Crimson ? TileCrimsonThorns : TileCorruptThorns;
 	}
 	/// <summary>Town NPC types alive somewhere in the world besides those in <see cref="TownNpcs"/> (the Guide at home, off screen).</summary>
 	public readonly HashSet<int> AliveTownNpcs = new();
@@ -717,13 +755,15 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		}
 		// A pickaxe on a corrupt plant or corrupt thorns: one hit (tileNoFail, Main.cs:8037, 8066); a mushroom drops a vile mushroom.
 		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int pt)
-			&& (pt == TileCorruptPlants || pt == TileCorruptThorns) && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
+			&& (pt is TileCorruptPlants or TileCorruptThorns or TileCrimsonPlants or TileCrimsonThorns) && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
 			var cell = new TilePos(o.AimX, o.AimY);
 			Furniture.Remove(cell);
-			if (pt == TileCorruptThorns)
+			if (pt is TileCorruptThorns or TileCrimsonThorns)
 				Grid.Set(cell.X, cell.Y, CellKind.Empty);
-			if (FrameXs.Remove(cell, out int frame) && frame == VileMushroomFrame)
+			if (FrameXs.Remove(cell, out int frame) && frame == VileMushroomFrame && pt == TileCorruptPlants)
 				Drops.Add(new DropInfo(nextDropId++, VileMushroom, "Vile Mushroom", 1, cell.X * 16f + 4, FallRow(cell.X, cell.Y) * 16f + 4, 8, 8));
+			else if (frame == ViciousMushroomFrame && pt == TileCrimsonPlants)
+				Drops.Add(new DropInfo(nextDropId++, ViciousMushroom, "Vicious Mushroom", 1, cell.X * 16f + 4, FallRow(cell.X, cell.Y) * 16f + 4, 8, 8));
 		}
 		// A pickaxe on a non-solid tile a test lets it take (a pot, a chain in the hellbridge's way): one hit removes it.
 		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int any)
