@@ -303,7 +303,7 @@ public sealed class TerraBotPlayer : ModPlayer
 					&& (Player.position.X + Player.width) / 16f + Player.tileRangeX + held.tileBoost - 1f + Player.blockRange >= pa.X
 					&& Player.position.Y / 16f - Player.tileRangeY - held.tileBoost - Player.blockRange <= pa.Y
 					&& (Player.position.Y + Player.height) / 16f + Player.tileRangeY + held.tileBoost - 2f + Player.blockRange >= pa.Y;
-				string Near(int x, int y) { Tile n = Main.tile[x, y]; return n.HasTile ? $"t{n.TileType}" : n.WallType > 0 ? $"w{n.WallType}" : "-"; }
+				string Near(int x, int y) { Tile n = Main.tile[x, y]; return n.HasTile ? $"t{n.TileType}" : n.WallType > WallID.None ? $"w{n.WallType}" : "-"; }
 				Context.Log.Info($"Block swing: holding {held.Name} (slot {Player.selectedItem + 1}, createTile {held.createTile}, stack {held.stack}), anim {Player.itemAnimation}, "
 					+ $"itemTime {Player.itemTime}, use {Player.controlUseItem}, cursor {(Main.mouseItem.IsAir ? "empty" : Main.mouseItem.Name)}, target {pa}: tile {(t.HasTile ? t.TileType : -1)} "
 					+ $"liquid {t.LiquidAmount}/{t.LiquidType}, wall {t.WallType}, around L {Near(pa.X - 1, pa.Y)} R {Near(pa.X + 1, pa.Y)} U {Near(pa.X, pa.Y - 1)} D {Near(pa.X, pa.Y + 1)}, "

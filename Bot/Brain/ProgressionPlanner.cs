@@ -1886,7 +1886,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	{
 		int doorTile = ctx.Knowledge?.TilePlacedBy(ctx.Ids.Door) ?? -1;
 		PlanItem door = bp.Items.FirstOrDefault(it => it.ItemType == ctx.Ids.Door);
-		if (doorTile < 0 || door == null || ctx.World == null)
+		if (doorTile < 0 || door.ItemType != ctx.Ids.Door || ctx.World == null)
 			return null;
 		var tried = new HashSet<TilePos>();
 		foreach (TilePos d in ctx.World.FindTiles(doorTile, anchor, SiteFinder.SearchRadius))

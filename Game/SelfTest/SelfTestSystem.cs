@@ -242,7 +242,7 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (t.LiquidAmount > 0)
 					c = '~';
-				else if (t.WallType > 0)
+				else if (t.WallType > WallID.None)
 					c = '|';
 				if (x == sx && y == sy)
 					c = 'S';
