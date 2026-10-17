@@ -497,8 +497,14 @@ public sealed partial class ProgressionPlanner
 			return null;
 		if (Scheduler == Schedulers.Errands && Plan != Plans.Hellbridge && !ErrandAsking)
 			return ProposeWallOfFlesh(ctx, bridgeKnown ? Errands.WallOfFleshErrand.BridgePhase : Errands.WallOfFleshErrand.DescendPhase);
-		if (!bridgeKnown)
-			return ResolveUnderworld(ctx);
+		if (!bridgeKnown) {
+			// Down there already with the planner's memory fresh (a checkpoint resumed: world_wof E11, 2026-10-17), ResolveUnderworld
+			// learns where the bridge goes and has nothing to do; the bridge itself is still to build, below. (Before: the need read as
+			// met, the errand went to its fight phase at the start, and the fight's deck was the whole span, not the part standing.)
+			ISkill down = ResolveUnderworld(ctx);
+			if (down != null || !bridgeKnown)
+				return down;
+		}
 		ctx.DepthErrand = true;
 		var (toEnd, backEnd) = BridgeEnds(ctx);
 		if (toEnd == bridgeTo && backEnd == bridgeBack) {

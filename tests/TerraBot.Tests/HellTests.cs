@@ -503,6 +503,31 @@ public class HellTests
 		Assert.True(HellbridgeSkill.Built(g.Grid, BridgeRow, 58));
 	}
 
+	/// <summary>
+	/// world_wof E11 (2026-10-17): "could not mine (3967,1037) (3 tries)", tile 634, an ash tree on a knoll in the bridge's way at 94 %.
+	/// The game keeps the block under a trunk (WorldGen.CanKillTile), so the bridge goes for the tree; a pickaxe does nothing to it.
+	/// </summary>
+	[Fact]
+	public void TheHellbridge_ChopsAnAshTreeOnAKnollInItsWay_WithTheAxe()
+	{
+		var (g, ctx) = OnTheTower();
+		const int knoll = 58;
+		for (int y = BridgeRow - 3; y <= BridgeRow - 1; y++)
+			g.Grid.Set(knoll, y, CellKind.Solid); // three rows of ash in the body's way
+		var tree = new TilePos(knoll, BridgeRow - 4); // its base on the knoll's top, the jump's spare row
+		g.Trees[tree] = 4;
+		g.Blocks.KeptByTheGame = (x, y) => g.Trees.ContainsKey(new TilePos(x, y - 1));
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		var log = (TestLog)ctx.Log;
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, bridge, 20000);
+		output.WriteLine($"{s}: {bridge.Describe()} at {g.Sim.Node}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Empty(g.Trees);
+		Assert.DoesNotContain(log.Lines, l => l.Contains("did nothing in"));
+		for (int x = TowerTo; x <= 70; x++)
+			Assert.True(HellbridgeSkill.Built(g.Grid, BridgeRow, x), $"column {x}");
+	}
+
 	/// <summary>A ruined house's Shadow Chest (locked, kept by the game) in the deck's row, on its floor: passed over, not built, not a stop.</summary>
 	[Fact]
 	public void TheHellbridge_PassesOverALockedChestInItsDeck_StandingInItsDip()

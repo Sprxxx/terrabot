@@ -121,6 +121,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly TestBlockActions Blocks;
 	public readonly SimWorld Sim;
 	public readonly Dictionary<TilePos, int> Trees = new(); // base -> height
+	/// <summary>The tile type a trunk cell reads as (vanilla TileID.Trees).</summary>
+	public const int TileTree = 5;
 	/// <summary>The wood a tree drops (base -> item); Wood unless set.</summary>
 	public readonly Dictionary<TilePos, int> TreeWoods = new();
 	public readonly Dictionary<TilePos, int> TileTypes = new(); // solid cells that are not dirt
@@ -433,6 +435,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			return -1; // as the game: no tile outside the world
 		if (Furniture.TryGetValue(new TilePos(x, y), out int f))
 			return f;
+		if (IsTreeTrunk(x, y))
+			return TileTree;
 		if (!Grid.Get(x, y).IsSolid())
 			return -1;
 		return TileTypes.TryGetValue(new TilePos(x, y), out int t) ? t : TileDirt;
@@ -763,13 +767,20 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		if (PickaxeSwings && o.Tool == ToolRequest.Pickaxe && o.UseItem && swingTimer == 0)
 			swingTimer = PickaxeSwingTicks;
 		if (o.Tool == ToolRequest.Axe && o.UseItem && o.HasAim) {
+			// As the game: an axe at any trunk cell takes the tree from there up (at the base, the whole tree).
 			var aim = new TilePos(o.AimX, o.AimY);
-			if (Trees.TryGetValue(aim, out int height) && Math.Abs(Sim.Node.X + 1 - aim.X) <= 4) {
+			TilePos? baseOf = Trees.Keys.Cast<TilePos?>().FirstOrDefault(t => t.Value.X == aim.X && aim.Y <= t.Value.Y && aim.Y > t.Value.Y - Trees[t.Value]);
+			if (baseOf is TilePos tree && Math.Abs(Sim.Node.X + 1 - aim.X) <= 4) {
+				int height = Trees[tree];
 				chopTicks[aim] = chopTicks.GetValueOrDefault(aim) + 1;
 				if (chopTicks[aim] >= 30) {
-					int wood = TreeWood(aim.X, aim.Y);
-					Trees.Remove(aim);
-					for (int i = 0; i < height; i++)
+					int wood = TreeWood(tree.X, tree.Y);
+					int taken = height - (tree.Y - aim.Y);
+					if (aim == tree)
+						Trees.Remove(tree);
+					else
+						Trees[tree] = tree.Y - aim.Y;
+					for (int i = 0; i < taken; i++)
 						Drops.Add(new DropInfo(nextDropId++, wood, ItemName(wood), 1, (aim.X + (i % 5) - 2) * 16f + 4, aim.Y * 16f + 4, 8, 8));
 				}
 			}

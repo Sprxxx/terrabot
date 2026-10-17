@@ -216,6 +216,29 @@ public class ErrandTests
 		Assert.True(brain.Planner.UnderworldReachedOnce, brain.Describe());
 	}
 
+	/// <summary>
+	/// world_wof E11 (2026-10-17): resumed from a checkpoint in the Underworld, the planner's memory fresh, the errand read the bridge
+	/// need as met at once ("the hellbridge is built; the fight next") and went to its fight phase, so the fight's deck was the whole
+	/// planned span. Learning where the bridge goes is not building it.
+	/// </summary>
+	[Fact]
+	public void ResumedDownThere_WithThePlannersMemoryFresh_TheErrandStaysInItsBridgePhase_AndBuilds()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 40000, () => access.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill);
+		brain.Planner.Reset(ProgressionPlanner.Plans.WallOfFlesh); // the planner's memory gone, as after a checkpoint resumed
+		g.Refresh(ctx);
+		ISkill next = access.NextSkill(ctx, brain.Planner);
+		output.WriteLine($"{access.Status} -> {next?.Describe()}");
+		Assert.Equal(WallOfFleshErrand.BridgePhase, access.Phase);
+		Assert.IsType<HellbridgeSkill>(next);
+		Assert.DoesNotContain(log.Lines, l => l.Contains("the hellbridge is built; the fight next"));
+		Assert.Equal(0, access.PhaseFailures);
+	}
+
 	/// <summary>world_wof E10 (2026-10-17): a chest in the deck's cell stopped the bridge three times and blocked the errand. Looted, then mined.</summary>
 	[Fact]
 	public void AChestInTheBridgesWay_IsLooted_ThenMined_AndNoFailureIsCounted()

@@ -18,8 +18,11 @@ public sealed class TestBlockActions : IBlockActions
 	public TestBlockActions(ITileGrid grid) => this.grid = grid;
 
 	/// <summary>Out-of-bounds cells are unbreakable, like out-of-world tiles in the game.</summary>
+	/// <summary>A cell the game keeps whatever the pickaxe (vanilla WorldGen.CanKillTile: the block under a tree's trunk, a chest with items); a test's rule.</summary>
+	public System.Func<int, int, bool> KeptByTheGame { get; set; }
+
 	public float BreakTicks(int x, int y) =>
-		Unbreakable.Contains(new TilePos(x, y)) || (grid is ArrayTileGrid a && !a.InBounds(x, y))
+		Unbreakable.Contains(new TilePos(x, y)) || (grid is ArrayTileGrid a && !a.InBounds(x, y)) || KeptByTheGame?.Invoke(x, y) == true
 			? float.PositiveInfinity
 			: TicksPerBlock;
 

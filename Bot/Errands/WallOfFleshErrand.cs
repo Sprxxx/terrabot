@@ -334,6 +334,13 @@ public sealed class WallOfFleshErrand : Errand
 		}
 		switch (Phase) {
 			case BridgePhase:
+				if (planner is ProgressionPlanner pp && !pp.HellbridgeDone) {
+					// The need resolved to nothing with the bridge not done (E11, 2026-10-17: the planner's memory fresh from a checkpoint):
+					// not a bridge built; asked again next tick, and counted if it keeps happening.
+					PhaseFailures++;
+					LastFailure = $"the bridge need resolved to nothing though the bridge is not done ({planner.Status})";
+					return null;
+				}
 				Phase = FightPhase;
 				PhaseFailures = 0;
 				ctx.Log.Info($"Errand {Id}: the hellbridge is built; the fight next");

@@ -139,10 +139,18 @@ public sealed class HellbridgeSkill : ISkill
 	private static bool InTheWay(CellKind k) => k.IsSolid() || k.IsShaped() || k.IsPlatform() || (k & CellKind.Hazard) != 0;
 
 	/// <summary>The node standing at the end with the body's front column on it (the body is 2 wide: going west, the end is its left column).</summary>
-	/// <summary>Where to stand to work on the column past <paramref name="end"/>: on the deck, or in the dip of a column passed over (<see cref="Passable"/>).</summary>
+	/// <summary>
+	/// Columns kept between the body and the bridge's end while working: a hit's knockback (4.5 px a tick, vanilla Player.Hurt) at the
+	/// very end threw the bot off into the lava below (world_wof E11, 2026-10-17: two of three deaths, "Hurt 40 (projectile type 44)
+	/// ... at (3882,1041)" then "Fall: ... lava at (3887,1072), 31 rows down"). The reach (tileRangeX 5) covers the next column from here.
+	/// </summary>
+	public const int EdgeMargin = 2;
+
+	/// <summary>Where to stand to work on the column past <paramref name="end"/>: on the deck, <see cref="EdgeMargin"/> columns short of it, or in the dip of a column passed over (<see cref="Passable"/>).</summary>
 	private TilePos StandAt(int end, BotContext ctx)
 	{
-		int x = (Dir > 0 ? end - 1 : end) - (standBack ? Dir : 0);
+		int x = (Dir > 0 ? end - 1 : end) - Dir * EdgeMargin - (standBack ? Dir : 0);
+		x = Dir > 0 ? Math.Max(x, FromX) : Math.Min(x, FromX); // never behind the start: the deck begins there
 		if (!Passable(ctx, ctx.Grid, Row, x))
 			return new TilePos(x, Row - 1);
 		// In a passed column's dip the body (20 px, over two columns) must be clear of the deck blocks either side: the run's left column.
@@ -385,7 +393,10 @@ public sealed class HellbridgeSkill : ISkill
 			else
 				ctx.Log.Info($"Hellbridge: {(place ? "placing" : "mining")} {cell} did nothing in {ActionTicks} ticks, try {f + 1}");
 		}
-		ctx.Output.Tool = place ? ToolRequest.Block : ToolRequest.Pickaxe;
+		// A tree in the way (an ash tree on a knoll: vanilla keeps the block under a trunk, WorldGen.CanKillTile, so the skill goes for
+		// the trunk first) is chopped, with the axe: a pickaxe does nothing to a tree. Seen in game (world_wof E11, 2026-10-17): "could
+		// not mine (3967,1037) (3 tries)", tile 634 (TreeAsh), twice in a row at 94 % of the bridge, and the errand blocked on it.
+		ctx.Output.Tool = place ? ToolRequest.Block : ctx.World?.IsTreeTrunk(cell.X, cell.Y) == true ? ToolRequest.Axe : ToolRequest.Pickaxe;
 		ctx.Output.Aim(cell.X, cell.Y);
 		ctx.Output.UseItem = true;
 		ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(StandAt(End, ctx).X, ctx.Physics), ctx.Physics);
