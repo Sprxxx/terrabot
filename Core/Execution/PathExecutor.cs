@@ -99,6 +99,12 @@ public sealed class PathExecutor
 	/// </summary>
 	public TilePos? CatchCell { get; private set; }
 
+	/// <summary>
+	/// The node the step in progress lands on, for a step whose fall is planned: a jump's or a drop's To, an ArrestedDrop's while
+	/// its catch can still be made (<see cref="CatchCell"/>). Null otherwise.
+	/// </summary>
+	public TilePos? PlannedLanding { get; private set; }
+
 	public PathExecutor(MoveContext ctx, IReadOnlyList<PathStep> path)
 	{
 		this.ctx = ctx;
@@ -182,6 +188,9 @@ public sealed class PathExecutor
 			MoveInput input;
 			bool advanced;
 			CatchCell = null;
+			// A jump or a drop lands on its To; an ArrestedDrop's catch only while it can still be made (CatchCell), after that the
+			// fall is no longer the step's.
+			PlannedLanding = step.Kind is MoveKind.Jump or MoveKind.Drop or MoveKind.DropThrough ? step.To : null;
 			bool ok = step.Kind switch {
 				MoveKind.Jump => TickJump(s, step, out input, out advanced),
 				MoveKind.Pillar => TickPillar(s, step, out input, out advanced),
@@ -590,6 +599,7 @@ public sealed class PathExecutor
 		bool past = s.Y + p.Height > cellTop;
 		if (!placed && !past) {
 			CatchCell = cell;
+			PlannedLanding = step.To;
 			BodyState next = s;
 			PlayerPhysics.ApplyControls(ref next, input, p);
 			next.X += next.VX;

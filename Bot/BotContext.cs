@@ -154,6 +154,12 @@ public sealed class BotContext
 	/// </summary>
 	public TilePos? PlannedCatch { get; set; }
 
+	/// <summary>
+	/// Where the walk's step in progress lands (a jump's, a drop's, an ArrestedDrop's node: PathExecutor.PlannedLanding), set and
+	/// cleared as <see cref="PlannedCatch"/>: a fall the step steers onto it within a safe fall is left to the step.
+	/// </summary>
+	public TilePos? PlannedLanding { get; set; }
+
 	/// <summary>Hostile NPCs near the player this tick (nearest first).</summary>
 	public System.Collections.Generic.IReadOnlyList<EntityInfo> Hostiles { get; set; } = Array.Empty<EntityInfo>();
 	/// <summary>

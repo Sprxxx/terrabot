@@ -619,6 +619,7 @@ public sealed class BotBrain
 		bool driving = Auto || Current != null;
 		ctx.NoteZone();
 		ctx.PlannedCatch = null;
+		ctx.PlannedLanding = null;
 		TickSkills(ctx);
 		if (driving || Current != null)
 			Falls.Tick(ctx);

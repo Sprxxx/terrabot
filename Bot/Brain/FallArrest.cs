@@ -71,7 +71,7 @@ public sealed class FallArrest
 			return;
 		}
 		Landing now = Predict(ctx.Grid, p, s, ctx.Output, fallStart);
-		if (now.Safe || PlannedCatchHolds(ctx, s)) {
+		if (now.Safe || PlannedFallHolds(ctx, s)) {
 			Stop();
 			return;
 		}
@@ -97,30 +97,31 @@ public sealed class FallArrest
 		Place(ctx, s, now);
 	}
 
-	private readonly OverlayGrid caught = new();
-
 	/// <summary>
-	/// A fall the walk planned (<see cref="BotContext.PlannedCatch"/>: an ArrestedDrop step placing its block on the way down)
-	/// that lands within a safe fall once that block is in: the step's to arrest, not the reflex's (which would put a block into
-	/// the first cell it could, rows above the plan's landing). Held keys as the step set them, or any other: the step steers
-	/// onto its block tick by tick (Arrive.Steer), which no one key held all the way down is (the keys this tick, pressing
-	/// towards the landing column, carry the body past it). Not once the step has let it go (placed, or passed): then the
-	/// reflex as for any fall.
+	/// A fall the walk planned: the step in the air lands at <see cref="BotContext.PlannedLanding"/> (a jump's or a drop's
+	/// landing node, an ArrestedDrop's, with its block <see cref="BotContext.PlannedCatch"/> taken as in), and the body steered
+	/// there as the step steers it (towards the node's column, tick by tick) comes down within a safe fall: the step's fall, not
+	/// the reflex's. The keys of this one tick held all the way down are not the step's: a jump presses towards its landing and
+	/// lets go to land on it, and an ArrestedDrop's catch is not placed yet. Seen in game (self-test chasm_arrested_descent,
+	/// 2026-10-17): "Jump (2052,167)->(2058,171)" from the arena wall's top down onto the chasm's lip, its first tick's right key
+	/// held on carrying it over the shaft ("nothing to land on within a safe fall: ground at (2065,213), 46 rows down"), and the
+	/// reflex took the keys ("steering straight"); the jump landed on the lip all the same. Not once the step has let the fall
+	/// go (an ArrestedDrop's catch passed): then the reflex as for any fall.
 	/// </summary>
-	private bool PlannedCatchHolds(BotContext ctx, in BodyState s)
+	private bool PlannedFallHolds(BotContext ctx, in BodyState s)
 	{
-		if (ctx.PlannedCatch is not TilePos c || ctx.Grid.Get(c.X, c.Y).CanStandOn())
+		if (ctx.PlannedLanding is not TilePos land)
 			return false;
-		caught.Reset(ctx.Grid);
-		caught.Set(c.X, c.Y, CellKind.Solid);
-		foreach (int key in new[] { ctx.Output.Horizontal, 0, -1, 1 }) {
-			MoveInput k = ctx.Output;
-			k.Horizontal = key;
-			if (Predict(caught, ctx.Physics, s, k, fallStart).Safe)
-				return true;
+		ITileGrid g = ctx.Grid;
+		if (ctx.PlannedCatch is TilePos c && !g.Get(c.X, c.Y).CanStandOn()) {
+			caught.Reset(g);
+			caught.Set(c.X, c.Y, CellKind.Solid);
+			g = caught;
 		}
-		return false;
+		return Predict(g, ctx.Physics, s, ctx.Output, fallStart, Body.CanonicalLeft(land.X, ctx.Physics)).Safe;
 	}
+
+	private readonly OverlayGrid caught = new();
 
 	/// <summary>The techniques, one at a time; a change of technique is logged.</summary>
 	private enum Kind { None, Steer, Place, Hand, NoBlock }
@@ -241,12 +242,17 @@ public sealed class FallArrest
 	/// columns ending it. Safe if that is no more than <see cref="PhysicsParams.SafeFallTiles"/> rows below
 	/// <paramref name="fallStart"/>, or the body reaches water or honey first.
 	/// </summary>
-	public static Landing Predict(ITileGrid g, PhysicsParams p, in BodyState from, in MoveInput input, int fallStart)
+	/// <param name="steerToX">Steer the hitbox's left edge to this x (px) each tick, as a step's executor does (Arrive.Steer),
+	/// instead of holding <paramref name="input"/>'s horizontal key.</param>
+	public static Landing Predict(ITileGrid g, PhysicsParams p, in BodyState from, in MoveInput input, int fallStart, float? steerToX = null)
 	{
 		const int T = Body.TileSize;
 		BodyState b = from;
+		MoveInput keys = input;
 		for (int t = 0; t < Horizon; t++) {
-			PlayerPhysics.ApplyControls(ref b, input, p);
+			if (steerToX is float sx)
+				keys.Horizontal = Arrive.Steer(b.X, b.VX, sx, p, 2f);
+			PlayerPhysics.ApplyControls(ref b, keys, p);
 			float nx = b.X + b.VX;
 			if (b.VX != 0f) {
 				int col = b.VX > 0f ? Floor((nx + p.Width - 0.001f) / T) : Floor(nx / T);
@@ -264,7 +270,7 @@ public sealed class FallArrest
 				for (int r = Floor((oldBottom - 0.001f) / T) + 1; r <= Floor((newBottom - 0.001f) / T); r++)
 					for (int c = c0; c <= c1; c++) {
 						CellKind k = g.Get(c, r);
-						if (k.IsSolid() || k.IsPlatform() && !input.Down && oldBottom <= r * T + 0.001f) { // Down falls through platforms
+						if (k.IsSolid() || k.IsPlatform() && !keys.Down && oldBottom <= r * T + 0.001f) { // Down falls through platforms
 							int rows = (int)((r * T - p.Height) / (float)T) - fallStart;
 							var at = new TilePos(c, r - 1);
 							return rows <= p.SafeFallTiles

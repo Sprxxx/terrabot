@@ -119,6 +119,7 @@ public class ShaftDescentTests
 			ctx.Tick = t;
 			ctx.Body = sim.State;
 			ctx.PlannedCatch = null;
+			ctx.PlannedLanding = null;
 			status = skill.Tick(ctx);
 			arrest.Tick(ctx);
 			acted |= arrest.Active;
@@ -171,6 +172,7 @@ public class ShaftDescentTests
 				input.UseItem = false;
 			ctx.Output = input;
 			ctx.PlannedCatch = exec.CatchCell;
+			ctx.PlannedLanding = exec.PlannedLanding;
 			arrest.Tick(ctx);
 			acted |= arrest.Active;
 			bool wasDown = sim.State.VY == 0f;
@@ -188,6 +190,79 @@ public class ShaftDescentTests
 		}
 		output.WriteLine($"at {sim.Node}, {exec.Status}: {exec.Reason}; placed {sim.Placed}, worst fall {worst}");
 		Assert.True(acted, "the reflex never acted");
+		Assert.True(worst <= PhysicsParams.Default.SafeFallTiles, $"fell {worst} rows");
+	}
+
+	/// <summary>
+	/// Self-test chasm_arrested_descent in game (2026-10-17): the plan was "Jump (2052,167)->(2058,171) [h13 d0]" from the arena
+	/// wall's top down onto the chasm's lip, then the ArrestedDrop; the jump's first tick's right key, held all the way down in
+	/// the fall reflex's look ahead, carried the body over the shaft ("nothing to land on within a safe fall: ground at
+	/// (2065,213), 46 rows down"), and the reflex took the keys ("steering straight") though the jump landed on the lip. The
+	/// scenario's own rows, three rows of the arena's air over them, ebonstone unbreakable, the chasm's wall behind.
+	/// </summary>
+	[Fact]
+	public void Sim_AJumpDownOntoTheLip_ThenTheShaft_TheReflexLeavesBothToTheWalk()
+	{
+		// The arena's air left of the wall too (the grid starts 20 columns into the arena): O columns of it here.
+		const int O = 6;
+		string air = new('.', O);
+		var rows = new List<string>();
+		// The sky over the arena: its top row (165) is the jump's head row, and the jump rises above it.
+		const int A = 15;
+		for (int i = 0; i < A; i++)
+			rows.Add(air + new string('.', 24));
+		for (int i = 0; i < 4; i++)
+			rows.Add(air + "@......................@");
+		for (int i = 0; i < 41; i++)
+			rows.Add(air + "@@@@@@@..........@@@@@@@");
+		rows.Add(air + "@@@@@@@...G......@@@@@@@");
+		rows.Add(new string('@', O + 24));
+		rows[A - 1] = air + "S" + rows[A - 1].Substring(O + 1); // on the wall's top, as the jump began: node (2052,167)
+		(ArrayTileGrid g, TestBlockActions b) = TestBlockActions.Parse(rows.ToArray());
+		b.BlockCount = 200;
+		for (int y = A + 4; y < g.Height - 1; y++)
+			for (int x = O + 7; x <= O + 16; x++)
+				b.Walls.Add(new TilePos(x, y));
+		var top = new TilePos(O, A - 1);
+		var lip = new TilePos(O + 6, A + 3);
+		var ctx = new BotContext { Grid = g, Blocks = b, AllowBreak = false, AllowPlace = true, Log = new Log(output) };
+		MoveContext moves = ctx.Moves;
+		JumpTemplate jump = moves.Jumps.Find(lip.X - top.X, lip.Y - top.Y, 0).Variants.First(v => v.Fits(g, top));
+		var steps = new List<PathStep> { new(MoveKind.Jump, top, lip, jump.Cost, jump) };
+		PathResult rest = new AStarPathfinder().FindPath(moves, lip, new GoalStandAt(g.Markers['G'], PhysicsParams.Default), new SearchLimits { SegmentAfter = 0 });
+		Assert.Contains(rest.Steps, st => st.Kind == MoveKind.ArrestedDrop);
+		steps.AddRange(rest.Steps);
+		foreach (PathStep st in steps)
+			output.WriteLine("  " + st);
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S'], b);
+		var exec = new Core.Execution.PathExecutor(moves, steps);
+		var arrest = new FallArrest();
+		int fallStart = (int)(sim.State.Y / 16f), worst = 0;
+		bool acted = false;
+		for (int t = 0; t < 1500 && exec.Status == Core.Execution.ExecStatus.Running; t++) {
+			ctx.Tick = t;
+			ctx.Body = sim.State;
+			ctx.Output = exec.Tick(sim.State);
+			ctx.PlannedCatch = exec.CatchCell;
+			ctx.PlannedLanding = exec.PlannedLanding;
+			arrest.Tick(ctx);
+			if (arrest.Active && !acted)
+				output.WriteLine($"reflex at t{t}, {sim.Node}: {arrest.State} (step {exec.Current})");
+			acted |= arrest.Active;
+			bool wasDown = sim.State.VY == 0f;
+			sim.Step(ctx.Output);
+			int row = (int)(sim.State.Y / 16f);
+			if (sim.State.VY == 0f) {
+				if (!wasDown)
+					worst = Math.Max(worst, row - fallStart);
+				fallStart = row;
+			}
+			else if (sim.State.Jump > 0)
+				fallStart = row;
+		}
+		output.WriteLine($"{exec.Status} {exec.Reason} at {sim.Node}; placed {sim.Placed}, worst fall {worst}");
+		Assert.Equal(Core.Execution.ExecStatus.Finished, exec.Status);
+		Assert.False(acted, "the fall reflex took over a planned fall");
 		Assert.True(worst <= PhysicsParams.Default.SafeFallTiles, $"fell {worst} rows");
 	}
 
