@@ -1203,6 +1203,15 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			if (Resolve(up, new Dictionary<int, int>(), 0, ctx) is ISkill fight)
 				return fight;
 		}
+		// The expedition under way (the shaft dug, the bridge known) takes itself up again before the surface's stages: a bot back at the
+		// spawn after a death goes back down, not to an NPC room first (seen in game, E4 2026-10-17: the errand ended and the plan built
+		// NPC rooms for a game day before it was proposed again).
+		if (Scheduler == Schedulers.Errands && WallOfFleshPlan(ctx.Ids) && Plan == Plans.WallOfFlesh && UnderworldReachedOnce && !WofLootCollected
+			&& ProposeWallOfFlesh(ctx, Errands.WallOfFleshErrand.BridgePhase) == null && Proposed != null) {
+			Status = $"the Wall of Flesh: the errand {Proposed.Id} taken up again";
+			Complete = false;
+			return null;
+		}
 		// The descent owns the bot (Schedulers.Operation): its own demand and stages, no optional loot, no stages from the top.
 		if (WallOfFleshPlan(ctx.Ids) && DescentOwns(ctx)) {
 			costs.Clear();

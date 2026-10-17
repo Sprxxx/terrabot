@@ -355,6 +355,18 @@ public class ErrandTests
 		Assert.Equal(WallOfFleshErrand.BridgePhase, again.Phase);
 		again.Begin(ctx);
 		Assert.Equal(shaft, again.ShaftX); // the dug shaft, not a new column
+		// Back at the spawn (a death), with an NPC room unbuilt: the expedition is taken up again before the surface's stages (E4).
+		Die(g, ctx);
+		g.Refresh(ctx);
+		Assert.Null(p.Next(ctx));
+		Assert.IsType<WallOfFleshErrand>(p.TakeProposed());
+		Assert.Contains("taken up again", p.Status);
+		// And on the way back down, the watchdog sees progress (E4: the measure ran backwards and blocked the trip at row 440).
+		again.OnDeath(ctx);
+		float atSpawn = again.Progress(ctx);
+		g.Sim.State = new BodyState { X = Body.CanonicalLeft(shaft, ctx.Physics), Y = Body.StandingTop(HellTests.SurfaceFeet + 20, ctx.Physics), ReleaseJump = true };
+		g.Refresh(ctx);
+		Assert.True(again.Progress(ctx) > atSpawn, "deeper is progress on the trip back");
 	}
 
 	[Fact]

@@ -128,7 +128,9 @@ public sealed class WallOfFleshErrand : Errand
 				TilePos n = ctx.Node;
 				return -(Math.Abs(n.X - ShaftX) + Math.Abs(Frontier - n.Y)) - 1f;
 			case BridgePhase:
-				return 100000f + (planner is ProgressionPlanner p ? (float)p.HellbridgeProgress(ctx) * 10000f : 0f) + (DownThere(ctx) ? 0f : -ctx.Node.Y);
+				// Down there: the bridge's built share. On the way back down after a death: the depth (it grows as the shaft is dropped
+				// down; E4 2026-10-17 had it the other way round and the watchdog blocked the trip back at row 440).
+				return DownThere(ctx) ? 100000f + (planner is ProgressionPlanner p ? (float)p.HellbridgeProgress(ctx) * 10000f : 0f) : 50000f + ctx.Node.Y;
 			case FightPhase:
 			case LootPhase:
 				return 1e9f + ctx.Tick;
