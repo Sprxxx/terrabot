@@ -12,6 +12,7 @@ namespace TerraBot.Bot.Progression;
 public sealed record StageRow(
 	string Id,
 	IReadOnlyList<string> After,
+	Func<GameIds, IReadOnlyList<Need>> Prerequisites,
 	Func<GameIds, IReadOnlyList<Need>> Packing,
 	Func<GameIds, IReadOnlyList<Need>> Reserve,
 	string Errand);
@@ -27,6 +28,12 @@ public static class StageTable
 	public static readonly StageRow WallOfFlesh = new(
 		"boss:WallOfFlesh",
 		new[] { "boss:evil", "boss:Skeletron" },
+		// Resolved before the packing, at base: a pickaxe for hellstone (the Nightmare or Deathbringer Pickaxe, power 65: the hellstone
+		// bricks of the ruined houses on the bridge's row, E6 2026-10-17; the evil boss is fought again for its scales or samples if
+		// the bag lacks them, ProgressionPlanner.BossDropOf). The user: "be as prepared as possible for the next step of the game".
+		ids => new Need[] {
+			new PickaxeAtLeast(HellstonePickPower, Tiers(ids.NightmarePickaxe, ids.DeathbringerPickaxe), "a pickaxe for hellstone"),
+		},
 		ids => new Need[] {
 			new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), ProgressionPlanner.WofFightArrows, "arrows for the fight"),
 			new HaveItem(ids.Torch, ShaftTorches, "torches for the shaft"),
@@ -40,6 +47,8 @@ public static class StageTable
 
 	/// <summary>Torches packed for the shaft: one every LightKeeper.PlaceEvery rows or so of some 760 (a measured estimate).</summary>
 	public const int ShaftTorches = 40;
+	/// <summary>Pick power hellstone and hellstone brick want (Player.cs:55038-55041; a game mechanic).</summary>
+	public const int HellstonePickPower = 65;
 
 	public static IReadOnlyList<StageRow> Rows { get; } = new[] { WallOfFlesh };
 

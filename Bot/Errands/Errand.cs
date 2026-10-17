@@ -67,6 +67,8 @@ public abstract class Errand
 	/// <summary>The plan it belongs to (ProgressionPlanner.Plans): taken up again after a load only under the same plan.</summary>
 	public string Plan { get; set; } = "";
 
+	/// <summary>What must hold before leaving base (gear, a station): resolved in the prepare phase, before the packing list.</summary>
+	public IReadOnlyList<Need> Prerequisites { get; protected set; } = Array.Empty<Need>();
 	/// <summary>What to carry before leaving base: resolved in the prepare phase, then reserved and frozen.</summary>
 	public IReadOnlyList<Need> Packing { get; protected set; } = Array.Empty<Need>();
 	/// <summary>What must stay in the bag for survival and the way back (potions, a recall potion): reserved, never spent on the work.</summary>

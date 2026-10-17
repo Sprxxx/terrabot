@@ -709,11 +709,22 @@ public sealed class BotBrain
 	/// 50 stacks all "gear" (a copper shortsword, a wooden sword, a copper pickaxe beside the silver one, shuriken, glowsticks,
 	/// a lemon, a flare gun...) or makings.
 	/// </summary>
-	public static void KeepRoom(BotContext ctx, int craftFor)
+	public static void KeepRoom(BotContext ctx, int craftFor) => KeepRoom(ctx, craftFor, MinFreeSlots, relaxed: craftFor >= 0);
+
+	/// <summary>
+	/// <see cref="KeepRoom(BotContext, int)"/> to <paramref name="target"/> free slots; <paramref name="relaxed"/>: what is kept only for
+	/// being gear (spare tools and weapons, food, throwables, vanity) may go too, the best tool of each kind, the plan's items, the
+	/// errand's reservations and the craft's makings staying. An errand leaving base packs a lean bag this way (seen in game, E6
+	/// 2026-10-17: a 50-stack bag from the checkpoint, one slot freed at a time and refilled by the digging; mined life crystals
+	/// found no slot and were left on the floor).
+	/// </summary>
+	public static void KeepRoom(BotContext ctx, int craftFor, int target, bool relaxed)
 	{
 		if (ctx.Inventory == null || ctx.Knowledge == null || ctx.Crafter == null)
 			return;
-		for (int guard = 0; guard < MinFreeSlots && ctx.Inventory.FreeSlots < MinFreeSlots; guard++) {
+		// The habit trashes a couple of stacks a pass; the lean bag for the road as many as it takes (a whole bag at most).
+		int atMost = relaxed && craftFor < 0 ? 50 : target;
+		for (int guard = 0; guard < atMost && ctx.Inventory.FreeSlots < target; guard++) {
 			IReadOnlyList<(int Type, int Stack)> stacks = ctx.Inventory.Stacks();
 			// Journey: a stack of a researched item first, whatever keeps it: the menu gives it back the moment it is needed.
 			if (ResearchedSpare(ctx, stacks) is int spare && ctx.Crafter.TryTrash(spare)) {
@@ -725,16 +736,17 @@ public sealed class BotBrain
 			// own makings stay). Not "every stack kept" as the test for it: a lone stack of a building block is neither kept nor
 			// trashed, and with one in the bag the relaxed pass never came (measured run M10m: "crafting 30 Vile Powder" blocked
 			// 6+ game hours again, nothing trashed).
-			if (trash < 0 && craftFor >= 0) {
+			if (trash < 0 && relaxed) {
 				HashSet<int> kept = KeptItems(ctx, stacks, gearToo: false);
 				// The best tool of each kind and the best weapon carried stay: the spares may go, never the last. Seen in game
 				// (world_wof M12c, Peppe): for a work bench's craft, "trashing a stack of Copper Axe (worth 400 copper, the least of
 				// anything not needed)", the only axe; then "GatherWood failed: no axe in the hotbar", every wood job, 6 game hours on.
 				kept.UnionWith(BestTools(ctx, stacks));
-				foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(craftFor))
-					foreach (Ingredient ing in r.Ingredients)
-						foreach (int a in ing.Accepts)
-							kept.Add(a);
+				if (craftFor >= 0)
+					foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(craftFor))
+						foreach (Ingredient ing in r.Ingredients)
+							foreach (int a in ing.Accepts)
+								kept.Add(a);
 				(trash, junk, cheapest) = PickTrash(ctx, stacks, kept);
 			}
 			if (trash < 0 || !ctx.Crafter.TryTrash(trash)) {

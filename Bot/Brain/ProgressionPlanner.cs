@@ -94,6 +94,11 @@ public sealed record BossDefeated(int Npc, int SummonItem, int[] Minions, string
 	/// and fought along the bridge: the Wall of Flesh (docs M12_SPEC.md S5-S7).
 	/// </summary>
 	public bool ByVoodooDoll { get; init; }
+	/// <summary>
+	/// Fought again though beaten, for its drops (the Eater of Worlds' Shadow Scales for the Nightmare Pickaxe, the Brain's Tissue
+	/// Samples for the Deathbringer): the need that asks is the item's, met once the bag holds it (<see cref="ProgressionPlanner.BossDropOf"/>).
+	/// </summary>
+	public bool Again { get; init; }
 }
 
 /// <summary>A town NPC of this type is alive in the world (the map shows his head): the Guide, without whom the doll is wasted (docs M12_SPEC.md S2).</summary>
@@ -1654,6 +1659,13 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 					new HuntSkill(item, src.NpcAiStyle, target) { SpawnsAboveRow = NocturnalAiStyles.Contains(src.NpcAiStyle) ? SurfaceSpawnRow(ctx) : null });
 		}
 
+		// What only a boss drops (shadow scales, tissue samples): the boss fought again for them, as a player farms it, with the summon
+		// the plan knows how to make. The user (2026-10-17, E6): "You could just use a pickaxe that can mine hellstone? Why not be as
+		// prepared as possible for the next step of the game": the Nightmare Pickaxe's 6 scales were trashed after the first kill.
+		if (BossDropOf(item, ctx.Ids) is BossDefeated again) {
+			Status = $"need {more} more {name}: the {again.Label} fought again for them";
+			return Resolve(again, claims, depth + 1, ctx);
+		}
 		RecipeInfo recipe = BestRecipe(item, ctx);
 		if (recipe == null) {
 			stuck = $"no recipe or source for {name}";
@@ -2134,7 +2146,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// </summary>
 	private ISkill ResolveBoss(BossDefeated b, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
-		if (ctx.World.BossDefeated(b.Npc))
+		if (ctx.World.BossDefeated(b.Npc) && !b.Again)
 			return null;
 		bool bossHere = BossUp(ctx, b.Npc);
 		if (b.ByOldMan)
@@ -3137,6 +3149,12 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				current[i] = 0f;
 				continue;
 			}
+			// A boss's drop the bag lacks: the boss fought again (BossDropOf), a fight's worth of ticks (a measured estimate: the Eater
+			// of Worlds in M10s took 2800 ticks, plus the walk to the corruption).
+			if (BossDropOf(i, ctx.Ids) != null) {
+				current[i] = BossDropCost;
+				continue;
+			}
 			items.Add(i);
 			foreach (RecipeInfo r in k.RecipesFor(i)) {
 				foreach (Ingredient ing in r.Ingredients)
@@ -3307,6 +3325,24 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		notedAt[tile] = ctx.Tick + 60 * 60 * 60; // far away: do not forget it before going there
 		ctx.Log.Info($"Auto: found a {ctx.Knowledge.TileName(tile)} at {found.Value}");
 		return true;
+	}
+
+	/// <summary>Ticks a boss's drop costs to get: the boss fought again (a measured estimate, see SolveCosts).</summary>
+	public const float BossDropCost = 6000f;
+
+	/// <summary>
+	/// The boss fought again for an item only it drops (<see cref="BossDefeated.Again"/>): the Eater of Worlds for Shadow Scales, the
+	/// Brain of Cthulhu for Tissue Samples; null for anything else.
+	/// </summary>
+	public static BossDefeated BossDropOf(int item, GameIds ids)
+	{
+		if (item <= 0)
+			return null;
+		if (item == ids.ShadowScale && ids.EvilBoss > 0 && !ids.Crimson)
+			return new BossDefeated(ids.EvilBoss, ids.WormFood, new[] { ids.EvilBossBody, ids.EvilBossTail }, "Eater of Worlds") { NightOnly = false, InEvilBiome = true, Again = true };
+		if (item == ids.TissueSample && ids.BrainOfCthulhu > 0 && ids.Crimson)
+			return new BossDefeated(ids.BrainOfCthulhu, ids.BloodySpine, new[] { ids.Creeper }, "Brain of Cthulhu") { NightOnly = false, InEvilBiome = true, Again = true };
+		return null;
 	}
 
 	private ISkill Do(string why, ISkill skill)

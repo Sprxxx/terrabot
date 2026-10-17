@@ -43,6 +43,7 @@ public class ErrandTests
 		ctx.SpawnTile = new TilePos(SpawnX, HellTests.SurfaceFeet);
 		g.Blocks.TicksPerBlock = 4;
 		g.Items[FakeGame.IronPickaxe] = 1;
+		g.Items[FakeGame.NightmarePickaxe] = 1; // the expedition's prerequisite (StageTable.WallOfFlesh)
 		g.Stations[FakeGame.TileBench] = new TilePos(SpawnX + 2, HellTests.SurfaceFeet);
 		g.Stations[FakeGame.TileFurnace] = new TilePos(SpawnX + 5, HellTests.SurfaceFeet);
 		g.Stations[FakeGame.TileAnvil] = new TilePos(SpawnX - 2, HellTests.SurfaceFeet);
@@ -367,6 +368,83 @@ public class ErrandTests
 		g.Sim.State = new BodyState { X = Body.CanonicalLeft(shaft, ctx.Physics), Y = Body.StandingTop(HellTests.SurfaceFeet + 20, ctx.Physics), ReleaseJump = true };
 		g.Refresh(ctx);
 		Assert.True(again.Progress(ctx) > atSpawn, "deeper is progress on the trip back");
+	}
+
+	/// <summary>E6 (2026-10-17): a 50-stack bag from the checkpoint; the expedition leaves base with room for the road.</summary>
+	[Fact]
+	public void TheErrand_LeavesBaseWithALeanBag()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		g.SlotLimit = 50;
+		for (int i = 0; i < 60; i++)
+			g.Items[9000 + i] = 1; // junk of no value, no use
+		g.Refresh(ctx);
+		Assert.True(g.FreeSlots < WallOfFleshErrand.LeanFreeSlots, $"{g.FreeSlots} free to begin with");
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 3000, () => access.Phase == WallOfFleshErrand.DescendPhase);
+		output.WriteLine($"{g.FreeSlots} free slots after packing, trashed {g.Trashed.Count}");
+		Assert.True(g.FreeSlots >= WallOfFleshErrand.LeanFreeSlots, $"{g.FreeSlots} free slots");
+		Assert.Equal(ProgressionPlanner.WofArrows, g.Count(FakeGame.WoodenArrow)); // the packing stayed
+		Assert.True(g.Count(FakeGame.StoneBlock) >= Bridge + ProgressionPlanner.BridgeBlockMargin);
+	}
+
+	/// <summary>E6 (2026-10-17): the bridge stopped on hellstone brick with 10 Bombs in the bag; a player bombs it.</summary>
+	[Fact]
+	public void TheBridge_StoppedByAHotWall_IsBlastedThrough_ThenGoesOn()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		g.Items[FakeGame.Bomb] = 3;
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 40000, () => access.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill);
+		// A hot wall across the bridge's way, three rows high, a few columns ahead.
+		int wallX = g.Sim.Node.X + 6;
+		for (int y = Row - 3; y <= Row - 1; y++) {
+			g.Grid.Set(wallX, y, CellKind.Solid | CellKind.Hazard);
+			g.Blocks.Unbreakable.Add(new TilePos(wallX, y)); // hellstone brick: pick-gated at 65
+		}
+		g.Refresh(ctx);
+		Run(g, ctx, brain, 6000, () => brain.Work is BlastOutSkill || brain.Errand == null);
+		Assert.Same(access, brain.Errand);
+		Assert.IsType<BlastOutSkill>(brain.Work);
+		Assert.Equal(1, access.Blasts);
+		Assert.Contains(Log(ctx).Lines, l => l.Contains("a blast through it next"));
+		Assert.Equal(0, access.PhaseFailures);
+	}
+
+	/// <summary>
+	/// E6 (2026-10-17) and the user: "You could just use a pickaxe that can mine hellstone?" Without the Nightmare Pickaxe and with its
+	/// scales trashed, the expedition's prerequisite has the Eater of Worlds fought again for them before the packing.
+	/// </summary>
+	[Fact]
+	public void WithoutAHellstonePickaxe_ThePrerequisite_FightsTheEaterAgainForScales_BeforePacking()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		g.Items.Remove(FakeGame.NightmarePickaxe);
+		g.Items[FakeGame.DemonBow] = 1; // the plan's evil bow stage met
+		g.Items[FakeGame.DemoniteBar] = 12; // the bars in hand: the scales are the first unmet ingredient
+		g.Items[FakeGame.WormFood] = 1;
+		g.Items[FakeGame.ShadowScale] = 0;
+		g.BossesDefeated.Add(FakeGame.EowHead);
+		g.Refresh(ctx);
+		ProgressionPlanner p = brain.Planner;
+		Assert.Null(p.Next(ctx));
+		var errand = Assert.IsType<WallOfFleshErrand>(p.TakeProposed());
+		errand.Begin(ctx);
+		ISkill first = errand.NextSkill(ctx, p);
+		output.WriteLine($"{errand.Status} | {p.Status} -> {first?.Describe()}");
+		Assert.NotNull(first);
+		Assert.StartsWith("prerequisite", errand.Status);
+		Assert.Equal(Errand.PreparePhase, errand.Phase);
+		Assert.True(p.Status.Contains("Eater of Worlds") || p.Status.Contains("Shadow Scale") || p.Status.Contains("corruption", System.StringComparison.OrdinalIgnoreCase), p.Status);
+		// The scales in the bag: the pickaxe is crafted (bars from the ore at the furnace, then the anvil), no fight.
+		g.Items[FakeGame.ShadowScale] = 6;
+		g.Refresh(ctx);
+		ISkill next = errand.NextSkill(ctx, p);
+		output.WriteLine($"{errand.Status} | {p.Status} -> {next?.Describe()}");
+		Assert.NotNull(next);
+		Assert.DoesNotContain("Eater", p.Status);
 	}
 
 	[Fact]

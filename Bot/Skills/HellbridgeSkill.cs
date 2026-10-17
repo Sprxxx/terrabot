@@ -46,6 +46,8 @@ public sealed class HellbridgeSkill : ISkill
 	public string Key => $"Hellbridge {Row} {FromX} {ToX}";
 	/// <summary>The bridge's last solid column from the start, as last read.</summary>
 	public int End { get; private set; }
+	/// <summary>The cell the bridge stopped at because nothing it has mines it (hellstone, hellstone brick), once it has.</summary>
+	public TilePos? Blocker { get; private set; }
 	/// <summary>Blocks placed and cells mined by this instance.</summary>
 	public int Placed { get; private set; }
 	public int Mined { get; private set; }
@@ -253,8 +255,10 @@ public sealed class HellbridgeSkill : ISkill
 	private SkillStatus Unmineable(BotContext ctx, TilePos cell)
 	{
 		CellKind k = ctx.Grid.Get(cell.X, cell.Y);
-		if ((k & CellKind.Hazard) != 0)
+		if ((k & CellKind.Hazard) != 0) {
+			Blocker = cell;
 			return Fail(ctx, Unbreakable(ctx, cell));
+		}
 		// A platform, a slope, a pot, a chain: frame-important, so the paths never mine them (TerrariaBlockActions.BreakTicks), but a
 		// pickaxe takes them, as a player clears a ruined house's floor. Seen in game (E5, 2026-10-17): "the cell (2413,1040) in the
 		// bridge's way cannot be mined at pick power 45 (tile 19)", a platform two rows over the deck; the bridge stopped there twice.
@@ -267,6 +271,7 @@ public sealed class HellbridgeSkill : ISkill
 			State = $"mining the tile on {cell} first ({above})";
 			return Act(ctx, above, place: false);
 		}
+		Blocker = cell;
 		return Fail(ctx, Unbreakable(ctx, cell));
 	}
 

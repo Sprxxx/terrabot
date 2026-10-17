@@ -110,6 +110,8 @@ public sealed class CollectDropsSkill : ISkill
 	/// <summary>Drops given up on (unreachable, or not picked up while standing on them). Callers that restart this
 	/// skill pass their own set, so the same unreachable drop is not tried again and again.</summary>
 	private readonly HashSet<int> skip;
+	/// <summary>Drops room was made for once (by id): not every tick.</summary>
+	private readonly HashSet<int> roomTried = new();
 	private WalkToSkill walk;
 	private int walkTarget = -1;
 	private int standingTicks;
@@ -173,6 +175,15 @@ public sealed class CollectDropsSkill : ISkill
 			if (!skip.Contains(d.Id) && want(d) && Dist(d, cx, cy) <= radiusPx && TooDeep(ctx, d)) {
 				skip.Add(d.Id);
 				ctx.Log.Info($"Collect: leaving {d.Name} x{d.Stack} at {d.Tile}, {d.Tile.Y - ctx.Node.Y} rows down (deeper than a safe fall, {p.SafeFallTiles})");
+			}
+		// A drop the plan wants (a life crystal, a stage's item) with no slot for it: room is made, as a player drops junk for a
+		// crystal. Seen in game (E6, 2026-10-17): mined life crystals left on the floor, the bag full of kept stacks.
+		foreach (DropInfo d in ctx.Drops)
+			if (!skip.Contains(d.Id) && want(d) && Dist(d, cx, cy) <= radiusPx && !Fits(ctx, d) && roomTried.Add(d.Id)
+				&& ctx.Inventory != null && !ctx.Inventory.HasRoomFor(d.Type) && (d.Type == ctx.Ids.LifeCrystal || ctx.NeededItems.Contains(d.Type))) {
+				Brain.BotBrain.KeepRoom(ctx, d.Type);
+				if (Fits(ctx, d))
+					ctx.Log.Info($"Collect: made room for the {d.Name} at {d.Tile}");
 			}
 		var candidates = ctx.Drops.Where(d => want(d) && !skip.Contains(d.Id) && Fits(ctx, d)
 			&& Dist(d, cx, cy) <= radiusPx).OrderBy(d => Dist(d, cx, cy)).ToList();

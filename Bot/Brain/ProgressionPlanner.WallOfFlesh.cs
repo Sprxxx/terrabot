@@ -543,6 +543,13 @@ public sealed partial class ProgressionPlanner
 		return Resolve(new HaveItem(BridgeBlockItems(ctx.Ids), count, need.Label), claims, depth + 1, ctx);
 	}
 
+	/// <summary>The wall the bridge stopped at was blasted (WallOfFleshErrand): the bridge's failures at that end start afresh.</summary>
+	public void BridgeBlasted()
+	{
+		bridgeFails = 0;
+		bridgeFailEnd = int.MinValue;
+	}
+
 	/// <summary>The hellbridge as a fight's deck (FightSkill.Deck): its columns and the feet row on it, once known.</summary>
 	public (int MinX, int MaxX, int StandY)? HellbridgeArena => HellbridgeBounds();
 

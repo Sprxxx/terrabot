@@ -86,6 +86,26 @@ public class ReflexTests
 				Assert.False(g.Grid.Get(x, y).HasLava(), $"lava at ({x},{y}) by the hole");
 	}
 
+	/// <summary>E6 (2026-10-17): mined life crystals left on the floor, the bag full of kept stacks; a player drops junk for a crystal.</summary>
+	[Fact]
+	public void ACollect_MakesRoomForALifeCrystal_InAFullBag()
+	{
+		FakeGame g = EarlyGameTests.Field(80, 70);
+		BotContext ctx = g.CreateContext(output);
+		g.SlotLimit = 50;
+		for (int i = 0; i < 50; i++)
+			g.Items[9000 + i] = 1; // junk of no value
+		TilePos n = g.Sim.Node;
+		g.Drops.Add(new DropInfo(1, FakeGame.LifeCrystal, "Life Crystal", 1, (n.X + 2) * 16f, n.Y * 16f, 14, 26));
+		g.Refresh(ctx);
+		Assert.Equal(0, g.FreeSlots);
+		var collect = new CollectDropsSkill(d => d.Type == FakeGame.LifeCrystal, 10);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, collect, 600);
+		output.WriteLine($"{s}: crystals {g.Count(FakeGame.LifeCrystal)}, trashed {g.Trashed.Count}");
+		Assert.Equal(1, g.Count(FakeGame.LifeCrystal));
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("made room for the Life Crystal"));
+	}
+
 	[Fact]
 	public void ARetreat_DoesNotCancelTheGuardiansRecall()
 	{

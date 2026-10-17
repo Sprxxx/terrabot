@@ -4,6 +4,7 @@ using TerraBot.Bot.Brain;
 using TerraBot.Bot.Progression;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
+using TerraBot.Core.Pathfinding;
 
 namespace TerraBot.Bot.Errands;
 
@@ -43,6 +44,20 @@ public sealed class WallOfFleshErrand : Errand
 	public const int DeathsPerColumn = 3;
 	/// <summary>Failures in a row of a bridge, fight or loot skill before the errand is blocked with the last reason (policy).</summary>
 	public const int MaxPhaseFailures = 3;
+	/// <summary>
+	/// Free slots the bag leaves base with (BotBrain.KeepRoom, relaxed): the shaft's stone and dirt, the Underworld's ash and loot, a
+	/// crystal on the way. A policy choice; seen in game (E6, 2026-10-17): a 50-stack bag, mined crystals left on the floor.
+	/// </summary>
+	public const int LeanFreeSlots = 10;
+	/// <summary>
+	/// Blasts at walls the bridge cannot mine (hellstone brick, a ruined house on the stand row: pick-gated at 65, and a bomb breaks it,
+	/// Projectile.CanExplodeTile) before the bridge phase is blocked; the bombs and dynamite carried are a player's way past hellstone.
+	/// Seen in game (E6, 2026-10-17): "the cell (2439,1041) in the bridge's way cannot be mined at pick power 45 (tile 76)" twice, with
+	/// 10 Bombs and 2 Dynamite in the bag.
+	/// </summary>
+	public const int MaxBlasts = 4;
+	/// <summary>Columns past the blocker the blast's walk aims for (within the blast's reach of it).</summary>
+	public const int BlastPastTiles = 4;
 
 	public const string DescendPhase = "descend", BridgePhase = "bridge", FightPhase = "fight", LootPhase = "loot";
 
@@ -71,6 +86,8 @@ public sealed class WallOfFleshErrand : Errand
 	private HellevatorSkill shaft;
 	private ISkill phaseSkill;
 	private bool landed, done;
+	private TilePos? blastAt;
+	public int Blasts { get; private set; }
 	private TilePos lastDeathAt;
 	private IErrandSupport planner;
 	private readonly GameIds ids;
@@ -81,6 +98,7 @@ public sealed class WallOfFleshErrand : Errand
 		StandRow = standRow;
 		this.ids = ids;
 		ShaftX = preferred;
+		Prerequisites = StageTable.WallOfFlesh.Prerequisites(ids);
 		Packing = StageTable.WallOfFlesh.Packing(ids);
 		Reserve = StageTable.WallOfFlesh.Reserve(ids);
 		Identity = $"the shaft at x {ShaftX}";
@@ -208,6 +226,16 @@ public sealed class WallOfFleshErrand : Errand
 	{
 		this.planner = planner;
 		if (Phase == PreparePhase) {
+			ISkill ready = planner.ResolveNeeds(Prerequisites, ctx, out string notReady);
+			if (notReady != null) {
+				LastFailure = $"a prerequisite cannot be met: {notReady}";
+				Failures = MaxFailures;
+				return null;
+			}
+			if (ready != null) {
+				Status = $"prerequisite: {planner.Status}";
+				return ready;
+			}
 			ISkill pack = planner.ResolveNeeds(Packing, ctx, out string blocked);
 			if (blocked != null) {
 				LastFailure = $"the packing list cannot be met: {blocked}";
@@ -219,7 +247,9 @@ public sealed class WallOfFleshErrand : Errand
 				return pack;
 			}
 			Packed(ctx, DescendPhase);
-			ctx.Log.Info($"Errand {Id}: packed ({Describe(Packing)}; kept back {Describe(Reserve)}); {Identity} from {ctx.Node} to row {StandRow}");
+			int before = ctx.Inventory?.FreeSlots ?? 0;
+			BotBrain.KeepRoom(ctx, -1, LeanFreeSlots, relaxed: true); // a lean bag for the road: spare gear and junk go, the packing stays
+			ctx.Log.Info($"Errand {Id}: packed ({Describe(Packing)}; kept back {Describe(Reserve)}); the bag {before} -> {ctx.Inventory?.FreeSlots ?? 0} free slots; {Identity} from {ctx.Node} to row {StandRow}");
 		}
 		// The remaining demand: a resupply only when the rest of the work is not feasible with what is carried.
 		ISkill more = planner.ResolveNeeds(RemainingDemand(ctx), ctx, out string demandBlocked);
@@ -249,6 +279,16 @@ public sealed class WallOfFleshErrand : Errand
 			Phase = LootPhase;
 			PhaseFailures = 0;
 			ctx.Log.Info($"Errand {Id}: the Wall of Flesh is defeated; its loot next");
+		}
+		// The bridge stopped at a wall nothing it has mines: a blast through it, with the bombs carried, then the bridge again.
+		if (blastAt is TilePos wall) {
+			blastAt = null;
+			Blasts++;
+			int dir = wall.X >= ctx.Node.X ? 1 : -1;
+			var past = new TilePos(wall.X + dir * BlastPastTiles, StandRow);
+			Status = $"bombing the wall at {wall} in the bridge's way (blast {Blasts} of {MaxBlasts})";
+			phaseSkill = new BlastOutSkill(new GoalNearTile(past, 3, ctx.Physics));
+			return phaseSkill;
 		}
 		ISkill s = planner.ResolveNeeds(PhaseNeeds(), ctx, out string phaseBlocked);
 		if (phaseBlocked != null) {
@@ -335,6 +375,14 @@ public sealed class WallOfFleshErrand : Errand
 		if (!ReferenceEquals(skill, phaseSkill))
 			return;
 		phaseSkill = null;
+		// The bridge stopped at a wall it cannot mine, with explosives carried: the next skill is the blast, not a failure counted.
+		if (skill is HellbridgeSkill { Blocker: TilePos wall } && status == SkillStatus.Failed && Blasts < MaxBlasts && BlastOutSkill.Carried(ctx).Count > 0) {
+			blastAt = wall;
+			if (planner is ProgressionPlanner p)
+				p.BridgeBlasted();
+			ctx.Log.Info($"Errand {Id}: the bridge cannot mine {wall} ({why}); a blast through it next ({BlastOutSkill.Carried(ctx).Count} kinds of explosive carried)");
+			return;
+		}
 		if (status == SkillStatus.Succeeded)
 			PhaseFailures = 0;
 		else if (why != "died" && !(why ?? "").StartsWith("out of blocks")) { // the bridge's blocks used up is consumption: the demand resupplies them
@@ -370,6 +418,7 @@ public sealed class WallOfFleshErrand : Errand
 		s["columnDeaths"] = ColumnDeaths.ToString();
 		s["frontier"] = Frontier.ToString();
 		s["landed"] = landed ? "1" : "0";
+		s["blasts"] = Blasts.ToString();
 		s["columnChanged"] = ColumnChanged ? "1" : "0";
 		s["failedColumns"] = string.Join(",", failedColumns);
 		return s;
@@ -384,6 +433,7 @@ public sealed class WallOfFleshErrand : Errand
 		ColumnDeaths = int.TryParse(state.GetValueOrDefault("columnDeaths", "0"), out int cd) ? cd : 0;
 		Frontier = int.TryParse(state.GetValueOrDefault("frontier", ""), out int fr) ? fr : int.MinValue;
 		landed = state.GetValueOrDefault("landed", "0") == "1";
+		Blasts = int.TryParse(state.GetValueOrDefault("blasts", "0"), out int bl) ? bl : 0;
 		ColumnChanged = state.GetValueOrDefault("columnChanged", "0") == "1";
 		foreach (string c in state.GetValueOrDefault("failedColumns", "").Split(',', StringSplitOptions.RemoveEmptyEntries))
 			if (int.TryParse(c, out int fc))
