@@ -64,6 +64,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 			NPCID.LarvaeAntlion, NPCID.TombCrawlerHead, NPCID.TombCrawlerBody, NPCID.TombCrawlerTail },
 		LifeCrystal = ItemID.LifeCrystal,
 		FloatingAccessories = new int[] { ItemID.FloatingTube }, // Player.ApplyEquipFunctional: canFloatInWater
+		PickupBlockers = new int[] { ItemID.EncumberingStone }, // Player.RefreshMechanicalAccsFromItemType: preventAllItemPickups
 		IronTierBow = WorldGen.SavedOreTiers.Iron == TileID.Lead ? ItemID.LeadBow : ItemID.IronBow,
 		WoodenArrow = ItemID.WoodenArrow,
 		Lens = ItemID.Lens,
@@ -144,6 +145,35 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return t.HasTile && TileID.Sets.IsATreeTrunk[t.TileType];
 	}
 
+	public int TreeWood(int x, int y)
+	{
+		if (!IsTreeTrunk(x, y))
+			return 0;
+		// The trees that drop wood (WorldGen.KillTile_GetItemDrops: tiles 5, 596, 616, 634 go to KillTile_GetTreeDrops); gem
+		// trees (583-589) drop stone and gems, mushroom trees (72) mushrooms.
+		ushort type = Main.tile[x, y].TileType;
+		if (type != TileID.Trees && type != TileID.VanityTreeSakura && type != TileID.VanityTreeYellowWillow && type != TileID.TreeAsh)
+			return 0;
+		// The ground: the tile under the base trunk tile (a base, as ScanTrees finds it, has no trunk under it), where
+		// WorldGen.GetTreeBottom's walk down past the trunk ends.
+		if (!WorldGen.InWorld(x, y + 1, 1) || !Main.tile[x, y + 1].HasTile)
+			return ItemID.Wood;
+		int ground = Main.tile[x, y + 1].TileType;
+		// KillTile_GetTreeDrops's switch on the ground under the tree, then the mods' trees (TileLoader.DropTreeWood).
+		int wood = ground switch {
+			TileID.AshGrass => ItemID.AshWood,
+			TileID.CorruptGrass or TileID.CorruptJungleGrass => ItemID.Ebonwood,
+			TileID.CrimsonGrass or TileID.CrimsonJungleGrass => ItemID.Shadewood,
+			TileID.JungleGrass => ItemID.RichMahogany,
+			TileID.HallowedGrass or TileID.GolfGrassHallowed => ItemID.Pearlwood,
+			TileID.SnowBlock => ItemID.BorealWood,
+			TileID.MushroomGrass => 0, // a glowing mushroom half the time, else nothing
+			_ => ItemID.Wood,
+		};
+		Terraria.ModLoader.TileLoader.DropTreeWood(ground, ref wood);
+		return wood;
+	}
+
 	public bool CanPlaceItem(int itemType, int x, int y)
 	{
 		Item item = FindItem(itemType, out _);
@@ -188,6 +218,18 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 					return true;
 			}
 		return false;
+	}
+
+	public bool CanPickUp(int itemType)
+	{
+		if (!ContentSamples.ItemsByType.TryGetValue(itemType, out Item sample))
+			return HasRoomFor(itemType);
+		// The very checks Player.GrabItems makes before it pulls an item in: CanAcceptItemIntoInventory (an Encumbering Stone
+		// carried lets only hearts and stars through) and ItemSpace (coin slots for coins, ammo slots for ammo). Seen in game
+		// (measured run U28, world_eye): an Encumbering Stone looted at t465000 (chest at (2541,587)), and from then on not one
+		// item was picked up for the 400000 ticks left: 101 of the run's 107 Collect heartbeats came after it, standing on
+		// coins, dirt and arrows that never came.
+		return player.CanAcceptItemIntoInventory(sample) && player.ItemSpace(sample).CanTakeItem;
 	}
 
 	/// <summary>The first stack of this item in the main inventory (hotbar first).</summary>
@@ -447,13 +489,23 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		[ItemID.WormTooth] = (NPCAIStyleID.Worm, true),
 	};
 
+	/// <summary>
+	/// The woods trees drop (WorldGen.KillTile_GetTreeDrops by the ground under the tree: Wood, Ebonwood on corrupt grass,
+	/// Shadewood on crimson grass, Rich Mahogany on jungle grass, Pearlwood on hallowed grass, Boreal Wood on snow, Ash Wood on
+	/// ash grass; palm trees Palm Wood). All of them are in the "Wood" recipe group (Recipe.SetupRecipeGroups), so an
+	/// any-wood ingredient (Wooden Arrow, Torch) takes whichever the trees near by give.
+	/// </summary>
+	private static readonly HashSet<int> TreeWoods = new() {
+		ItemID.Wood, ItemID.Ebonwood, ItemID.Shadewood, ItemID.RichMahogany, ItemID.Pearlwood, ItemID.BorealWood, ItemID.PalmWood, ItemID.AshWood,
+	};
+
 	public ItemSource SourceOf(int itemType)
 	{
 		if (DroppedByTile.TryGetValue(itemType, out var drop))
 			return new ItemSource(SourceKind.Mine, drop.Tile, FrameX: drop.FrameX, EvilBiome: drop.Evil);
 		if (DroppedByNpcAi.TryGetValue(itemType, out var hunted))
 			return new ItemSource(SourceKind.Hunt, NpcAiStyle: hunted.Ai, EvilBiome: hunted.Evil);
-		if (itemType == ItemID.Wood)
+		if (TreeWoods.Contains(itemType))
 			return new ItemSource(SourceKind.Tree);
 		if (itemType == ItemID.Gel)
 			return new ItemSource(SourceKind.Hunt, NpcAiStyle: NPCAIStyleID.Slime);

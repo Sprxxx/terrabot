@@ -119,6 +119,12 @@ public sealed class CollectDropsSkill : ISkill
 	public string State { get; private set; } = "new";
 	public string Name => "Collect";
 	public const int MaxTicks = 60 * 40;
+	/// <summary>
+	/// Ticks standing where the walk counts as arrived before a drop that did not come is given up on: half a second. A drop
+	/// in grab range is pulled in at once (Player.GrabItems runs every tick: PullItem_Common moves it towards the player, and
+	/// it is picked up when the hitboxes touch), so one that has not come in that time is not coming.
+	/// </summary>
+	public const int StandGiveUpTicks = 30;
 
 	public CollectDropsSkill(Func<DropInfo, bool> want, int radiusTiles = 20, HashSet<int> skip = null)
 	{
@@ -166,7 +172,16 @@ public sealed class CollectDropsSkill : ISkill
 			}
 		var candidates = ctx.Drops.Where(d => want(d) && !skip.Contains(d.Id) && Fits(ctx, d)
 			&& Dist(d, cx, cy) <= radiusPx).OrderBy(d => Dist(d, cx, cy)).ToList();
-		if (candidates.Count == 0 || ++ticks > MaxTicks) {
+		if (candidates.Count == 0) {
+			State = "done";
+			return SkillStatus.Succeeded;
+		}
+		if (++ticks > MaxTicks) {
+			// Out of time on the drop it was after: given up on (logged), so a caller that starts a fresh collect with the same
+			// skip set does not set off for it again.
+			int at = candidates.FindIndex(d => d.Id == walkTarget);
+			if (at >= 0 && skip.Add(walkTarget))
+				ctx.Log.Info($"Collect: giving up on {candidates[at].Name} x{candidates[at].Stack} at {candidates[at].Tile}: not picked up in {MaxTicks / 60} s");
 			State = "done";
 			return SkillStatus.Succeeded;
 		}
@@ -194,8 +209,8 @@ public sealed class CollectDropsSkill : ISkill
 		else if (s == SkillStatus.Succeeded) {
 			// Standing on it but it did not come to us (inventory full, or it is out of grab range).
 			walk = null;
-			if (++standingTicks > 30)
-				skip.Add(target.Id);
+			if (++standingTicks > StandGiveUpTicks && skip.Add(target.Id))
+				ctx.Log.Info($"Collect: giving up on {target.Name} x{target.Stack} at {target.Tile}: stood by it {StandGiveUpTicks} ticks at {ctx.Node} and it was not picked up");
 		}
 		State = $"fetching {target.Name} x{target.Stack}";
 		return SkillStatus.Running;
@@ -215,9 +230,12 @@ public sealed class CollectDropsSkill : ISkill
 	/// <summary>
 	/// The bag has room for it (a free slot, or a stack it joins): a drop that does not fit is not walked to, as a player with a
 	/// full bag does not go for it. Seen in game (measured run M10f, world_eow): 50 of 240 heartbeats Collect, "fetching
-	/// Goodie Bag x1 got 0" and "fetching Ancient Shadow Greaves x1 got 0" over and over beside a full bag.
+	/// Goodie Bag x1 got 0" and "fetching Ancient Shadow Greaves x1 got 0" over and over beside a full bag. And nothing is
+	/// walked to while the game would not pick it up at all (<see cref="IInventory.CanPickUp"/>: an Encumbering Stone
+	/// carried). Seen in game (measured run U28, world_eye): with one in the bag from t465000, 101 Collect heartbeats standing
+	/// on coins, dirt and arrows ("WalkTo reached StandAt(1805,286) at (1805,286)" 62 times in a row after one fight).
 	/// </summary>
-	private static bool Fits(BotContext ctx, DropInfo d) => ctx.Inventory == null || ctx.Inventory.HasRoomFor(d.Type);
+	private static bool Fits(BotContext ctx, DropInfo d) => ctx.Inventory == null || ctx.Inventory.CanPickUp(d.Type);
 
 	/// <summary>
 	/// A drop more rows under the feet than a fall the body takes unhurt (<see cref="PhysicsParams.SafeFallTiles"/>): at a
@@ -233,8 +251,9 @@ public sealed class CollectDropsSkill : ISkill
 }
 
 /// <summary>
-/// Get <see cref="Amount"/> of an item that trees drop (wood): pick up matching drops, chop the nearest tree,
-/// pick up its wood; with no tree around, explore along the surface (alternating directions).
+/// Get <see cref="Amount"/> of an item that trees drop (wood), counting <see cref="Also"/> (the other woods the need
+/// accepts) with it: pick up matching drops, chop the nearest tree whose wood counts, pick up its wood; with no tree
+/// around, explore along the surface (alternating directions).
 /// </summary>
 public sealed class GatherWoodSkill : ISkill
 {
@@ -256,6 +275,14 @@ public sealed class GatherWoodSkill : ISkill
 
 	public int ItemType { get; }
 	public int Amount { get; }
+	/// <summary>
+	/// Other woods that count towards <see cref="Amount"/>: what the need's recipe takes besides (vanilla's "Wood" recipe
+	/// group: Ebonwood, Shadewood, Boreal Wood...). Counted, picked up, and their trees chopped. Seen in game (measured run
+	/// U28, world_eye): for Wooden Arrows (any wood), the trees near by were the Corruption's (x 1765-1960), which drop Ebonwood;
+	/// only Wood counted and only Wood drops were collected, so "GatherWood start: have 4" every time for the last 30 game
+	/// hours of the run.
+	/// </summary>
+	public IReadOnlyList<int> Also { get; init; } = Array.Empty<int>();
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "GatherWood";
@@ -271,7 +298,13 @@ public sealed class GatherWoodSkill : ISkill
 
 	public string Describe() => $"GatherWood {lastHave}/{Amount} [{State}]" + (sub != null ? " > " + sub.Describe() : "");
 
-	public void Start(BotContext ctx) => ctx.Log.Info($"GatherWood start: have {ctx.Inventory.Count(ItemType)}, want {Amount}, {ctx.Seen.Trees.Count} tree(s) seen");
+	public void Start(BotContext ctx) => ctx.Log.Info($"GatherWood start: have {Have(ctx)}, want {Amount}, {ctx.Seen.Trees.Count} tree(s) seen"
+		+ (Also.Count > 0 && ctx.Knowledge != null ? $" (counting {string.Join(", ", Also.Select(ctx.Knowledge.ItemName))} too)" : ""));
+
+	/// <summary>Does this wood count towards the amount?</summary>
+	public bool Counts(int itemType) => itemType == ItemType || Also.Contains(itemType);
+
+	private int Have(BotContext ctx) => ctx.Inventory.Count(ItemType) + Also.Where(a => a != ItemType).Sum(ctx.Inventory.Count);
 
 	public void Stop(BotContext ctx)
 	{
@@ -293,7 +326,7 @@ public sealed class GatherWoodSkill : ISkill
 	public SkillStatus Tick(BotContext ctx)
 	{
 		ctx.Output = MoveInput.None;
-		int have = ctx.Inventory.Count(ItemType);
+		int have = Have(ctx);
 		lastHave = have;
 		if (have >= Amount && sub is not ChopTreeSkill) {
 			ctx.Log.Info($"GatherWood done: {have}/{Amount}");
@@ -330,15 +363,15 @@ public sealed class GatherWoodSkill : ISkill
 			sub.Stop(ctx);
 			sub = null;
 			if (felled) {
-				sub = new CollectDropsSkill(d => d.Type == ItemType, 15, ignoredDrops);
+				sub = new CollectDropsSkill(d => Counts(d.Type), 15, ignoredDrops);
 				sub.Start(ctx);
 				State = "collecting";
 				return SkillStatus.Running;
 			}
 		}
 
-		if (CollectDropsSkill.AnyInRange(ctx, d => d.Type == ItemType && !ignoredDrops.Contains(d.Id), CollectRadius)) {
-			sub = new CollectDropsSkill(d => d.Type == ItemType, CollectRadius, ignoredDrops);
+		if (CollectDropsSkill.AnyInRange(ctx, d => Counts(d.Type) && !ignoredDrops.Contains(d.Id), CollectRadius)) {
+			sub = new CollectDropsSkill(d => Counts(d.Type), CollectRadius, ignoredDrops);
 			State = "collecting";
 		}
 		else if (NearestTree(ctx) is TilePos tree) {
@@ -389,7 +422,10 @@ public sealed class GatherWoodSkill : ISkill
 		int bestDist = int.MaxValue;
 		foreach (TilePos t in ctx.KnownTrees) {
 			int d = Math.Abs(t.X - node.X) + Math.Abs(t.Y - node.Y);
-			if (d < bestDist && !badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t)) {
+			// A tree remembered with its ground (it was seen): one whose wood does not count is no use to go back to. Gone (0):
+			// going there forgets it.
+			int wood = ctx.World.TreeWood(t.X, t.Y);
+			if (d < bestDist && !badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t) && (wood == 0 || Counts(wood))) {
 				best = t;
 				bestDist = d;
 			}
@@ -397,14 +433,29 @@ public sealed class GatherWoodSkill : ISkill
 		return best;
 	}
 
+	/// <summary>
+	/// The nearest tree in sight whose wood counts (<see cref="Counts"/>, by the ground it stands on: <see
+	/// cref="IWorldInfo.TreeWood"/>). Trees of another wood are passed by, as a player after Wood walks past the Corruption's
+	/// Ebonwood trees; logged once per wood when that leaves none.
+	/// </summary>
 	private TilePos? NearestTree(BotContext ctx)
 	{
 		TilePos node = ctx.Node;
-		foreach (TilePos t in ctx.Seen.Trees)
-			if (!badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t) && Math.Abs(t.X - node.X) <= TreeSearchTiles && ctx.World.IsTreeTrunk(t.X, t.Y))
+		int otherWood = 0;
+		foreach (TilePos t in ctx.Seen.Trees) {
+			if (badTrees.Contains(t) || ctx.UnreachableTiles.Contains(t) || Math.Abs(t.X - node.X) > TreeSearchTiles || !ctx.World.IsTreeTrunk(t.X, t.Y))
+				continue;
+			int wood = ctx.World.TreeWood(t.X, t.Y);
+			if (Counts(wood))
 				return t;
+			otherWood = wood;
+		}
+		if (otherWood != 0 && notedWoods.Add(otherWood) && ctx.Knowledge != null)
+			ctx.Log.Info($"GatherWood: the trees in sight give {ctx.Knowledge.ItemName(otherWood)}, which does not count for {ctx.Knowledge.ItemName(ItemType)}; looking further");
 		return null;
 	}
+
+	private readonly HashSet<int> notedWoods = new();
 
 	private SkillStatus Fail(BotContext ctx, string reason)
 	{

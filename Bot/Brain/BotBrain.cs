@@ -119,6 +119,7 @@ public sealed class BotBrain
 	public ProgressionPlanner Planner { get; } = new();
 	/// <summary>Pick up what a fight dropped (gel, coins...) before going back to the plan.</summary>
 	public const int LootRadiusTiles = 15;
+	private readonly HashSet<int> lootGivenUp = new();
 	/// <summary>
 	/// A boss's loot is looked for this far round (tiles): the Eye dies over the arena and its drops fall to the floor
 	/// (BossFightSkill.ArenaHalfWidth 20 to either side of the kite's centre, and the fall), farther than a fight's.
@@ -416,6 +417,22 @@ public sealed class BotBrain
 			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && ctx.Crafter.TryEquip(item))
 				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)}");
 	}
+
+	/// <summary>
+	/// Trash anything carried that stops pickups (<see cref="GameIds.PickupBlockers"/>: the Encumbering Stone), as a player who
+	/// finds nothing comes to the bag throws it out: with it carried, no wood, ore, crystal or coin is picked up. Seen in game
+	/// (measured run U28, world_eye): looted from a chest at (2541,587) at t465000 with the rest of it, and from then on no
+	/// count in the bag rose for the 400000 ticks left (Wood 38 down to 4 as arrows were made, "need 16 more Wood" for the last
+	/// 30 game hours), and 101 of the run's 107 Collect heartbeats were spent standing on drops that never came.
+	/// </summary>
+	public static void DropPickupBlockers(BotContext ctx)
+	{
+		if (ctx.Inventory == null || ctx.Crafter == null || ctx.Knowledge == null)
+			return;
+		foreach (int item in ctx.Ids.PickupBlockers)
+			if (ctx.Inventory.Count(item) > 0 && ctx.Crafter.TryTrash(item))
+				ctx.Log.Info($"Inventory: trashing the {ctx.Knowledge.ItemName(item)} (while it is carried nothing but hearts and stars is picked up)");
+	}
 	/// <summary>
 	/// Free slots kept in the bag: one for what is mined or dropped next, one for a chest's best item. Seen in game (measured
 	/// run S9): the bag full of dirt, stone, mud, cobwebs and seeds, a mined life crystal could not be picked up (the bot
@@ -637,6 +654,7 @@ public sealed class BotBrain
 		if (Auto && ctx.Tick % HabitEvery == 0)
 			WatchPlace(ctx);
 		if (Auto && ctx.Tick % HabitEvery == 0) {
+			DropPickupBlockers(ctx);
 			KeepRoom(ctx);
 			WearAccessories(ctx);
 			NoteEvilEnemies(ctx);
@@ -760,9 +778,13 @@ public sealed class BotBrain
 			// A reflex is over: its loot, then back to the paused work if the planner still wants it. Reflexes do not count
 			// as failures or successes of the work.
 			Override = null;
-			if (Auto && wasFight && CollectDropsSkill.AnyInRange(ctx, _ => true, LootRadiusTiles)) {
+			// Drops given up on by an earlier fight's collect (no way there, or stood on and not picked up) stay given up on while
+			// they lie there: each fight's collect began afresh and stood on the same ones again. The set keeps only drops still
+			// on the ground (ids are item slots, reused once a drop is gone).
+			lootGivenUp.IntersectWith(ctx.Drops.Select(d => d.Id));
+			if (Auto && wasFight && CollectDropsSkill.AnyInRange(ctx, d => !lootGivenUp.Contains(d.Id), LootRadiusTiles)) {
 				ctx.Log.Info("Auto: picking up loot after the fight");
-				BeginOverride(new CollectDropsSkill(_ => true, LootRadiusTiles), ctx);
+				BeginOverride(new CollectDropsSkill(_ => true, LootRadiusTiles, lootGivenUp), ctx);
 				return;
 			}
 			if (Work != null) {

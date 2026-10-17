@@ -47,6 +47,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int DemoniteOre = 56, DemoniteBar = 57, DemonBow = 44, Bottle = 31, Glass = 170, SandBlock = 169;
 	public const int TileBottles = 13, TileDemonite = 22, TileCorruptGrass = 23, TileCorruptPlants = 24, TileEbonstone = 25, TileCorruptThorns = 32;
 	public const int EowHead = 13, EowBody = 14, EowTail = 15, FlyingAi = 5, WormAi = 6, VileMushroomFrame = 144;
+	/// <summary>The Corruption's trees' wood (in the "Wood" recipe group), and the Encumbering Stone (carried, no pickups).</summary>
+	public const int Ebonwood = 619, EncumberingStone = 4346;
 
 	public static readonly GameIds Ids = new() {
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
@@ -57,7 +59,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
-		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion, FloatingAccessories = new[] { InnerTube },
+		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion, FloatingAccessories = new[] { InnerTube }, PickupBlockers = new[] { EncumberingStone },
 		DesertTiles = new[] { TileSand }, // only cells a test marks with it (TileTypes) count
 		EvilTiles = new[] { TileCorruptGrass, TileEbonstone }, // likewise
 		CorruptionWeights = new Dictionary<int, int> { [TileCorruptGrass] = 1, [TileCorruptPlants] = 1, [TileEbonstone] = 1 },
@@ -86,6 +88,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly TestBlockActions Blocks;
 	public readonly SimWorld Sim;
 	public readonly Dictionary<TilePos, int> Trees = new(); // base -> height
+	/// <summary>The wood a tree drops (base -> item); Wood unless set.</summary>
+	public readonly Dictionary<TilePos, int> TreeWoods = new();
 	public readonly Dictionary<TilePos, int> TileTypes = new(); // solid cells that are not dirt
 	public readonly Dictionary<TilePos, int> Furniture = new(); // cell -> tile type of placed furniture
 	public readonly HashSet<TilePos> Walls = new();
@@ -150,7 +154,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = IronPickaxe, Ingredients = new[] { new Ingredient(10, IronBar), new Ingredient(3, Wood) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = LeadPickaxe, Ingredients = new[] { new Ingredient(10, LeadBar), new Ingredient(3, Wood) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = IronBow, Ingredients = new[] { new Ingredient(7, IronBar) }, Stations = new[] { TileAnvil } });
-		Add(new RecipeInfo { Result = WoodenArrow, ResultStack = 25, Ingredients = new[] { new Ingredient(1, Wood), new Ingredient(1, StoneBlock) }, Stations = new[] { TileBench } });
+		// Any wood (vanilla: anyWood, the "Wood" recipe group).
+		Add(new RecipeInfo { Result = WoodenArrow, ResultStack = 25, Ingredients = new[] { new Ingredient(1, Wood, Ebonwood), new Ingredient(1, StoneBlock) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = SuspiciousEye, Ingredients = new[] { new Ingredient(6, Lens) }, Stations = new[] { TileDemonAltar } });
 		Add(new RecipeInfo { Result = IronBroadsword, Ingredients = new[] { new Ingredient(8, IronBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = IronHelmet, Ingredients = new[] { new Ingredient(15, IronBar) }, Stations = new[] { TileAnvil } });
@@ -210,7 +215,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public IReadOnlyList<RecipeInfo> RecipesFor(int itemType) => recipes.TryGetValue(itemType, out List<RecipeInfo> l) ? l : Array.Empty<RecipeInfo>();
 
 	public ItemSource SourceOf(int itemType) => itemType switch {
-		Wood => new ItemSource(SourceKind.Tree),
+		Wood or Ebonwood => new ItemSource(SourceKind.Tree),
 		Gel => new ItemSource(SourceKind.Hunt, NpcAiStyle: SlimeAi),
 		StoneBlock => new ItemSource(SourceKind.Mine, TileStone),
 		DirtBlock => new ItemSource(SourceKind.Mine, TileDirt),
@@ -284,6 +289,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	// ---------- IWorldInfo ----------
 
 	public bool IsTreeTrunk(int x, int y) => Trees.Any(t => t.Key.X == x && y <= t.Key.Y && y > t.Key.Y - t.Value);
+	public int TreeWood(int x, int y) => Trees.ContainsKey(new TilePos(x, y)) ? TreeWoods.GetValueOrDefault(new TilePos(x, y), Wood) : 0;
 
 	public (int Width, int Height, int OriginX, int OriginY) Footprint(int itemType) => TilePlacedBy(itemType) switch {
 		TileBench or TileAnvil => (2, 1, 0, 0),
@@ -473,6 +479,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	public int Count(int itemType) => Items.TryGetValue(itemType, out int n) ? n : 0;
 	public bool HasRoomFor(int itemType) => FreeSlots > 0 || Stacks().Any(s => s.Type == itemType && s.Stack < StackOf(itemType));
+	/// <summary>Like Player.CanAcceptItemIntoInventory and ItemSpace: room for it, and no Encumbering Stone carried.</summary>
+	public bool CanPickUp(int itemType) => Count(EncumberingStone) == 0 && HasRoomFor(itemType);
 	public bool IsEquipped(int itemType) => Equipped.Contains(itemType);
 
 	/// <summary>Chests by top-left tile, with their contents; looted ones are emptied.</summary>
@@ -579,9 +587,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			if (Trees.TryGetValue(aim, out int height) && Math.Abs(Sim.Node.X + 1 - aim.X) <= 4) {
 				chopTicks[aim] = chopTicks.GetValueOrDefault(aim) + 1;
 				if (chopTicks[aim] >= 30) {
+					int wood = TreeWood(aim.X, aim.Y);
 					Trees.Remove(aim);
 					for (int i = 0; i < height; i++)
-						Drops.Add(new DropInfo(nextDropId++, Wood, "Wood", 1, (aim.X + (i % 5) - 2) * 16f + 4, aim.Y * 16f + 4, 8, 8));
+						Drops.Add(new DropInfo(nextDropId++, wood, ItemName(wood), 1, (aim.X + (i % 5) - 2) * 16f + 4, aim.Y * 16f + 4, 8, 8));
 				}
 			}
 		}
@@ -658,7 +667,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		cx = Sim.State.CenterX(p);
 		cy = Sim.State.CenterY(p);
 		foreach (DropInfo d in Drops.ToList())
-			if (MathF.Abs(d.CenterX - cx) <= 42 && MathF.Abs(d.CenterY - cy) <= 42) {
+			if (MathF.Abs(d.CenterX - cx) <= 42 && MathF.Abs(d.CenterY - cy) <= 42 && Count(EncumberingStone) == 0) {
 				Items[d.Type] = Count(d.Type) + d.Stack;
 				Drops.Remove(d);
 			}

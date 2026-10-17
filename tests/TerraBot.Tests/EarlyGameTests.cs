@@ -175,6 +175,93 @@ public class EarlyGameTests
 		Assert.Equal(new[] { new Core.Grid.TilePos(200, 20) }, ctx.KnownTrees);
 	}
 
+	/// <summary>
+	/// Measured run U28 (world_eye): Wooden Arrows' wood (any wood) gathered beside the Corruption's trees, which drop
+	/// Ebonwood; only Wood counted and only Wood drops were fetched, "GatherWood start: have 4" for the last 30 game hours.
+	/// </summary>
+	[Fact]
+	public void AnyWoodNeed_AmongEbonwoodTrees_GathersEbonwood_AndCountsIt()
+	{
+		FakeGame game = Field(80, 12, 20, 28);
+		foreach (var t in game.Trees.Keys.ToList())
+			game.TreeWoods[t] = FakeGame.Ebonwood;
+		game.Items[FakeGame.StoneBlock] = 50;
+		BotContext ctx = game.CreateContext(output);
+		var planner = new ProgressionPlanner();
+		ISkill skill = planner.ResolveForTest(new HaveItem(FakeGame.WoodenArrow, 100, "arrows"), ctx);
+		output.WriteLine($"plan: {planner.Status}");
+		var wood = Assert.IsType<GatherWoodSkill>(skill);
+		SkillStatus s = RunSkill(game, ctx, wood, 6000);
+		output.WriteLine($"{s}: {wood.Describe()}, wood {game.Count(FakeGame.Wood)}, ebonwood {game.Count(FakeGame.Ebonwood)}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(game.Count(FakeGame.Ebonwood) >= 4, $"ebonwood {game.Count(FakeGame.Ebonwood)}");
+		// And the planner, asked again, has the arrows' wood: on to the work bench for the craft (its own 10 Wood, no group).
+		planner.ResolveForTest(new HaveItem(FakeGame.WoodenArrow, 100, "arrows"), ctx);
+		output.WriteLine($"then: {planner.Status}");
+		Assert.DoesNotContain("or other wood", planner.Status);
+	}
+
+	/// <summary>
+	/// A need only Wood does (a Wooden Door: no recipe group) beside Ebonwood trees: those are passed by for the Wood trees
+	/// beyond, not felled for wood that does not count.
+	/// </summary>
+	[Fact]
+	public void WoodOnlyNeed_PassesEbonwoodTrees_ForWoodOnes()
+	{
+		FakeGame game = Field(80, 8, 12, 40, 48);
+		game.TreeWoods[new Core.Grid.TilePos(8, 24)] = FakeGame.Ebonwood;
+		game.TreeWoods[new Core.Grid.TilePos(12, 24)] = FakeGame.Ebonwood;
+		BotContext ctx = game.CreateContext(output);
+		SkillStatus s = RunSkill(game, ctx, new GatherWoodSkill(FakeGame.Wood, 12), 8000);
+		output.WriteLine($"{s}, wood {game.Count(FakeGame.Wood)}, ebonwood {game.Count(FakeGame.Ebonwood)}, trees left {string.Join(" ", game.Trees.Keys)}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Contains(new Core.Grid.TilePos(8, 24), game.Trees.Keys);
+		Assert.Contains(new Core.Grid.TilePos(12, 24), game.Trees.Keys);
+	}
+
+	/// <summary>
+	/// A drop the game would not pick up (an Encumbering Stone carried: Player.CanAcceptItemIntoInventory) is not walked to
+	/// and stood on. Measured run U28: "WalkTo reached StandAt(1805,286) at (1805,286)" 62 times in a row after a fight.
+	/// </summary>
+	[Fact]
+	public void Collect_ADropThatWouldNotBePickedUp_IsNotWalkedTo()
+	{
+		FakeGame game = Field(80);
+		game.Items[FakeGame.EncumberingStone] = 1;
+		game.Drops.Add(new DropInfo(1, FakeGame.Gel, "Gel", 3, 10 * 16f, 24 * 16f, 8, 8));
+		BotContext ctx = game.CreateContext(output);
+		var collect = new CollectDropsSkill(_ => true);
+		Core.Grid.TilePos start = game.Sim.Node;
+		SkillStatus s = RunSkill(game, ctx, collect, 600);
+		output.WriteLine($"{s} after {game.Sim.Ticks} ticks at {game.Sim.Node}: {collect.Describe()}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Equal(start, game.Sim.Node);
+		Assert.Single(game.Drops);
+	}
+
+	/// <summary>
+	/// Measured run U28: an Encumbering Stone looted from a chest at t465000, and no count in the bag rose again for the
+	/// 400000 ticks left. Carried, it is trashed, and the wood comes in.
+	/// </summary>
+	[Fact]
+	public void AnEncumberingStone_IsTrashed_SoTheWoodIsPickedUp()
+	{
+		FakeGame game = Field(80, 12, 20, 28);
+		game.Items[FakeGame.EncumberingStone] = 1;
+		BotContext ctx = game.CreateContext(output);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Early);
+		for (int t = 0; t < 60 * 30; t++) {
+			game.Refresh(ctx);
+			ctx.Tick = t;
+			brain.Tick(ctx);
+			game.Step(ctx);
+		}
+		output.WriteLine($"{brain.Describe()}; wood {game.Count(FakeGame.Wood)}, stone {game.Count(FakeGame.EncumberingStone)}");
+		Assert.Equal(0, game.Count(FakeGame.EncumberingStone));
+		Assert.True(game.Count(FakeGame.Wood) + game.Count(FakeGame.WorkBench) > 0);
+	}
+
 	[Fact]
 	public void GatherWood_NoAxe_Fails()
 	{
