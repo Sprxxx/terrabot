@@ -332,7 +332,8 @@ public sealed class SelfTestSystem : ModSystem
 				else if (s.Mode == "wof") {
 					// The Wall of Flesh (Milestone 12, docs M12_SPEC.md section 10): one Guide Voodoo Doll thrown east off the end of the
 					// floor the bot stands on (the bridge, its arena), then the fight along it.
-					var bridge = BridgeUnder(bot.Context.Node);
+					// The node from the player as placed (the bot's context is refreshed only once it is on, below).
+					var bridge = BridgeUnder(Body.NodeOf(p.position.X, p.position.Y, bot.LivePhysics));
 					Mod.Logger.Info($"SELFTEST {s.Name}: the bridge x {bridge.MinX}..{bridge.MaxX}, feet row {bridge.StandY}; the doll goes east into the lava");
 					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.GuideVoodooDoll, NPCID.WallofFlesh, bot.Context.Ids.WallOfFleshMinions) {
 						Arena = bridge,
