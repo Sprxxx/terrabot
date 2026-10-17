@@ -1066,6 +1066,22 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return list;
 	}
 
+	private List<int> craftableArmor;
+
+	public IReadOnlyList<int> CraftableArmor()
+	{
+		if (craftableArmor == null) {
+			var set = new HashSet<int>();
+			for (int i = 0; i < Recipe.numRecipes; i++) {
+				Recipe r = Main.recipe[i];
+				if (r?.createItem != null && r.createItem.type > ItemID.None && !r.Disabled && ArmorSlotOf(r.createItem.type) != ArmorSlot.None)
+					set.Add(r.createItem.type);
+			}
+			craftableArmor = set.ToList();
+		}
+		return craftableArmor;
+	}
+
 	/// <summary>The bot's Journey adapter (set by TerraBotPlayer): researched items count as had, a duplication away.</summary>
 	public IJourney Journey { get; set; }
 

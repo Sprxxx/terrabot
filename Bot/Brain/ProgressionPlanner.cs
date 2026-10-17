@@ -3145,6 +3145,34 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	public const int MaxShortfallDepth = 6;
 
 	/// <summary>
+	/// Armour better than the worn piece, slot by slot, that the bag alone makes: every ingredient carried or crafted from what is
+	/// carried (ore to bars at the furnace), nothing gathered. The best by defence for each slot. Seen in game (world_wof E26 to E36,
+	/// 2026-10-18): 172 Demonite Ore and 39 Shadow Scales carried through every Wall fight in Iron Chainmail and Greaves (defence 11 of
+	/// the Shadow set's 19 with the worn Ancient Shadow Helmet); the user: "we should strive to equip the best gear possible".
+	/// </summary>
+	public IEnumerable<Need> ArmourFromTheBag(BotContext ctx)
+	{
+		if (ctx.Knowledge == null || ctx.Inventory == null)
+			yield break;
+		foreach (ArmorSlot slot in new[] { ArmorSlot.Head, ArmorSlot.Body, ArmorSlot.Legs }) {
+			int worn = ctx.Inventory.Worn(slot);
+			int have = worn >= 0 ? ctx.Inventory.ArmorDefense(worn) : 0;
+			int best = -1, bestDef = have;
+			foreach (int item in ctx.Knowledge.CraftableArmor()) {
+				if (ctx.Inventory.ArmorSlotOf(item) != slot || ctx.Inventory.ArmorDefense(item) <= bestDef || item == worn)
+					continue;
+				if (MakeableFromBag(item, 1, ctx, new Dictionary<int, int>(), 0)) {
+					best = item;
+					bestDef = ctx.Inventory.ArmorDefense(item);
+				}
+			}
+			if (best >= 0)
+				yield return new Wearing(new[] { best }, $"{ctx.Knowledge.ItemName(best)} from the bag (defence {bestDef} over {have})");
+		}
+	}
+
+
+	/// <summary>
 	/// Rough ticks still needed for <paramref name="n"/> of the item, taking what is carried (minus what <paramref name="used"/>
 	/// has already taken for this estimate) before crafting or gathering the rest.
 	/// </summary>

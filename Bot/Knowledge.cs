@@ -78,6 +78,9 @@ public interface IGameKnowledge
 	/// what a player knows of where to look. Null when generation has no such rule for it.
 	/// </summary>
 	GenArea? GenerationArea(int tileType) => null;
+
+	/// <summary>Armour pieces (head, body, legs; no vanity) some recipe makes: the candidates for an armour upgrade.</summary>
+	IReadOnlyList<int> CraftableArmor() => System.Array.Empty<int>();
 }
 
 /// <summary>

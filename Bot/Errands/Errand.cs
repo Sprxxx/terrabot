@@ -38,6 +38,9 @@ public interface IErrandSupport
 	ISkill ResolveNeeds(IEnumerable<Need> needs, BotContext ctx, out string blocked);
 	/// <summary>Why the last resolved skill was chosen (the planner's status line).</summary>
 	string Status { get; }
+
+	/// <summary>Armour better than what is worn that the bag alone makes (crafting at the stations), one need per slot.</summary>
+	IEnumerable<Need> ArmourFromTheBag(BotContext ctx) => System.Array.Empty<Need>();
 }
 
 /// <summary>

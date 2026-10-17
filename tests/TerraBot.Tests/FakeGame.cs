@@ -307,6 +307,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public GenArea? GenerationArea(int tileType) => tileType == TileDemonAltar ? AltarArea : null;
 
 	public IReadOnlyList<RecipeInfo> RecipesFor(int itemType) => recipes.TryGetValue(itemType, out List<RecipeInfo> l) ? l : Array.Empty<RecipeInfo>();
+	public IReadOnlyList<int> CraftableArmor() => Armor.Keys.Where(recipes.ContainsKey).ToList();
+	/// <summary>Adds a recipe (tests).</summary>
+	public void AddRecipe(RecipeInfo r) => Add(r);
 
 	public ItemSource SourceOf(int itemType) => itemType switch {
 		Wood or Ebonwood => new ItemSource(SourceKind.Tree),

@@ -204,6 +204,8 @@ public sealed class WallOfFleshErrand : Errand
 
 	/// <summary>The shaft as dug, row by row (<see cref="HellevatorSkill.Route"/>): the trip back goes down it. Saved with the errand.</summary>
 	public List<(int Row, int Col)> ShaftRoute { get; private set; } = new();
+	/// <summary>Died: back at the spawn, the armour the bag makes is made before the trip down (<see cref="IErrandSupport.ArmourFromTheBag"/>).</summary>
+	private bool upgradeAfterDeath = true;
 
 	/// <summary>Down the route an earlier errand dug at this shaft (the planner keeps it).</summary>
 	public void UseRoute(IEnumerable<(int Row, int Col)> route) => ShaftRoute = route.ToList();
@@ -284,6 +286,16 @@ public sealed class WallOfFleshErrand : Errand
 			int before = ctx.Inventory?.FreeSlots ?? 0;
 			BotBrain.KeepRoom(ctx, -1, LeanFreeSlots, relaxed: true); // a lean bag for the road: spare gear and junk go, the packing stays
 			ctx.Log.Info($"Errand {Id}: packed ({Describe(Packing)}; kept back {Describe(Reserve)}); the bag {before} -> {ctx.Inventory?.FreeSlots ?? 0} free slots; {Identity} from {ctx.Node} to row {StandRow}");
+		}
+		// Back at the spawn after a death, before the trip down: the armour the bag makes, at the base's stations (the furnace and
+		// the anvil are there, not down there). Once per death: what cannot be made is left.
+		if (upgradeAfterDeath && !DownThere(ctx)) {
+			ISkill up = planner.ResolveNeeds(planner.ArmourFromTheBag(ctx), ctx, out string upBlocked);
+			if (up != null && upBlocked == null) {
+				Status = $"at the base after a death, better armour first: {planner.Status}";
+				return up;
+			}
+			upgradeAfterDeath = false;
 		}
 		// The remaining demand: a resupply only when the rest of the work is not feasible with what is carried.
 		ISkill more = planner.ResolveNeeds(RemainingDemand(ctx), ctx, out string demandBlocked);
@@ -453,6 +465,7 @@ public sealed class WallOfFleshErrand : Errand
 		base.OnDeath(ctx);
 		shaft = null;
 		phaseSkill = null;
+		upgradeAfterDeath = true;
 		if (Phase == DescendPhase) {
 			ColumnDeaths++;
 			lastDeathAt = DeepestRow > int.MinValue ? new TilePos(ShaftX, DeepestRow) : ctx.Node;

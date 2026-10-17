@@ -225,6 +225,28 @@ public class BuildingTests
 		Assert.Equal(FakeGame.EbonwoodWorkBench, Assert.IsType<CraftSkill>(next).ItemType);
 	}
 
+	/// <summary>world_wof E26-E36 (2026-10-18): 172 Demonite Ore and 39 Shadow Scales carried through every Wall fight in iron armour.</summary>
+	[Fact]
+	public void ArmourTheBagMakes_IsProposed_SlotBySlot_AndNoneWithoutTheMakings()
+	{
+		const int ShadowScalemail = 102;
+		FakeGame g = ProgressionTests.Mine(110);
+		g.Armor[FakeGame.IronChainmail] = (ArmorSlot.Body, 3);
+		g.Armor[ShadowScalemail] = (ArmorSlot.Body, 7);
+		g.Equipped.Add(FakeGame.IronChainmail);
+		g.AddRecipe(new RecipeInfo { Result = ShadowScalemail, Ingredients = new[] { new Ingredient(2, FakeGame.DemoniteBar), new Ingredient(2, FakeGame.ShadowScale) }, Stations = new[] { FakeGame.TileAnvil } });
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		g.Items[FakeGame.DemoniteOre] = 6;
+		g.Items[FakeGame.ShadowScale] = 2;
+		g.Refresh(ctx);
+		var needs = p.ArmourFromTheBag(ctx).ToList();
+		var w = Assert.IsType<Wearing>(Assert.Single(needs));
+		Assert.Contains(ShadowScalemail, w.Items);
+		g.Items[FakeGame.ShadowScale] = 1; // a scale short: nothing gathered for it
+		Assert.Empty(p.ArmourFromTheBag(ctx));
+	}
+
 	[Fact]
 	public void Night_WithTheFurnaceOutsideTheHouse_MakesANewOneAtHome()
 	{
