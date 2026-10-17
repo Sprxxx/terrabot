@@ -7,6 +7,12 @@ namespace TerraBot.Bot;
 /// <summary>A chest the player has seen: its top-left tile, and whether it is locked (gold chests in the dungeon...).</summary>
 public readonly record struct ChestInfo(TilePos TopLeft, bool Locked);
 
+/// <summary>
+/// A town NPC and its home: <paramref name="Home"/> is the floor tile the game gave it (NPC.homeTileX/Y, WorldGen.ScoreRoom's
+/// bestX/bestY: a solid floor block with three open cells over it), meaningless while <paramref name="Homeless"/>.
+/// </summary>
+public readonly record struct TownNpcHome(int Type, string Name, bool Homeless, TilePos Home);
+
 public interface IWorldInfo
 {
 	/// <summary>Chests within <paramref name="radius"/> tiles that the player has seen (revealed on the map), nearest first.</summary>
@@ -78,6 +84,22 @@ public interface IWorldInfo
 	/// (Item.CheckLavaDeath, Item.cs:50409-50425; docs M12_SPEC.md section 2b).
 	/// </summary>
 	bool TownNpcAlive(int npcType);
+
+	/// <summary>
+	/// The town NPCs alive that want a house of their own, where the game has them living: not the Old Man, the Travelling or
+	/// the Skeleton Merchant (the game never houses them: Main.UpdateTime_SpawnTownNPCs skips 37, 368 and 453), nor the town
+	/// pets (NPCID.Sets.IsTownPet), which share a town NPC's room (TownRoomManager.CanNPCsLiveWithEachOther: NPCs of another
+	/// housingCategory may live together). A player sees this
+	/// in the housing menu (each NPC's banner in its room).
+	/// </summary>
+	IReadOnlyList<TownNpcHome> TownNpcHomes();
+
+	/// <summary>
+	/// The town NPCs not alive whose arrival the game allows now (the rules of Main.UpdateTime_SpawnTownNPCs, which every
+	/// 7200 ticks of daylight picks one of them to move into an empty valid room): the Guide always, the Merchant with 50 silver
+	/// carried, the Nurse after a life crystal and the Merchant, the Dryad after a boss... Type and name, in the game's order.
+	/// </summary>
+	IReadOnlyList<(int Type, string Name)> TownNpcsThatCanCome();
 
 	/// <summary>
 	/// The life the boss's health bar at the foot of the screen shows, 0 when there is none: what a player reads to know the

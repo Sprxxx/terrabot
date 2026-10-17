@@ -222,7 +222,12 @@ public sealed partial class ProgressionPlanner
 		public const string WallOfFlesh = "wof";
 		/// <summary>Just the hellbridge, from where the bot stands in the Underworld (a building block of "wof"; the synthetic scenarios).</summary>
 		public const string Hellbridge = "hellbridge";
-		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss, EvilBoss, Skeletron, WallOfFlesh, Hellbridge };
+		/// <summary>
+		/// A work bench and the house, rooms for the town NPCs (<see cref="NpcHousing"/>), and two NPCs moved in (<see cref="NpcsHoused"/>):
+		/// the boss plans' NPC housing on its own (its self-test).
+		/// </summary>
+		public const string Housing = "housing";
+		public static readonly string[] All = { Early, Iron, Settle, Crystals, Arena, Boss, EvilBoss, Skeletron, WallOfFlesh, Hellbridge, Housing };
 	}
 
 	/// <summary>Worm Food: 30 Vile Powder + 15 Rotten Chunk at a Demon Altar (Recipe.cs:14407-14413).</summary>
@@ -335,6 +340,8 @@ public sealed partial class ProgressionPlanner
 			return new Need[] { new ArenaBuilt("arena") };
 		if (plan == Plans.Hellbridge)
 			return new Need[] { new BridgeBlocks("bridge blocks"), new UnderworldReached("the Underworld"), new HellbridgeBuilt("hellbridge") };
+		if (plan == Plans.Housing)
+			return new Need[] { new StationPlaced(ids.WorkBenchTile, "work bench"), new HouseBuilt("house"), new NpcHousing("NPC housing"), new NpcsHoused(2, "two town NPCs moved in") };
 		var stages = new List<Need> {
 			new StationPlaced(ids.WorkBenchTile, "work bench"),
 			new HaveItem(ids.WoodenSword, 1, "wooden sword"),
@@ -360,6 +367,10 @@ public sealed partial class ProgressionPlanner
 		stages.Add(new Wearing(Tiers(ids.IronTierGreaves, ids.SilverTierGreaves), "greaves"));
 		if (plan == Plans.Settle)
 			return stages;
+		// Settled, the town NPCs' rooms, as a player houses the Guide, the Merchant and the Nurse before the first boss: one room
+		// each for those without a home and those who can come, one spare at least. Checked on every pass (a survey kept for
+		// NpcSurveyTicks), so a room is added when one moves in; never a stop: what it cannot do is left for a day.
+		stages.Add(new NpcHousing("NPC housing"));
 		// The bow and arrows before the crystals: the armoured nights go to the summon's lenses (NightPartsForTheSummon), and
 		// demon eyes, fliers, are shot, not reached with a sword. Seen in game (measured run U5): the bow came at d9 after
 		// max life 200; 46 hits taken from demon eyes on the night hunts, most of them last seen at full life, 1 lens of 6.
@@ -489,6 +500,7 @@ public sealed partial class ProgressionPlanner
 		OldManMet = false;
 		SkeletronPrepMet = false;
 		ResetWallOfFlesh();
+		ResetNpcHousing();
 		dungeonSideForced = null;
 		dungeonSide = null;
 		dungeonSideAt = long.MinValue / 2;
@@ -636,6 +648,9 @@ public sealed partial class ProgressionPlanner
 	/// <summary>Tell the planner about a finished skill (so a just-placed station counts before the next scan).</summary>
 	public void OnSkillFinished(ISkill skill, SkillStatus status, BotContext ctx)
 	{
+		NpcHousingFinished(skill, status, ctx);
+		if (skill is BuildSkill { Blueprint.IsNpcRoom: true })
+			return; // not the house (below): the NPC rooms keep their own list
 		// A bench or furnace that would not go down here is not tried here again for a while: the walk to the one far away
 		// instead. Seen in game (measured run S5): "placing a Work Bench here" failing ("no free floor") and started again,
 		// 278 heartbeats (58% of the run).
@@ -834,6 +849,7 @@ public sealed partial class ProgressionPlanner
 	{
 		stuck = null;
 		badSites.Clear();
+		badNpcSlots.Clear();
 		eyeArena.ForgetGivenUp();
 		evilArena.ForgetGivenUp();
 		dungeonArena.ForgetGivenUp();
@@ -1025,6 +1041,7 @@ public sealed partial class ProgressionPlanner
 			Plans.Skeletron => "Skeletron is defeated",
 			Plans.WallOfFlesh => "the Wall of Flesh is defeated: Hardmode",
 			Plans.Hellbridge => $"the hellbridge is built ({HellbridgeText})",
+			Plans.Housing => $"the house, {npcRooms.Count} NPC rooms and {HousedInOurRooms(ctx)} town NPCs living in them",
 			_ => "settled: house built, iron-tier pickaxe, broadsword and armour",
 		};
 		Complete = true;
@@ -1175,6 +1192,8 @@ public sealed partial class ProgressionPlanner
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Items, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
 			HouseBuilt hb => ResolveHouse(hb.HeartLantern && LanternFromASpareCrystal(ctx), claims, depth, ctx),
+			NpcHousing => ResolveNpcHousing(claims, depth, ctx),
+			NpcsHoused nh => ResolveNpcsHoused(nh, ctx),
 			ArenaBuilt { AtDungeon: true } ad => ResolveDungeonArena(ad, claims, depth, ctx),
 			ArenaBuilt ab => ResolveArena(ab, claims, depth, ctx),
 			DungeonFound => ResolveDungeon(ctx, "for Skeletron"),
@@ -1620,6 +1639,10 @@ public sealed partial class ProgressionPlanner
 				keepOut.Add((new TilePos(h.X - ArenaHouseGap, h.Y - ArenaHouseGap),
 					new TilePos(h.X + house.Width - 1 + ArenaHouseGap, h.Y + house.Height - 1 + ArenaHouseGap)));
 			}
+			// Nor over the NPC rooms: the same gap as the house's.
+			foreach (var (r, _) in npcRooms)
+				keepOut.Add((new TilePos(r.X - ArenaHouseGap, r.Y - ArenaHouseGap),
+					new TilePos(r.X + Blueprint.NpcRoomWidth - 1 + ArenaHouseGap, r.Y + Blueprint.SmallHouse(ctx.Ids).Height - 1 + ArenaHouseGap)));
 			// Not over the Eye's arena (its floor is protected once ready): beside it, or on it when it lies in the zone (above).
 			if (evil && eyeArena.Site is TilePos e)
 				keepOut.Add((e, new TilePos(e.X + bp.Width - 1, e.Y + bp.Height - 1)));
@@ -1687,6 +1710,7 @@ public sealed partial class ProgressionPlanner
 	}
 
 	private (TilePos?, TilePos?, bool, TilePos?, bool, int, TilePos?, bool, (int, int, int)) protectedFor = (null, null, false, null, false, 0, null, false, (0, 0, 0));
+	private int protectedNpcRooms;
 
 	/// <summary>
 	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house,
@@ -1702,9 +1726,10 @@ public sealed partial class ProgressionPlanner
 		bool evilReady = evilArena.Site is TilePos evilSite && ArenaReady(ctx, arena, evilSite);
 		bool dungeonReady = dungeonArena.Site is TilePos dungeonSite && ArenaReady(ctx, dungeon, dungeonSite);
 		var key = (HouseSite, eyeArena.Site, eyeReady, evilArena.Site, evilReady, Bridges.Count, dungeonArena.Site, dungeonReady, HellbridgeKey(ctx));
-		if (protectedFor == key && ctx.Protected != null)
+		if (protectedFor == key && protectedNpcRooms == npcRooms.Count && ctx.Protected != null)
 			return;
 		protectedFor = key;
+		protectedNpcRooms = npcRooms.Count;
 		var cells = new HashSet<TilePos>();
 		if (HouseSite is TilePos h) {
 			Blueprint house = Blueprint.SmallHouse(ctx.Ids);
@@ -1712,6 +1737,14 @@ public sealed partial class ProgressionPlanner
 				for (int y = 0; y < house.Height; y++)
 					if (house.At(x, y) != PlanCell.None)
 						cells.Add(new TilePos(h.X + x, h.Y + y));
+		}
+		// The NPC rooms built, as the house (the one being built is the build's own: BotContext.Reserved).
+		foreach (var (r, shared) in npcRooms) {
+			Blueprint room = Blueprint.NpcRoom(ctx.Ids, shared);
+			for (int x = 0; x < room.Width; x++)
+				for (int y = 0; y < room.Height; y++)
+					if (room.At(x, y) != PlanCell.None)
+						cells.Add(new TilePos(r.X + x, r.Y + y));
 		}
 		foreach ((bool isReady, TilePos? at) in new[] { (eyeReady, eyeArena.Site), (evilReady, evilArena.Site) })
 			if (isReady && at is TilePos a)
