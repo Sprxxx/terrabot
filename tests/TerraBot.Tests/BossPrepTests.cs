@@ -493,6 +493,45 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AnAltarBehindRockThePickaxeCannotBreak_WithBombsCarried_IsBlastedTo_NotGivenUp()
+	{
+		// Measured run U30: from the corruption chasm's foot the altar at (1748,412) lay behind ebonstone (pick 40); seven bombs,
+		// each "then the walk is Partial", took the bot to it at t721800, after 42 "not that one again for a day" from t673200.
+		FakeGame g = ProgressionTests.Mine(width: 120);
+		for (int x = 26; x <= 36; x++)
+			for (int y = 27; y <= 35; y++) {
+				bool inside = x > 27 && x < 35 && y > 28 && y < 34;
+				g.Grid.Set(x, y, inside ? CellKind.Empty : CellKind.Solid);
+				if (!inside)
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.AddAltar(30, 32); // sealed in, on the shell's floor (row 34)
+		g.AddAltar(80, 23); // out in the open, farther
+		g.Items[FakeGame.Lens] = 6;
+		g.Items[FakeGame.Bomb] = 5;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		var walk = Assert.IsType<WalkToSkill>(s);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000));
+		p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		ISkill next = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		var blast = Assert.IsType<BlastOutSkill>(next);
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos altar) && altar.X < 40, $"given up for {altar}");
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, blast, 3000));
+		p.OnSkillFinished(blast, SkillStatus.Succeeded, ctx);
+		ISkill after = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {after?.Describe()}; {g.Blasts} blast(s), {g.BlastHits} on the bot");
+		var again = Assert.IsType<WalkToSkill>(after);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, again, 6000));
+		Assert.True(ctx.Node.ChebyshevTo(new TilePos(31, 32)) <= ProgressionPlanner.StationReach, $"at {ctx.Node}");
+	}
+
+	[Fact]
 	public void NoAltarFoundAround_TravelsToNewGround_NotStuck()
 	{
 		// Measured run S17: all else ready at d5 +21h, then "no DemonAltar found after 10 explorations" and auto mode

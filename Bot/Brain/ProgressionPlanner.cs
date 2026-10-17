@@ -674,7 +674,8 @@ public sealed class ProgressionPlanner
 				stationWalkFailures.Remove(stationWalkType);
 			// A step that failed 3 times does not count (it is banned and the next walk routes round it): counting it
 			// too rebuilt the furnace and anvil twice in one run (5 iron bars each time).
-			else if (status == SkillStatus.Failed && !skill.FailureReason.Contains("same step") && !skill.FailureReason.Contains("died")) {
+			else if (status == SkillStatus.Failed && !skill.FailureReason.Contains("same step") && !skill.FailureReason.Contains("died")
+				&& !BlastFirst(stationWalk, ctx)) {
 				int n = stationWalkFailures.TryGetValue(stationWalkType, out int f) ? f + 1 : 1;
 				stationWalkFailures[stationWalkType] = n;
 				bool placeable = ctx.Knowledge.ItemsPlacing(stationWalkType).Count > 0;
@@ -1153,6 +1154,11 @@ public sealed class ProgressionPlanner
 					return recall;
 				if (NightMiningInstead(station, item, ctx) is ISkill night)
 					return night;
+				if (blastFor is (int type, TilePos from, Core.Pathfinding.IGoal goal) && type == station && from == ctx.Node) {
+					blastFor = null;
+					return Do($"blasting a way on towards the {k.TileName(station)} at {KnownStations[station]} to craft {name}", new BlastOutSkill(goal));
+				}
+				blastFor = null;
 				stationWalk = WalkToStation(KnownStations[station], ctx);
 				stationWalkType = station;
 				return Do($"walking to the {k.TileName(station)} to craft {name}", stationWalk);
@@ -2585,6 +2591,34 @@ public sealed class ProgressionPlanner
 	/// a new one here" removed it, and the search found the same altar again, 5 times until the run's 5 days were up.
 	/// </summary>
 	private readonly Dictionary<TilePos, long> failedStationSites = new();
+
+	/// <summary>
+	/// A walk to a station nothing places (a demon altar) that ended "no path" where it got to, with explosives that break tiles in
+	/// the bag: a blast towards the station from there first (BlastOutSkill), not a failed walk, once per spot and station for
+	/// <see cref="FailedTripTicks"/>; the walk after it goes on through what the blast opened, or fails and counts. As a player
+	/// with bombs blasts through the ebonstone they cannot mine, rather than leave the altar they have seen for one farther off.
+	/// Seen in game (measured run U30): from the corruption chasm's foot at (1762,420) seven bombs, each "then the walk is
+	/// Partial", took the bot west through the ebonstone to the DemonAltar at (1748,412) (t702000-t721800); before them, from
+	/// t673200, the 2-walk count gave that altar up 42 times in 13 game hours ("not that one again for a day"), the sight of
+	/// it bringing it back each time; the brain's own rule (3 failures in a row) started 19 blasts towards it, 7 of them threw.
+	/// </summary>
+	private bool BlastFirst(WalkToSkill walk, BotContext ctx)
+	{
+		if (ctx.Knowledge.ItemsPlacing(stationWalkType).Count > 0 || walk.LastPlan?.Status != Core.Pathfinding.PathStatus.NoPath || walk.Goal == null
+			|| !ctx.AllowBreak || BlastOutSkill.Carried(ctx).Count == 0)
+			return false;
+		var key = (stationWalkType, ctx.Node);
+		if (blastsTried.TryGetValue(key, out long at) && ctx.Tick - at < FailedTripTicks && ctx.Tick >= at)
+			return false;
+		blastsTried[key] = ctx.Tick;
+		blastFor = (stationWalkType, ctx.Node, walk.Goal);
+		ctx.Log.Info($"Auto: no path to the {ctx.Knowledge.TileName(stationWalkType)} at {KnownStations.GetValueOrDefault(stationWalkType)} from {ctx.Node}; "
+			+ $"a blast on towards it from here before that counts as a failed walk ({string.Join(", ", BlastOutSkill.Carried(ctx).Select(e => $"{e.Name} x{ctx.Inventory.Count(e.ItemType)}"))})");
+		return true;
+	}
+
+	private (int Type, TilePos From, Core.Pathfinding.IGoal Goal)? blastFor;
+	private readonly Dictionary<(int Type, TilePos From), long> blastsTried = new();
 	/// <summary>Cells of one placed station (an altar is 3×2): found again as another of its cells.</summary>
 	public const int StationSiteTiles = 3;
 
