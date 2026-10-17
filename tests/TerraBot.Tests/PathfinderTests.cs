@@ -14,6 +14,23 @@ public class PathfinderTests
 
 	public PathfinderTests(ITestOutputHelper output) => this.output = output;
 
+	/// <summary>world_wof E34 (2026-10-18): a walk to stand right by a lava pit, a jump off by a column, a fall into it. Lava beside or under a node prices it.</summary>
+	[Fact]
+	public void LavaBesideOrJustUnderANode_IsNoticed_AndAPlanKeepsClearOfIt()
+	{
+		var g = ArrayTileGrid.Parse(
+			"......................",
+			"......................",
+			"......................",
+			"..........###.........",
+			"..S.......#.#......G..",
+			"#####!!!###.#####.####",
+			"######################");
+		Assert.True(MoveContext.LavaNear(g, new TilePos(4, 4)), "lava a row under, a column off");
+		Assert.True(MoveContext.LavaNear(g, new TilePos(6, 4)), "lava under the feet");
+		Assert.False(MoveContext.LavaNear(g, new TilePos(15, 4)), "far from it");
+	}
+
 	[Fact]
 	public void FlatGround_WalksStraight()
 	{

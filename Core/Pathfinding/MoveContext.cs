@@ -240,6 +240,27 @@ public sealed class MoveContext
 	/// </summary>
 	public System.Func<TilePos, bool> Deadly { get; init; }
 
+	/// <summary>
+	/// An edge ending with lava beside the body or within two rows under its feet costs this much more (ticks): a plan keeps its
+	/// margin from lava, as Baritone's avoids cells next to it, and walks by it only when nothing else gets there. A jump or a step
+	/// that goes a little wrong there ends in the lava. Seen in game (world_wof E34, 2026-10-18): a fight's walk to stand right by
+	/// a lava pit at (2141,1063), a jump off by a column, a 3-row fall into it, dead.
+	/// </summary>
+	public float LavaNearTicks { get; init; } = 240f;
+
+	/// <summary>Lava in a column beside the body (rows of the body), or under it and a column either side (two rows down).</summary>
+	public static bool LavaNear(ITileGrid g, TilePos n)
+	{
+		for (int y = n.Y - 2; y <= n.Y; y++)
+			if (g.Get(n.X - 1, y).HasLava() || g.Get(n.X + 2, y).HasLava())
+				return true;
+		for (int y = n.Y + 1; y <= n.Y + 2; y++)
+			for (int x = n.X - 1; x <= n.X + 2; x++)
+				if (g.Get(x, y).HasLava())
+					return true;
+		return false;
+	}
+
 	/// <summary>Applies the liquid, footing and depth penalties to an edge ending at <paramref name="to"/>.</summary>
 	public float Adjust(float cost, TilePos to)
 	{
@@ -251,6 +272,8 @@ public sealed class MoveContext
 			c += BelowRowTicks;
 		if (Avoid != null && Avoid(to))
 			c += AvoidTicks;
+		if (LavaNearTicks > 0f && LavaNear(Grid, to))
+			c += LavaNearTicks;
 		return Body.IsPrecarious(Grid, to, MaxDrop + 1) ? c + PrecariousTicks : c;
 	}
 }
