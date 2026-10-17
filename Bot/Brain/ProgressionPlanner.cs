@@ -1443,8 +1443,9 @@ public sealed class ProgressionPlanner
 	/// opens its surface in full armour). Rotten chunks are hunted on <see cref="EvilGround"/>: eaters of souls spawn only
 	/// while the player is in the Corruption zone (spec G4). Vile mushrooms are picked where the map shows them (only those
 	/// of their frame, <see cref="ItemSource.FrameX"/>), and looked for along the corruption's surface from there (spec G5):
-	/// not a trip to new ground elsewhere, where none grow: the known stretch of it is walked to and fro, its plants cut so
-	/// new ones grow, some of them mushrooms (MineSkill.PatrolEvilSurface; measured run M10b: 4 of 6 in 5 game days).
+	/// not a trip to new ground elsewhere, where none grow: the plants on the corrupt grass the map shows are cut where they
+	/// are so new ones grow, some of them mushrooms, and with none to cut the known stretch is walked to and fro
+	/// (MineSkill.PatrolEvilSurface, CutPlantsSkill; measured run M10b: 4 of 6 in 5 game days).
 	/// </summary>
 	private ISkill ResolveEvilSource(int item, ItemSource src, int more, int target, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{

@@ -788,6 +788,68 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void TheKnownPlants_AreCutWhereTheyAre_NotAfterAWalkToTheStretchsFarEnd()
+	{
+		// Measured runs M10d, M10e, M10f (world_eow): the passes walked the corruption's surface end to end (x 1472-1967,
+		// x 1623-1951...), 0-12 plants cut a pass (15 of 28 passes none), while the corrupt grass tops that grow plants lie
+		// in x 1769-1941 and x 1269-1387 only (101 at the run's start, the rest ebonstone and ebonsand). Here the far end is west of
+		// the bot, the plants east: they are gone to, not walked away from.
+		var (g, ctx, job) = MushroomJobIn(500);
+		int[] plants = { 540, 550, 560 };
+		foreach (int x in plants)
+			g.AddPlant(x, Feet, mushroom: false);
+		int minX = ctx.Node.X, t = 0;
+		for (; t < 60 * 60 && plants.Any(x => g.TileTypeAt(x, Feet) == FakeGame.TileCorruptPlants); t++) {
+			Step(g, ctx, job);
+			minX = System.Math.Min(minX, ctx.Node.X);
+		}
+		output.WriteLine($"{t} ticks: {job.Describe()}; walked as far west as x {minX}");
+		Assert.All(plants, x => Assert.NotEqual(FakeGame.TileCorruptPlants, g.TileTypeAt(x, Feet)));
+		Assert.True(minX >= 490, $"walked west to x {minX} before cutting the plants east of x 500");
+	}
+
+	[Fact]
+	public void CorruptThornsOnTheGrass_AreCutToo_SoTheGrassUnderThemGrows()
+	{
+		// A plant growing on corrupt grass is corrupt thorns 1 in 13 (WorldGen.cs:54339), and they spread to the cells round
+		// them (WorldGen.GrowSpike, 1 in 3 of their tile updates): a grass top under thorns grows nothing, and the thorns hurt.
+		var (g, ctx, job) = MushroomJobIn(450);
+		int[] thorns = { 480, 500 };
+		foreach (int x in thorns)
+			g.AddThorn(x, Feet);
+		for (int t = 0; t < 60 * 60 && thorns.Any(x => g.TileTypeAt(x, Feet) == FakeGame.TileCorruptThorns); t++)
+			Step(g, ctx, job);
+		output.WriteLine(job.Describe());
+		Assert.All(thorns, x => Assert.NotEqual(FakeGame.TileCorruptThorns, g.TileTypeAt(x, Feet)));
+	}
+
+	[Fact]
+	public void APlantThatCannotBeGotTo_IsLeft_AndTheJobGoesOn()
+	{
+		// Inside a lump of rock the pickaxe cannot break, too thick to reach through (a tool reaches through blocks) from above, beside or below: the
+		// cutting gives up on it (BotContext.UnreachableTiles) and the job goes on with the patrol of the stretch, not round
+		// and round at it.
+		var (g, ctx, job) = MushroomJobIn(450);
+		var sealedIn = new TilePos(470, Feet);
+		for (int x = sealedIn.X - 7; x <= sealedIn.X + 7; x++)
+			for (int y = Feet - 8; y <= Feet + 12; y++)
+				if (new TilePos(x, y) != sealedIn) {
+					g.Grid.Set(x, y, CellKind.Solid);
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+				}
+		g.AddPlant(sealedIn.X, sealedIn.Y, mushroom: false);
+		string patrol = null;
+		for (int t = 0; t < 60 * 60 && patrol == null; t++) {
+			Step(g, ctx, job);
+			if (job.Describe().Contains("Patrol for"))
+				patrol = job.Describe();
+		}
+		output.WriteLine(patrol ?? job.Describe());
+		Assert.NotNull(patrol);
+		Assert.Equal(FakeGame.TileCorruptPlants, g.TileTypeAt(sealedIn.X, sealedIn.Y));
+	}
+
+	[Fact]
 	public void TheDemonBow_IsMadeOnlyFromTheDemoniteInTheBag()
 	{
 		FakeGame g = CorruptWorld();

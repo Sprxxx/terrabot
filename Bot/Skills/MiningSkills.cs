@@ -92,9 +92,10 @@ public sealed class MineSkill : ISkill
 	public ExploreBias Bias { get; init; } = ExploreBias.Down;
 	/// <summary>
 	/// What grows back on the evil biome's surface (vile mushrooms on corrupt grass): with none in sight or on the map, the
-	/// job walks the known stretch of that surface end to end and back (<see cref="PatrolSkill"/>, cutting the other plants
-	/// of <see cref="TileType"/> so new ones grow) for up to <see cref="MaxPatrolPasses"/> passes, before exploring new
-	/// ground. Seen in game (measured run M10b): the mushrooms the bot got were ones grown back in the corruption it had
+	/// job cuts the other plants of <see cref="TileType"/> and the corrupt thorns on the grass the map shows, where they are
+	/// (<see cref="CutPlantsSkill"/>), so their grass tops grow again; with none to cut, it walks the known stretch of that
+	/// surface end to end and back (<see cref="PatrolSkill"/>) for up to <see cref="MaxPatrolPasses"/> passes, before
+	/// exploring new ground. Seen in game (measured run M10b): the mushrooms the bot got were ones grown back in the corruption it had
 	/// seen ((1931,244), (1914,244), "on the map"), while its "Sideways" explorations went out to (1625,268), 140 tiles
 	/// west of the corruption (x 1765-1960), and found none: 2 of 6 at day 2 +20h, 4 at day 5 +4h. In measured run M10a,
 	/// 222 such explorations, and the sixth mushroom 49 game hours after the rotten chunks (day 5 +10h).
@@ -298,7 +299,7 @@ public sealed class MineSkill : ISkill
 			return SkillStatus.Running;
 		}
 		// What grows back on the evil surface: the stretch of it the map shows is walked again, not new ground (PatrolEvilSurface).
-		if (PatrolEvilSurface && ctx.PatrolPasses.GetValueOrDefault(ItemType) < MaxPatrolPasses && Patrol(ctx))
+		if (PatrolEvilSurface && Patrol(ctx))
 			return SkillStatus.Running;
 		// Counted on the context per item: a fight pauses the skill and the planner starts it afresh, and a count of its
 		// own went back to 0 each time (world_eye run 42: 12 game hours of the same first leg, never reaching the give-up).
@@ -358,10 +359,11 @@ public sealed class MineSkill : ISkill
 	}
 
 	/// <summary>
-	/// <see cref="PatrolEvilSurface"/>: one seen on the map (within <see cref="MapSearchRadius"/>) is gone for; else a pass
-	/// to the far end of the known evil surface round the bot (PatrolSkill.EvilSurfaceSpan), the other end if the last pass
-	/// could not get to that one. False when the known stretch is too small to wait on, or has no surface to stand on at
-	/// its ends: the job explores instead.
+	/// <see cref="PatrolEvilSurface"/>: one seen on the map (within <see cref="MapSearchRadius"/>) is gone for; else the
+	/// plants and thorns on the corrupt grass the map shows are cut (CutPlantsSkill), however many passes there were; else
+	/// (none to cut) a pass to the far end of the known evil surface round the bot (PatrolSkill.EvilSurfaceSpan), the other
+	/// end if the last pass could not get to that one, up to <see cref="MaxPatrolPasses"/>. False when the known stretch is
+	/// too small to wait on, or has no surface to stand on at its ends, or the passes are used up: the job explores instead.
 	/// </summary>
 	private bool Patrol(BotContext ctx)
 	{
@@ -372,7 +374,23 @@ public sealed class MineSkill : ISkill
 			ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, but some at {known} on the map ({known.ChebyshevTo(ctx.Node)} tiles away); going back for it");
 			return true;
 		}
-		if (PatrolSkill.EvilSurfaceSpan(ctx, ctx.Node) is not (int x0, int x1))
+		// The plants on the corrupt grass the map shows, cut where they are (CutPlantsSkill): the grass tops kept free are what
+		// grows mushrooms, not the walking. The stretch is walked only with none to cut.
+		if (ctx.AllowBreak && CutPlantsSkill.Next(ctx, ctx.Node, TileType, FrameX) is TilePos first) {
+			var (toCut, mushrooms, free) = CutPlantsSkill.Survey(ctx, ctx.Node, TileType, FrameX);
+			int growing = toCut + mushrooms;
+			double perHour = CutPlantsSkill.MushroomsPerCellHour;
+			ctx.Log.Info($"Mine: no {Label(ctx)} seen; cutting the {toCut} plant(s) and thorns on the corrupt grass the map shows within "
+				+ $"{CutPlantsSkill.Radius} tiles, nearest first ({first}): kept cut, its {growing} grass tops that grow things (and {free} free ones, "
+				+ $"some sloped or walled) give {growing * perHour * 24:0.0}-{(growing + free) * perHour * 24:0.0} {Label(ctx)} a game day "
+				+ $"({perHour:0.0000} a grass top an hour, vanilla rates; the map looked at every {MapLookEvery * ExploreSkill.FoundCheckEvery} ticks)");
+			// Found: one in sight, or (every MapLookEvery-th look) one grown anywhere the map shows: a round can take game hours.
+			int looks = 0;
+			bool found(BotContext c) => PickTarget(c) != null || ++looks % MapLookEvery == 0 && Nearest(c, c.Node, MapSearchRadius) != null;
+			Begin(ctx, new CutPlantsSkill(Label(ctx), found) { PlantTile = TileType, KeepFrameX = FrameX }, "cutting plants");
+			return true;
+		}
+		if (ctx.PatrolPasses.GetValueOrDefault(ItemType) >= MaxPatrolPasses || PatrolSkill.EvilSurfaceSpan(ctx, ctx.Node) is not (int x0, int x1))
 			return false;
 		TilePos? west = PatrolSkill.EndSpot(ctx, x0, 1), east = PatrolSkill.EndSpot(ctx, x1, -1);
 		if (west is not TilePos w || east is not TilePos e)
@@ -386,6 +404,13 @@ public sealed class MineSkill : ISkill
 		Begin(ctx, new PatrolSkill(Label(ctx), far, c => PickTarget(c) != null) { CutTile = TileType, KeepFrameX = FrameX }, $"patrolling, pass {pass}");
 		return true;
 	}
+
+	/// <summary>
+	/// A cutting round looks at the whole map (<see cref="MapSearchRadius"/>) for the job's own on every this-many-th of its
+	/// looks in sight (every ExploreSkill.FoundCheckEvery ticks): every 300 ticks, 5 seconds, against the 0.0016 mushrooms a
+	/// grass top grows each game hour (CutPlantsSkill.MushroomsPerCellHour), one in 6 game hours for 100 grass tops.
+	/// </summary>
+	public const int MapLookEvery = 20;
 
 	private bool walkedBack;
 	private WalkToSkill resumeWalk;

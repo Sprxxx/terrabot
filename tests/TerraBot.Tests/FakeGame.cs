@@ -45,7 +45,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	// Milestone 10 (docs M10_SPEC.md; ItemID, TileID, NPCID and the recipes checked against the decompiled tML 2026.08).
 	public const int WormFood = 70, VilePowder = 67, VileMushroom = 60, RottenChunk = 68, WormTooth = 69, UnholyArrow = 47;
 	public const int DemoniteOre = 56, DemoniteBar = 57, DemonBow = 44, Bottle = 31, Glass = 170, SandBlock = 169;
-	public const int TileBottles = 13, TileDemonite = 22, TileCorruptGrass = 23, TileCorruptPlants = 24, TileEbonstone = 25;
+	public const int TileBottles = 13, TileDemonite = 22, TileCorruptGrass = 23, TileCorruptPlants = 24, TileEbonstone = 25, TileCorruptThorns = 32;
 	public const int EowHead = 13, EowBody = 14, EowTail = 15, FlyingAi = 5, WormAi = 6, VileMushroomFrame = 144;
 
 	public static readonly GameIds Ids = new() {
@@ -62,7 +62,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		EvilTiles = new[] { TileCorruptGrass, TileEbonstone }, // likewise
 		CorruptionWeights = new Dictionary<int, int> { [TileCorruptGrass] = 1, [TileCorruptPlants] = 1, [TileEbonstone] = 1 },
 		EvilBoss = EowHead, EvilBossBody = EowBody, EvilBossTail = EowTail, WormFood = WormFood, VilePowder = VilePowder,
-		VileMushroom = VileMushroom, RottenChunk = RottenChunk, WormTooth = WormTooth, UnholyArrow = UnholyArrow,
+		VileMushroom = VileMushroom, CorruptGrass = TileCorruptGrass, CorruptThorns = TileCorruptThorns, RottenChunk = RottenChunk, WormTooth = WormTooth, UnholyArrow = UnholyArrow,
 		DemoniteOre = DemoniteOre, DemoniteBar = DemoniteBar, DemonBow = DemonBow, Bottle = Bottle, BottleTile = TileBottles,
 	};
 
@@ -346,6 +346,13 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Furniture[new TilePos(x, y)] = TileCorruptPlants;
 		FrameXs[new TilePos(x, y)] = mushroom ? VileMushroomFrame : 0;
 	}
+
+	/// <summary>Corrupt thorns at the cell (hurt on touch, not passable: CellKind.Hazard), cut by one hit of a pickaxe.</summary>
+	public void AddThorn(int x, int y)
+	{
+		Grid.Set(x, y, CellKind.Hazard);
+		Furniture[new TilePos(x, y)] = TileCorruptThorns;
+	}
 	public readonly System.Collections.Generic.HashSet<int> BossesDefeated = new();
 	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
 	/// <summary>Light everywhere; tests set it lower for the torch habit.</summary>
@@ -569,11 +576,13 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				Drops.Add(new DropInfo(nextDropId++, LifeCrystal, "Life Crystal", 1, key.X * 16f, FallRow(key.X, key.Y) * 16f + 4, 16, 16));
 			}
 		}
-		// A pickaxe on a corrupt plant: one hit (tileNoFail); a mushroom drops a vile mushroom.
-		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int pt) && pt == TileCorruptPlants
-			&& Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
+		// A pickaxe on a corrupt plant or corrupt thorns: one hit (tileNoFail, Main.cs:8037, 8066); a mushroom drops a vile mushroom.
+		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int pt)
+			&& (pt == TileCorruptPlants || pt == TileCorruptThorns) && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
 			var cell = new TilePos(o.AimX, o.AimY);
 			Furniture.Remove(cell);
+			if (pt == TileCorruptThorns)
+				Grid.Set(cell.X, cell.Y, CellKind.Empty);
 			if (FrameXs.Remove(cell, out int frame) && frame == VileMushroomFrame)
 				Drops.Add(new DropInfo(nextDropId++, VileMushroom, "Vile Mushroom", 1, cell.X * 16f + 4, FallRow(cell.X, cell.Y) * 16f + 4, 8, 8));
 		}

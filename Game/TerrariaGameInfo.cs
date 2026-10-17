@@ -81,6 +81,8 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		WormFood = ItemID.WormFood,
 		VilePowder = ItemID.VilePowder,
 		VileMushroom = ItemID.VileMushroom,
+		CorruptGrass = TileID.CorruptGrass,
+		CorruptThorns = TileID.CorruptThorns,
 		RottenChunk = ItemID.RottenChunk,
 		WormTooth = ItemID.WormTooth,
 		UnholyArrow = ItemID.UnholyArrow,
