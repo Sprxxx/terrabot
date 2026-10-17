@@ -284,9 +284,13 @@ public sealed class HellevatorSkill : ISkill
 			PlaceLedge(ctx, n);
 			lastLedgeY = n.Y;
 		}
-		// The straight dig goes on from where the leg came down (beside the shaft: back onto it first).
-		col = Math.Abs(n.X - ColumnAt(n.Y)) <= Slack ? n.X : ColumnAt(n.Y);
-		Note(n.Y, col);
+		// The straight dig goes on from where the leg came down (beside the shaft: back onto it first). On a route from an earlier trip:
+		// onto the route's own column, the dug way, not a fresh column a few off it. Seen in game (world_wof E34, 2026-10-18): each leg
+		// ended 3-4 columns west of the old shaft, the dig went on there ("digging (2114,379)" beside the open shaft at 2117), and the
+		// trip down took 9 game hours down ground already dug.
+		col = FollowsRoute ? ColumnAt(n.Y) : Math.Abs(n.X - ColumnAt(n.Y)) <= Slack ? n.X : ColumnAt(n.Y);
+		if (!FollowsRoute)
+			Note(n.Y, col);
 		ctx.Log.Info($"Hellevator: at {n}, {StandRow - n.Y} rows to go");
 		return SkillStatus.Running;
 	}
