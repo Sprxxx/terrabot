@@ -11,14 +11,21 @@ namespace TerraBot.Bot.Brain;
 public sealed partial class ProgressionPlanner
 {
 	/// <summary>Arrows into the Wall of Flesh fight, wooden and unholy together (spec S1: 1000, refilled below 800).</summary>
-	public const int WofArrows = 1000;
+	public const int WofArrows = 1400;
 	/// <summary>Healing potions into the fight (spec S1: 10, from the bag).</summary>
 	public const int WofPotions = 10;
 	/// <summary>
 	/// Arrows enough for the fight, the descent's remaining demand (<see cref="DescentDemand"/>): the two Classic wins of fight_wof_150
 	/// shot 496 and 512 (2148 carried, 1652 and 1636 left), the Unholy arrows among them.
 	/// </summary>
-	public const int WofFightArrows = 600;
+	public const int WofFightArrows = 1200;
+	/// <summary>
+	/// Arrows a bot already down there goes on to the fight with, short of <see cref="WofFightArrows"/>: the packing list's count is
+	/// for the surface, where wood is; from the bridge, the resupply would climb 700 rows for it (E13, 2026-10-17). Seen in game
+	/// (E14, 2026-10-17): 667 arrows took the Wall to 1,451 of 8,000 and ran out ("Boss fight failed: out of arrows"); the Hungry
+	/// and the Leeches take their share, so the fight wants twice what the damage sum says.
+	/// </summary>
+	public const int WofFightArrowsMin = 600;
 	/// <summary>Longest the Wall's plan works on max life past 200 (BestEffort): a game day.</summary>
 	public const int WofLifeTicks = 24 * 3600;
 	/// <summary>
@@ -113,7 +120,7 @@ public sealed partial class ProgressionPlanner
 	/// </summary>
 	private IEnumerable<Need> DescentDemand(GameIds ids)
 	{
-		yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofFightArrows, "arrows for the fight");
+		yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofFightArrowsMin, "arrows for the fight");
 		yield return new BridgeBlocks("bridge blocks");
 	}
 

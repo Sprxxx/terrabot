@@ -222,7 +222,7 @@ public sealed class WallOfFleshErrand : Errand
 				yield return new BridgeBlocks("bridge blocks") { Batch = BridgeBatch };
 				break;
 			case FightPhase:
-				yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), ProgressionPlanner.WofFightArrows, "arrows for the fight");
+				yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), ProgressionPlanner.WofFightArrowsMin, "arrows for the fight");
 				break;
 		}
 	}
