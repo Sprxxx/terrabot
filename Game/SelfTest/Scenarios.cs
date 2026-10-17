@@ -571,11 +571,18 @@ public sealed class Scenario
 				Journey = true,
 				ByName = true,
 				ResetLife = true,
-				ResearchReset = new int[] { Terraria.ID.ItemID.LifeCrystal, Terraria.ID.ItemID.Wood, Terraria.ID.ItemID.WorkBench, Terraria.ID.ItemID.IronPickaxe },
+				ResearchReset = new int[] { Terraria.ID.ItemID.LifeCrystal, Terraria.ID.ItemID.Wood, Terraria.ID.ItemID.WorkBench, Terraria.ID.ItemID.IronPickaxe,
+					Terraria.ID.ItemID.HermesBoots, Terraria.ID.ItemID.CopperCoin, Terraria.ID.ItemID.MagicMirror, Terraria.ID.ItemID.WoodenArrow },
 				Inventory = p => {
 					p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.LifeCrystal, 10);
 					p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.Wood, 120);
 					p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.WorkBench);
+					// The user (2026-10-17): accessories researched "and THEN" worn; "same thing with ammo and coins"; Journey run J2:
+					// the only Magic Mirror went into research and never came back.
+					p.inventory[23] = new Terraria.Item(Terraria.ID.ItemID.HermesBoots);
+					p.inventory[24] = new Terraria.Item(Terraria.ID.ItemID.MagicMirror);
+					p.inventory[50] = new Terraria.Item(Terraria.ID.ItemID.CopperCoin, 99);
+					p.inventory[54] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 99);
 				},
 				TimeoutTicks = 60 * 60 * 3,
 				Check = r => !r.JourneyOn ? "research was off: not a Journey character in a Journey world (selftest.ps1 -Player <a Journey character>)"
@@ -584,7 +591,11 @@ public sealed class Scenario
 					: r.LifeMax < Bot.Brain.ProgressionPlanner.MaxCrystalLife ? $"max life {r.LifeMax}, not {Bot.Brain.ProgressionPlanner.MaxCrystalLife}"
 					: !r.LogHas("Journey: researched 100 Wood") ? "the wood was not researched"
 					: !r.LogHas("Journey: researched 1 Work Bench") ? "the work bench was not researched"
-					: r.LogHas("Journey: researched 1 Iron Pickaxe") ? "the pickaxe in use was researched"
+					: !r.LogHas("Journey: researched 1 Hermes Boots") ? "the Hermes Boots were not researched"
+					: r.Log.FindIndex(l => l.Contains("Gear: wearing Hermes Boots")) < r.Log.FindIndex(l => l.Contains("Journey: researched 1 Hermes Boots")) ? "the Hermes Boots were worn before research (or not at all)"
+					: !r.LogHas("Journey: researched 1 Magic Mirror") || !r.Log.Any(l => l.Contains("Journey: duplicated") && l.Contains("Magic Mirror")) ? "the Magic Mirror was not researched and duplicated back"
+					: !r.LogHas("Journey: researched 99 Copper Coin") ? "the 99 copper coins were not researched"
+					: !r.LogHas("Journey: researched 99 Wooden Arrow") ? "the 99 arrows were not researched"
 					: null,
 			},
 			new() {

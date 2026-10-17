@@ -770,6 +770,9 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		}
 	}
 
+	public int MaxStack(int itemType) =>
+		itemType > 0 && itemType < Terraria.ModLoader.ItemLoader.ItemCount ? ContentSamples.ItemsByType[itemType].maxStack : 9999;
+
 	public bool IsGear(int itemType)
 	{
 		if (itemType <= 0 || itemType >= Terraria.ModLoader.ItemLoader.ItemCount)

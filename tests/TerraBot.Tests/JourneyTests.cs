@@ -91,17 +91,23 @@ public class JourneyTests
 	}
 
 	[Fact]
-	public void Habit_NeverGivesUpGearInUse_OnlyASpare()
+	public void Habit_GearInUse_IsResearched_AndComesBackDuplicated()
 	{
+		// The user (2026-10-17): accessories researched "and THEN" worn, "same thing with ammo": the one in use goes into
+		// research and a copy comes back from the menu at once (before: a spare had to be carried).
 		var (g, ctx) = Journey();
-		g.Items[FakeGame.IronPickaxe] = 1; // the one in use: research takes 1, and none would be left
-		Assert.False(Habit(ctx));
-		Assert.Equal(0, g.Journey.ResearchDone(FakeGame.IronPickaxe));
-
-		g.Items[FakeGame.IronPickaxe] = 2; // a spare
+		g.StackSize[FakeGame.IronPickaxe] = 1; // a tool: one a slot
+		g.Items[FakeGame.IronPickaxe] = 1;
 		Assert.True(Habit(ctx));
 		Assert.True(g.Journey.IsResearched(FakeGame.IronPickaxe));
 		Assert.Equal(1, g.Count(FakeGame.IronPickaxe));
+		Assert.Contains(g.Journey.Duplicated, d => d.Type == FakeGame.IronPickaxe);
+
+		var (a, actx) = Journey();
+		a.Items[FakeGame.WoodenArrow] = 99; // research takes 99: all of them, and a stack comes back
+		Assert.True(Habit(actx));
+		Assert.True(a.Journey.IsResearched(FakeGame.WoodenArrow));
+		Assert.True(a.Count(FakeGame.WoodenArrow) > 0);
 	}
 
 	[Fact]

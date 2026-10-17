@@ -66,7 +66,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
-		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion, FloatingAccessories = new[] { InnerTube }, PickupBlockers = new[] { EncumberingStone },
+		Campfire = Campfire, HeartLantern = HeartLantern, RecallPotion = RecallPotion, FloatingAccessories = new[] { InnerTube }, PickupBlockers = new[] { EncumberingStone }, Coins = new[] { CopperCoin },
 		DesertTiles = new[] { TileSand }, // only cells a test marks with it (TileTypes) count
 		EvilTiles = new[] { TileCorruptGrass, TileEbonstone }, // likewise
 		CorruptionWeights = new Dictionary<int, int> { [TileCorruptGrass] = 1, [TileCorruptPlants] = 1, [TileEbonstone] = 1 },
@@ -85,6 +85,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	// The Bomb and Dynamite (ItemID 166, 167) with the Game layer's numbers (TerrariaGameInfo.TileExplosiveInfos).
 	public const int Bomb = 166, Dynamite = 167;
+	/// <summary>The Copper Coin (ItemID 71): 100 a stack turn into a silver coin (Player.DoCoins), so a slot holds 99.</summary>
+	public const int CopperCoin = 71;
 	public static ExplosiveInfo BombInfo => Ids.TileExplosives[0];
 	public static ExplosiveInfo DynamiteInfo => Ids.TileExplosives[1];
 	/// <summary>Solid cells a blast does not break (a dungeon brick, an altar); every other solid cell it does.</summary>
@@ -581,6 +583,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		return got;
 	}
 
+	int IInventory.MaxStack(int itemType) => StackOf(itemType);
 	public IReadOnlyList<int> UnwornAccessories() => Accessories.Where(a => Count(a) > 0 && !Equipped.Contains(a)).ToList();
 
 	public bool TryEquip(int itemType)

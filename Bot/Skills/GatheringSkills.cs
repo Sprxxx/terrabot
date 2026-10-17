@@ -237,9 +237,12 @@ public sealed class CollectDropsSkill : ISkill
 	/// </summary>
 	/// <summary>
 	/// The bag would take it, and keep it: not a researched item a research mod deletes on pickup (Upgraded Research's auto-trash,
-	/// <see cref="IJourney.PickupVanishes"/>), whose walk gains nothing.
+	/// <see cref="IJourney.PickupVanishes"/>), whose walk gains nothing. Nor a researched item that stacks (Journey: a click in
+	/// the menu gives a stack of it; the user, 2026-10-17: "no point in mining heart crystals if its already researched"); one
+	/// that does not stack may be better than the menu's (a prefix).
 	/// </summary>
-	private static bool Fits(BotContext ctx, DropInfo d) => (ctx.Inventory == null || ctx.Inventory.CanPickUp(d.Type)) && !(ctx.Journey?.PickupVanishes(d.Type) ?? false);
+	private static bool Fits(BotContext ctx, DropInfo d) => (ctx.Inventory == null || ctx.Inventory.CanPickUp(d.Type)) && !(ctx.Journey?.PickupVanishes(d.Type) ?? false)
+		&& !(ctx.Infinite(d.Type) && (ctx.Inventory?.MaxStack(d.Type) ?? 2) > 1);
 
 	/// <summary>
 	/// A drop more rows under the feet than a fall the body takes unhurt (<see cref="PhysicsParams.SafeFallTiles"/>): at a

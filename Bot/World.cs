@@ -130,6 +130,9 @@ public interface IInventory
 
 	/// <summary>Gear a player keeps: a tool, weapon, armour, accessory, healing item or ammo (by the item's own stats).</summary>
 	bool IsGear(int itemType);
+
+	/// <summary>How many of the item one bag slot holds (vanilla Item.maxStack): 1 for tools, weapons, armour, accessories.</summary>
+	int MaxStack(int itemType) => 9999;
 }
 
 public enum CraftResult

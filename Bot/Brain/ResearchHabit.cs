@@ -50,8 +50,9 @@ public static class ResearchHabit
 	}
 
 	/// <summary>
-	/// Is the item ready for research: the bag holds all research still takes of it, and for gear one more (the copy in use stays);
-	/// one more of anything when the duplication menu gives nothing (<see cref="IJourney.DuplicationAllowed"/>). Always false on Classic.
+	/// Is the item ready for research: the bag holds all research still takes of it (coins: what a slot holds of it, the rest
+	/// next time), gear in use too (it comes back duplicated); one more of anything when the duplication menu gives nothing
+	/// (<see cref="IJourney.DuplicationAllowed"/>). Always false on Classic.
 	/// </summary>
 	public static bool Ready(BotContext ctx, int itemType, int carried)
 	{
@@ -60,9 +61,17 @@ public static class ResearchHabit
 			return false;
 		// The Guide Voodoo Doll is an accessory by its stats (Item.cs:6839-6845), so "gear", but never worn (BotBrain.WearAccessories)
 		// nor in use: research takes the one carried (1, Sacrifices.tsv "D") and it is duplicated back the same tick.
-		bool inUse = ctx.Inventory.IsGear(itemType) && itemType != ctx.Ids.GuideVoodooDoll;
+		// Coins (copper, silver, gold): a stack of 100 turns into one of the next coin (Player.DoCoins, Player.cs:38531-38550), so
+		// the bag never holds what research takes of one: they go in as soon as the bag holds 99 (or the rest), in two goes.
+		int slot = ctx.Inventory.MaxStack(itemType);
+		if (System.Array.IndexOf(ctx.Ids.Coins, itemType) >= 0 && slot <= left)
+			return carried >= System.Math.Min(left, slot - 1);
 		// No duplication (a research mod's checklist mode): nothing research takes comes back, so one is always left in the bag.
-		return inUse || !ctx.Journey.DuplicationAllowed ? carried > left : carried >= left;
+		if (!ctx.Journey.DuplicationAllowed)
+			return carried > left;
+		// Gear in use too (ammo, a pickaxe, an accessory before it is worn): what research takes comes back from the menu at once
+		// (ResearchOnce). The user (2026-10-17): accessories "should research, and THEN equip"; "same thing with ammo and coins".
+		return carried >= left;
 	}
 
 	/// <summary>
@@ -89,7 +98,9 @@ public static class ResearchHabit
 		bool done = j.IsResearched(itemType);
 		ctx.Log.Info($"Journey: researched {used} {name} ({why}): {j.ResearchDone(itemType)}/{j.ResearchNeeded(itemType)}"
 			+ (done ? ", researched: duplicable from now on" : $", {j.ResearchLeft(itemType)} to go (the rest would not go in)") + $"; {ctx.Inventory.Count(itemType)} left in the bag");
-		if (done && ctx.Inventory.Count(itemType) <= 0 && BotBrain.KeptItems(ctx, ctx.Inventory.Stacks()).Contains(itemType))
+		// Back into the bag unless it is junk (NoUse): seen in game (Journey run J2), the only Magic Mirror and Hook went into
+		// research and never came back, and a second mirror was trashed later ("nothing needs it").
+		if (done && ctx.Inventory.Count(itemType) <= 0 && !NoUse(ctx, itemType))
 			DuplicateOnce(ctx, itemType, "back into the bag, which keeps it");
 		return used;
 	}
@@ -139,15 +150,25 @@ public static class ResearchHabit
 	private static System.Collections.Generic.HashSet<int> keptNow;
 
 	/// <summary>
-	/// An item researched to its cap that the bot has no use for, by <see cref="TrashResearched"/>'s rule: not kept by the bag
-	/// (<see cref="BotBrain.KeptItems"/>, worked out once a tick), not coins, not stone or dirt, another placeable only while
-	/// stone or dirt is carried. For the bag's stacks and for a pickup (the game adapter deletes those as they are picked up).
+	/// An item researched to its cap that the bot has no use for (<see cref="NoUse"/>): for the bag's stacks and for a pickup
+	/// (the game adapter deletes those as they are picked up).
 	/// </summary>
 	public static bool Trashable(BotContext ctx, int itemType)
 	{
 		IJourney j = ctx?.Journey;
-		if (itemType <= 0 || j == null || !j.Enabled || !j.DuplicationAllowed || ctx.Inventory == null || ctx.Knowledge == null || !j.IsResearched(itemType)
-			|| System.Array.IndexOf(ctx.Ids.BuildingBlocks, itemType) >= 0 || System.Array.IndexOf(ctx.Ids.Coins, itemType) >= 0)
+		return itemType > 0 && j != null && j.Enabled && j.DuplicationAllowed && ctx.Inventory != null && ctx.Knowledge != null && j.IsResearched(itemType)
+			&& NoUse(ctx, itemType);
+	}
+
+	/// <summary>
+	/// Junk to the bot: not kept by the bag (<see cref="BotBrain.KeptItems"/>, worked out once a tick), not coins, not stone or
+	/// dirt, not a thing a slot holds one of (a tool, a mirror, a hook, a weapon, armour, an accessory: the bot may want any of
+	/// them, and they are few), another placeable only while stone or dirt is carried.
+	/// </summary>
+	public static bool NoUse(BotContext ctx, int itemType)
+	{
+		if (itemType <= 0 || ctx.Inventory == null || ctx.Knowledge == null || System.Array.IndexOf(ctx.Ids.BuildingBlocks, itemType) >= 0
+			|| System.Array.IndexOf(ctx.Ids.Coins, itemType) >= 0 || ctx.Inventory.MaxStack(itemType) <= 1)
 			return false;
 		if (!ReferenceEquals(keptFor, ctx) || keptAt != ctx.Tick || keptNow == null) {
 			keptNow = BotBrain.KeptItems(ctx, ctx.Inventory.Stacks());

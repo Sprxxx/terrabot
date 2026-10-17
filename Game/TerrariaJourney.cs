@@ -30,7 +30,7 @@ namespace TerraBot.Game;
 /// </summary>
 public sealed class TerrariaJourney : IJourney
 {
-	/// <summary>Main inventory (0-49) and the ammo slots (54-57): where a stack can be taken into the research slot from.</summary>
+	/// <summary>Main inventory (0-49), the coin slots (50-53) and the ammo slots (54-57): where a stack can be taken into the research slot from.</summary>
 	private static readonly int[] Slots = BuildSlots();
 
 	private static int[] BuildSlots()
@@ -38,7 +38,7 @@ public sealed class TerrariaJourney : IJourney
 		var s = new List<int>();
 		for (int i = 0; i < TerrariaGameInfo.MainInventorySlots; i++)
 			s.Add(i);
-		for (int i = AmmoStart; i < AmmoEnd; i++)
+		for (int i = TerrariaGameInfo.MainInventorySlots; i < AmmoEnd; i++)
 			s.Add(i);
 		return s.ToArray();
 	}

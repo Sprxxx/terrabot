@@ -103,7 +103,9 @@ public class ResearchModTests
 		g.Journey.AutoTrash = false;
 		g.Drops.RemoveAll(d => d.Type == FakeGame.Lens);
 		g.Refresh(ctx);
-		Assert.True(CollectDropsSkill.AnyInRange(ctx, _ => true, 20)); // without the mod's auto-trash: gel is fetched
+		// Without the auto-trash, researched gel is still not walked to: a click in the menu gives a stack (the user: "no point
+		// in mining heart crystals if its already researched").
+		Assert.False(CollectDropsSkill.AnyInRange(ctx, _ => true, 20));
 	}
 
 	[Fact]
@@ -157,5 +159,81 @@ public class ResearchModTests
 		g.Journey.On = false;
 		Assert.Equal(0, ResearchHabit.TrashResearched(ctx, null)); // Classic
 		Assert.Equal(5, g.Count(Junk));
+	}
+
+	/// <summary>An accessory (one a slot), and a tool nothing in the plan uses (a Magic Mirror, one a slot).</summary>
+	private const int Accessory = 9101, Mirror = 9102;
+
+	/// <summary>
+	/// The user (2026-10-17): an accessory "should research, and THEN equip". Worn first, the research slot never saw it (it
+	/// takes bag stacks only); now it is researched, a copy comes back from the menu, and that copy is worn.
+	/// </summary>
+	[Fact]
+	public void AnAccessory_IsResearchedFirst_ThenWorn()
+	{
+		var (g, ctx) = Journey();
+		g.Accessories.Add(Accessory);
+		g.StackSize[Accessory] = 1;
+		g.Journey.Caps[Accessory] = 1;
+		g.Items[Accessory] = 1;
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Early);
+		for (int t = 0; t < 600 && !g.Equipped.Contains(Accessory); t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		var log = ((TestLog)ctx.Log).Lines;
+		int researched = log.FindIndex(l => l.StartsWith($"Journey: researched 1 item{Accessory}"));
+		int worn = log.FindIndex(l => l == $"Gear: wearing item{Accessory}");
+		output.WriteLine($"researched at line {researched}, worn at line {worn}");
+		Assert.True(g.Journey.IsResearched(Accessory));
+		Assert.Contains(g.Journey.Duplicated, d => d.Type == Accessory);
+		Assert.Contains(Accessory, g.Equipped);
+		Assert.True(researched >= 0 && worn > researched, "researched, then worn");
+	}
+
+	/// <summary>
+	/// The user (2026-10-17): coins researched "when available". A stack of 100 copper turns into a silver coin (Player.DoCoins),
+	/// so the bag never holds the 100 research takes: 99 go in, then the last one, and a stack comes back from the menu.
+	/// </summary>
+	[Fact]
+	public void Coins_GoInWhatASlotHolds_ThenTheRest()
+	{
+		var (g, ctx) = Journey();
+		g.StackSize[FakeGame.CopperCoin] = 100;
+		g.Journey.Caps[FakeGame.CopperCoin] = 100;
+		ctx.Tick = ResearchHabit.Every * 100;
+		g.Items[FakeGame.CopperCoin] = 98;
+		Assert.False(ResearchHabit.Tick(ctx, null)); // not yet what a slot holds
+		g.Items[FakeGame.CopperCoin] = 99;
+		Assert.True(ResearchHabit.Tick(ctx, null));
+		Assert.Equal(99, g.Journey.ResearchDone(FakeGame.CopperCoin));
+		g.Items[FakeGame.CopperCoin] = 1;
+		Assert.True(ResearchHabit.Tick(ctx, null));
+		Assert.True(g.Journey.IsResearched(FakeGame.CopperCoin));
+		Assert.True(g.Count(FakeGame.CopperCoin) > 0); // money back from the menu
+		ctx.TrashResearched = true;
+		Assert.Equal(0, ResearchHabit.TrashResearched(ctx, null)); // and never trashed
+	}
+
+	/// <summary>
+	/// Journey run J2: the only Magic Mirror went into research and never came back (only what the bag "keeps" was duplicated
+	/// back), and a second one was trashed later as "nothing needs it". A thing a slot holds one of is never junk.
+	/// </summary>
+	[Fact]
+	public void AOneASlotTool_ComesBackAfterResearch_AndIsNotTrashed()
+	{
+		var (g, ctx) = Journey();
+		ctx.TrashResearched = true;
+		g.StackSize[Mirror] = 1;
+		g.Journey.Caps[Mirror] = 1;
+		g.Items[Mirror] = 1;
+		ctx.Tick = ResearchHabit.Every * 100;
+		Assert.True(ResearchHabit.Tick(ctx, null));
+		Assert.True(g.Journey.IsResearched(Mirror));
+		Assert.Equal(1, g.Count(Mirror));
+		Assert.Equal(0, ResearchHabit.TrashResearched(ctx, null));
+		Assert.Equal(1, g.Count(Mirror));
 	}
 }

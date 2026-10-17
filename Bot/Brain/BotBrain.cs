@@ -446,8 +446,20 @@ public sealed class BotBrain
 				ctx.Log.Info($"Gear: taking off {ctx.Knowledge.ItemName(item)} (it floats the body on water; the paths wade to the floor)");
 		foreach (int item in ctx.Inventory.UnwornAccessories())
 			// Not the Guide Voodoo Doll, an accessory (Item.cs:6839-6845): worn, it is not in the bag to be thrown (docs M12_SPEC.md S6).
-			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && item != ctx.Ids.GuideVoodooDoll && ctx.Crafter.TryEquip(item))
+			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && item != ctx.Ids.GuideVoodooDoll && !ResearchFirst(ctx, item) && ctx.Crafter.TryEquip(item))
 				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)}");
+	}
+
+	/// <summary>
+	/// Journey: an accessory not yet researched is researched first (ResearchHabit, a copy duplicated back), then worn, as the
+	/// user plays it (2026-10-17: "it should research, and THEN equip"); worn, the research slot never sees it. Not when the
+	/// research slot refused it lately, nor with no duplication to get it back.
+	/// </summary>
+	private static bool ResearchFirst(BotContext ctx, int item)
+	{
+		IJourney j = ctx.Journey;
+		return j != null && j.Enabled && j.DuplicationAllowed && j.ResearchLeft(item) > 0
+			&& !(ctx.ResearchRefused.TryGetValue(item, out long at) && ctx.Tick - at < ResearchHabit.RefusedTicks && ctx.Tick >= at);
 	}
 
 	/// <summary>
@@ -727,7 +739,8 @@ public sealed class BotBrain
 				RequestReplan($"a chest at {seen.TopLeft} came into sight");
 			// A life crystal: whatever the work (building, gathering, crafting, going home...), only not during a reflex.
 			else if (Override == null && Work != null && !(Work is MineSkill m && m.ItemType == ctx.Ids.LifeCrystal)) {
-				if (ProgressionPlanner.LifeCrystalUseful(ctx) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart)
+				// Not once researched (Journey): the menu gives every crystal still to use.
+				if (ProgressionPlanner.LifeCrystalUseful(ctx) && !ctx.Infinite(ctx.Ids.LifeCrystal) && ProgressionPlanner.SeenLifeCrystal(ctx) is TilePos heart)
 					RequestReplan($"a life crystal at {heart} came into sight");
 			}
 		}
