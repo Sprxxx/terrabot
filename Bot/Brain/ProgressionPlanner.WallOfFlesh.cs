@@ -94,8 +94,8 @@ public sealed partial class ProgressionPlanner
 	public const int LandingFrom = 3, LandingTo = 6;
 	/// <summary>Rows under the bridge looked down for the lava the doll falls into (the band's lava is 13-36 rows under row 1042).</summary>
 	public const int LavaScanRows = 60;
-	/// <summary>With no lava under the landing columns, the bridge goes on by this much and is looked at again.</summary>
-	public const int BridgeExtendTiles = 8;
+	/// <summary>A bridge standing where a run resumes counts as the bridge (<see cref="KnowBridge"/>) when at least this share of <see cref="BridgeLength"/> stands.</summary>
+	public const int ResumedBridgeShare = 2;
 	/// <summary>The Wall's loot is looked for this far round where it died (its 9 x 9 brick box, NPC.cs:85023-85057).</summary>
 	public const int WofLootRadiusTiles = 20;
 
@@ -428,9 +428,33 @@ public sealed partial class ProgressionPlanner
 	/// </summary>
 	private void KnowBridge(BotContext ctx, TilePos n, int row)
 	{
+		// Standing on a bridge already built (a run resumed from a saved world with the planner's memory fresh: E12, 2026-10-17, at
+		// the far end with the doll in hand): that bridge as it stands, the summon side the shorter one from here (the flight side
+		// wants the length).
+		if (HellbridgeSkill.Built(ctx.Grid, row, n.X)) {
+			int eastLimit = ctx.WorldWidth > 0 ? ctx.WorldWidth - BridgeEdgeRoom : n.X + 4 * BridgeLength;
+			int westLimit = ctx.WorldWidth > 0 ? BridgeEdgeRoom : Math.Max(1, n.X - 4 * BridgeLength);
+			int east = HellbridgeSkill.BridgeEnd(ctx.Grid, row, n.X, eastLimit, ctx);
+			int west = HellbridgeSkill.BridgeEnd(ctx.Grid, row, n.X, westLimit, ctx);
+			if (east - west >= BridgeLength / ResumedBridgeShare) {
+				bridgeDir = east - n.X <= n.X - west ? 1 : -1;
+				bridgeKnown = true;
+				bridgeRow = row;
+				bridgeFrom = n.X;
+				bridgeTo = bridgeDir > 0 ? east : west;
+				bridgeBack = bridgeDir > 0 ? west : east;
+				ctx.Log.Info($"Auto: on a hellbridge already built on row {row}, x {west}-{east}: the summon end is x {bridgeTo}");
+				return;
+			}
+		}
 		int dir = BridgeDirection(ctx, n.X);
 		int from = dir > 0 ? n.X + 1 : n.X;
 		var (to, back) = BridgeSpan(from, dir, BridgeLength, ctx.WorldWidth);
+		// The summon end over the lava: the sea stops short of the world's edge (E12, 2026-10-17: "no lava under where the doll would land
+		// past the hellbridge's end at x 4080"), so the end is drawn back to the last column with lava under where the doll lands, and
+		// the flight side takes the rest of the length.
+		if (LastLavaColumn(ctx, to, from, dir, row) is int lavaTo && lavaTo != to)
+			(to, back) = BridgeSpan(from, dir, BridgeLength, ctx.WorldWidth, lavaTo);
 		bridgeKnown = true;
 		bridgeRow = row;
 		bridgeFrom = from;
@@ -445,10 +469,17 @@ public sealed partial class ProgressionPlanner
 	/// <paramref name="length"/> that way or as far as the world allows (<see cref="BridgeEdgeRoom"/> from its edge; no edge with
 	/// <paramref name="worldWidth"/> 0), the flight end the rest of the length the other way, as far as the world allows that way.
 	/// </summary>
-	public static (int To, int Back) BridgeSpan(int from, int dir, int length, int worldWidth)
+	public static (int To, int Back) BridgeSpan(int from, int dir, int length, int worldWidth, int? toLimit = null)
 	{
 		int east = worldWidth > 0 ? Math.Max(from, worldWidth - BridgeEdgeRoom) : int.MaxValue / 4;
 		int west = worldWidth > 0 ? Math.Min(from, BridgeEdgeRoom) : int.MinValue / 4;
+		// The summon end held back to a column (the last with lava under where the doll lands).
+		if (toLimit is int lim) {
+			if (dir > 0)
+				east = Math.Max(from, Math.Min(east, lim));
+			else
+				west = Math.Min(from, Math.Max(west, lim));
+		}
 		int to = dir > 0 ? Math.Min(from + length, east) : Math.Max(from - length, west);
 		int rest = length - Math.Abs(to - from);
 		int back = dir > 0 ? Math.Max(from - rest, west) : Math.Min(from + rest, east);
@@ -612,7 +643,6 @@ public sealed partial class ProgressionPlanner
 		if (ctx.Drops.Any(d => d.Type == doll))
 			return Do("picking up the Guide Voodoo Doll lying in sight", new CollectDropsSkill(d => d.Type == doll, BotBrain.LootRadiusTiles));
 		int dir = bridgeDir != 0 ? bridgeDir : 1, row = bridgeRow, stand = row - 1;
-		var endStand = new TilePos(dir > 0 ? bridgeTo - 1 : bridgeTo, stand);
 		// Journey: the doll researched (1 is its research, Sacrifices.tsv "D"), one is duplicated for each try, no hunt.
 		if (ctx.Inventory.Count(doll) <= 0 && ctx.Infinite(doll))
 			return Do("duplicating a Guide Voodoo Doll (researched)", new DuplicateSkill(doll, 1));
@@ -627,29 +657,53 @@ public sealed partial class ProgressionPlanner
 		}
 		if (!ctx.World.TownNpcAlive(ids.Guide))
 			return ResolveTownNpc(new TownNpcAlive(ids.Guide, "the Guide"), ctx);
-		if (ctx.WorldWidth > 0 && Math.Abs(bridgeTo - ctx.WorldWidth / 2) <= SummonCentreGap) {
-			stuck = $"the hellbridge's far end x {bridgeTo} is within {SummonCentreGap} columns of the world's middle: the Wall could come from either side";
+		// The summon column: the end with lava under where the doll lands, else the last column back from it with lava below (the lava
+		// sea stops short of the world's edge: E12, 2026-10-17, "no lava under where the doll would land past the hellbridge's end at
+		// x 4080, and no room to go on toward the world's edge", the errand blocked with the whole bridge built and the doll in hand).
+		// A deck over the landing columns (a bridge that went on past the lava) is opened for the doll to fall through.
+		if (SummonColumn(ctx, dir, row) is not int sx) {
+			stuck = $"no lava under the hellbridge's row anywhere from its end at x {bridgeTo} back to x {bridgeFrom}: nowhere for the doll to fall";
 			return null;
 		}
-		if (!LavaBeyond(ctx, bridgeTo, dir, row)) {
-			int was = bridgeTo;
-			if (ctx.WorldWidth > 0 && (bridgeTo + dir * BridgeExtendTiles < BridgeEdgeRoom || bridgeTo + dir * BridgeExtendTiles > ctx.WorldWidth - BridgeEdgeRoom)) {
-				stuck = $"no lava under where the doll would land past the hellbridge's end at x {bridgeTo}, and no room to go on toward the world's edge";
-				return null;
-			}
-			bridgeTo += dir * BridgeExtendTiles;
-			hellbridgeDone = false;
-			ctx.Log.Info($"Auto: no lava under where the doll would land ({LandingFrom}-{LandingTo} columns past x {was}); the hellbridge goes on to {bridgeTo}");
-			return ResolveHellbridge(ctx);
+		if (ctx.WorldWidth > 0 && Math.Abs(sx - ctx.WorldWidth / 2) <= SummonCentreGap) {
+			stuck = $"the summon column x {sx} is within {SummonCentreGap} columns of the world's middle: the Wall could come from either side";
+			return null;
 		}
-		// At the end, or a column short of it (the doll lands 3-6 columns past the end from either, LandingFrom).
+		var endStand = new TilePos(dir > 0 ? sx - 1 : sx, stand);
+		List<TilePos> landing = LandingDeck(ctx, sx, dir, row);
+		if (landing.Count > 0) // from the deck's last column that stays: every landing cell within the pickaxe's reach
+			return Do($"opening the hellbridge's deck over the lava at x {landing[0].X}-{landing[^1].X} for the doll to fall through",
+				new MineCellsSkill(landing, new TilePos(sx + dir * (LandingFrom - 1), stand)));
+		// At the summon column, or a column short of it (the doll lands 3-6 columns past it from either, LandingFrom).
 		if (ctx.Node.Y != stand || Math.Abs(ctx.Node.X - endStand.X) > 1)
-			return Do($"to the hellbridge's far end at {endStand} to summon the {b.Label}", new WalkToSkill(new GoalStandAt(endStand, ctx.Physics)) { Quiet = true });
+			return Do($"to the hellbridge's summon column at {endStand} to summon the {b.Label}", new WalkToSkill(new GoalStandAt(endStand, ctx.Physics)) { Quiet = true });
 		if ((ctx.Combat.LifeFraction < 1f || ctx.Combat.PotionSickTicks > 0) && ctx.Tick - lastRestEnd > MaxRestTicks)
 			return Do($"resting to full life before summoning the {b.Label} ({ctx.Combat.Life}/{ctx.Combat.LifeMax})",
 				new WaitSkill("life", c => c.Combat.LifeFraction >= 1f && c.Combat.PotionSickTicks == 0, MaxRestTicks));
 		thrownByPlan = true;
-		return Do($"summoning the {b.Label}: a Guide Voodoo Doll into the lava off the hellbridge's end at x {bridgeTo}", WallOfFleshFight(b, ctx));
+		return Do($"summoning the {b.Label}: a Guide Voodoo Doll into the lava off the hellbridge at x {sx}", WallOfFleshFight(b, ctx));
+	}
+
+	/// <summary>The column the doll is thrown from: the summon end with lava under where it lands, else the last column back toward the start with it; null with none.</summary>
+	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeFrom, dir, row);
+
+	/// <summary>The last column from <paramref name="end"/> back toward <paramref name="start"/> with lava under where the doll lands past it (<see cref="LavaBeyond"/>), or null.</summary>
+	public static int? LastLavaColumn(BotContext ctx, int end, int start, int dir, int row)
+	{
+		for (int x = end; (x - start) * dir >= 0; x -= dir)
+			if (LavaBeyond(ctx, x, dir, row))
+				return x;
+		return null;
+	}
+
+	/// <summary>The deck cells over the landing columns past the summon column, where built: the doll would lie on them.</summary>
+	public static List<TilePos> LandingDeck(BotContext ctx, int sx, int dir, int row)
+	{
+		var cells = new List<TilePos>();
+		for (int k = LandingFrom; k <= LandingTo; k++)
+			if (ctx.Grid.Get(sx + dir * k, row).CanStandOn())
+				cells.Add(new TilePos(sx + dir * k, row));
+		return cells;
 	}
 
 	/// <summary>

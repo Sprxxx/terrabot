@@ -247,8 +247,13 @@ public class WallOfFleshPlanTests
 		Assert.IsType<HellbridgeSkill>(Next(p, ctx));
 	}
 
+	/// <summary>
+	/// world_wof E12 (2026-10-17): the bridge's end against the world's edge, where the lava sea does not reach: "no lava under where the
+	/// doll would land ... and no room to go on", the errand blocked with the whole bridge built and the doll in hand. The doll is thrown
+	/// from the last column back with lava under where it lands, the deck over those columns opened first.
+	/// </summary>
 	[Fact]
-	public void NoLavaUnderWhereTheDollWouldLand_TheBridgeGoesOn()
+	public void NoLavaUnderWhereTheDollWouldLand_TheDeckIsOpenedOverTheLavaBehindTheEnd_AndTheDollThrownThere()
 	{
 		var (g, ctx, p) = AfterTheEye();
 		var shaft = Assert.IsType<HellevatorSkill>(Next(p, ctx));
@@ -258,14 +263,55 @@ public class WallOfFleshPlanTests
 		var bridge = Assert.IsType<HellbridgeSkill>(Next(p, ctx));
 		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, bridge, 30000));
 		p.OnSkillFinished(bridge, SkillStatus.Succeeded, ctx);
-		// An ash knoll under the landing columns (x 147-150): the doll would lie on it.
+		// An ash knoll under the landing columns past the end (x 147-150): the doll would lie on it.
 		for (int x = bridge.ToX + 3; x <= bridge.ToX + 6; x++)
 			g.Grid.Set(x, Row + 8, CellKind.Solid);
 		g.Items[FakeGame.GuideVoodooDoll] = 1;
 		g.Refresh(ctx);
-		var more = Assert.IsType<HellbridgeSkill>(Next(p, ctx));
-		Assert.Equal(bridge.ToX + ProgressionPlanner.BridgeExtendTiles, more.ToX);
-		Assert.False(p.HellbridgeDone);
+		int sx = Assert.IsType<int>(p.SummonColumn(ctx, 1, Row));
+		Assert.True(sx < bridge.ToX && sx >= bridge.ToX - ProgressionPlanner.LandingTo, $"summon column {sx}, end {bridge.ToX}");
+		var open = Assert.IsType<MineCellsSkill>(Next(p, ctx));
+		Assert.Contains("opening the hellbridge's deck", p.Status);
+		Assert.All(open.Cells, c => Assert.True(c.Y == Row && c.X > sx && c.X <= bridge.ToX, $"{c}"));
+		Assert.True(p.HellbridgeDone);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, open, 5000));
+		p.OnSkillFinished(open, SkillStatus.Succeeded, ctx);
+		Assert.All(open.Cells, c => Assert.False(g.Grid.Get(c.X, c.Y).IsSolid(), $"{c} still there"));
+		g.Refresh(ctx);
+		ISkill s = Next(p, ctx);
+		if (s is WalkToSkill toStand) {
+			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, toStand, 3000));
+			g.Refresh(ctx);
+			s = Next(p, ctx);
+		}
+		Assert.IsType<BossFightSkill>(s);
+		Assert.Contains($"summoning the Wall of Flesh: a Guide Voodoo Doll into the lava off the hellbridge at x {sx}", p.Status);
+	}
+
+	/// <summary>E12 (2026-10-17): a run resumed from a saved world on the finished bridge, the planner's memory fresh: that bridge is known as it stands.</summary>
+	[Fact]
+	public void ResumedOnABuiltBridge_ThePlannerKnowsItAsItStands_AndGoesOnToTheHunt()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		var shaft = Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, shaft, 30000));
+		p.OnSkillFinished(shaft, SkillStatus.Succeeded, ctx);
+		g.Refresh(ctx);
+		var bridge = Assert.IsType<HellbridgeSkill>(Next(p, ctx));
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, bridge, 30000));
+		// The planner's memory gone; the bot on the deck.
+		p.Reset(ProgressionPlanner.Plans.WallOfFlesh);
+		p.Scheduler = ProgressionPlanner.Schedulers.Operation;
+		p.BridgeLength = Bridge;
+		g.Refresh(ctx);
+		Assert.True(HellbridgeSkill.Built(g.Grid, Row, g.Sim.Node.X), $"not on the deck: {g.Sim.Node}");
+		ISkill s = Next(p, ctx);
+		Assert.True(p.HellbridgeDone, p.Status);
+		Assert.IsNotType<HellbridgeSkill>(s);
+		var (row, back, to) = Assert.IsType<(int, int, int)>(p.Hellbridge);
+		Assert.Equal((Row, bridge.ToX), (row, to));
+		Assert.True(back <= bridge.FromX, $"the flight end {back} (the tower's roof counts as deck)");
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("on a hellbridge already built"));
 	}
 
 	[Fact]
