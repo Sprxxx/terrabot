@@ -576,6 +576,34 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void ALensHunt_StartedOnTheCorruption_WalksOutOfIt_AwayFromTheBiome()
+	{
+		// Measured run U23: the lens hunts of nights 6 and 7 wandered by the arena site in the corruption and fought eaters of
+		// souls (its spawns replace demon eyes there): 1 and 2 lenses a night.
+		FakeGame g = CorruptWorld();
+		BotContext ctx = Armoured(g);
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.IsNight = true;
+		MoveTo(g, ctx, CorruptFrom + 20, Feet);
+		g.Refresh(ctx);
+		Assert.True(ctx.InEvilBiome(ctx.Node));
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
+		hunt.Start(ctx);
+		int firstGoalX = -1;
+		for (int t = 0; t < 600 && firstGoalX < 0; t++) {
+			g.Refresh(ctx);
+			hunt.Tick(ctx);
+			g.Step(ctx);
+			var m = System.Text.RegularExpressions.Regex.Match(hunt.Describe(), @"\[wandering\] > WalkTo \((\d+),(\d+)\)");
+			if (m.Success)
+				firstGoalX = int.Parse(m.Groups[1].Value);
+		}
+		output.WriteLine($"{hunt.Describe()}; first wander to x {firstGoalX}, from x {CorruptFrom + 20}");
+		Assert.True(firstGoalX >= 0, "no wander");
+		Assert.True(firstGoalX < CorruptFrom + 20, $"wandered on into the corruption, to x {firstGoalX}");
+	}
+
+	[Fact]
 	public void TheMushroomJob_PicksOnlyTheMushrooms_AmongTheCorruptPlants()
 	{
 		FakeGame g = CorruptWorld();

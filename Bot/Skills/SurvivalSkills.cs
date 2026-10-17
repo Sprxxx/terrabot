@@ -184,11 +184,16 @@ public sealed class HuntSkill : ISkill
 		// player goes out of town to farm. Seen in game (measured runs U2, U3): night hunts by the house, the Guide's,
 		// failed "no NPC with AI style 2 found after 12 wanders", wandering 30 tiles out and back; 70 heartbeats of hunting
 		// and 34 waiting for the next night, and still 2 lenses short at day 10.
+		// On the evil biome's ground, prey of the plain surface does not spawn either (vanilla's spawn pool there is the biome's
+		// own: NPC.cs, the Corruption's eaters of souls in place of demon eyes): out of it, the same way. Seen in game
+		// (measured run U23): the lens hunts of nights 6 and 7 wandered x 1720-1840 by the arena site in the corruption,
+		// fought eaters of souls, and gave 1 and 2 lenses; 3 nights of hunting for 6, the summon at d8 +22h.
+		bool evilHere = Ground == null && ctx.InEvilBiome(node);
 		TilePos goal;
-		if (ctx.Combat.InTown && townWalks < MaxTownWalks && wanderFrom == null) {
+		if ((ctx.Combat.InTown || evilHere) && townWalks < MaxTownWalks && wanderFrom == null) {
 			if (townWalks++ == 0) {
-				wanderDir = ctx.SaferSide(node);
-				ctx.Log.Info($"Hunt: in town (nothing spawns here); walking out of it {(wanderDir > 0 ? "east" : "west")}");
+				wanderDir = evilHere ? AwayFromEvil(ctx, node) : ctx.SaferSide(node);
+				ctx.Log.Info($"Hunt: {(evilHere ? "on the evil biome's ground (its own spawns, not this prey)" : "in town (nothing spawns here)")}; walking out of it {(wanderDir > 0 ? "east" : "west")}");
 			}
 			goal = new TilePos(node.X + wanderDir * WanderTiles, node.Y - 10);
 		}
@@ -205,8 +210,8 @@ public sealed class HuntSkill : ISkill
 				if (townWalks > 0)
 					townSide = -wanderDir;
 			}
-			else if (ctx.Combat.InTown && townSide == 0 && node.X != from.X)
-				townSide = System.Math.Sign(node.X - from.X); // a wander back into town: nothing spawns that side
+			else if ((ctx.Combat.InTown || evilHere) && townSide == 0 && node.X != from.X)
+				townSide = System.Math.Sign(node.X - from.X); // a wander back into town (or the evil biome): nothing spawns that side
 			int dir = townSide != 0 ? -townSide
 				: wandersOut[Side(wanderDir)] <= wandersOut[Side(-wanderDir)] ? wanderDir : -wanderDir;
 			// Out to OpenWanderSteps on each side, then round again: vanilla spawns 62-84 tiles from the player wherever it
@@ -223,6 +228,10 @@ public sealed class HuntSkill : ISkill
 	}
 
 	private static int Side(int dir) => dir > 0 ? 1 : 0;
+
+	/// <summary>The side (+1 east, -1 west) with less of the evil biome a wander's length off.</summary>
+	private static int AwayFromEvil(BotContext ctx, TilePos node) =>
+		ctx.CorruptionAround(new TilePos(node.X + WanderTiles, node.Y)) <= ctx.CorruptionAround(new TilePos(node.X - WanderTiles, node.Y)) ? 1 : -1;
 
 	/// <summary>The state of the walk out from under cover to the open ground (not broken off for prey in sight).</summary>
 	public const string ToOpenGround = "to open ground";
