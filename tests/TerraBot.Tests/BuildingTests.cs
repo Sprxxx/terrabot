@@ -973,6 +973,68 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AHurtFlightHome_HitOnTheWay_FightsBack()
+	{
+		// Measured run M10e: 3 of 5 deaths on flights home, hit 8 times and more on the way, not one shot back.
+		FakeGame g = ProgressionTests.Mine();
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, brain.Planner, ctx);
+		g.Sim.State.X += 20 * 16;
+		g.Life = 20;
+		g.AddSlime(9, (int)(g.Sim.State.X / 16) + 3, 24);
+		int t = 0;
+		for (; t < 120 && brain.Current is not StayHomeSkill; t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		Assert.IsType<StayHomeSkill>(brain.Current);
+		for (int i = 0; i < 30; i++, t++) {
+			g.Refresh(ctx);
+			if (i == 20)
+				ctx.NoteHit(10); // caught up with on the way
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"{brain.Describe()}; at {ctx.Node}, hostiles {string.Join(", ", ctx.Hostiles.Select(h => h.FeetTile))}, danger {ProgressionPlanner.InDanger(ctx, toFight: true)}, tick {ctx.Tick}");
+		Assert.IsType<FightSkill>(brain.Current);
+	}
+
+	[Fact]
+	public void BadlyHurt_WithAWormNear_FarFromTheHouse_FightsOn_NotAFlightHome()
+	{
+		// Measured run M10e: with a devourer near, home was run to from 300 tiles off ("home at any distance"); worms and eaters
+		// of souls killed the bot on the way, 3 times.
+		FakeGame g = ProgressionTests.Mine(width: 300);
+		g.Stations[FakeGame.TileBench] = new TilePos(5, 24);
+		g.Stations[FakeGame.TileFurnace] = new TilePos(8, 24);
+		g.Items[FakeGame.WoodenSword] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var brain = new BotBrain();
+		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Settle);
+		HouseAlreadyThere(g, brain.Planner, ctx);
+		g.Sim.State.X += (ProgressionPlanner.RetreatHomeTiles + 50) * 16;
+		g.Life = 20;
+		int bx = (int)(g.Sim.State.X / 16);
+		g.ExtraHostiles.Add(new EntityInfo(50, 7, "Devourer", (bx + 4) * 16f, 22 * 16f, 22, 22, 0, 0, 100, 100, 26, FakeGame.WormAi));
+		ISkill retreat = null;
+		for (int t = 0; t < 120 && retreat == null; t++) {
+			g.Refresh(ctx);
+			brain.Tick(ctx);
+			g.Step(ctx);
+			if (brain.Current is StayHomeSkill or ShelterSkill)
+				retreat = brain.Current;
+		}
+		output.WriteLine(brain.Describe());
+		Assert.Null(retreat);
+	}
+
+	[Fact]
 	public void BadlyHurt_NearTheHouse_RetreatsHome_NotIntoAHole()
 	{
 		// The night runs: most deaths came while digging in to recover, hit as it dug. A house nearby is the better hiding place.

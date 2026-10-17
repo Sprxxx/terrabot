@@ -676,10 +676,12 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			Origin = TreeSight < int.MaxValue ? n : null,
 		};
 		ctx.Drops = Drops.ToList();
-		ctx.Hostiles = Slimes.Select(s => new EntityInfo(s.id, 1, "Slime", s.x, s.y, 24, 24, 0, 0, s.life, 40, 7, SlimeAi)).ToList();
+		ctx.Hostiles = Slimes.Select(s => new EntityInfo(s.id, 1, "Slime", s.x, s.y, 24, 24, 0, 0, s.life, 40, 7, SlimeAi)).Concat(ExtraHostiles).ToList();
 	}
 
 	/// <summary>Adds a slime standing on the floor under tile (x, y).</summary>
+	/// <summary>Hostiles other than slimes (a worm), as they are: not moved nor hurt by the fake.</summary>
+	public readonly List<EntityInfo> ExtraHostiles = new();
 	public void AddSlime(int id, int x, int feetRow) => Slimes.Add((id, x * 16f, (feetRow + 1) * 16f - 24f, 40));
 }
 

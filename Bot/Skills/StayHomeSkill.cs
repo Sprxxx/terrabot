@@ -30,7 +30,22 @@ public sealed class StayHomeSkill : ISkill
 
 	public string Describe() => $"StayHome {inside} [{State}]" + (walk != null ? " > " + walk.Describe() : "");
 
-	public void Start(BotContext ctx) => ctx.Log.Info($"StayHome: {(RecoverTo > 0 ? "hurt" : "night")}; going into the house at {inside}");
+	public void Start(BotContext ctx)
+	{
+		startTick = ctx.Tick;
+		ctx.Log.Info($"StayHome: {(RecoverTo > 0 ? "hurt" : "night")}; going into the house at {inside}");
+	}
+
+	private long startTick;
+
+	/// <summary>
+	/// A hurt flight home that an enemy hit since it began (as for a shelter, <see cref="ShelterSkill.FightBackReason"/>): it
+	/// is not getting away. Seen in game (measured run M10e, world_eow): 3 of 5 deaths on flights home from the corruption,
+	/// 300 tiles, "walking home" while a zombie, eaters of souls and devourers hit it 8 times and more, not one shot back.
+	/// </summary>
+	public string FightBackReason(BotContext ctx) =>
+		RecoverTo > 0 && !home && ctx.LastEnemyHitTick >= startTick && ctx.Tick - ctx.LastEnemyHitTick < ShelterSkill.HitRecentTicks
+			? "hit on the way home" : null;
 
 	public void Stop(BotContext ctx)
 	{

@@ -546,14 +546,16 @@ public sealed class BotBrain
 		}
 		// Seen on Classic: demon eyes wore the bot down from 200 to 0 while it fought on without potions. A player
 		// would hide and regenerate; demon eyes cannot get through blocks.
-		// A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place: home at any distance, or fight on.
-		// Seen in game (run 50): dug in beside a devourer, killed in the hole.
+		// A worm (devourer, giant worm) digs through blocks, so a hole is no hiding place: home if it is near, else fight on.
+		// Seen in game (run 50): dug in beside a devourer, killed in the hole. Not home from any distance: a worm is faster
+		// than a walk; seen in game (measured run M10e, world_eow): flights home of 300 tiles from the corruption, 3 of the
+		// run's 5 deaths, the worms and eaters of souls about all the way.
 		bool wormNear = false;
 		TilePos? retreatHome = null;
 		if (Auto && Current is not BossFightSkill && Current is not ShelterSkill { Retreat: true } && Current is not SurfaceSkill && Current is not StayHomeSkill
 			&& !RetreatHeldOff(ctx) && ctx.Combat.LifeMax > 0 && ctx.Combat.LifeFraction < RetreatThreshold(ctx) && NoPotion(ctx) && ProgressionPlanner.InDanger(ctx)
 			&& !(ctx.Combat.HasRanged && FastFlierNear(ctx))
-			&& ((retreatHome = Planner.HomeToRetreatTo(ctx, anyDistance: wormNear = WormNear(ctx))) != null || !wormNear)) {
+			&& ((retreatHome = Planner.HomeToRetreatTo(ctx)) != null || !(wormNear = WormNear(ctx)))) {
 			ctx.Log.Info($"Danger: life {ctx.Combat.Life}/{ctx.Combat.LifeMax} and {(ctx.Combat.PotionSickTicks > 0 ? "potion sick" : "no potion")}; retreating{(Current != null ? $" from {Current.Name}" : "")}");
 			// Home if it is near (enemies cannot get through the door), else dig in where it is.
 			if (retreatHome is TilePos home)
@@ -596,16 +598,16 @@ public sealed class BotBrain
 		// Only on the last stretch, and only what is not hitting it: walking without fighting back at all, zombies killed it
 		// 160 tiles out, and twice more just below the spawn (world_eye run 46).
 		// Running home hurt is a flight: hit or not it keeps going (fighting would hand it straight back to the retreat).
+		string fightBack = Current is ShelterSkill caught ? caught.FightBackReason(ctx) : Current is StayHomeSkill fleeing ? fleeing.FightBackReason(ctx) : null;
 		bool safeAtHome = Current is StayHomeSkill { Home: true } && ctx.RecentAttacker < 0
 			// A hurt flight at any distance (with a worm near the retreat is home from anywhere: seen in game, world_eye run 69,
 			// 120 tiles out the fight took it back every tick and the retreat gave it up again, until a devourer killed the bot).
-			|| Current is StayHomeSkill { Home: false, RecoverTo: > 0 }
+			|| Current is StayHomeSkill { Home: false, RecoverTo: > 0 } && fightBack == null
 			|| Current is StayHomeSkill { Home: false } walking && walking.Inside.ChebyshevTo(ctx.Node) <= ProgressionPlanner.RetreatHomeTiles
-				&& ctx.RecentAttacker < 0;
+				&& ctx.RecentAttacker < 0 && fightBack == null;
 		// A retreat (or a sealed hole) is not stopped for every hostile in sight, only when it is caught: hit, or something within
 		// a swing (ShelterSkill.FightBackReason). The shelter is dropped for the fight, and afterwards the retreat is decided
 		// afresh, not before FightBackHoldTicks (RetreatHeldOff).
-		string fightBack = Current is ShelterSkill caught ? caught.FightBackReason(ctx) : null;
 		bool shelterHolds = Current is ShelterSkill { Retreat: true } or ShelterSkill { Sealed: true } && fightBack == null;
 		if (Auto && !safeAtHome && Current is not FightSkill && !shelterHolds && Current is not SurfaceSkill && Current is not BossFightSkill && ProgressionPlanner.InDanger(ctx, toFight: true)) {
 			if (fightBack != null) {
