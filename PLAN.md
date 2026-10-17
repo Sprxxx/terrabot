@@ -626,6 +626,15 @@ UI click would call:
   right-click on the stack and a click on an empty slot do, then onto the hotbar like dragging it; a favourite mark is
   cleared as an alt-click does (`TerraBotPlayer.HoldOneToThrow`). A stack of N Guide Voodoo Dolls in lava kills N-1 more
   town NPCs, so only one is ever thrown.
+* **Journey research** (approved by the user 2026-10-17; `Game/TerrariaJourney.cs`): a bag stack into the research slot and
+  the research button, as the shift-click with the research menu open runs it (`ItemSlot.cs:640-647`:
+  `Main.CreativeMenu.SwapItem`, then the button's `CreativeUI.SacrificeItem(out int)`, CreativeUI.cs:293/303-354, with
+  `ItemLoader.CanResearch` and the catalog's cap); the rest is swapped back. Never `CreativeUI.ResearchItem` (research from
+  nothing). Only once the bag holds the whole count research still takes, in one go (the user's way of playing), never gear
+  without a spare left, never the item in hand mid-swing (`Bot/Brain/ResearchHabit.cs`).
+* **Journey duplication**: the duplication menu's shift-click on a researched item (`ItemSlot.cs:618-625`, context 29: a
+  `maxStack` clone, `OnCreated(JourneyDuplicationItemCreationContext)`, `Player.GetItem`), only if `Player.ItemSpace` takes
+  it. The planner's `DuplicateSkill` for any need met by a researched item.
 
 ## Milestone 9: real-world play up to the Eye of Cthulhu (in progress)
 Scenario `world_eye`: the copied real world (Peppe on "Noxious Vision of Organs", a small Crimson world), the

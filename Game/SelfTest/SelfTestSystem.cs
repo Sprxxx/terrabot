@@ -31,6 +31,8 @@ public sealed class SelfTestSystem : ModSystem
 	public const string CheckpointFlag = "-terrabotcheckpoints";
 	/// <summary>Real-world runs: a game-time budget in days instead of the scenario's own (a run from a checkpoint).</summary>
 	public const string DaysFlag = "-terrabotdays";
+	/// <summary>Real-world runs on a Journey character: research and duplication off (the Classic behaviour), selftest.ps1 -NoJourney.</summary>
+	public const string NoJourneyFlag = "-terrabotnojourney";
 	/// <summary>
 	/// Milestones a checkpoint is saved at: the late stages can then be measured from there in a few minutes instead of a
 	/// whole 10-day run from day 1 (user, 2026-10-16: "do we REALLY have to start from the beginning every time?").
@@ -232,6 +234,7 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				SpawnsOn = s.RealWorld;
 				FarReach(p, s);
+				JourneySetup(p, bot, s);
 				if (s.RealWorld) {
 					// The world as it is: its town NPCs, its enemies, the character's own inventory, at the spawn.
 					s.Inventory?.Invoke(p);
@@ -515,6 +518,31 @@ public sealed class SelfTestSystem : ModSystem
 		}
 	}
 
+	/// <summary>
+	/// Journey Mode for the scenario: research and duplication on for the scenarios that ask for it (Scenario.Journey) and for the
+	/// real-world runs on a Journey character (unless <see cref="NoJourneyFlag"/>), off for the other synthetic ones, so a Journey
+	/// character copied in (Pepi) plays them as before. On a Journey character the menu's state is logged once: the powers that
+	/// change the bot's assumptions (enemy strength, frozen time, time rate, god mode, spawns off, placement range).
+	/// </summary>
+	private void JourneySetup(Player p, TerraBotPlayer bot, Scenario s)
+	{
+		bot.Journey.Allowed = s.RealWorld ? !Program.LaunchParameters.ContainsKey(NoJourneyFlag) : s.Journey;
+		if (p.difficulty != PlayerDifficultyID.Creative)
+			return;
+		var m = Terraria.GameContent.Creative.CreativePowerManager.Instance;
+		Mod.Logger.Info($"SELFTEST {s.Name}: Journey character in a {(Main.GameModeInfo.IsJourneyMode ? "Journey" : "non-Journey")} world, research and duplication "
+			+ $"{(bot.Journey.Enabled ? "on" : "off")}; enemy strength x{m.GetPower<Terraria.GameContent.Creative.CreativePowers.DifficultySliderPower>().StrengthMultiplierToGiveNPCs:0.00}"
+			+ $" (NPC.ScaleStats), time frozen {m.GetPower<Terraria.GameContent.Creative.CreativePowers.FreezeTime>().Enabled}"
+			+ $", time rate x{m.GetPower<Terraria.GameContent.Creative.CreativePowers.ModifyTimeRate>().TargetTimeRate}"
+			+ $", god mode {m.GetPower<Terraria.GameContent.Creative.CreativePowers.GodmodePower>().IsEnabledForPlayer(p.whoAmI)}"
+			+ $", spawns off {m.GetPower<Terraria.GameContent.Creative.CreativePowers.SpawnRateSliderPerPlayerPower>().GetShouldDisableSpawnsFor(p.whoAmI)}"
+			+ $", far placement {m.GetPower<Terraria.GameContent.Creative.CreativePowers.FarPlacementRangePower>().IsEnabledForPlayer(p.whoAmI)}");
+		// The scenario's fixture: these items start unresearched on the copied character (the throw-away copy in the test folder).
+		foreach (int t in s.ResearchReset)
+			if (ContentSamples.ItemPersistentIdsByNetIds.TryGetValue(t, out string id))
+				Main.LocalPlayerCreativeTracker.ItemSacrifices.SetSacrificeCountDirectly(id, 0);
+	}
+
 	/// <summary>The floor under the node, as far as it goes either way: an arena's (MinX, MaxX, StandY) for the boss fight.</summary>
 	private static (int MinX, int MaxX, int StandY) BridgeUnder(TilePos node)
 	{
@@ -755,6 +783,8 @@ public sealed class SelfTestSystem : ModSystem
 		result.HardMode = Main.hardMode;
 		result.Dolls = bot.GameInfo.Count(ItemID.GuideVoodooDoll);
 		result.GuideAlive = NPC.AnyNPCs(NPCID.Guide);
+		result.LifeMax = Main.LocalPlayer.statLifeMax;
+		result.JourneyOn = bot.Journey.Enabled;
 		result.Milestones = string.Join(", ", milestones);
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		// The hotbar is restocked every 30 ticks, one swap at a time: a pickaxe crafted on the last tick can still be in

@@ -49,6 +49,10 @@ public sealed class RunResult
 	public string Arena = "no arena";
 	/// <summary>A heart lantern hangs where the house blueprint puts it.</summary>
 	public bool HeartLanternHung;
+	/// <summary>Player.statLifeMax at the end (life crystals and fruit used).</summary>
+	public int LifeMax;
+	/// <summary>Journey Mode's research and duplication were on for the run (a Journey character, and the scenario allowing it).</summary>
+	public bool JourneyOn;
 	public List<string> Log = new();
 
 	public bool LogHas(string s) => Log.Any(l => l.Contains(s));
@@ -126,6 +130,13 @@ public sealed class Scenario
 	/// its no-grab delay ran out (Player.cs:6003). The M12 world's character is Classic, without it.
 	/// </summary>
 	public bool NoFarReach { get; init; }
+	/// <summary>
+	/// Journey Mode's research and duplication on for this synthetic scenario (a Journey character needed; the other synthetic
+	/// scenarios run with them off, as on Classic). Real-world runs have them on whenever the character is Journey's.
+	/// </summary>
+	public bool Journey { get; init; }
+	/// <summary>Items set back to unresearched on the copied character before the run (the scenario's fixture).</summary>
+	public int[] ResearchReset { get; init; } = System.Array.Empty<int>();
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
 	public Action<Arena, int> During { get; init; }
 	/// <summary>The run also ends once the bot logs a line containing this (for skills that never finish on their own).</summary>
@@ -546,6 +557,35 @@ public sealed class Scenario
 				},
 				TimeoutTicks = 60 * 60 * 5,
 				Check = r => r.Arena != null ? $"arena: {r.Arena}" : r.FallDamageHits > 0 ? "fall damage" : null,
+			},
+			new() {
+				// Journey Mode (needs a Journey character, selftest.ps1 -Player <one>; the copy's research of these three is set back to
+				// none first). Plan "crystals" (max life 200) at 100 max life with 10 life crystals, which is what research takes of them
+				// (Sacrifices.tsv "H" = 10): researched, not used, then duplicated from the menu and used to max life 400 (used, the ten
+				// would make 300). 120 wood (research takes 100, "L") and one work bench ("D" = 1): the habit researches both, the bench
+				// duplicated back. The iron pickaxe in the hotbar (one, in use) is not researched. Run it by name.
+				Name = "journey_research",
+				Rows = Grid(Repeat(new string('.', 40), 8), "..S" + new string('.', 37), new string('@', 40)),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Crystals,
+				Journey = true,
+				ByName = true,
+				ResetLife = true,
+				ResearchReset = new int[] { Terraria.ID.ItemID.LifeCrystal, Terraria.ID.ItemID.Wood, Terraria.ID.ItemID.WorkBench, Terraria.ID.ItemID.IronPickaxe },
+				Inventory = p => {
+					p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.LifeCrystal, 10);
+					p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.Wood, 120);
+					p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.WorkBench);
+				},
+				TimeoutTicks = 60 * 60 * 3,
+				Check = r => !r.JourneyOn ? "research was off: not a Journey character in a Journey world (selftest.ps1 -Player <a Journey character>)"
+					: !r.LogHas("Journey: researched 10 Life Crystal") ? "the 10 life crystals were not researched"
+					: !r.Log.Any(l => l.Contains("Journey: duplicated") && l.Contains("Life Crystal")) ? "no life crystals duplicated"
+					: r.LifeMax < Bot.Brain.ProgressionPlanner.MaxCrystalLife ? $"max life {r.LifeMax}, not {Bot.Brain.ProgressionPlanner.MaxCrystalLife}"
+					: !r.LogHas("Journey: researched 100 Wood") ? "the wood was not researched"
+					: !r.LogHas("Journey: researched 1 Work Bench") ? "the work bench was not researched"
+					: r.LogHas("Journey: researched 1 Iron Pickaxe") ? "the pickaxe in use was researched"
+					: null,
 			},
 			new() {
 				// Milestone 6: a house from a kit (dirt, wood walls, door, chair, table, torches) on flat ground, checked

@@ -50,7 +50,10 @@ target in `PreItemCheck` and restored in `PostItemCheck`. When the bot is disabl
 Things with no control to press go through the function the UI click would call; they're listed in PLAN.md
 under "Actions that stand in for UI clicks". Keep that list current, since it's the exception to the rule
 that the bot acts only through controls. The items are `Main.CraftItem`, `Player.AdjTiles`, inventory slot
-swaps, the tile-target and mouse overrides, and an NPC's first chat button (the Old Man's Curse).
+swaps, the tile-target and mouse overrides, an NPC's first chat button (the Old Man's Curse), and Journey Mode's
+research slot and duplication shift-click (`Game/TerrariaJourney.cs`; off on Classic and in the synthetic self-tests
+unless `Scenario.Journey`; `selftest.ps1 -NoJourney` turns it off for real-world runs). Journey log lines:
+`Journey: researched N <item> (...)`, `Journey: duplicated N <item> (...)`, `need N more <item> (researched: duplicating to M)`.
 
 ### Pathfinding model
 - Node `(x, y)`: body = columns `x..x+1`, rows `y-2..y`, `y` = feet row. Canonical hitbox left = `x*16+6`.

@@ -37,7 +37,9 @@ param(
 	# Start from a checkpoint folder (its .plr/.tplr/.wld/.twld replace the copies of the originals).
 	[string]$FromCheckpoint = "",
 	# Real-world runs: a game-time budget in days instead of the scenario's own.
-	[double]$BudgetDays = 0
+	[double]$BudgetDays = 0,
+	# Real-world runs on a Journey character: no research or duplication (the bot plays it as on Classic).
+	[switch]$NoJourney
 )
 $ErrorActionPreference = "Stop"
 
@@ -97,6 +99,7 @@ if ($Fast) { $tmlArgs += @("-terrabotfast", "$DrawEvery") }
 if ($XRay) { $tmlArgs += @("-terrabotxray", "1") }
 if ($Checkpoints) { $tmlArgs += @("-terrabotcheckpoints", "1") }
 if ($BudgetDays -gt 0) { $tmlArgs += @("-terrabotdays", ([string]$BudgetDays).Replace(",", ".")) }
+if ($NoJourney) { $tmlArgs += @("-terrabotnojourney", "1") }
 Write-Host "Launching tModLoader:  $($tmlArgs -join ' ')"
 $started = Get-Date
 $proc = Start-Process -FilePath (Join-Path $TmlDir "dotnet\dotnet.exe") -ArgumentList $tmlArgs -WorkingDirectory $TmlDir -PassThru
