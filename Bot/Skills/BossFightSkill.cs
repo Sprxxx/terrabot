@@ -35,6 +35,20 @@ namespace TerraBot.Bot.Skills;
 /// Corruption (the worm despawns then); knocked off it, or down a chasm deeper than a safe fall, walk back.</item>
 /// </list>
 /// </para>
+/// <para>
+/// Skeletron (<see cref="SkeletronPattern"/>, docs M11_SPEC.md section 3 and S7) is summoned by another skill (<see cref="Summon"/>:
+/// the Old Man's chat button) and fought on its own rules:
+/// <list type="bullet">
+/// <item>shoot the head (the kill is the head's; in Classic the hands add nothing to its defence), a hand only when the head
+/// has no clear line;</item>
+/// <item>move: while it hovers, stand under it (it hovers straight overhead, a short shot up); while it spins, run from it (1.5
+/// px/tick against the player's 3), past it when an end of the arena leaves no room; the dodge planner sees the hands' lunges
+/// coming from their wind-up (<see cref="SkeletronPattern.PredictHand"/>);</item>
+/// <item>escape by a recall potion when dawn is near (<see cref="DawnEscapeTicks"/>: by day it does 1000 damage, NPC.cs:22206),
+/// once it is enraged, or when a Dungeon Guardian shows: the fight fails "escaped", the head despawns once we are more than
+/// 2000 px off (NPC.cs:22198-22205).</item>
+/// </list>
+/// </para>
 /// </summary>
 public sealed class BossFightSkill : ISkill
 {
@@ -87,7 +101,21 @@ public sealed class BossFightSkill : ISkill
 	/// <summary>Ticks with no boss around after it appeared before concluding it left (or died).</summary>
 	public const int GoneTicks = 90;
 
-	private UseItemSkill summon;
+	private ISkill summon;
+	private UseItemSkill escape;
+	private string escapeWhy;
+	private bool escapeLogged;
+	/// <summary>
+	/// Skeletron: escape this many ticks before dawn (Main.time 30600 of the night's 32400, docs M11_SPEC.md section 3e): at dawn
+	/// it turns to 1000 damage and 9999 defence for good (NPC.cs:22206-22210, 22462-22475). Half a minute: the recall potion's
+	/// 30-tick use (Item.cs:27252) after a swing under way, with room to spare.
+	/// </summary>
+	public const int DawnEscapeTicks = 1800;
+	/// <summary>
+	/// Skeletron hovering: stand still while under the head, within its half width (80 px wide, NPC.cs:4272) of its centre;
+	/// the head follows us across at up to 8 px/tick, so from farther off we walk under it.
+	/// </summary>
+	public const float UnderHeadPx = 40f;
 	private bool seenBoss;
 	private bool summoned;
 	private int waitForBoss;
@@ -138,6 +166,15 @@ public sealed class BossFightSkill : ISkill
 	public int[] MinionTypes { get; }
 	/// <summary>A worm boss (<see cref="WormPattern"/>): fought with the worm tactics, not the Eye's.</summary>
 	public bool IsWorm { get; }
+	/// <summary>Skeletron (<see cref="SkeletronPattern"/>): fought with its own rules (see the class).</summary>
+	public bool IsSkeletron { get; }
+	/// <summary>
+	/// The summon, when it is not an item to use (<see cref="SummonItem"/> 0): a skill made when the summon starts, such as the
+	/// Old Man's chat button for Skeletron (<see cref="ChatButtonSkill"/>). Null: use the summon item.
+	/// </summary>
+	public Func<ISkill> Summon { get; init; }
+	/// <summary>Why the fight was escaped (a recall potion drunk), or null.</summary>
+	public string Escaped { get; private set; }
 	/// <summary>Worm: its segments in view this tick.</summary>
 	public int SegmentsInView => segments.Count;
 	/// <summary>The NPC (whoAmI) aimed at this tick, or null.</summary>
@@ -155,6 +192,7 @@ public sealed class BossFightSkill : ISkill
 		BossType = bossType;
 		MinionTypes = minionTypes;
 		IsWorm = WormPattern.IsWormBoss(bossType);
+		IsSkeletron = SkeletronPattern.IsSkeletron(bossType);
 		segmentTypes = WormPattern.SegmentTypes(bossType);
 	}
 
@@ -166,6 +204,7 @@ public sealed class BossFightSkill : ISkill
 	public void Stop(BotContext ctx)
 	{
 		summon?.Stop(ctx);
+		escape?.Stop(ctx);
 		backToArena?.Stop(ctx);
 		backToArena = null;
 	}
@@ -226,13 +265,13 @@ public sealed class BossFightSkill : ISkill
 			}
 			if (!ctx.Combat.HasRanged)
 				return Fail(ctx, "no bow with arrows");
-			if (summon == null && ctx.Inventory.Count(SummonItem) <= 0)
+			if (summon == null && Summon == null && ctx.Inventory.Count(SummonItem) <= 0)
 				return Fail(ctx, "no summon item");
 			// Worm Food does nothing out of the Corruption zone (Player.cs:43462), and the worm would not stay (NPC.cs:55436):
 			// the planner finds where it holds (the bot's look at it here is kept, BotContext.Zone).
 			if (summon == null && IsWorm && ctx.Combat.InEvilZone == false)
 				return Fail(ctx, $"not in the Corruption zone at {ctx.Node}: the summon would do nothing here");
-			summon ??= Start(ctx, new UseItemSkill(SummonItem));
+			summon ??= Start(ctx, Summon?.Invoke() ?? new UseItemSkill(SummonItem));
 			SkillStatus s = summon.Tick(ctx);
 			if (s == SkillStatus.Failed)
 				return Fail(ctx, "could not summon: " + summon.FailureReason);
@@ -281,6 +320,8 @@ public sealed class BossFightSkill : ISkill
 			return Fail(ctx, $"still fighting after {maxTicks} ticks");
 		if (!ctx.Combat.HasRanged)
 			return Fail(ctx, "out of arrows");
+		if (IsSkeletron && Escape(ctx, boss) is SkillStatus escaping)
+			return escaping;
 
 		if (IsWorm)
 			TrackZone(ctx);
@@ -291,11 +332,15 @@ public sealed class BossFightSkill : ISkill
 		// can hit): the ones about to bite besides are the zone's own spawns, eaters of souls (40 life, 22 contact damage,
 		// NPC.cs:3849; 2-3 arrows), which the boss fight shot none of. Seen in game (measured run M10k, world_eow from the
 		// worm_food checkpoint): held in a pocket at x 1720-1722, hit by segments and eaters of souls in turn, dead in the fight.
-		EntityInfo? servant = ctx.Hostiles.Where(h => (IsWorm ? !segmentTypes.Contains(h.Type) && h.Damage > 0 : MinionTypes.Contains(h.Type))
+		EntityInfo? servant = ctx.Hostiles.Where(h => (IsWorm ? !segmentTypes.Contains(h.Type) && h.Damage > 0 : MinionTypes.Contains(h.Type) && !IsSkeletron)
 				&& h.DistanceTo(cx, cy) <= ServantDangerTiles * 16f)
 			.OrderBy(h => h.DistanceTo(cx, cy)).Cast<EntityInfo?>().FirstOrDefault();
 		// A worm: its nearest segment in reach (WormShot).
 		EntityInfo? target = servant ?? (IsWorm ? null : boss);
+		// Skeletron: the head, the hands only when the head has no clear line (in Classic they add nothing to its defence,
+		// NPC.cs:22212-22265 is Expert only; unholy arrows pierce through a hand into the head anyway).
+		if (IsSkeletron)
+			target = SkeletronTarget(ctx, boss, cx, cy);
 		// While walking back the path may need the pickaxe or blocks: no shooting then.
 		bool canShoot = !walkingBack || ctx.Output.Tool == ToolRequest.None;
 		AimSolution? aim = null;
@@ -575,6 +620,8 @@ public sealed class BossFightSkill : ISkill
 			maxX = Math.Max(maxX, ctx.Body.X);
 			KiteWorm(ctx, minX, maxX);
 		}
+		else if (IsSkeletron)
+			KiteSkeletron(ctx, boss, minX, maxX);
 		else {
 			TrackDash(ctx, boss, cx, cy);
 			Kite(ctx, boss, floorY, minX, maxX);
@@ -588,9 +635,11 @@ public sealed class BossFightSkill : ISkill
 					threats.Add(chain[i]);
 		}
 		foreach (EntityInfo h in IsWorm ? ctx.Hostiles.Where(o => !segmentTypes.Contains(o.Type)) : ctx.Hostiles) {
-			if (h.Damage <= 0 || h.DistanceTo(cx, cy) > ThreatRadiusTiles * 16f)
+			if (h.Damage <= 0 || h.DistanceTo(cx, cy) > (h.AiStyle == SkeletronPattern.HandAiStyle ? SkeletronPattern.LungeReachPx : ThreatRadiusTiles * 16f))
 				continue;
-			threats.Add(h.AiStyle == EyePattern.EyeAiStyle ? EyePattern.Predict(h, ctx.Expert) : new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
+			threats.Add(h.AiStyle == EyePattern.EyeAiStyle ? EyePattern.Predict(h, ctx.Expert)
+				: h.AiStyle is SkeletronPattern.HeadAiStyle or SkeletronPattern.HandAiStyle ? SkeletronPattern.Predict(h, ctx.Hostiles, ctx.Expert, cx, cy)
+				: new Threat(h.X, h.Y, h.Width, h.Height, h.VX, h.VY));
 		}
 		if (threats.Count == 0)
 			return;
@@ -600,19 +649,21 @@ public sealed class BossFightSkill : ISkill
 		int immune = IsWorm ? ImmuneTicksLeft(ctx) : 0;
 		ITileGrid terrain = IsWorm ? ctx.Grid : null;
 		float maxBottom = IsWorm ? LowestBottom(ctx) : float.PositiveInfinity;
-		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, runDir, 0, Dodge.Horizon, immune, terrain);
+		// Skeletron's kiting may stand (under the hovering head): the plan judged is the one the kiting chose.
+		int kiteDir = IsSkeletron ? ctx.Output.Horizontal : runDir;
+		DodgePlan kite = Dodge.Evaluate(ctx.Body, p, floorY, minX, maxX, threats, kiteDir, 0, Dodge.Horizon, immune, terrain);
 		// Hysteresis: start dodging when the kite comes within DodgeStartGap, stop once it clears DodgeStopGap again.
 		if (!kite.Hits && kite.Clearance >= (dodging ? DodgeStopGap : DodgeStartGap) && kite.EndBottom <= maxBottom) {
 			dodging = false;
 			return;
 		}
-		DodgePlan best = Dodge.Best(ctx.Body, p, floorY, minX, maxX, threats, runDir, Dodge.Horizon, immune, terrain, maxBottom);
+		DodgePlan best = Dodge.Best(ctx.Body, p, floorY, minX, maxX, threats, kiteDir, Dodge.Horizon, immune, terrain, maxBottom);
 		if (!dodging) {
 			Dodges++;
 			if (ctx.Tick - lastDodgeLog >= 30) {
 				lastDodgeLog = ctx.Tick;
 				ctx.Log.Info($"Boss fight: dodge {(best.Dir > 0 ? "right" : best.Dir < 0 ? "left" : "stand")}{(best.JumpHold > 0 ? $" + jump {best.JumpHold}" : "")} " +
-				$"(kiting {(runDir > 0 ? "right" : "left")} {(kite.Hits ? $"is hit in {kite.HitTick} ticks" : $"passes {kite.Clearance:0} px from it")}; the dodge {(best.Hits ? $"is hit in {best.HitTick}" : $"clears by {best.Clearance:0} px")})");
+				$"(kiting {(kiteDir > 0 ? "right" : kiteDir < 0 ? "left" : "standing")} {(kite.Hits ? $"is hit in {kite.HitTick} ticks" : $"passes {kite.Clearance:0} px from it")}; the dodge {(best.Hits ? $"is hit in {best.HitTick}" : $"clears by {best.Clearance:0} px")})");
 			}
 		}
 		dodging = true;
@@ -842,6 +893,88 @@ public sealed class BossFightSkill : ISkill
 			ctx.Output.Jump = true;
 		else
 			hopping = false;
+	}
+
+	/// <summary>
+	/// Skeletron's kiting (<see cref="SkeletronPattern"/>). Hovering, it keeps its top 250 px over ours and follows us across: stand
+	/// under it (within <see cref="UnderHeadPx"/> of its centre, else walk under it) and shoot straight up; the hands' lunges are
+	/// the dodge planner's, aimed at where we were when they set off. Spinning (or enraged by day), it flies straight at us: run
+	/// away from it, and past it when the way from it is out of room (as the worm's kiting, <see cref="KiteWorm"/>).
+	/// </summary>
+	private void KiteSkeletron(BotContext ctx, EntityInfo? head, float minX, float maxX)
+	{
+		ctx.Output.Horizontal = 0;
+		if (head is not EntityInfo h)
+			return;
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p);
+		int offset = ctx.Node.X - centre.Value.X;
+		var (_, hard) = HalfWidths();
+		bool Room(int dir) => dir > 0 ? offset < hard && maxX - ctx.Body.X >= 16f : offset > -hard && ctx.Body.X - minX >= 16f;
+		int ahead = Math.Sign(h.CenterX - cx);
+		if (SkeletronPattern.HeadPhase(h) == SkeletronPattern.Phase.Hover) {
+			if (Math.Abs(h.CenterX - cx) > UnderHeadPx && Room(ahead)) {
+				runDir = ahead;
+				ctx.Output.Horizontal = ahead;
+			}
+			return;
+		}
+		int away = ahead != 0 ? -ahead : runDir;
+		if (Room(away))
+			runDir = away;
+		else {
+			runDir = -away;
+			if (ctx.Tick - lastForcedTurnLog > 60) {
+				lastForcedTurnLog = ctx.Tick;
+				ctx.Log.Info($"Boss fight: no room to run from Skeletron's head at {ctx.Node}: running past it");
+			}
+		}
+		ctx.Output.Horizontal = runDir;
+	}
+
+	/// <summary>Skeletron: the head if an arrow reaches it, else the nearest hand one reaches, else the head (aimed at, not shot).</summary>
+	private EntityInfo? SkeletronTarget(BotContext ctx, EntityInfo? head, float cx, float cy)
+	{
+		if (head is EntityInfo h && FightSkill.ClearShot(ctx, cx, cy, h.CenterX, h.CenterY))
+			return h;
+		foreach (EntityInfo e in ctx.Hostiles)
+			if (MinionTypes.Contains(e.Type) && e.DistanceTo(cx, cy) <= ThreatRadiusTiles * 16f && FightSkill.ClearShot(ctx, cx, cy, e.CenterX, e.CenterY))
+				return e;
+		return head;
+	}
+
+	/// <summary>
+	/// Skeletron: time to go (<see cref="DawnEscapeTicks"/> before dawn, day already, the head enraged, or a Dungeon Guardian in
+	/// view)? Then a recall potion (the fight fails "escaped ..." once it is drunk); with none, the kiting runs from the head
+	/// (the AI's 2000 px rule drops us only that far off, NPC.cs:22198-22205). Null while the fight goes on.
+	/// </summary>
+	private SkillStatus? Escape(BotContext ctx, EntityInfo? head)
+	{
+		if (escape == null) {
+			string why = !ctx.IsNight ? "it is day: Skeletron is enraged (1000 damage)"
+				: ctx.NightTicksLeft <= DawnEscapeTicks ? $"dawn in {ctx.NightTicksLeft / 60} s: Skeletron turns to 1000 damage at dawn"
+				: head is EntityInfo h && SkeletronPattern.HeadPhase(h) == SkeletronPattern.Phase.Day ? "Skeletron is enraged"
+				: ctx.Hostiles.Any(e => e.Type == SkeletronPattern.Guardian) ? "a Dungeon Guardian is here"
+				: null;
+			if (why == null)
+				return null;
+			if (ctx.Ids.RecallPotion <= 0 || ctx.Inventory.Count(ctx.Ids.RecallPotion) <= 0) {
+				if (!escapeLogged) {
+					escapeLogged = true;
+					ctx.Log.Warn($"Boss fight: {why}, and no recall potion: running from it");
+				}
+				return null;
+			}
+			escapeWhy = why;
+			ctx.Log.Warn($"Boss fight: {why}; drinking a recall potion (boss at {(head is EntityInfo b ? $"{b.Life}/{b.LifeMax}" : "?")}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax})");
+			escape = Start(ctx, new UseItemSkill(ctx.Ids.RecallPotion));
+		}
+		State = $"escaping: {escapeWhy}";
+		SkillStatus s = escape.Tick(ctx);
+		if (s == SkillStatus.Running)
+			return SkillStatus.Running;
+		Escaped = escapeWhy;
+		return Fail(ctx, s == SkillStatus.Succeeded ? $"escaped: {escapeWhy}" : $"escape failed ({escape.FailureReason}): {escapeWhy}");
 	}
 
 	/// <summary>Worm kiting: jumping onto a step in front (held until the body is back on the ground).</summary>
