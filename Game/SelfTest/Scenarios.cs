@@ -744,6 +744,20 @@ public sealed class Scenario
 				Check = r => !r.LogHas("DropThrough") ? "no DropThrough in the plan" : null,
 			},
 			new() {
+				// Measured run U30 (world_eye): the corruption chasm under the lip at (1779,341), open 55 rows, its wall behind; every
+				// walk from the lip ended "no path" for 117,000 ticks. Down it on blocks placed mid-fall (ArrestedDrop), no fall
+				// damage, the fall reflex left out of it. No digging: the ebonstone is beyond the pickaxe there.
+				Name = "chasm_arrested_descent",
+				Rows = Grid(Repeat("@......................@", 3), "@..S...................@",
+					Repeat("@eeeeeewwwwwwwwwweeeeee@", 41), "@eeeeeewwwGwwwwwweeeeee@", "@@@@@@@@@@@@@@@@@@@@@@@@"),
+				Build = true,
+				Blocks = 200,
+				TimeoutTicks = 60 * 60,
+				Check = r => r.FallDamageHits > 0 ? $"took fall damage {r.FallDamageHits}x"
+					: !r.LogHas("ArrestedDrop") ? "no ArrestedDrop in the plan"
+					: r.LogHas("Fall: from row") ? "the fall reflex had to act" : null,
+			},
+			new() {
 				Name = "drop_6_no_damage",
 				Rows = Grid(Repeat("......................", 3), "..S...................", Repeat("@@@@@@@...............", 5),
 					"@@@@@@@.........G.....", "@@@@@@@@@@@@@@@@@@@@@@"),

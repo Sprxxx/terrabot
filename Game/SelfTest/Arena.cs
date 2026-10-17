@@ -12,7 +12,7 @@ namespace TerraBot.Game.SelfTest;
 /// Only reachable when tModLoader was launched with -terrabotselftest (tools/selftest.ps1, isolated save dir).
 ///
 /// Legend (same as the unit tests): '.' air, '#' dirt (breakable), '@' Lihzahrd brick (needs pick power 210, so
-/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, 'H' life crystal (right column of a 2×2 pocket), 'A' demon altar (bottom-middle), '=' wood platform, '!' lava, '~' water, 'h' dirt half block, 'r' minecart track,
+/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, 'H' life crystal (right column of a 2×2 pocket), 'A' demon altar (bottom-middle), '=' wood platform, '!' lava, '~' water, 'h' dirt half block, 'r' minecart track, 'w' open with an ebonstone wall behind, 'e' ebonstone,
 /// 'S' start node (left body column, feet row), 'G' target tile.
 /// </summary>
 public sealed class Arena
@@ -76,6 +76,7 @@ public sealed class Arena
 					case '~': t.LiquidType = LiquidID.Water; t.LiquidAmount = 255; break;
 					case 'h': t.ResetToType(TileID.Dirt); t.IsHalfBlock = true; break;
 					case 'r': Minecart.PlaceTrack(t, 0); break;
+					case 'w': t.WallType = WallID.EbonstoneUnsafe; break; // open, an ebonstone wall behind (a corruption chasm's)
 				}
 			}
 		}
