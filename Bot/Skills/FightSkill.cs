@@ -50,6 +50,22 @@ public sealed class FightSkill : ISkill
 	public const float MeleePreferredWithin = 6 * 16f;
 	/// <summary>NPC AI styles that fly (vanilla NPCAIStyleID: 2 Demon Eye, 4 Eye of Cthulhu, 5 Flying, 14 Bat).</summary>
 	public static readonly int[] FlyingAiStyles = { 2, 4, 5, 14 };
+
+	/// <summary>
+	/// A worm that digs (AI style 6 with noTileCollide: devourers, giant worms, the Eater of Worlds' segments): its head steers at
+	/// the player through the ground (vanilla NPC.AI_006_Worms, <see cref="WormPattern"/>), so its "feet" are wherever in the rock it
+	/// is. Seen in game (measured run M10d, world_eow): chasing a Devourer through a chasm's ebonstone walls (too hard for the
+	/// Iron Pickaxe), every walk was "Partial", jumping into the chasm ("Jump (1704,269)->(1699,275)"), bridging and pillaring
+	/// inside it; on a pillar top a bite from the east ("knockback 4.5 dir -1 at tile (1703,267)") threw the bot over the open
+	/// shaft and it fell 94 rows to (1701,361), dead.
+	/// </summary>
+	public static bool Burrower(in EntityInfo e) => e.AiStyle == WormPattern.WormAiStyle && e.NoTileCollide;
+
+	/// <summary>
+	/// An enemy that comes at the player on its own, through the air or the ground: met from where the bot stands, never chased
+	/// on foot (<see cref="FlyingAiStyles"/>, <see cref="Burrower"/>).
+	/// </summary>
+	public static bool ComesAtUs(in EntityInfo e) => FlyingAiStyles.Contains(e.AiStyle) || Burrower(e);
 	private const int RetargetPathTicks = 30;
 	/// <summary>
 	/// Per enemy: the closest it has been and the ticks spent on it since. Per enemy, not per target switch: seen in
@@ -216,10 +232,11 @@ public sealed class FightSkill : ISkill
 			progress[t.Id] = (Math.Min(targetDistance, progress[t.Id].Best), 0); // swinging at it is progress (the no-damage rule covers swings that do nothing)
 		wasInReach = inReach;
 
-		bool flier = FlyingAiStyles.Contains(t.AiStyle);
+		bool comes = ComesAtUs(t);
+		turnOnly = false;
 		if (!inReach && UseRanged(ctx, t, cx, cy)) {
 			Shoot(ctx, t, cx, cy);
-			if (flier)
+			if (comes)
 				KeepOffEdge(ctx);
 			MindTheEdge(ctx);
 			Heal(ctx);
@@ -255,9 +272,11 @@ public sealed class FightSkill : ISkill
 				}
 			}
 		}
-		else if (flier && FarWaitOver(ctx, t, cx, cy))
+		else if (comes && FarWaitOver(ctx, t, cx, cy))
 			return SkillStatus.Succeeded;
-		else if (flier) {
+		else if (comes) {
+			// Burrowers the same way (Burrower): seen in game (measured run M10d), chasing a Devourer through a chasm's walls
+			// ended on a pillar top beside an open shaft, and a bite threw the bot down it.
 			// A flier is never chased on foot: it comes at the player on its own (AI 2, 5 and 14 all fly at their target), and
 			// the ground beneath it is wherever it happens to be over. In sight with a sword: hold ground and meet it (chasing
 			// demon eyes' "feet tile" cost the bot 150 life on Classic). Out of sight: wait for it in the open, shooting the
@@ -437,7 +456,7 @@ public sealed class FightSkill : ISkill
 			return false;
 		int n = 0;
 		foreach (EntityInfo e in ctx.Hostiles)
-			if (FlyingAiStyles.Contains(e.AiStyle) && e.DistanceTo(cx, cy) > ThreatTiles * 16f && !ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) {
+			if (ComesAtUs(e) && e.DistanceTo(cx, cy) > ThreatTiles * 16f && !ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) {
 				ctx.WaitOut(e.Id, IgnoreTicks);
 				n++;
 			}
@@ -458,6 +477,7 @@ public sealed class FightSkill : ISkill
 		ctx.Output.AimMouse(t.CenterX, t.CenterY);
 		if (ctx.Combat.Facing != want && ctx.Combat.ItemAnimation == 0) {
 			ctx.Output.Horizontal = want;
+			turnOnly = true;
 			State = "turning to meet";
 			return;
 		}
@@ -485,10 +505,15 @@ public sealed class FightSkill : ISkill
 		int want = dx >= 0 ? 1 : -1;
 		ctx.Output.Tool = ctx.Combat.HasRanged ? ToolRequest.Ranged : ToolRequest.Weapon;
 		ctx.Output.AimMouse(t.CenterX, t.CenterY);
-		if (ctx.Combat.Facing != want && ctx.Combat.ItemAnimation == 0)
+		if (ctx.Combat.Facing != want && ctx.Combat.ItemAnimation == 0) {
 			ctx.Output.Horizontal = want;
+			turnOnly = true;
+		}
 		State = "waiting for it in the open";
 	}
+
+	/// <summary>The key pressed this tick only turns the body to face the enemy (<see cref="HoldAndMeet"/>, <see cref="WaitInTheOpen"/>).</summary>
+	private bool turnOnly;
 
 	/// <summary>
 	/// How far (tiles) a hit throws the player: vanilla Player.Hurt sets velocity (4.5 * hitDirection, -4.5 * 7/9 = -3.5) for
@@ -497,14 +522,16 @@ public sealed class FightSkill : ISkill
 	public const int KnockbackTiles = 5;
 
 	/// <summary>
-	/// Standing against fliers within <see cref="KnockbackTiles"/> of a sheer drop on one side (deeper than a fall the body
-	/// takes unhurt, <see cref="PhysicsParams.SafeFallTiles"/>): a step away from it, so a hit does not throw the bot over
-	/// the edge. Both sides sheer (a ledge, a pillar): stay. Seen in game (measured run M10a): knocked back by eaters of souls
-	/// ("Hurt 12 ... knockback 4.5") at a chasm's edge at x 1778, the bot fell 105 rows to (1777,401) and died.
+	/// Standing against an enemy that comes at us (<see cref="ComesAtUs"/>) within <see cref="KnockbackTiles"/> of a sheer drop on
+	/// one side (deeper than a fall the body takes unhurt, <see cref="PhysicsParams.SafeFallTiles"/>): a step away from it, so a
+	/// hit does not throw the bot over the edge. Both sides sheer (a ledge, a pillar): stay. Before a turn to face the enemy:
+	/// facing it across the drop, the turn and the step would take turns and the bot stay put. Seen in game (measured run
+	/// M10a): knocked back by eaters of souls ("Hurt 12 ... knockback 4.5") at a chasm's edge at x 1778, the bot fell 105 rows
+	/// to (1777,401) and died; (M10d) on a pillar top 2 columns from an open shaft, a Devourer's bite threw it down the shaft.
 	/// </summary>
 	private void KeepOffEdge(BotContext ctx)
 	{
-		if (ctx.Output.Horizontal != 0 || !ctx.Body.Grounded)
+		if (ctx.Output.Horizontal != 0 && !turnOnly || !ctx.Body.Grounded)
 			return;
 		TilePos n = ctx.Node;
 		int left = EdgeWithin(ctx, n, -1), right = EdgeWithin(ctx, n, 1);
@@ -569,15 +596,24 @@ public sealed class FightSkill : ISkill
 			return;
 		float decel = b.Grounded ? p.RunSlowdown : p.RunSlowdown * 0.5f;
 		float coast = b.VX * b.VX / (2f * decel);
-		float toEdge = (e - 1) * Core.Pathfinding.Body.TileSize + EdgeSupportPx;
-		if (coast >= toEdge) {
+		if (coast >= RoomToEdge(b, p, n, moving, e)) {
 			ctx.Output.Horizontal = -moving;
 			State += ", braking at the edge";
 		}
 	}
 
-	/// <summary>How far (px) past its canonical spot the body still stands on the lip: the 6 px gap to the next column plus its 20 px width.</summary>
-	private const float EdgeSupportPx = 26f;
+	/// <summary>
+	/// How far (px) the hitbox moves that way before it is off the last column with ground, the sheer one <paramref name="e"/>
+	/// columns off (<see cref="EdgeWithin"/>): from where it is, not from the feet tile's canonical spot (6 px in, so the lip
+	/// held 26 px more). Seen in game (measured run M10d): bitten on a pillar top at px 27251.3, 2.7 px short of the canonical
+	/// 27254, the bot had 39.3 px to the open shaft, not 42.
+	/// </summary>
+	public static float RoomToEdge(in BodyState b, PhysicsParams p, TilePos feet, int dir, int e)
+	{
+		const int T = Core.Pathfinding.Body.TileSize;
+		int sheer = dir > 0 ? feet.X + 1 + e : feet.X - e;
+		return dir > 0 ? sheer * T - b.X : b.X + p.Width - (sheer + 1) * T;
+	}
 
 	/// <summary>Nothing to stand on under either of the body's columns within a safe fall.</summary>
 	private static bool SheerUnder(BotContext ctx, TilePos feet) => Sheer(ctx, feet.X, feet.Y) && Sheer(ctx, feet.X + 1, feet.Y);
