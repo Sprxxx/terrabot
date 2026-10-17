@@ -90,7 +90,8 @@ public sealed class TerrariaJourney : IJourney
 
 	public int Research(int itemType)
 	{
-		if (!Enabled || Main.CreativeMenu.Blocked || IsResearched(itemType))
+		// Not dead: the menu does not open then (Player.ToggleCreativeMenu, Player.cs:5765-5770).
+		if (!Enabled || player.dead || Main.CreativeMenu.Blocked || IsResearched(itemType))
 			return 0;
 		int left = ResearchNeeded(itemType) - ResearchDone(itemType);
 		// The stack: the smallest that finishes the research in one go, else the biggest (the most progress for the click).
@@ -127,7 +128,7 @@ public sealed class TerrariaJourney : IJourney
 
 	public int Duplicate(int itemType)
 	{
-		if (!Enabled || Main.CreativeMenu.Blocked || !IsResearched(itemType) || itemType >= ItemLoader.ItemCount)
+		if (!Enabled || player.dead || Main.CreativeMenu.Blocked || !IsResearched(itemType) || itemType >= ItemLoader.ItemCount)
 			return 0;
 		Item sample = ContentSamples.ItemsByType[itemType];
 		// OverrideHover's condition for the shift-click's cursorOverride 7 in context 29: the bag can take it.
