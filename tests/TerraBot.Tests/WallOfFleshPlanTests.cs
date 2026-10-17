@@ -307,6 +307,20 @@ public class WallOfFleshPlanTests
 		Assert.Contains($"summoning the Wall of Flesh: a Guide Voodoo Doll into the lava off the hellbridge at x {sx}", p.Status);
 	}
 
+	/// <summary>world_wof E29 (2026-10-18): a block over the deck past the stand (a lip) stopped the thrown doll on the deck, 70 throws.</summary>
+	[Fact]
+	public void ABlockInTheDollsFlight_IsOpenedBeforeTheThrow()
+	{
+		FakeGame g = HellTests.Hell();
+		BotContext ctx = g.CreateContext(output);
+		int row = Row, sx = 60;
+		g.Grid.Set(sx + 1, row - 1, CellKind.Solid); // the lip
+		g.Grid.Set(sx + 1, row - 2, CellKind.Solid);
+		var cells = ProgressionPlanner.LandingDeck(ctx, sx, 1, row);
+		Assert.Contains(new TilePos(sx + 1, row - 1), cells);
+		Assert.Contains(new TilePos(sx + 1, row - 2), cells);
+	}
+
 	/// <summary>E12 (2026-10-17): a run resumed from a saved world on the finished bridge, the planner's memory fresh: that bridge is known as it stands.</summary>
 	[Fact]
 	public void ResumedOnABuiltBridge_ThePlannerKnowsItAsItStands_AndGoesOnToTheHunt()

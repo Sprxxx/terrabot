@@ -805,9 +805,19 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>The deck cells over the landing columns past the summon column, where built: the doll would lie on them.</summary>
+	/// <summary>Rows over the deck the thrown doll flies through (it leaves at the body's height with vy -2, Player.DropSelectedItem).</summary>
+	public const int FlightRows = 3;
+
 	public static List<TilePos> LandingDeck(BotContext ctx, int sx, int dir, int row)
 	{
 		var cells = new List<TilePos>();
+		// The doll's flight first: a block over the deck between the stand and the landing columns (a lip the bridge raised at its
+		// end against knockback, a block placed in a fight) stops it on the deck. Seen in game (world_wof E29, 2026-10-18): thrown
+		// east from x 4070 seventy times in three game days, it stopped at (4071,1041) each time ("did not reach lava").
+		for (int k = 1; k <= LandingTo; k++)
+			for (int y = row - FlightRows; y < row; y++)
+				if (ctx.Grid.Get(sx + dir * k, y).IsBlock())
+					cells.Add(new TilePos(sx + dir * k, y));
 		for (int k = LandingFrom; k <= LandingTo; k++)
 			if (ctx.Grid.Get(sx + dir * k, row).CanStandOn())
 				cells.Add(new TilePos(sx + dir * k, row));
