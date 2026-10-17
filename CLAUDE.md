@@ -153,6 +153,11 @@ Gotchas already hit:
     `BlastOut start`, `BlastOut: N open cells walkable ... trying K nearest the goal`, `BlastOut: <Bomb> at (x,y) (tile t ...):
     thrown from ... out of the blast's box ... in T of the F-tick fuse`, `BlastOut: threw a ...`, `BlastOut: clear of the blast
     at ...`, `BlastOut: (x,y) is open ...`, `BlastOut failed: <reason>` (each wall tried and why not).
+  - Wall of Flesh (M12): `Hellevator start/done`, `Hellevator: at (x,y), N rows to go`, `Hellevator: no deeper from ... looking for a way
+    onto row R`, `Auto: underworld reached at ...: the hellbridge goes on row R from x a to b`, `Hellbridge: 25 % ...`, `Hellbridge done`,
+    `Throw start/failed`, `Throw: split one ...`, `Throw: one Guide Voodoo Doll thrown east`, `Boss fight: wall of flesh summoned at (x,y),
+    from the east`, `Boss fight: the Wall from the east N tiles off (band from M ...): running west|standing`, `Boss fight: Wall of Flesh
+    defeated: N ticks ... life taken (DPS a second), from x a to b, L lasers came at us, D dodges, H heals`, `Auto: unplanned wof`.
   - Self-test: `SELFTEST heartbeat <scenario> t<ticks> ...` every 30 s; `Planner: slow pass, N ms` over 50 ms.
     Watch runs with `tools/watch_selftest.sh` (prints STALL after 60 s without a log line).
   - Building (M6): `Auto: house site (x,y) (N edits)`, `Build start: small house at (x,y)`, `Build: <Kind> (x,y) failed (...),
