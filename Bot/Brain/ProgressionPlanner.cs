@@ -1802,6 +1802,7 @@ public sealed class ProgressionPlanner
 	{
 		if (oldManAt != null)
 			return null;
+		CrossingTheEvilBiome(ctx);
 		if (ctx.IsNight && ctx.Tick - lastShelterEnd >= ShelterCooldownTicks)
 			return Do($"night: sheltering until morning on the way to the Dungeon {why} (the walk is by day)", new ShelterSkill());
 		TilePos node = ctx.Node;
@@ -1832,6 +1833,14 @@ public sealed class ProgressionPlanner
 			new TravelUntilSkill("the Dungeon", new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, TravelArrivedTiles, ctx.Physics)) { Quiet = true, Travel = true },
 				DungeonInView));
 	}
+
+	/// <summary>
+	/// The way to the Dungeon and back crosses the evil biome's surface where it lies between (the M11 world's corruption, 700
+	/// tiles of it west of the spawn, docs M11_SPEC.md section 0): an errand there as the M10 ones are
+	/// (<see cref="BotContext.EvilErrand"/>), its surface opened in full armour (BotContext.EvilSurfaceOpen) and its ground below
+	/// as before. Else, with stone the pickaxe cannot break, every step of the 700 cost the paths their off-limits cost.
+	/// </summary>
+	private static void CrossingTheEvilBiome(BotContext ctx) => ctx.EvilErrand = true;
 
 	/// <summary>The side of the Old Man the Dungeon's entrance opens to: toward the world's middle, where the spawn is (WorldGen.DungeonEnt, WorldGen.cs:32549).</summary>
 	private static int EntranceSide(BotContext ctx, TilePos home)
@@ -1909,6 +1918,7 @@ public sealed class ProgressionPlanner
 	/// </summary>
 	private ISkill ResolveSkeletron(BossDefeated b, bool bossHere, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
+		CrossingTheEvilBiome(ctx);
 		var arena = DungeonArenaBounds(ctx);
 		if (bossHere)
 			return Do($"fighting {b.Label}{(arena != null ? " on the arena by the Dungeon" : " by the Dungeon")}", SkeletronFight(b, arena, ctx));

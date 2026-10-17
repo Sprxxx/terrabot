@@ -161,6 +161,7 @@ public class SkeletronTests
 		Assert.False(p.SkeletronPrepMet);
 		var hop = Hop(p, ctx);
 		Assert.True(p.SkeletronPrepMet, p.Status); // bow, arrows, life, (potions from the bag): on to the Dungeon
+		Assert.True(ctx.EvilErrand); // the way crosses the evil biome's surface where it lies between: open in full armour
 		int from = ctx.Node.X;
 		Assert.Equal(from - ProgressionPlanner.DungeonHopTiles, hop.Walk.Target.X);
 		Assert.Contains("west first", p.Status);

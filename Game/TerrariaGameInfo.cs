@@ -539,7 +539,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	/// <summary>Main.wallDungeon (Main.cs:10586-10594) of the cell's wall, in a cell the map has revealed.</summary>
 	public bool IsDungeonWall(int x, int y) =>
-		WorldGen.InWorld(x, y, 1) && (XRay || Main.Map.IsRevealed(x, y)) && Main.wallDungeon[Main.tile[x, y].WallType];
+		WorldGen.InWorld(x, y, 1) && Main.wallDungeon[Main.tile[x, y].WallType] && (XRay || Main.Map.IsRevealed(x, y)); // paths ask it below the surface: the wall first
 
 	/// <summary>
 	/// A right-click on the NPC and a click on its first chat button, as the game runs them (a UI action: PLAN.md, "Actions that
