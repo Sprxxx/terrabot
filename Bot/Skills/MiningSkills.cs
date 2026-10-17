@@ -16,6 +16,9 @@ namespace TerraBot.Bot.Skills;
 /// (<see cref="GoalReachTile"/>), and swing the pickaxe at it until it is gone;</item>
 /// <item>with nothing in sight, dig down <see cref="ExploreDepth"/> rows (zig-zagging sideways) to look further.</item>
 /// </list>
+/// A block that is everywhere (<see cref="Bulk"/>: stone, dirt, ash) is quarried: every tile of it in the pickaxe's reach from
+/// where the bot stands is mined first, one after another with no walk or pickup in between (<see cref="InReach"/>), and only
+/// then are the drops collected and the next tile walked to.
 /// Vanilla has no line-of-sight rule for pickaxes: any tile in range can be mined.
 /// </summary>
 public sealed class MineSkill : ISkill
@@ -223,7 +226,7 @@ public sealed class MineSkill : ISkill
 		// other target is dropped for the vein step's, so each tile past the amount counts against MaxVeinExtra). Ore only: a
 		// "vein" of stone or dirt is the whole world (a settle scenario mined 776 blocks and never finished).
 		if (have >= Amount && sub is not CollectDropsSkill && !(target != null && target == veinTarget)) {
-			bool ore = !ctx.Ids.BuildingBlocks.Contains(ItemType);
+			bool ore = !Bulk(ctx);
 			if (ore && veinExtra < MaxVeinExtra && lastMined is TilePos last && Nearest(ctx, last, VeinRadius) is TilePos more) {
 				if (veinExtra == 0)
 					ctx.Log.Info($"Mine: {Label(ctx)} {have}/{Amount}; finishing the vein first");
@@ -290,6 +293,15 @@ public sealed class MineSkill : ISkill
 			sub = null;
 		}
 
+		// A block that is everywhere: what is in reach from here first, before the drops and before any walk (InReach).
+		if (InReach(ctx, out int inReach) is TilePos near) {
+			ctx.Log.Debug($"Mine: {inReach} {Label(ctx)} in reach from {ctx.Node}; mining them from here, nearest first ({near})");
+			target = near;
+			mineTicks = 0;
+			arrivedOutOfReach = 0;
+			State = $"mining {near}";
+			return SkillStatus.Running;
+		}
 		if (CollectDropsSkill.AnyInRange(ctx, d => d.Type == ItemType && !ignoredDrops.Contains(d.Id), CollectRadius)) {
 			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;
@@ -368,7 +380,7 @@ public sealed class MineSkill : ISkill
 		// Ore seen before and still on the map: back for it before new ground (a player looks at the map). Not stone or dirt:
 		// those are everywhere. Ore of the tier group too (Also): the explorations count against it as well (TierGroup), so
 		// an iron job leaving silver on the map would send the plan on a trip past it.
-		if (!ctx.Ids.BuildingBlocks.Contains(ItemType) && OnTheMap(ctx, out (int Item, int Tile)? other) is TilePos known) {
+		if (!Bulk(ctx) && OnTheMap(ctx, out (int Item, int Tile)? other) is TilePos known) {
 			target = known;
 			alt = other;
 			mineTicks = 0;
@@ -533,6 +545,13 @@ public sealed class MineSkill : ISkill
 			}
 			else
 				MinedOwn++;
+			// A block that is everywhere: the next one in reach at once, its drop and this one's pulled in meanwhile (InReach).
+			if (InReach(ctx, out _) is TilePos next) {
+				target = next;
+				mineTicks = 0;
+				arrivedOutOfReach = 0;
+				return SkillStatus.Running;
+			}
 			int altDrop = alt?.Item ?? -1;
 			Begin(ctx, new CollectDropsSkill(d => d.Type == ItemType || d.Type == altDrop, CollectRadius, ignoredDrops), "collecting");
 			return SkillStatus.Running;
@@ -666,7 +685,7 @@ public sealed class MineSkill : ISkill
 	/// <see cref="BelowFloorAllowance"/> for this job: ore only (a life crystal has its own margin, ValuableDepthMargin; stone
 	/// and dirt are everywhere). In sight as on the map, so the found check of an exploration at the floor sees that ore too.
 	/// </summary>
-	private int StepBelow(BotContext ctx) => Valuable(ctx) || ctx.Ids.BuildingBlocks.Contains(ItemType) ? 0 : BelowFloorAllowance(ctx);
+	private int StepBelow(BotContext ctx) => Valuable(ctx) || Bulk(ctx) ? 0 : BelowFloorAllowance(ctx);
 
 	private static float BelowFloorCost(TilePos c, int floor, int below) => below > 0 && c.Y > floor ? (c.Y - floor) * (float)BelowFloorRowTiles : 0f;
 
@@ -774,6 +793,7 @@ public sealed class MineSkill : ISkill
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
 		int floor = ctx.DeepestRow, below = StepBelow(ctx);
+		bool bulk = Bulk(ctx);
 		foreach (TilePos c in Find(ctx, tileType, node, SearchRadius)) {
 			if (bad.Contains(c) || !ctx.InMiningReach(c, node, SearchRadius) || WhyNotMine(ctx, moves, c, Valuable(ctx), below) != null)
 				continue;
@@ -784,12 +804,118 @@ public sealed class MineSkill : ISkill
 			// the stone it stood on tile by tile, placing a block each time to keep its footing, and the count never rose.
 			if (c.Y == node.Y + 1 && c.X >= node.X - 1 && c.X <= node.X + 2)
 				score += UnderFootPenalty;
-			if (score < bestScore) {
+			if (score < bestScore && !(bulk && WhyNotQuarry(ctx, moves, c) != null)) {
 				bestScore = score;
 				best = c;
 			}
 		}
 		return best;
+	}
+
+	/// <summary>
+	/// A block that is everywhere, wanted by the hundred (stone, dirt, the Underworld's ash: the hellbridge's thousands), not an
+	/// ore vein: mined from where the bot stands as far as the pickaxe reaches (<see cref="InReach"/>), with no vein to finish,
+	/// no map lookup and no step below the depth floor.
+	/// </summary>
+	public static bool Bulk(GameIds ids, int itemType) => ids.BuildingBlocks.Contains(itemType) || itemType > 0 && itemType == ids.AshBlock;
+
+	private bool Bulk(BotContext ctx) => Bulk(ctx.Ids, ItemType);
+
+	/// <summary>
+	/// Why a <see cref="Bulk"/> job leaves this tile be though mining would take it on (<see cref="WhyNotMine"/>), or null:
+	/// <list type="bullet">
+	/// <item>it has no floor under it within a fall the body takes unhurt (<see cref="OverAFall"/>): a bridge or a stair over a
+	/// drop, not ground. Mining it opens a hole into that fall, and getting to it takes blocks placed to stand on. Seen in game
+	/// (measured run world_wof M12d, t129600-t151200): the stone job began on the stair the bot had just built up out of a
+	/// valley ("place(2399,258) ... place(2418,247)", up to 48 rows over the ground at (2416,304)) and mined it block by block,
+	/// placing blocks to reach the next ((2401,258) and (2399,261) mined twice): 40 Stone Blocks in 21,600 ticks;</item>
+	/// <item>it is a block of a build in progress (BotContext.Rebuilt: the arena's floor), which path moves may take out at the
+	/// price of putting it back, but not a quarry.</item>
+	/// </list>
+	/// </summary>
+	private string WhyNotQuarry(BotContext ctx, MoveContext moves, TilePos c)
+	{
+		if (OverAFall(moves.Grid, c, ctx.Physics.SafeFallTiles))
+			return "over a fall";
+		if (ctx.Rebuilt != null && ctx.Rebuilt.Contains(c))
+			return "part of a build in progress";
+		return null;
+	}
+
+	/// <summary>No floor under the tile within <paramref name="safeFallTiles"/> rows (<see cref="PhysicsParams.SafeFallTiles"/>).</summary>
+	public static bool OverAFall(ITileGrid g, TilePos c, int safeFallTiles)
+	{
+		for (int dy = 1; dy <= safeFallTiles; dy++)
+			if (g.Get(c.X, c.Y + dy).CanStandOn())
+				return false;
+		return true;
+	}
+
+	/// <summary>
+	/// <see cref="Bulk"/>: the nearest tile of the job's own in the pickaxe's reach from where the body is held still
+	/// (<see cref="GoalReachTile.IsGoal"/>: Player.IsTargetTileInItemRange with tileRangeX 5, tileRangeY 4 and the pickaxe's
+	/// tileBoost, less a tile of slack, and never one of the two cells under the feet), that mining would take on
+	/// (<see cref="WhyNotMine"/>: no lava let in, no sand let fall, no protected cell) and a quarry would
+	/// (<see cref="WhyNotQuarry"/>), and not given up on lately (BotContext.MineFailures: the search's cost of it,
+	/// <see cref="BestOf"/>, decides when it is tried again, not its being in reach); <paramref name="count"/> is how many such
+	/// tiles there are. Mined one after another with no
+	/// walk and no pickup walk in between: the drops of those beside the body come in on their own (Player.GrabItems pulls from
+	/// 42 px round the hitbox), the rest are collected once nothing is left in reach, and only then is the next tile walked to
+	/// (<see cref="BestOf"/>, the nearest: the quarry's edge, where the next reach is full of them). Null when nothing is in
+	/// reach, when the bag and the drops lying round already make <see cref="Amount"/>, or while the body is moving.
+	/// <para>Seen in game (measured run world_wof M12d, Silver Pickaxe, pick 45 at 11 ticks a hit, 23 ticks a stone): 735 Stone
+	/// Blocks in 72,000 ticks, each a target of its own picked by the search (|dx| + 1.5|dy| from the node), in scattered order
+	/// ((2401,259), (2409,253), (2403,258), (2402,258), (2410,253)), each followed by a walk to its reach and a walk to its drop;
+	/// 49 ticks a block over the stretch with no fight, chest or stair in it (t172800-t199800: 1,773 to 2,324).</para>
+	/// </summary>
+	private TilePos? InReach(BotContext ctx, out int count)
+	{
+		count = 0;
+		if (!Bulk(ctx) || alt != null || target != null)
+			return null;
+		if (!(ctx.Body.Grounded || Math.Abs(ctx.Body.VY) < HeldStillVY))
+			return null;
+		if (ctx.Inventory.Count(ItemType) + Lying(ctx) >= Amount)
+			return null;
+		TilePos node = ctx.Node;
+		MoveContext moves = ctx.Moves;
+		int boost = ctx.PickRangeBoost;
+		TilePos? best = null;
+		float bestDist = float.MaxValue;
+		foreach (TilePos c in Find(ctx, TileType, node, ReachRadius + boost)) {
+			if (bad.Contains(c) || !new GoalReachTile(c, ctx.Physics, boost).IsGoal(node) || ctx.MineFailuresLately(c) > 0
+				|| WhyNotMine(ctx, moves, c) != null || WhyNotQuarry(ctx, moves, c) != null)
+				continue;
+			count++;
+			// From the body's middle (columns x and x + 1, rows y - 2 to y): the tiles beside it first.
+			float dx = c.X - node.X - 0.5f, dy = c.Y - node.Y + 1f, dist = dx * dx + dy * dy;
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = c;
+			}
+		}
+		return best;
+	}
+
+	/// <summary>
+	/// How far round the node (Chebyshev) the tiles in reach are looked for, before the pickaxe's tileBoost: GoalReachTile's
+	/// widest, dx up to 5 and dy up to -5 (Player.IsTargetTileInItemRange), its slack aside.
+	/// </summary>
+	public const int ReachRadius = 5;
+
+	/// <summary>The job's item lying round in collecting's reach that collecting would go for: counted towards the amount before mining more.</summary>
+	private int Lying(BotContext ctx)
+	{
+		int n = 0;
+		if (ctx.Drops == null)
+			return 0;
+		PhysicsParams p = ctx.Physics;
+		float cx = ctx.Body.CenterX(p), cy = ctx.Body.CenterY(p), r = CollectRadius * 16f;
+		foreach (DropInfo d in ctx.Drops)
+			if (d.Type == ItemType && !ignoredDrops.Contains(d.Id) && (d.CenterX - cx) * (d.CenterX - cx) + (d.CenterY - cy) * (d.CenterY - cy) <= r * r
+				&& !CollectDropsSkill.TooDeep(ctx, d))
+				n += d.Stack;
+		return n;
 	}
 
 	/// <summary>
