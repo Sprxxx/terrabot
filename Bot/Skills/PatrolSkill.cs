@@ -12,7 +12,9 @@ namespace TerraBot.Bot.Skills;
 /// mushrooms on corrupt grass), as a player walks the corruption to and fro instead of off into new ground; the plants
 /// it passes are cut (<see cref="CutTile"/>) so new ones, some of them mushrooms, can grow in their place. Succeeds at
 /// the end of the pass or as soon as <see cref="Found"/> holds (checked every <see cref="ExploreSkill.FoundCheckEvery"/>
-/// ticks); fails if the end cannot be walked to. MineSkill counts the passes (BotContext.PatrolPasses).
+/// ticks); fails if the end cannot be walked to. MineSkill counts the passes (BotContext.PatrolPasses). Only with no plant
+/// to cut on the map: those are gone to where they are first (<see cref="CutPlantsSkill"/>), the grass tops kept free being
+/// what grows mushrooms, not the walking (measured runs M10d-M10f: 0-12 plants cut a pass, 15 of 28 passes none).
 /// <para>
 /// Vanilla regrowth (decompiled tML 2026.08, a 4200x1200 world as M10's): WorldGen.UpdateWorld_Inner makes
 /// maxTilesX * maxTilesY * 3E-05 * the tile update rate (1) random updates a tick above the surface layer (WorldGen.cs:66300,
@@ -128,8 +130,9 @@ public sealed class PatrolSkill : ISkill
 		TilePos node = ctx.Node;
 		int heading = Math.Sign(End.X - node.X);
 		TilePos? best = null;
-		foreach (TilePos c in ctx.World.FindTiles(CutTile, node, ReachTiles + ctx.PickRangeBoost)) {
-			if ((c.X - node.X) * heading < 0 || KeepFrameX >= 0 && ctx.World.TileFrameX(c.X, c.Y) == KeepFrameX)
+		// The thorns on the grass too (CutPlantsSkill.Cuttable): a grass top under them grows nothing.
+		foreach (TilePos c in CutPlantsSkill.Candidates(ctx, node, ReachTiles + ctx.PickRangeBoost, CutTile, KeepFrameX)) {
+			if ((c.X - node.X) * heading < 0)
 				continue;
 			if (!new GoalReachTile(c, ctx.Physics, ctx.PickRangeBoost).InRange(node))
 				continue;

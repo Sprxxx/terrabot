@@ -196,6 +196,12 @@ public sealed class GameIds
 	public int WormFood { get; init; }
 	public int VilePowder { get; init; }
 	public int VileMushroom { get; init; }
+	/// <summary>
+	/// Corrupt grass (TileID.CorruptGrass), the ground vile mushrooms grow on, and corrupt thorns (TileID.CorruptThorns),
+	/// which grow there in place of a plant 1 in 13 (WorldGen.cs:54339) and block that grass top until cut. 0 = none.
+	/// </summary>
+	public int CorruptGrass { get; init; }
+	public int CorruptThorns { get; init; }
 	public int RottenChunk { get; init; }
 	/// <summary>Worm Tooth (Devourers: 3-8 at 100%, ItemDropDatabase.cs:1113): with 5 wooden arrows, 5 Unholy Arrows.</summary>
 	public int WormTooth { get; init; }
