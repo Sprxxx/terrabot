@@ -98,7 +98,15 @@ public sealed class HellbridgeSkill : ISkill
 		actionCell = null;
 	}
 
-	public void Pause(BotContext ctx) => Stop(ctx);
+	/// <summary>A reflex (a fight) takes over: the walk is let go, the cell under way and its tick count kept, so a cell that takes long (a
+	/// tree, <see cref="TreeTicks"/>) is not begun afresh after every fight in hell's crowd (E18 and E19, 2026-10-17: ten game hours at
+	/// one tree, no failure ever counted, the watchdog the only end).</summary>
+	public void Pause(BotContext ctx)
+	{
+		walk?.Stop(ctx);
+		walk = null;
+	}
+
 	public void Resume(BotContext ctx) { }
 
 	/// <summary>
@@ -156,8 +164,12 @@ public sealed class HellbridgeSkill : ISkill
 	/// Columns kept between the body and the bridge's end while working: a hit's knockback (4.5 px a tick, vanilla Player.Hurt) at the
 	/// very end threw the bot off into the lava below (world_wof E11, 2026-10-17: two of three deaths, "Hurt 40 (projectile type 44)
 	/// ... at (3882,1041)" then "Fall: ... lava at (3887,1072), 31 rows down"). The reach (tileRangeX 5) covers the next column from here.
+	/// Three columns put the next column's upper cells a tenth of a tile inside vanilla's tool range (Player.IsTargetTileInItemRange:
+	/// the hitbox's right edge plus tileRangeX 5 less one), and the steering's wobble took them out of it: an ash tree at (3967,1037)
+	/// swung at for ten game hours, "in range False" (E19, 2026-10-17). Two columns leave a tile to spare; the lip (<see cref="LipHeight"/>)
+	/// is the knockback's answer now.
 	/// </summary>
-	public const int EdgeMargin = 3;
+	public const int EdgeMargin = 2;
 	/// <summary>Tiles within which a shooter or a worm (not a spared one) has the lip raised at the end (<see cref="ThreatNear"/>).</summary>
 	public const int LipRadiusTiles = 30;
 	/// <summary>Blocks the lip stands on the next column's deck block.</summary>

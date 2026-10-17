@@ -274,6 +274,15 @@ public sealed class TerraBotPlayer : ModPlayer
 		if (aim is TilePos a) {
 			Player.tileTargetX = a.X;
 			Player.tileTargetY = a.Y;
+			// Evidence for an axe that does nothing (world_wof E16 and E18, 2026-10-17: ten game hours at an ash tree, "could not mine
+			// (3967,1037)"): what vanilla sees of the swing, once a second while a skill asks for the axe.
+			if (LastOutput.Tool == ToolRequest.Axe && Main.GameUpdateCount % 60 == 0) {
+				Item held = Player.inventory[Player.selectedItem];
+				Tile t = Main.tile[a.X, a.Y];
+				Context.Log.Info($"Axe swing: holding {held.Name} (slot {Player.selectedItem + 1}, axe {held.axe}, pick {held.pick}), anim {Player.itemAnimation}, itemTime {Player.itemTime}, "
+					+ $"toolTime {Player.toolTime}, use {Player.controlUseItem}, target {a}: tile {(t.HasTile ? t.TileType : -1)} frame ({t.TileFrameX},{t.TileFrameY}), "
+					+ $"in range {Player.IsTargetTileInItemRange(held)}, canKill {WorldGen.CanKillTile(a.X, a.Y)}, tileAxe {(t.HasTile && Main.tileAxe[t.TileType])}, noBuilding {Player.noBuilding}");
+			}
 		}
 		// Virtual mouse: vanilla reads Main.mouseX/Y (+ screenPosition = MouseWorld) for weapon aim and facing.
 		// Point it at the bot's aim for the duration of ItemCheck only; PostItemCheck puts the real cursor back.
