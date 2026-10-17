@@ -1625,7 +1625,8 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			ctx.Log.Info($"Auto: found a {k.TileName(s.TileType)} at {found.Value}");
 			return null;
 		}
-		int best = Cheapest(items, ctx);
+		// Of several that place it (a Work Bench of any wood), the one cheapest to finish from the bag (see AFarBench in the tests).
+		int best = items.Count > 1 ? CheapestToFinish(items, 1, ctx) : Cheapest(items, ctx);
 		if (best < 0) {
 			stuck = $"no obtainable item places a {k.TileName(s.TileType)}";
 			return null;
@@ -1782,10 +1783,15 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		int researched = items.FirstOrDefault(ctx.Infinite, -1);
 		if (researched >= 0)
 			return Resolve(new HaveItem(researched, 1, k.ItemName(researched)), claims, depth + 1, ctx);
-		RecipeInfo r = BestRecipe(items[0], ctx);
-		if (r == null || !r.Ingredients.All(i => ctx.Inventory.CountAny(i.Accepts) >= i.Stack))
+		// Any of the items that place it whose makings are in the bag (an Ash Wood Work Bench from Ash Wood), not the first only.
+		// Seen in game (world_wof E25, 2026-10-17): in the Underworld with 117 wood, nearly all Ash Wood from the trees the bridge
+		// chopped, the plain Work Bench's 10 Wood were not there, and every arrow top-up at the summon end was a walk over the
+		// whole 3800-tile bridge to the bench at its other end and back, nine times in three game days.
+		int makeable = items.FirstOrDefault(i => BestRecipe(i, ctx) is RecipeInfo r
+			&& r.Ingredients.All(ing => ctx.Inventory.CountAny(ing.Accepts) >= ing.Stack), -1);
+		if (makeable < 0)
 			return null; // not without fetching things: the walk then
-		return Resolve(new HaveItem(items[0], 1, k.ItemName(items[0])), claims, depth + 1, ctx);
+		return Resolve(new HaveItem(makeable, 1, k.ItemName(makeable)), claims, depth + 1, ctx);
 	}
 
 	/// <summary>A work bench or furnace farther than this (tiles) from the house's inside spot is not at home.</summary>

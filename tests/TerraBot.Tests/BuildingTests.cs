@@ -205,6 +205,27 @@ public class BuildingTests
 	}
 
 	[Fact]
+	public void AFarBench_IsMadeHere_OfTheWoodTheBagHolds()
+	{
+		// world_wof E25 (2026-10-17): 117 wood in the bag, nearly all Ash Wood, 5 plain Wood; the plain Work Bench could not be made, so
+		// each arrow top-up at the summon end was a walk over the 3800-tile bridge to the bench at its far end.
+		FakeGame g = ProgressionTests.Mine(110);
+		g.Stations[FakeGame.TileBench] = new TilePos(2, 24);
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Settle);
+		p.SeeStationsForTest(ctx);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, new WalkToSkill(new TilePos(2 + ProgressionPlanner.FarStationTiles + 4, 24)), 60 * 60));
+		g.Items[FakeGame.Wood] = 5;
+		g.Items[FakeGame.Ebonwood] = 112;
+		g.Items[FakeGame.StoneBlock] = 40;
+		g.Refresh(ctx);
+		ISkill next = p.ResolveForTest(new HaveItem(FakeGame.WoodenArrow, 300, "arrows"), ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.Equal(FakeGame.EbonwoodWorkBench, Assert.IsType<CraftSkill>(next).ItemType);
+	}
+
+	[Fact]
 	public void Night_WithTheFurnaceOutsideTheHouse_MakesANewOneAtHome()
 	{
 		// Measured run M2: nightfall with 21 iron ore and the furnace 15 rows below the house (on a site given up); the walk to

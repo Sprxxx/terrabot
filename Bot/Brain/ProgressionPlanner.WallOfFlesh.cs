@@ -26,6 +26,16 @@ public sealed partial class ProgressionPlanner
 	/// and the Leeches take their share, so the fight wants twice what the damage sum says.
 	/// </summary>
 	public const int WofFightArrowsMin = 600;
+	/// <summary>
+	/// The fight's arrows once <see cref="WofFightArrowsMin"/> was reached: topped up again only under this. Seen in game (world_wof E25,
+	/// 2026-10-17): 600 made at the bench, some 200 shot at fliers on the walk to the summon column, and back for more under 600,
+	/// nine times in three game days with the doll in hand.
+	/// </summary>
+	public const int WofFightArrowsRefill = WofFightArrowsMin * 2 / 3;
+
+	/// <summary>The fight phase's arrows: <see cref="WofFightArrowsMin"/>, refilled under <see cref="WofFightArrowsRefill"/>.</summary>
+	public static HaveItem WofFightArrowsNeed(GameIds ids) =>
+		new(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofFightArrowsMin, "arrows for the fight") { RefillBelow = WofFightArrowsRefill };
 	/// <summary>Longest the Wall's plan works on max life past 200 (BestEffort): a game day.</summary>
 	public const int WofLifeTicks = 24 * 3600;
 	/// <summary>
@@ -120,7 +130,7 @@ public sealed partial class ProgressionPlanner
 	/// </summary>
 	private IEnumerable<Need> DescentDemand(GameIds ids)
 	{
-		yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofFightArrowsMin, "arrows for the fight");
+		yield return WofFightArrowsNeed(ids);
 		yield return new BridgeBlocks("bridge blocks");
 	}
 

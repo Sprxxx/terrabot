@@ -49,6 +49,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int EowHead = 13, EowBody = 14, EowTail = 15, FlyingAi = 5, WormAi = 6, VileMushroomFrame = 144;
 	/// <summary>The Corruption's trees' wood (in the "Wood" recipe group), and the Encumbering Stone (carried, no pickups).</summary>
 	public const int Ebonwood = 619, EncumberingStone = 4346;
+	/// <summary>A work bench made of Ebonwood (another item placing <see cref="TileBench"/>; its own id for the tests).</summary>
+	public const int EbonwoodWorkBench = 637;
 	// Milestone 11 (docs M11_SPEC.md; NPCID, TileID and ItemID checked against the decompiled tML 2026.08).
 	public const int SkeletronHeadNpc = 35, SkeletronHandNpc = 36, OldManNpc = 37, GuardianNpc = 68;
 	public const int TileBlueBrick = 41, TileJungleGrass = 60, TileSnow = 147, HealingPotion = 188;
@@ -202,6 +204,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Sim.Mined += OnMined;
 
 		Add(new RecipeInfo { Result = WorkBench, Ingredients = new[] { new Ingredient(10, Wood) } });
+		Add(new RecipeInfo { Result = EbonwoodWorkBench, Ingredients = new[] { new Ingredient(10, Ebonwood) } });
 		Add(new RecipeInfo { Result = WoodenSword, Ingredients = new[] { new Ingredient(7, Wood) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Torch, ResultStack = 3, Ingredients = new[] { new Ingredient(1, Gel), new Ingredient(1, Wood) } });
 		Add(new RecipeInfo { Result = Furnace, Ingredients = new[] { new Ingredient(20, StoneBlock), new Ingredient(4, Wood), new Ingredient(3, Torch) }, Stations = new[] { TileBench } });
@@ -327,7 +330,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	};
 
 	public IReadOnlyList<int> ItemsPlacing(int tileType) => tileType switch {
-		TileBench => new[] { WorkBench },
+		TileBench => new[] { WorkBench, EbonwoodWorkBench },
 		TileFurnace => new[] { Furnace },
 		TileAnvil => new[] { IronAnvil, LeadAnvil },
 		TileTable => new[] { Table },
@@ -341,7 +344,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	};
 
 	public int TilePlacedBy(int itemType) => itemType switch {
-		WorkBench => TileBench, Furnace => TileFurnace, IronAnvil or LeadAnvil => TileAnvil,
+		WorkBench or EbonwoodWorkBench => TileBench, Furnace => TileFurnace, IronAnvil or LeadAnvil => TileAnvil,
 		Table => TileTable, Chair => TileChair, Door => TileDoor, Torch => TileTorch,
 		Campfire => TileCampfire, HeartLantern => TileLantern, Bottle => TileBottles, _ => -1,
 	};
