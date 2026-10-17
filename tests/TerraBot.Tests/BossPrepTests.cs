@@ -354,6 +354,37 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void NoArena_TheSummonItemMadeDeepDown_TheEyeIsSummonedOnTheSurface()
+	{
+		// Measured run U23: no arena (given up), the summon item made at an altar 160 rows down; the Eye was waited for and
+		// fought there in 17 tiles of room, and the fight gave up after 28800 ticks.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 45; y++)
+			rows.Add(y == 44 ? "...S" + new string('.', 196) : new string('.', 200));
+		for (int y = 45; y < 125; y++) {
+			char[] r = new string('#', 200).ToCharArray();
+			if (y >= 110 && y <= 113)
+				for (int x = 40; x <= 56; x++)
+					r[x] = '.'; // the altar's pocket, its floor at row 114
+			rows.Add(new string(r));
+		}
+		rows.Add(new string('@', 200));
+		FakeGame g = new FakeGame(rows.ToArray());
+		g.Items[FakeGame.SuspiciousEye] = 1;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		var p0 = Core.Physics.PhysicsParams.Default;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(48, p0), Y = Core.Pathfinding.Body.StandingTop(113, p0), ReleaseJump = true };
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"at {ctx.Node}: {p.Status} -> {s?.Describe()}");
+		Assert.IsNotType<BossFightSkill>(s);
+		Assert.IsType<WalkToSkill>(s);
+		Assert.Contains("surface", p.Status);
+	}
+
+	[Fact]
 	public void AnAltarNoWalkGetsTo_IsNotFoundAgain_TheNextOneIs()
 	{
 		// Measured run M10d (world_eow): the altar at (1732,358) lay behind a chasm's ebonstone lining (pick 40 breaks none);

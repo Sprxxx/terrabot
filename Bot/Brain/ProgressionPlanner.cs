@@ -1353,6 +1353,13 @@ public sealed class ProgressionPlanner
 			if (ArenaBounds(ctx) is (int bx0, int bx1, int by) && !InArena(ctx.Node, bx0, bx1, by)) {
 				return Do($"walking to the arena to summon the {b.Label}", ArenaWalk(ctx, bx0, bx1, by));
 			}
+			// No arena: open ground on the surface, not wherever the summon item was made. Seen in game (measured run U23,
+			// world_eye): the arena given up ("the boss will be fought on open ground"), the Suspicious Looking Eye made at an
+			// altar in a pocket at row 408, some 160 rows down; the night waited for and the Eye fought there, "forced to turn
+			// (wall)" every few seconds in 17 tiles of room, 28800 ticks, the Eye at 1927/2800 when the fight gave up.
+			if (ArenaBounds(ctx) == null && UnderTheSurface(ctx))
+				return Do($"up to the surface to summon the {b.Label} on open ground (no arena)", new WalkToSkill(
+					new Core.Pathfinding.GoalRow(SurfaceRow(ctx) + TravelFromSurfaceRows - 3, ctx.Node.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true });
 			if (b.NightOnly && !ctx.IsNight)
 				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
 			// The Eye leaves at dawn: seen in game, summoned late after a long fight with demon eyes, it flew off at
