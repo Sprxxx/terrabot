@@ -541,6 +541,26 @@ public class WallOfFleshPlanTests
 		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
 	}
 
+	/// <summary>E23 (2026-10-17): short of blocks on the bridge, "need 22 more Stone Block", a climb of 55 rows to a stone pocket and a lava death. Down there, the ash underfoot.</summary>
+	[Fact]
+	public void DownThere_BridgeBlocksShort_AreTheAshUnderfoot_NotStoneUpInTheCaverns()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		var shaft = Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, shaft, 30000));
+		p.OnSkillFinished(shaft, SkillStatus.Succeeded, ctx);
+		g.Refresh(ctx);
+		Assert.IsType<HellbridgeSkill>(Next(p, ctx)); // the bridge known
+		g.Items[FakeGame.StoneBlock] = 20;
+		g.Items[FakeGame.DirtBlock] = 0;
+		g.Refresh(ctx);
+		ISkill s = p.ResolveForTest(new Bot.Brain.BridgeBlocks("bridge blocks") { Batch = 600 }, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		var mine = Assert.IsType<MineSkill>(s);
+		Assert.Equal(FakeGame.AshBlock, mine.ItemType);
+		Assert.Equal(FakeGame.TileAsh, mine.TileType);
+	}
+
 	/// <summary>On the way down with fewer arrows than the fight needs, they are made.</summary>
 	[Fact]
 	public void OnTheWayDown_FewerArrowsThanTheFightNeeds_AreMade()

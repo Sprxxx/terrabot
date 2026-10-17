@@ -634,6 +634,15 @@ public sealed partial class ProgressionPlanner
 		int count = left + BridgeBlockMargin;
 		if (need.Batch > 0 && left > 0)
 			count = Math.Min(count, need.Batch);
+		// Down there the blocks are the ash underfoot, a quarry a few columns off the deck, never a stone deposit up in the caverns
+		// (the cheapest-to-finish choice, a stack of stone short by a few, sent the bot 55 rows up to one and into lava: E23,
+		// 2026-10-17, "need 22 more Stone Block ... Peppe tried to swim in lava"). What is carried of any block counts.
+		if (bridgeKnown && Errands.WallOfFleshErrand.DownThere(ctx)) {
+			int shortfall = count - ctx.Inventory.CountAny(BridgeBlockItems(ctx.Ids));
+			if (shortfall <= 0)
+				return null;
+			return Resolve(new HaveItem(ctx.Ids.AshBlock, ctx.Inventory.Count(ctx.Ids.AshBlock) + shortfall, need.Label), claims, depth + 1, ctx);
+		}
 		return Resolve(new HaveItem(BridgeBlockItems(ctx.Ids), count, need.Label), claims, depth + 1, ctx);
 	}
 

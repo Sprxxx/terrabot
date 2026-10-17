@@ -322,6 +322,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		CrimtaneOre => new ItemSource(SourceKind.Mine, TileCrimtane),
 		DemoniteOre => new ItemSource(SourceKind.Mine, TileDemonite),
 		SandBlock => new ItemSource(SourceKind.Mine, TileSand),
+		AshBlock => new ItemSource(SourceKind.Mine, TileAsh),
 		_ => ItemSource.None, // lead ore: not in this world
 	};
 
