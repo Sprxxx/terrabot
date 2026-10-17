@@ -1123,12 +1123,15 @@ public sealed partial class ProgressionPlanner
 		stuck = null;
 		var claims = new Dictionary<int, int>();
 		IReadOnlyList<Need> stages = StagesFor(Plan, ctx.Ids);
+		int errandFrom = WayDownErrandFrom(stages, ctx);
 		for (int i = 0; i < stages.Count; i++) {
 			Need stage = stages[i];
 			if (SkeletronStage(stage))
 				SkeletronPrepMet = true; // every stage before met
 			if (stage is PrepFor { Inner: TownNpcAlive })
 				WofPrepMet = true; // S1 met: on to the Guide, the shaft and the bridge
+			if (i < errandFrom && !ForTheWayDown(stage))
+				continue;
 			nightOnlyByDay = false;
 			ISkill skill = Resolve(stage, claims, 0, ctx);
 			if (stuck != null) {

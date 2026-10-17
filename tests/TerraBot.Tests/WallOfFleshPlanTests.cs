@@ -496,4 +496,22 @@ public class WallOfFleshPlanTests
 		g.Refresh(ctx);
 		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
 	}
+
+	/// <summary>
+	/// world_wof M12d-M12f: the hellevator, once begun, left for wood stocks, an NPC room, the crystal search. On the way down the
+	/// errand owns the bot: a surface stage unmet (here max life under the earlier bosses' 200) waits; after a death it comes first.
+	/// </summary>
+	[Fact]
+	public void OnTheWayDown_TheSurfacesWork_Waits_UntilADeath()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		g.LifeMax = 100;
+		g.Refresh(ctx);
+		Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("on the way down to the Underworld"));
+		ctx.Deaths++;
+		g.Refresh(ctx);
+		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
+	}
 }

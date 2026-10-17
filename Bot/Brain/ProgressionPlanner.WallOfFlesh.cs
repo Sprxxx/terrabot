@@ -99,6 +99,33 @@ public sealed partial class ProgressionPlanner
 	private int wayDownDeaths = -1;
 	/// <summary>The hellevator was begun since the last death (down the shaft, or the bridge's work, until a death sends the bot home).</summary>
 	private bool OnTheWayDown(BotContext ctx) => wayDownDeaths >= 0 && wayDownDeaths == ctx.Deaths;
+	private int wayDownNoted = -1;
+
+	/// <summary>
+	/// On the way down (<see cref="OnTheWayDown"/>), the errand owns the bot: the stages before the Underworld's are skipped but for
+	/// what the errand itself takes (<see cref="ForTheWayDown"/>); the index of the Underworld's stage then, else -1. The surface's
+	/// work (a stock topped up, an NPC room, max life) waits for the next time the bot is home, after a death. Seen in game
+	/// (world_wof M12d-M12f, Peppe): the hellevator, once begun, left for "need 3 more Wood (gathering to 8)", "need 4 more Wood
+	/// (gathering to 27)", "building NPC room 1", the crystal search: each time back up hundreds of rows, and down again.
+	/// </summary>
+	private int WayDownErrandFrom(IReadOnlyList<Need> stages, BotContext ctx)
+	{
+		if (!OnTheWayDown(ctx))
+			return -1;
+		for (int i = 0; i < stages.Count; i++)
+			if (stages[i] is PrepFor { Inner: UnderworldReached }) {
+				if (wayDownNoted != ctx.Deaths) {
+					wayDownNoted = ctx.Deaths;
+					ctx.Log.Info("Auto: on the way down to the Underworld: the surface's work waits until a death sends the bot home");
+				}
+				return i;
+			}
+		return -1;
+	}
+
+	/// <summary>What the way down takes, and so is still worked on during it: the bridge's blocks, the fight's arrows (their own floor).</summary>
+	private static bool ForTheWayDown(Need stage) =>
+		stage is PrepFor { Inner: BridgeBlocks } or PrepFor { Inner: HaveItem { OnTheWayDownAtLeast: > 0 } };
 	/// <summary>
 	/// The hellbridge: its row, the column it is begun from (where the bot came down), its summon end (<see cref="bridgeTo"/>, the
 	/// far end the doll is thrown off, the Wall's side) and its flight end (<see cref="bridgeBack"/>, the far side of the shaft).
