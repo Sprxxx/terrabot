@@ -808,6 +808,27 @@ public sealed class SelfTestSystem : ModSystem
 				Bot.Building.Blueprint arenaBp = Bot.Building.Blueprint.Arena(ids);
 				result.Arena = Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, arenaBp, a) ? null : $"arena at {a} not finished";
 			}
+			// The NPC rooms, each through the game's own housing query, and who the game has living in the bot's rooms.
+			var rooms = new List<(TilePos Origin, Bot.Building.Blueprint Plan)>();
+			if (house is TilePos hr)
+				rooms.Add((hr, bp));
+			foreach (var (o, shared) in bot.Brain.Planner.NpcRooms) {
+				Bot.Building.Blueprint room = Bot.Building.Blueprint.NpcRoom(ids, shared);
+				rooms.Add((o, room));
+				string why = bot.GameInfo.CheckHousing(o.X + room.Inside.X, o.Y + room.Inside.Y);
+				result.NpcRoomHousing ??= why == null ? null : $"{o}: {why}";
+			}
+			result.NpcRooms = bot.Brain.Planner.NpcRooms.Count;
+			foreach (TownNpcHome n in bot.GameInfo.TownNpcHomes()) {
+				var at = rooms.Where(r => !n.Homeless && n.Home.X >= r.Origin.X && n.Home.X < r.Origin.X + r.Plan.Width && n.Home.Y >= r.Origin.Y && n.Home.Y < r.Origin.Y + r.Plan.Height)
+					.Select(r => (TilePos?)r.Origin).FirstOrDefault();
+				if (at != null)
+					result.NpcsHoused.Add(n.Name);
+				Mod.Logger.Info($"SELFTEST {s.Name}: town NPC {n.Name}: " + (n.Homeless ? "homeless" : $"home {n.Home}" + (at is TilePos r0 ? $", in the bot's room at {r0}" : ", not in the bot's rooms")));
+			}
+			if (rooms.Count > 1)
+				Mod.Logger.Info($"SELFTEST {s.Name}: {result.NpcRooms} NPC rooms ({string.Join(", ", bot.Brain.Planner.NpcRooms.Select(r => r.Origin))}), "
+					+ $"housing check {result.NpcRoomHousing ?? "valid for all"}; {result.NpcsHoused.Count} town NPCs live in the bot's rooms ({string.Join(", ", result.NpcsHoused)})");
 		}
 		result.BenchPlaced = bot.GameInfo.ScanStations(bot.FeetTile()).ContainsKey(TileID.WorkBenches) || bot.Brain.Planner.KnownStations.ContainsKey(TileID.WorkBenches);
 		result.FallDamageHits = bot.FallDamageHits;
