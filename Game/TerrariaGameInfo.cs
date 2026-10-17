@@ -888,6 +888,19 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		}
 	}
 
+	public int ToolPower(int itemType, ToolKind kind)
+	{
+		if (itemType <= 0 || itemType >= Terraria.ModLoader.ItemLoader.ItemCount)
+			return 0;
+		Item it = ContentSamples.ItemsByType[itemType];
+		return kind switch {
+			ToolKind.Pickaxe => it.pick,
+			ToolKind.Axe => it.axe,
+			ToolKind.Hammer => it.hammer,
+			_ => it.damage > 0 && !it.consumable && it.ammo <= 0 && it.pick <= 0 && it.axe <= 0 && it.hammer <= 0 ? it.damage : 0,
+		};
+	}
+
 	public int MaxStack(int itemType) =>
 		itemType > 0 && itemType < Terraria.ModLoader.ItemLoader.ItemCount ? ContentSamples.ItemsByType[itemType].maxStack : 9999;
 

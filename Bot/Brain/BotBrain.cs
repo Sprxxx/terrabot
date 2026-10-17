@@ -520,6 +520,10 @@ public sealed class BotBrain
 			// 6+ game hours again, nothing trashed).
 			if (trash < 0 && craftFor >= 0) {
 				HashSet<int> kept = KeptItems(ctx, stacks, gearToo: false);
+				// The best tool of each kind and the best weapon carried stay: the spares may go, never the last. Seen in game
+				// (world_wof M12c, Peppe): for a work bench's craft, "trashing a stack of Copper Axe (worth 400 copper, the least of
+				// anything not needed)", the only axe; then "GatherWood failed: no axe in the hotbar", every wood job, 6 game hours on.
+				kept.UnionWith(BestTools(ctx, stacks));
 				foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(craftFor))
 					foreach (Ingredient ing in r.Ingredients)
 						foreach (int a in ing.Accepts)
@@ -566,6 +570,23 @@ public sealed class BotBrain
 			}
 		}
 		return best;
+	}
+
+	/// <summary>The most powerful carried item of each tool kind and the best weapon (<see cref="IInventory.ToolPower"/>).</summary>
+	internal static IEnumerable<int> BestTools(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks)
+	{
+		foreach (ToolKind kind in System.Enum.GetValues<ToolKind>()) {
+			int best = -1, power = 0;
+			foreach (var s in stacks) {
+				int p = ctx.Inventory.ToolPower(s.Type, kind);
+				if (p > power) {
+					power = p;
+					best = s.Type;
+				}
+			}
+			if (best > 0)
+				yield return best;
+		}
 	}
 
 	/// <summary>The stack KeepRoom would trash with this kept set (-1 for none), whether it is worth nothing, and its worth.</summary>

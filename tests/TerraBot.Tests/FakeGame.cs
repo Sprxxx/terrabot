@@ -657,6 +657,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 
 	int IInventory.MaxStack(int itemType) => StackOf(itemType);
+	/// <summary>Tools' powers by kind for inventory tests (an axe, a pickaxe...); none listed: 0.</summary>
+	public readonly Dictionary<(int Item, ToolKind Kind), int> ToolPowers = new();
+	public int ToolPower(int itemType, ToolKind kind) => ToolPowers.GetValueOrDefault((itemType, kind));
 	public IReadOnlyList<int> UnwornAccessories() => Accessories.Where(a => Count(a) > 0 && !Equipped.Contains(a)).ToList();
 
 	public bool TryEquip(int itemType)

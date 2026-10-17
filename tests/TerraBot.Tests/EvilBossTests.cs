@@ -648,6 +648,38 @@ public class EvilBossTests
 		Assert.Equal(30 - 7, g.Count(FakeGame.Wood)); // the craft's own makings stay
 	}
 
+	/// <summary>
+	/// world_wof M12c (Peppe): for a work bench's craft, "trashing a stack of Copper Axe (worth 400 copper, the least of anything
+	/// not needed)", its only axe; every wood job after failed "no axe in the hotbar" and the run timed out. The last tool of its
+	/// kind stays, however cheap; another gear stack goes.
+	/// </summary>
+	[Fact]
+	public void WithTheBagFull_ACraftMakesRoom_ButNotWithTheOnlyAxe()
+	{
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.Stations[FakeGame.TileBench] = ctx.Node;
+		g.Items[FakeGame.Wood] = 30;
+		for (int junk = 900; junk < 905; junk++) {
+			g.Items[junk] = 1;
+			g.Gear.Add(junk);
+		}
+		const int axe = 900;
+		g.Values[axe] = 5; // the cheapest of all: the axe
+		g.ToolPowers[(axe, ToolKind.Axe)] = 35;
+		for (int other = 901; other < 905; other++)
+			g.Values[other] = 100 + other; // worth more than the axe
+		g.Items[FakeGame.Wood] = 30;
+		g.SlotLimit = g.Stacks().Count; // full
+		g.Refresh(ctx);
+		var craft = new CraftSkill(FakeGame.WoodenSword);
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, craft, 600);
+		output.WriteLine($"{st}: trashed {string.Join(",", g.Trashed)}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.Equal(1, g.Count(axe));
+		Assert.DoesNotContain(axe, g.Trashed);
+	}
+
 	[Fact]
 	public void WithTheBagFullOfGear_AndALoneStackOfBlocks_ACraftStillMakesRoom()
 	{

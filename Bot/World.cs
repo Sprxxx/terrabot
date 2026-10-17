@@ -128,6 +128,9 @@ public interface IWorldInfo
 	bool CanExplode(int x, int y);
 }
 
+/// <summary>What a tool or weapon is for (<see cref="IInventory.ToolPower"/>).</summary>
+public enum ToolKind { Pickaxe, Axe, Hammer, Weapon }
+
 /// <summary>Read-only view of the player's items.</summary>
 public interface IInventory
 {
@@ -161,6 +164,12 @@ public interface IInventory
 
 	/// <summary>How many of the item one bag slot holds (vanilla Item.maxStack): 1 for tools, weapons, armour, accessories.</summary>
 	int MaxStack(int itemType) => 9999;
+
+	/// <summary>
+	/// The item's power as a tool of this kind (vanilla Item.pick, Item.axe, Item.hammer; a weapon's Item.damage), 0 when it is
+	/// none: the best of each kind carried is the one the bot works and fights with.
+	/// </summary>
+	int ToolPower(int itemType, ToolKind kind) => 0;
 }
 
 public enum CraftResult
