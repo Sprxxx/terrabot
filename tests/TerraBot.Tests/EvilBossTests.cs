@@ -253,6 +253,38 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void TheWormFood_IsUsedWhereTheZoneHoldsOnTheArenaNow_NotAtItsMiddleWhereItDoesNot()
+	{
+		// Measured runs M10m and M10n (world_eow): the arena at (1872,239), 306 corruption tiles round its middle by the bot's
+		// count when the site was chosen; the build cleared 12-15 off the game's count round its stand row, which then held
+		// the zone west of x 1933 only, and the fights began at the middle (1920) and at (1933,245) and kited east out of it.
+		// Here the game's flag held over the floor's west part where the bot stood on it (the build walks all of it).
+		FakeGame g = CorruptWorld();
+		var (ctx, p) = AfterTheEye(g);
+		g.Items[FakeGame.WormFood] = 1;
+		BuildTheEvilArena(g, ctx, p);
+		var (x0, x1, y) = Assert.IsType<(int, int, int)>(p.EvilArenaBounds(ctx));
+		int mid = (x0 + x1) / 2, heldTo = mid - 10;
+		for (int x = x0; x <= x1; x++)
+			ctx.Zone.Note(new TilePos(x, y), x <= heldTo, ctx.Tick);
+
+		// At the middle, out of the zone by the game's flag: along the floor to the middle of where it held, not the summon.
+		MoveTo(g, ctx, mid, y);
+		ctx.Combat.InEvilZone = false;
+		ISkill s = Next(p, ctx);
+		var walk = Assert.IsType<WalkToSkill>(s);
+		int spot = (x0 + heldTo) / 2;
+		Assert.InRange(walk.Target.X, spot - ProgressionPlanner.ArenaCentreTolerance, spot + ProgressionPlanner.ArenaCentreTolerance);
+		Assert.Contains("where the zone holds", p.Status);
+
+		// There, in the zone: the fight, kiting from there.
+		MoveTo(g, ctx, spot, y);
+		ctx.Combat.InEvilZone = true;
+		var fight = Assert.IsType<BossFightSkill>(Next(p, ctx));
+		Assert.Equal(p.EvilArenaBounds(ctx), fight.Arena);
+	}
+
+	[Fact]
 	public void WhileTheWormIsUp_OutOfSight_ThePlanStaysOnTheFight_NotOnANewWormFood()
 	{
 		// Measured run M10j: after "surfacing (pausing Boss)" from a chasm's water, the worm out of view (8597 of 10050 on its

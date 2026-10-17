@@ -1312,7 +1312,8 @@ public sealed class ProgressionPlanner
 			TilePos chosen = slot.Site.Value;
 			bool inEvil = SiteFinder.InEvilBiome(ctx, bp, chosen);
 			ctx.Log.Info($"Auto: {name} site {chosen} ({SiteFinder.Edits(ctx, bp, chosen)} edits"
-				+ (evil ? $", {ctx.CorruptionAround(Middle(bp, chosen))} corruption tiles round its middle" : "")
+				+ (evil ? $", {ctx.CorruptionAround(Middle(bp, chosen))} corruption tiles round its middle, {SiteFinder.CorruptionOnceBuilt(ctx, bp, chosen, Middle(bp, chosen))} once built"
+					+ $" (the zone wants {BotContext.CorruptionZoneTiles}, {SiteFinder.ZoneMargin} over it for the kiting: {SiteFinder.ZoneShortfall(ctx, bp, chosen)} short)" : "")
 				+ (inEvil != evil ? $", {(evil ? "off" : "in")} the evil biome: each step costs {SiteFinder.EvilStepFactor}x" : "") + ")");
 		}
 		TilePos site = slot.Site.Value;
@@ -1423,10 +1424,10 @@ public sealed class ProgressionPlanner
 	/// Seen in game (measured run U7): from under the floor (protected from path moves), the walk to the 9 tiles over the
 	/// middle made partial plans of 3,000-14,000 nodes straight up at it all night, and the summon waited a whole day.
 	/// </summary>
-	private static WalkToSkill ArenaWalk(BotContext ctx, int x0, int x1, int standY)
+	private static WalkToSkill ArenaWalk(BotContext ctx, int x0, int x1, int standY, int? toX = null)
 	{
 		TilePos n = ctx.Node;
-		int mid = (x0 + x1) / 2;
+		int mid = toX ?? (x0 + x1) / 2;
 		bool onFloor = n.Y == standY && n.X >= x0 && n.X <= x1;
 		return new WalkToSkill(onFloor
 			? new Core.Pathfinding.GoalStandOnRow(standY, mid - ArenaCentreTolerance, mid + ArenaCentreTolerance, ctx.Physics)
@@ -1506,6 +1507,36 @@ public sealed class ProgressionPlanner
 	/// <summary>Within this many tiles of the summon spot, the summon is made there (the arena's own tolerance).</summary>
 	public const int SummonSpotTiles = ArenaCentreTolerance;
 
+	/// <summary>Did the game's flag say the zone did not hold, at the latest look within <see cref="SummonSpotTiles"/> of the spot?</summary>
+	private static bool ZoneOutNear(BotContext ctx, TilePos spot) => ctx.Zone.Near(spot, SummonSpotTiles) == false;
+
+	/// <summary>
+	/// Where on the worm's arena (columns <paramref name="x0"/>-<paramref name="x1"/>, feet row <paramref name="standY"/>) the
+	/// Worm Food is used: the middle of the longest stretch of the floor where the zone holds (<see cref="BotContext.InEvilZone"/>:
+	/// the game's flag where the bot stands, the latest look where it stood, the build having walked the whole floor, else the
+	/// count of the seen tiles), the nearer the arena's middle on a tie; null if it holds nowhere on it. The fight kites from
+	/// there and keeps within it (BossFightSkill). Seen in game (measured runs M10m and M10n): the arena at (1872,239), the
+	/// fight begun at its middle (1920) and east of it at (1933,245), where the game's count once built was 346 and 300; the
+	/// zone held west of x 1933 only, and kiting east lost the worm both times.
+	/// </summary>
+	public static TilePos? EvilSummonSpot(BotContext ctx, int x0, int x1, int standY)
+	{
+		int mid = (x0 + x1) / 2, bestFrom = 0, bestLen = 0, run = 0;
+		for (int x = x0; x <= x1 + 1; x++) {
+			if (x <= x1 && ctx.InEvilZone(new TilePos(x, standY))) {
+				run++;
+				continue;
+			}
+			int from = x - run;
+			if (run > bestLen || run == bestLen && run > 0 && Math.Abs(from + (run - 1) / 2 - mid) < Math.Abs(bestFrom + (bestLen - 1) / 2 - mid)) {
+				bestFrom = from;
+				bestLen = run;
+			}
+			run = 0;
+		}
+		return bestLen > 0 ? new TilePos(bestFrom + (bestLen - 1) / 2, standY) : null;
+	}
+
 	/// <summary>
 	/// The evil biome's boss, its summon item in hand: to where the Corruption zone holds (its arena, <see cref="EvilArenaBounds"/>,
 	/// or the Eye's if that lies in the zone; else <see cref="EvilGround"/>), rest to full, summon and fight, at any time of day.
@@ -1515,28 +1546,43 @@ public sealed class ProgressionPlanner
 	private ISkill ResolveEvilBoss(BossDefeated b, bool bossHere, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		ctx.EvilErrand = true;
+		ctx.NoteZone();
 		var arena = EvilArenaBounds(ctx)
 			?? (ArenaBounds(ctx) is (int x0, int x1, int y) a && ctx.CorruptionAround(new TilePos((x0 + x1) / 2, y)) >= BotContext.CorruptionZoneTiles ? a : ((int, int, int)?)null);
+		string offArena = "";
 		if (!bossHere) {
-			TilePos? stretch = arena is (int sx0, int sx1, int sy) ? new TilePos((sx0 + sx1) / 2, sy) : ctx.InEvilBiome(ctx.Node) ? ctx.Node : EvilGround(ctx);
+			// On the arena: where the zone holds now (EvilSummonSpot), the build having changed the count. Nowhere on its floor,
+			// by what the bot saw standing there: the open ground of the corruption, as with no arena.
+			TilePos? summonAt = null;
+			if (arena is (int fx0, int fx1, int fy)) {
+				summonAt = EvilSummonSpot(ctx, fx0, fx1, fy);
+				if (summonAt == null && Enumerable.Range(fx0, fx1 - fx0 + 1).Any(x => ctx.Zone.At(new TilePos(x, fy)) == false)) {
+					offArena = $" (off the arena: the zone held nowhere on its floor x {fx0}-{fx1} where the bot stood)";
+					arena = null;
+				}
+				else
+					summonAt ??= new TilePos((fx0 + fx1) / 2, fy);
+			}
+			TilePos? stretch = summonAt ?? (ctx.InEvilBiome(ctx.Node) ? ctx.Node : EvilGround(ctx));
 			if (stretch is TilePos st) {
 				ISkill bridgeFirst = BridgeTheChasms(st, claims, depth, ctx);
 				if (bridgeFirst != null || stuck != null)
 					return bridgeFirst;
 			}
-			if (arena is (int ax0, int ax1, int ay)) {
-				if (!InArena(ctx.Node, ax0, ax1, ay))
-					return Do($"walking to the arena in the corruption to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay));
+			if (arena is (int ax0, int ax1, int ay) && summonAt is TilePos at) {
+				if (!InArena(ctx.Node, at.X, at.X, ay))
+					return Do($"walking to {at} on the arena in the corruption, where the zone holds, to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay, at.X));
 			}
 			// On the surface: the worm is fought from open ground, kiting sideways as it arcs out (spec G9-G10), not where
 			// the Worm Food happened to be made. Seen in game (measured run M10e, world_eow): crafted at an altar in a pocket
 			// at row 409, some 130 rows under the corruption's surface, and summoned there at once: "no room to run from the
 			// worm's head" 20 times, the bot held in place at (1890,409) and killed, the worm at 9637 of 10050 life.
-			else if (ctx.CorruptionAround(ctx.Node) < BotContext.CorruptionZoneTiles || UnderTheSurface(ctx)) {
+			// In the zone by the game's flag where there is one (the Worm Food works only there), else by the count.
+			else if (!ctx.InEvilZone(ctx.Node) || UnderTheSurface(ctx)) {
 				if (EvilGround(ctx) is not TilePos spot)
 					return ExploreForEvilBiome(ctx, $"to summon the {b.Label}");
 				if (spot.ChebyshevTo(ctx.Node) > SummonSpotTiles)
-					return Do($"walking to the corruption at {spot} to summon the {b.Label} ({ctx.CorruptionAround(spot)} corruption tiles round it)",
+					return Do($"walking to the corruption at {spot} to summon the {b.Label} ({ctx.CorruptionAround(spot)} corruption tiles round it){offArena}",
 						new WalkToSkill(new Core.Pathfinding.GoalNearTile(spot, SummonSpotTiles, ctx.Physics)) { Quiet = true });
 				// There, and still too little seen round it to be sure: the summon is tried anyway (the game counts what is there).
 			}
@@ -1544,7 +1590,7 @@ public sealed class ProgressionPlanner
 				return Do($"resting to {SummonLifeFraction:P0} life before summoning the {b.Label} ({ctx.Combat.Life}/{ctx.Combat.LifeMax})",
 					new WaitSkill("life", c => c.Combat.LifeFraction >= SummonLifeFraction, MaxRestTicks));
 		}
-		return Do($"fighting the {b.Label} in the corruption{(arena != null ? ", in the arena" : "")} ({(ctx.IsNight ? "night" : "day")})",
+		return Do($"fighting the {b.Label} in the corruption{(arena != null ? ", in the arena" : "")} ({(ctx.IsNight ? "night" : "day")}){offArena}",
 			new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena });
 	}
 
@@ -1682,8 +1728,11 @@ public sealed class ProgressionPlanner
 	{
 		// Kept a while: a spot while the biome is still seen there, none until the bot stands in the biome (an exploration for
 		// it ended there, or the map filled in on the way).
+		// Not a spot where the game's flag said the zone did not hold when the bot stood by it (ZoneOutNear): the count of the
+		// seen tiles there was wrong, and the Worm Food would do nothing there.
 		if (ctx.Tick - evilGroundAt < EvilGroundRecheckTicks
-			&& (evilGround is TilePos kept ? ctx.InEvilBiome(kept) || ctx.CorruptionAround(kept) >= BotContext.CorruptionZoneTiles : !ctx.InEvilBiome(ctx.Node)))
+			&& (evilGround is TilePos kept ? (ctx.InEvilBiome(kept) || ctx.CorruptionAround(kept) >= BotContext.CorruptionZoneTiles) && !ZoneOutNear(ctx, kept)
+				: !ctx.InEvilBiome(ctx.Node)))
 			return evilGround;
 		evilGroundAt = ctx.Tick;
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
@@ -1691,7 +1740,7 @@ public sealed class ProgressionPlanner
 		int bestCount = BotContext.CorruptionZoneTiles - 1, seenCount = -1;
 		for (int d = 0; d <= MaxTravelTiles; d += RouteSampleTiles)
 			foreach (int x in d == 0 ? new[] { originX } : new[] { originX - d, originX + d }) {
-				if (SurfaceAt(ctx.Grid, x) is not TilePos c || !ctx.InEvilBiome(c))
+				if (SurfaceAt(ctx.Grid, x) is not TilePos c || !ctx.InEvilBiome(c) || ZoneOutNear(ctx, c))
 					continue;
 				int n = ctx.CorruptionAround(c);
 				if (n >= EvilGroundTiles) {
@@ -1712,7 +1761,7 @@ public sealed class ProgressionPlanner
 		if (best == null && ctx.KnownEvil.Count > 0) {
 			TilePos from = ctx.SpawnTile ?? ctx.Node;
 			foreach (TilePos e in ctx.KnownEvil.All.OrderBy(e => Math.Abs(e.X - from.X)))
-				if (Math.Abs(e.X - originX) <= MaxTravelTiles && SurfaceAt(ctx.Grid, e.X) is TilePos above) {
+				if (Math.Abs(e.X - originX) <= MaxTravelTiles && SurfaceAt(ctx.Grid, e.X) is TilePos above && !ZoneOutNear(ctx, above)) {
 					best = above;
 					break;
 				}

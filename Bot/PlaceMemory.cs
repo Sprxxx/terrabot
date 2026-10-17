@@ -93,3 +93,33 @@ public sealed class PlaceMemory
 
 	private static int Floor(int v) => v >= 0 ? v / AreaTiles : (v - AreaTiles + 1) / AreaTiles;
 }
+
+/// <summary>
+/// Whether the evil biome's zone held where the bot stood (<see cref="BotContext.Zone"/>): the latest look at each node, and
+/// when. A node, not a column: the scene scan is centred on the body, and an arena's floor is one row.
+/// </summary>
+public sealed class ZoneMemory
+{
+	private readonly Dictionary<TilePos, (bool In, long Tick)> seen = new();
+
+	public int Count => seen.Count;
+
+	public void Note(TilePos node, bool inZone, long tick) => seen[node] = (inZone, tick);
+
+	/// <summary>The zone at the node at the latest look, null if never stood on.</summary>
+	public bool? At(TilePos node) => seen.TryGetValue(node, out var s) ? s.In : null;
+
+	/// <summary>The latest look at any node within <paramref name="tiles"/> (Chebyshev) of the tile, null if none.</summary>
+	public bool? Near(TilePos t, int tiles)
+	{
+		bool? latest = null;
+		long at = long.MinValue;
+		for (int x = t.X - tiles; x <= t.X + tiles; x++)
+			for (int y = t.Y - tiles; y <= t.Y + tiles; y++)
+				if (seen.TryGetValue(new TilePos(x, y), out var s) && s.Tick > at) {
+					at = s.Tick;
+					latest = s.In;
+				}
+		return latest;
+	}
+}

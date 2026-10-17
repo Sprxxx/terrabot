@@ -378,14 +378,72 @@ public sealed class BotContext
 	{
 		if (World == null || Ids.CorruptionWeights.Count == 0)
 			return 0;
-		int x0 = (int)Math.Ceiling((t.X - SceneScanHalfWidth) / (double)DesertChunk), x1 = (int)Math.Floor((t.X + SceneScanHalfWidth + 1) / (double)DesertChunk) - 1;
-		int y0 = (int)Math.Ceiling((t.Y - SceneScanHalfHeight) / (double)DesertChunk), y1 = (int)Math.Floor((t.Y + SceneScanHalfHeight + 1) / (double)DesertChunk) - 1;
+		var (x0, x1, y0, y1) = CorruptionChunks(t);
 		int sum = 0;
 		for (int cx = x0; cx <= x1; cx++)
 			for (int cy = Math.Max(0, y0); cy <= y1; cy++)
 				sum += ChunkCounts(cx, cy).Corrupt;
 		return sum;
 	}
+
+	/// <summary>The chunks <see cref="CorruptionAround"/> counts round the tile: those wholly inside the scene scan.</summary>
+	private static (int X0, int X1, int Y0, int Y1) CorruptionChunks(TilePos t) => (
+		(int)Math.Ceiling((t.X - SceneScanHalfWidth) / (double)DesertChunk), (int)Math.Floor((t.X + SceneScanHalfWidth + 1) / (double)DesertChunk) - 1,
+		(int)Math.Ceiling((t.Y - SceneScanHalfHeight) / (double)DesertChunk), (int)Math.Floor((t.Y + SceneScanHalfHeight + 1) / (double)DesertChunk) - 1);
+
+	/// <summary>The tiles (first and last column, first and last row) <see cref="CorruptionAround"/> counts round the tile.</summary>
+	public static (int X0, int X1, int Y0, int Y1) CorruptionCounted(TilePos t)
+	{
+		var (x0, x1, y0, y1) = CorruptionChunks(t);
+		return (x0 * DesertChunk, (x1 + 1) * DesertChunk - 1, Math.Max(0, y0) * DesertChunk, (y1 + 1) * DesertChunk - 1);
+	}
+
+	/// <summary>What one seen tile counts for the Corruption zone (<see cref="CorruptionAround"/>): 0 unseen or none.</summary>
+	public int CorruptionWeightAt(int x, int y) =>
+		World != null && World.IsRevealed(x, y) && Ids.CorruptionWeights.TryGetValue(World.TileTypeAt(x, y), out int w) ? w : 0;
+
+	/// <summary>
+	/// The tiles in this rectangle changed (a build): the chunks over it are counted again at their next look, not kept for
+	/// <see cref="DesertRecheckTicks"/>. The Corruption zone's count round an arena just built otherwise still held the tiles
+	/// its build cleared for a game minute.
+	/// </summary>
+	public void RecountChunks(int x0, int y0, int x1, int y1)
+	{
+		for (int cx = (int)Math.Floor(x0 / (double)DesertChunk); cx <= (int)Math.Floor(x1 / (double)DesertChunk); cx++)
+			for (int cy = Math.Max(0, y0) / DesertChunk; cy <= Math.Max(0, y1) / DesertChunk; cy++)
+				desertChunks.Remove((cx, cy));
+	}
+
+	/// <summary>
+	/// Where the bot has stood and whether the evil biome's zone held there (<see cref="CombatInfo.InEvilZone"/>, as a player
+	/// sees it by the background and the music), the latest look at each node: the part of an arena's floor the zone holds
+	/// over is known once the bot has walked it (its build walks all of it). Seen in game (measured runs M10m and M10n,
+	/// world_eow): the arena at (1872,239) had 306 corruption tiles round its middle by the bot's count; the game's count,
+	/// read from the M10m checkpoints' worlds, was 346 at the middle (1920) once built and fell some 4 a column east of it,
+	/// under the zone's 300 at x 1933, and the fights kited east past it to (1935,245): the worm dove and despawned.
+	/// </summary>
+	public ZoneMemory Zone { get; } = new();
+	private long zoneNotedAt = long.MinValue;
+
+	/// <summary>
+	/// Notes the zone (<see cref="Zone"/>) where the bot stands this tick, once a tick: only standing (a jump moves the scan's
+	/// centre up), only with the flag perceived, and only in the zone or on an errand in the evil biome (<see cref="EvilErrand"/>),
+	/// not all over the world.
+	/// </summary>
+	public void NoteZone()
+	{
+		if (zoneNotedAt == Tick || Combat.InEvilZone is not bool z || !Body.Grounded || !z && !EvilErrand)
+			return;
+		zoneNotedAt = Tick;
+		Zone.Note(Node, z, Tick);
+	}
+
+	/// <summary>
+	/// Is the evil biome's zone here: the flag as the game shows it where the bot stands, else (another tile, or no flag) the
+	/// latest look at the tile (<see cref="Zone"/>), else the count of the seen tiles round it (<see cref="CorruptionAround"/>).
+	/// </summary>
+	public bool InEvilZone(TilePos t) =>
+		t == Node && Combat.InEvilZone is bool here ? here : Zone.At(t) ?? CorruptionAround(t) >= CorruptionZoneTiles;
 
 	/// <summary>
 	/// The evil biome's stone (ebonstone, crimstone) wants pick power 65 (vanilla Player.PickTile): with less, the bot cannot

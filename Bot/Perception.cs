@@ -56,6 +56,15 @@ public sealed class CombatInfo
 	/// (spawnInfo.PlayerSafe), so nothing to hunt.
 	/// </summary>
 	public bool InTown { get; set; }
+	/// <summary>
+	/// In the evil biome's zone (vanilla Player.ZoneCorrupt or ZoneCrimson: SceneMetrics.EvilTileCount at least 300 in the
+	/// scan round the player), as a player knows it by the background and the music changing; null where nothing tells it
+	/// (tests), and the bot goes by its own count of the tiles it has seen (<see cref="BotContext.CorruptionAround"/>). Worm
+	/// Food works only in it (Player.cs:43462), and the Eater of Worlds dives and despawns once no player is in it
+	/// (NPC.AI_006_Worms, NPC.cs:55436). The game updates it with its scene scan (LightingEngine's ExportMetrics, every
+	/// fourth lighting pass), so it can lag the body by a few ticks; the worm reads the same flag.
+	/// </summary>
+	public bool? InEvilZone { get; set; }
 	/// <summary>Armour pieces worn (head, body, legs: 0-3).</summary>
 	public int ArmourPieces { get; set; }
 

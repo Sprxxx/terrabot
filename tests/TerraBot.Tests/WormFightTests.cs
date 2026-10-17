@@ -281,6 +281,90 @@ public class WormFightTests
 		Assert.Contains("walking back to where the fight began", fight.State);
 	}
 
+	/// <summary>The body standing on the field's feet row 24 at node column <paramref name="x"/>, moving at <paramref name="vx"/>.</summary>
+	private static Core.Physics.BodyState StandingAt(int x, float vx) =>
+		new() { X = Core.Pathfinding.Body.CanonicalLeft(x, P), Y = 25 * 16f - P.Height, VX = vx, ReleaseJump = true };
+
+	[Fact]
+	public void OutOfTheZone_OnTheArena_RunsBackIn_AndThenKitesShortOfWhereItWasLost()
+	{
+		// Measured runs M10m and M10n (world_eow): on the arena at (1872,239) the game's Corruption count (read from M10m's
+		// checkpoint worlds) fell under the zone's 300 east of x 1932; kiting east to (1935,245), and from (1933,245), the bot
+		// left the zone, and "the worm left: no segment in view for 320 ticks, not defeated, its bar empty", twice. Here the
+		// game's flag says the zone holds up to column 110 of the arena (50-145).
+		var (_, ctx, fight) = Setup(97 * 16f, 0f, Arena, Seg(9, Bod, 60, 27));
+		var lines = new System.Collections.Generic.List<string>();
+		ctx.Log = new ListLog(lines);
+		void At(int x, float vx)
+		{
+			ctx.Tick++;
+			ctx.Body = StandingAt(x, vx);
+			ctx.Combat.InEvilZone = x <= 110;
+			fight.Tick(ctx);
+			output.WriteLine($"at {ctx.Node} ({(ctx.Combat.InEvilZone == true ? "in" : "out of")} the zone): {fight.Describe()} -> horizontal {ctx.Output.Horizontal}");
+		}
+		At(97, 0f);
+		// Run out of it east (no head near): back west, though the kiting's turn (20 from the centre) is still 5 columns on.
+		At(112, 2.5f);
+		Assert.Equal(-1, ctx.Output.Horizontal);
+		Assert.Contains("out of the zone", fight.State);
+		Assert.Contains(lines, l => l.Contains("out of the Corruption zone at (112,24)"));
+		// Back in it and running east again: turned short of where it was lost, not out of it a second time.
+		At(108, 2.5f);
+		Assert.Equal(-1, ctx.Output.Horizontal);
+		Assert.Contains(lines, l => l.Contains("back in the Corruption zone"));
+	}
+
+	[Fact]
+	public void TheFloorsColumnsWhereTheZoneWasSeenNotToHold_BoundTheKiting_BeforeItIsLostInTheFight()
+	{
+		// Measured run M10n: the build walked the whole floor of the arena at (1872,239), the zone holding west of x 1933 only
+		// (the game's count), and the fight then began at (1933,245) and kited east out of it. What the bot saw standing on
+		// the floor (BotContext.Zone) bounds the kiting from the start: here the zone held up to column 104.
+		var (_, ctx, fight) = Setup(97 * 16f, 0f, Arena, Seg(9, Bod, 60, 27));
+		for (int x = 50; x <= 145; x++)
+			ctx.Zone.Note(new Core.Grid.TilePos(x, 24), x <= 104, -1000 + x);
+		ctx.Combat.InEvilZone = true;
+		fight.Tick(ctx);
+		ctx.Tick = 1;
+		ctx.Body = StandingAt(101, 2.5f);
+		fight.Tick(ctx);
+		output.WriteLine($"at {ctx.Node}: {fight.Describe()} -> horizontal {ctx.Output.Horizontal}");
+		Assert.Equal(-1, ctx.Output.Horizontal); // the bound is 2 columns short of 105, the first seen out
+		Assert.True(ctx.InEvilZone(ctx.Node));
+	}
+
+	[Fact]
+	public void OutOfTheZone_TheWormFoodIsNotUsed_TheFightFailsAtOnce()
+	{
+		// Worm Food does nothing out of the zone (Player.cs:43462), and the worm would not stay there (NPC.cs:55436).
+		var (g, ctx, fight) = Setup(97 * 16f, 0f, Arena);
+		g.Items[WormFood] = 1;
+		ctx.Combat.InEvilZone = false;
+		SkillStatus s = fight.Tick(ctx);
+		output.WriteLine($"{fight.Describe()}: {fight.FailureReason}");
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.Contains("not in the Corruption zone", fight.FailureReason);
+		Assert.Equal(1, g.Count(WormFood));
+	}
+
+	[Fact]
+	public void WithoutAnArena_OutOfTheZone_WalksBackToWhereItLastHeld()
+	{
+		// No arena: the leash is 40 tiles each way, wider than the zone may be. Out of the zone 23 columns from where it held,
+		// within the leash: a walk back there (the ground need not be flat), not the kiting on.
+		var (_, ctx, fight) = Setup(97 * 16f, 0f, null, Seg(9, Bod, 60, 27));
+		ctx.Combat.InEvilZone = true;
+		fight.Tick(ctx);
+		ctx.Tick = 1;
+		ctx.Body = StandingAt(120, 0f);
+		ctx.Combat.InEvilZone = false;
+		Assert.Equal(SkillStatus.Running, fight.Tick(ctx));
+		output.WriteLine($"at {ctx.Node}: {fight.Describe()} -> horizontal {ctx.Output.Horizontal}");
+		Assert.Contains("walking back", fight.State);
+		Assert.Equal(-1, ctx.Output.Horizontal);
+	}
+
 	[Fact]
 	public void Bodies_GetTheirMotionMeasured()
 	{
