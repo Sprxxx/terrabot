@@ -521,9 +521,9 @@ public class HellTests
 			g.Step(ctx);
 		}
 		int end = bridge.End, lipX = end + 1;
-		// A Demon 20 tiles ahead, over the lava.
-		g.ExtraHostiles.Add(new EntityInfo(9, 62, "Demon", (end + 20) * 16f, (BridgeRow - 6) * 16f, 38, 54, 0f, 0f, 120, 120, 30, 22));
-		for (int t = 0; t < 900 && s == SkillStatus.Running; t++) {
+		// A Demon (a hoverer that throws sickles) 20 tiles ahead, over the lava; a Hellbat is no reason for a lip.
+		g.ExtraHostiles.Add(new EntityInfo(9, 62, "Demon", (end + 20) * 16f, (BridgeRow - 6) * 16f, 38, 54, 0f, 0f, 120, 120, 30, HellbridgeSkill.HoveringFighterAi));
+		for (int t = 0; t < HellbridgeSkill.LipHoldTicks / 2 && s == SkillStatus.Running; t++) {
 			g.Refresh(ctx);
 			s = bridge.Tick(ctx);
 			g.Step(ctx);
@@ -533,7 +533,16 @@ public class HellTests
 		Assert.True(g.Grid.Get(lipX, BridgeRow).IsSolid() && g.Grid.Get(lipX, BridgeRow - 1).IsSolid() && g.Grid.Get(lipX, BridgeRow - 2).IsSolid(), "no lip");
 		Assert.Equal(end, bridge.End);
 		Assert.Contains("lip", bridge.Describe());
-		// It leaves: the lip's two blocks come down, and the bridge goes on to its end.
+		// It stays (hovering, never coming): the hold ends after LipHoldTicks and the bridge goes on past the lip's column regardless
+		// (E15, 2026-10-17: a hold of two game hours, the errand blocked).
+		for (int t = 0; t < HellbridgeSkill.LipHoldTicks + 1500 && s == SkillStatus.Running && bridge.End <= lipX; t++) {
+			g.Refresh(ctx);
+			s = bridge.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"the Demon still there: {bridge.Describe()} at {g.Sim.Node}");
+		Assert.True(bridge.End > lipX, $"held for ever: {bridge.Describe()}");
+		// It leaves: the bridge goes on to its end.
 		g.ExtraHostiles.Clear();
 		for (int t = 0; t < 20000 && s == SkillStatus.Running; t++) {
 			g.Refresh(ctx);

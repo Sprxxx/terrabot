@@ -145,12 +145,21 @@ public sealed class HellbridgeSkill : ISkill
 	/// ... at (3882,1041)" then "Fall: ... lava at (3887,1072), 31 rows down"). The reach (tileRangeX 5) covers the next column from here.
 	/// </summary>
 	public const int EdgeMargin = 3;
-	/// <summary>Tiles within which a hostile (not a spared one) has the lip raised at the end (<see cref="ThreatNear"/>).</summary>
+	/// <summary>Tiles within which a shooter or a worm (not a spared one) has the lip raised at the end (<see cref="ThreatNear"/>).</summary>
 	public const int LipRadiusTiles = 30;
 	/// <summary>Blocks the lip stands on the next column's deck block.</summary>
 	public const int LipHeight = 2;
+	/// <summary>
+	/// Ticks the bridge holds behind a lip for a hostile that neither comes nor goes, then carries on; and ticks before another lip for
+	/// one (a shot flying at the body raises it regardless). Hell is never empty: holding while anything was within 30 tiles stalled
+	/// the bridge two game hours and the watchdog blocked the errand (world_wof E15, 2026-10-17, "[holding behind the lip]").
+	/// </summary>
+	public const int LipHoldTicks = 900, LipCooldownTicks = 1800;
+	/// <summary>Vanilla NPC AI styles that throw or shoot from afar (NPCAIStyleID.HoveringFighter: Demons; Caster: Fire Imps) or come through blocks (Worm: Bone Serpents).</summary>
+	public const int HoveringFighterAi = 22, CasterAi = 8, WormAi = 6;
 	/// <summary>The column the lip stands on (or is going up on) while a threat is near; null otherwise.</summary>
 	private int? lipAt;
+	private long lipSince, lipCooldownUntil = long.MinValue / 2;
 
 	/// <summary>Where to stand to work on the column past <paramref name="end"/>: on the deck, <see cref="EdgeMargin"/> columns short of it, or in the dip of a column passed over (<see cref="Passable"/>).</summary>
 	private TilePos StandAt(int end, BotContext ctx)
@@ -201,9 +210,12 @@ public sealed class HellbridgeSkill : ISkill
 		End = BridgeEnd(g, Row, scanFrom, ToX, ctx);
 		// The lip's column is the next deck block with two on top (below): the end is held short of it while the lip is wanted, so the
 		// two go on before the bridge moves on; the lip gone with the threat, the two come down as cells in the way.
-		bool threat = ThreatNear(ctx);
-		if (!threat)
+		bool threat = ShotIncoming(ctx) || ThreatNear(ctx) && ctx.Tick >= lipCooldownUntil && (lipAt == null || ctx.Tick - lipSince <= LipHoldTicks);
+		if (!threat) {
+			if (lipAt != null)
+				lipCooldownUntil = ctx.Tick + LipCooldownTicks;
 			lipAt = null;
+		}
 		else if (lipAt is int lip && (End - lip) * Dir >= 0)
 			End = lip - Dir;
 		LogProgress(ctx);
@@ -256,7 +268,10 @@ public sealed class HellbridgeSkill : ISkill
 		// than the reach allows. Seen in game (world_wof E11 and E12, 2026-10-17): four deaths from a sickle's or a bite's knockback
 		// at the end, 20-35 rows down into lava.
 		if (threat) {
-			lipAt ??= c;
+			if (lipAt == null) {
+				lipAt = c;
+				lipSince = ctx.Tick;
+			}
 			for (int y = Row; y >= Row - LipHeight; y--) {
 				CellKind lk = g.Get(c, y);
 				if (lk.IsSolid())
@@ -456,13 +471,20 @@ public sealed class HellbridgeSkill : ISkill
 			}
 	}
 
-	/// <summary>A hostile that is not spared within <see cref="LipRadiusTiles"/>, or a shot flying at the body (a spared Voodoo Demon's sickle too).</summary>
+	/// <summary>A shooter or a worm that is not spared within <see cref="LipRadiusTiles"/>: what throws the body off the end from afar or through the deck.</summary>
 	private static bool ThreatNear(BotContext ctx)
 	{
 		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
 		foreach (EntityInfo h in ctx.Hostiles)
-			if (h.Damage > 0 && !ctx.Spared(h) && h.DistanceTo(cx, cy) <= LipRadiusTiles * 16f)
+			if (h.Damage > 0 && h.AiStyle is HoveringFighterAi or CasterAi or WormAi && !ctx.Spared(h) && h.DistanceTo(cx, cy) <= LipRadiusTiles * 16f)
 				return true;
+		return false;
+	}
+
+	/// <summary>A shot flying at the body (a spared Voodoo Demon's sickle too).</summary>
+	private static bool ShotIncoming(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
 		foreach (ShotInfo s in ctx.Shots)
 			if (s.Damage > 0 && s.DistanceTo(cx, cy) <= ShotDodge.ShotThreatPx && WallOfFleshPattern.Incoming(s, cx, cy, Core.Physics.Dodge.Horizon))
 				return true;
