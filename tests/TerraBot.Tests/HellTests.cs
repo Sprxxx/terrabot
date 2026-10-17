@@ -89,9 +89,9 @@ public class HellTests
 	[Fact]
 	public void TheHellevator_StartedFarFromItsShaft_GoesToTheShaftsTop_ThenDigs()
 	{
-		const int far = 560, cave = 50;
+		const int far = 560, cave = 36;
 		FakeGame g = Hell(600, far, TowerFrom, TowerTo);
-		// A cave far off and deep (the bot there, as after a crystal search): a pocket at rows 47-50.
+		// A cave far off and deep (the bot there, as after a crystal search): a pocket at rows 33-36.
 		for (int x = far - 3; x <= far + 3; x++)
 			for (int y = cave - 3; y <= cave; y++)
 				g.Grid.Set(x, y, CellKind.Empty);
@@ -105,9 +105,35 @@ public class HellTests
 		Assert.Equal(SkillStatus.Succeeded, s);
 		Assert.InRange(g.Sim.Node.X, TowerFrom - 1, TowerTo);
 		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("columns from the shaft") && l.Contains("to the shaft's top"));
-		// The way it went: up, along the surface, down the shaft (381 cells broken, 5558 ticks), not a tunnel through the rock to the
-		// shaft's line, leg by leg (1586 broken, 14152 ticks: in game the legs' searches gave out at 40001 nodes).
+		// The way it went: up, along the surface, down the shaft (325 cells broken, 5028 ticks), not a tunnel through the rock to the
+		// shaft's line, leg by leg (1614 broken, 14237 ticks: in game the legs' searches gave out at 40001 nodes).
 		Assert.True(g.Sim.Broken < 800, $"broken {g.Sim.Broken}");
+	}
+
+	/// <summary>
+	/// world_wof M12d: in the Underworld already by an old shaft, the shaft moved 300 columns off; the last leg walked the lava's edge
+	/// toward it and the bot burnt to death twice. Down there, the row is got onto from where the bot is, not back up to the shaft.
+	/// </summary>
+	[Fact]
+	public void TheHellevator_StartedInTheUnderworldFarFromItsShaft_GetsOntoTheRowFromThere()
+	{
+		const int far = 140, island = 90;
+		FakeGame g = Hell();
+		// Ground round the bot in the open band (an ash knoll over the lava sea), at x 135-145, rows 90-99.
+		for (int x = far - 5; x <= far + 5; x++)
+			for (int y = island; y < SeaTop; y++)
+				g.Grid.Set(x, y, CellKind.Solid);
+		var pp = Core.Physics.PhysicsParams.Default;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(far, pp), Y = Core.Pathfinding.Body.StandingTop(island - 1, pp), ReleaseJump = true };
+		BotContext ctx = Context(g);
+		ctx.SurfaceY = SurfaceFeet;
+		var shaft = new HellevatorSkill(ShaftX, BridgeRow - 1);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, shaft, 30000);
+		output.WriteLine($"{s}: {shaft.FailureReason} at {g.Sim.Node}, tick {ctx.Tick}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Equal(BridgeRow - 1, g.Sim.Node.Y);
+		Assert.InRange(g.Sim.Node.X, far - HellevatorSkill.SeekTiles, far + HellevatorSkill.SeekTiles);
+		Assert.DoesNotContain(((TestLog)ctx.Log).Lines, l => l.Contains("first") && l.Contains("columns from the shaft"));
 	}
 
 	/// <summary>The Hell world with the bot standing on the tower's roof at its east end, ready to bridge east.</summary>

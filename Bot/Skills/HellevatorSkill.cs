@@ -51,6 +51,8 @@ public sealed class HellevatorSkill : ISkill
 
 	private WalkToSkill leg, approach;
 	private int failedApproaches;
+	/// <summary>The column the last leg seeks the row round: the shaft's, or the bot's when it is down there already far from it.</summary>
+	private int? seekX;
 	private bool finalLeg, forceFinal;
 	private int failedLegs, ledges, legStartY;
 	private TilePos? ledgeCell;
@@ -137,18 +139,27 @@ public sealed class HellevatorSkill : ISkill
 				return SkillStatus.Running;
 			}
 		}
+		// Down there already (within the last leg's rows or under the row), far from the shaft: onto the row from here, never back up
+		// to the shaft. Seen in game (world_wof M12d): in the Underworld at (2152,1061) by the old shaft at 2155, the shaft moved to
+		// 2479, and the last leg walked the lava's edge 300 columns toward it, burnt to death twice.
+		if (leg == null && !forceFinal && StandRow - n.Y <= FinalLegRows && Math.Abs(n.X - ShaftX) > SeekTiles) {
+			forceFinal = true;
+			seekX = n.X;
+			ctx.Log.Info($"Hellevator: down at {n} already, {Math.Abs(n.X - ShaftX)} columns from the shaft; onto row {StandRow} within {SeekTiles} of here");
+		}
 		if (leg == null && !forceFinal && Math.Abs(n.X - ShaftX) > ApproachTiles)
 			return Approach(ctx, n);
 		if (leg == null) {
 			finalLeg = forceFinal || StandRow - n.Y <= LegRows;
 			legStartY = n.Y;
 			int to = Math.Min(n.Y + LegRows, StandRow);
+			int around = seekX ?? ShaftX;
 			IGoal goal = finalLeg
-				? new GoalStandOnRow(StandRow, ShaftX - SeekTiles, ShaftX + SeekTiles, ctx.Physics)
+				? new GoalStandOnRow(StandRow, around - SeekTiles, around + SeekTiles, ctx.Physics)
 				: new GoalRow(to, ShaftX, ctx.Physics) { Below = true, Accept = t => Math.Abs(t.X - ShaftX) <= Slack };
 			leg = new WalkToSkill(goal) { Quiet = true, Underground = true };
 			leg.Start(ctx);
-			State = finalLeg ? $"down onto row {StandRow} within {SeekTiles} of x {ShaftX}" : $"digging down to row {to}";
+			State = finalLeg ? $"down onto row {StandRow} within {SeekTiles} of x {around}" : $"digging down to row {to}";
 		}
 		SkillStatus s = leg.Tick(ctx);
 		if (s == SkillStatus.Running)
