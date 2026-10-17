@@ -168,7 +168,7 @@ public sealed class MoveContext
 	/// than a bomb's 180-tick fuse, and no throw was made.
 	/// </summary>
 	public MoveContext WalkingOnly() => new(Grid, Physics, Moves) {
-		Blocks = Blocks, AllowBreak = false, AllowPlace = false, DigAnyway = DigAnyway, BadEdges = BadEdges,
+		Blocks = Blocks, AllowBreak = false, AllowPlace = false, DigAnyway = DigAnyway, BadEdges = BadEdges, Deadly = Deadly,
 		LiquidCostMultiplier = LiquidCostMultiplier, HeadUnderCostMultiplier = HeadUnderCostMultiplier,
 		BreakCostMultiplier = BreakCostMultiplier, BreakOverheadTicks = BreakOverheadTicks, PillarRiskTicks = PillarRiskTicks,
 		PrecariousTicks = 0f,
@@ -179,6 +179,7 @@ public sealed class MoveContext
 		LiquidCostMultiplier = LiquidCostMultiplier, HeadUnderCostMultiplier = HeadUnderCostMultiplier,
 		BreakCostMultiplier = BreakCostMultiplier, BreakOverheadTicks = BreakOverheadTicks, PillarRiskTicks = PillarRiskTicks,
 		PrecariousTicks = PrecariousTicks, AvoidBelowRow = AvoidBelowRow, BelowRowTicks = BelowRowTicks, Avoid = Avoid, AvoidTicks = AvoidTicks,
+		Deadly = Deadly,
 	};
 
 	public IMoveType MoveFor(MoveKind kind)
@@ -212,12 +213,19 @@ public sealed class MoveContext
 	/// </summary>
 	public System.Func<TilePos, bool> Avoid { get; init; }
 	public float AvoidTicks { get; init; } = 150f; // 40: a trip east crossed the underground desert, killed by an antlion charger (run 51)
+	/// <summary>
+	/// Nodes where standing is certain death by a game rule, as touching lava is: edges ending there are never planned. Only
+	/// for a mechanic with no counterplay, gated on its own condition: the Dungeon Guardian's ground before Skeletron is
+	/// beaten (BotContext.GuardianGround: every spawn there is a Guardian, 1000 contact damage, flying through blocks at 8
+	/// px/tick, NPC.cs:88648-88673 and 22462-22475). Null: none.
+	/// </summary>
+	public System.Func<TilePos, bool> Deadly { get; init; }
 
 	/// <summary>Applies the liquid, footing and depth penalties to an edge ending at <paramref name="to"/>.</summary>
 	public float Adjust(float cost, TilePos to)
 	{
 		// Never into lava: 3x cost for "liquid" sent the bot into a lava pool chasing an antlion charger (78 damage, dead).
-		if (Body.TouchesLava(Grid, to))
+		if (Body.TouchesLava(Grid, to) || Deadly != null && Deadly(to))
 			return float.PositiveInfinity;
 		float c = Body.HeadInLiquid(Grid, to) ? cost * HeadUnderCostMultiplier : Body.InLiquid(Grid, to) ? cost * LiquidCostMultiplier : cost;
 		if (to.Y > AvoidBelowRow)
