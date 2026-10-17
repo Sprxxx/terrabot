@@ -1217,7 +1217,10 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		// The expedition under way (the shaft dug, the bridge known) takes itself up again before the surface's stages: a bot back at the
 		// spawn after a death goes back down, not to an NPC room first (seen in game, E4 2026-10-17: the errand ended and the plan built
 		// NPC rooms for a game day before it was proposed again).
-		if (Scheduler == Schedulers.Errands && WallOfFleshPlan(ctx.Ids) && Plan == Plans.WallOfFlesh && UnderworldReachedOnce && !WofLootCollected) {
+		// Down there now with no memory of it either (a run resumed from a saved world with no errand saved: E13, 2026-10-17, the plan
+		// started from its first stages and the bot climbed 700 rows out of hell for wood, then dug a second shaft).
+		if (Scheduler == Schedulers.Errands && WallOfFleshPlan(ctx.Ids) && Plan == Plans.WallOfFlesh && !WofLootCollected
+			&& (UnderworldReachedOnce || Errands.WallOfFleshErrand.DownThere(ctx))) {
 			costs.Clear();
 			costEvaluations = 0;
 			stuck = null;

@@ -685,7 +685,7 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>The column the doll is thrown from: the summon end with lava under where it lands, else the last column back toward the start with it; null with none.</summary>
-	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeFrom, dir, row);
+	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeBack, dir, row); // back to the far end: on a bridge taken as it stands, "from" is only where the bot stood
 
 	/// <summary>The last column from <paramref name="end"/> back toward <paramref name="start"/> with lava under where the doll lands past it (<see cref="LavaBeyond"/>), or null.</summary>
 	public static int? LastLavaColumn(BotContext ctx, int end, int start, int dir, int row)

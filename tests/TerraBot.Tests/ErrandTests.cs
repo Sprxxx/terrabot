@@ -592,6 +592,26 @@ public class ErrandTests
 		Assert.Null(other.Errand);
 	}
 
+	/// <summary>E13 (2026-10-17): resumed in the Underworld with no errand saved, the plan began from its first stages and the bot climbed out for wood.</summary>
+	[Fact]
+	public void WakingInTheUnderworld_WithNoErrand_TheExpeditionIsProposedFirst_InThePhaseTheWorldIsAt()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 40000, () => access.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill);
+		brain.Interrupt(ctx);
+		// A new brain and planner, nothing restored: the first thing is the expedition, down there, not the surface's stages.
+		var fresh = new BotBrain();
+		fresh.SetAuto(true, ctx, ProgressionPlanner.Plans.WallOfFlesh);
+		int before = Log(ctx).Lines.Count;
+		Run(g, ctx, fresh, 30, () => fresh.Errand != null);
+		var again = Assert.IsType<WallOfFleshErrand>(fresh.Errand);
+		output.WriteLine($"{fresh.Describe()} | {again.Status}");
+		Assert.NotEqual(Errand.PreparePhase, again.Phase);
+		Assert.DoesNotContain(Log(ctx).Lines.Skip(before), l => l.Contains("GatherWood") || l.Contains("life crystal"));
+	}
+
 	[Fact]
 	public void TheReservations_KeepTheBagsHabitsOffThePackingList()
 	{
