@@ -615,6 +615,12 @@ UI click would call:
 * **Housing check**: `WorldGen.StartRoomCheck` + `RoomNeeds` + `ScoreRoom`, read-only, as the housing query runs it.
 * **Pointing**: the tile target (`tileTargetX/Y`) and the mouse position (`Main.mouseX/Y`) are overridden for
   the duration of `ItemCheck`. Range, tool power and speed are vanilla's.
+* **Talking to an NPC and pressing its first chat button** (Milestone 11, docs M11_SPEC.md section 2c):
+  `SetTalkNPC` + `GetChat` (the right-click's chat opening, `Main.HoverOverNPCs`), then the button-1 handler
+  (`NPCLoader.PreChatButtonClicked/OnChatButtonClicked`, `NPC.SpawnSkeletron`). The click is read only while the
+  chat panel is drawn, which the fast self-test skips, so the handler runs with the game's guards: chat range
+  (80 x 64 px round the player's centre), the Old Man's "Curse" button only at night and as
+  `NPCLoader.SetChatButtons` leaves it, no Skeletron head up already (`TerrariaGameInfo.PressFirstChatButton`).
 
 ## Milestone 9: real-world play up to the Eye of Cthulhu (in progress)
 Scenario `world_eye`: the copied real world (Peppe on "Noxious Vision of Organs", a small Crimson world), the
@@ -639,9 +645,14 @@ Each mechanic is to be verified against the decompile and terraria.wiki.gg when 
   (Vertebrae from Crimson enemies plus Crimtane Bars; the Eye drops Crimtane Ore in Crimson worlds), or by smashing
   3 Crimson Hearts. Needs travel to the Crimson, fighting its Creepers, and a hammer. Crimstone needs pick power 65,
   so use the chasms or explosives. After the win: Crimtane gear and the Deathbringer Pickaxe.
-* **M11, Skeletron.** The dungeon on the far side of the world, the Old Man at its door, a night fight. Prep:
-  400 life, Crimtane armour, potions, an arena near the dungeon. After the win the dungeon opens (Muramasa, Water
-  Bolt, golden keys).
+* **M11, Skeletron** (built 2026-10-17, docs M11_SPEC.md; plan `skeletron`, scenario `world_skeletron`, not yet
+  measured). Prep from the boss plan's gear (a bow, 500 arrows, 200 life, potions and a recall potion from the bag);
+  the Dungeon found along the surface by the snow/jungle rule, stopping when the Old Man shows; a 160-wide arena
+  by him on his entrance's side, raised over the lake there, the sky over it open; the night waited for at its end;
+  the summon by the Old Man's Curse button (a UI-equivalent action) before night time 10800; the fight stands under
+  the hovering head, runs from its spin, dodges the hands' lunges from their wind-up, escapes dawn by recall
+  potion. The Dungeon Guardian's ground (below the surface on a dungeon wall, until Skeletron is beaten) is never a
+  path's node. After the win the dungeon opens (Muramasa, Water Bolt, golden keys): M11b.
 * **M12, the Wall of Flesh.** Hellstone with the Deathbringer, Molten armour, a hellbridge in the Underworld, the
   Guide Voodoo Doll in lava. Optional on the way: Queen Bee (jungle), King Slime.
 * **M13, early Hardmode.** The Pwnhammer smashes altars (Cobalt/Palladium, Mythril/Orichalcum,

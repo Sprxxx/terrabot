@@ -39,7 +39,15 @@ public sealed class SelfTestSystem : ModSystem
 	/// </summary>
 	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated", "Eye loot collected",
 		// Milestone 10's: the Eater fight measured from the Worm Food in hand, not after the chunk hunt and the mushrooms again.
-		"vile powder 30", "worm food", "eow arena" };
+		"vile powder 30", "worm food", "eow arena",
+		// After the Eater (the start of later runs), and Milestone 11's: the Skeletron fight rerun from its arena by the Dungeon
+		// (docs M11_SPEC.md, the proposed scenario), without the walk and the build.
+		"Eater of Worlds defeated", "eow loot collected", "dungeon arena" };
+	/// <summary>
+	/// Where the player stood when a checkpoint was saved (node "x y"), in the checkpoint's folder; selftest.ps1 copies it into
+	/// the test save folder as <see cref="StartFile"/> for a run from that checkpoint (Scenario.ResumeAtCheckpoint).
+	/// </summary>
+	public const string CheckpointStartFile = "start.txt", StartFile = "terrabot_start.txt";
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
@@ -72,6 +80,7 @@ public sealed class SelfTestSystem : ModSystem
 	private readonly List<int> spawned = new();
 	private bool spawnFailed;
 	private int lifeAtStart;
+	private int healingAtStart;
 	private int deathsAtStart;
 	/// <summary>Ticks between heartbeat lines during a scenario (30 game seconds).</summary>
 	/// <summary>Mode "surface": ticks under water before surfacing starts (breath about 140/200, as when the brain's reflex fires).</summary>
@@ -217,7 +226,12 @@ public sealed class SelfTestSystem : ModSystem
 					// The world as it is: its town NPCs, its enemies, the character's own inventory, at the spawn.
 					s.Inventory?.Invoke(p);
 					Arena.StripHelpers(p);
-					Arena.PlacePlayer(p, new TilePos(Main.spawnTileX - 1, Main.spawnTileY - 1));
+					var startAt = new TilePos(Main.spawnTileX - 1, Main.spawnTileY - 1);
+					if (s.ResumeAtCheckpoint && SavedStart() is TilePos resume) {
+						startAt = resume;
+						Mod.Logger.Info($"SELFTEST resuming at {resume}, where the checkpoint was saved (the spawn is at ({Main.spawnTileX},{Main.spawnTileY}))");
+					}
+					Arena.PlacePlayer(p, startAt);
 					Next(Phase.Settle);
 					return;
 				}
@@ -285,6 +299,7 @@ public sealed class SelfTestSystem : ModSystem
 				if (s.EnemyType != 0 && s.SpawnAtTick == 0)
 					SpawnEnemies(s);
 				lifeAtStart = p.statLife;
+				healingAtStart = Enumerable.Range(0, 58).Where(i => p.inventory[i].type == ItemID.HealingPotion).Sum(i => p.inventory[i].stack);
 				bot.Context.DigAnyway = false; // a last resort from the scenario before (seen: it let a walk test undermine sand)
 				bot.Context.DepthBonus = 0;
 				if (s.Mode == "fight") {
@@ -457,6 +472,9 @@ public sealed class SelfTestSystem : ModSystem
 				Main.ActivePlayerFileData.Path, System.IO.Path.ChangeExtension(Main.ActivePlayerFileData.Path, ".tplr") })
 				if (System.IO.File.Exists(file))
 					System.IO.File.Copy(file, System.IO.Path.Combine(dir, System.IO.Path.GetFileName(file)), true);
+			Player lp = Main.LocalPlayer;
+			TilePos at = Body.NodeOf(lp.position.X, lp.position.Y, lp.GetModPlayer<TerraBotPlayer>().LivePhysics);
+			System.IO.File.WriteAllText(System.IO.Path.Combine(dir, CheckpointStartFile), $"{at.X} {at.Y}");
 			string mapDir = System.IO.Path.ChangeExtension(Main.ActivePlayerFileData.Path, null);
 			if (System.IO.Directory.Exists(mapDir)) {
 				string mapOut = System.IO.Directory.CreateDirectory(System.IO.Path.Combine(dir, "map")).FullName;
@@ -467,6 +485,22 @@ public sealed class SelfTestSystem : ModSystem
 		}
 		catch (Exception e) {
 			Mod.Logger.Warn($"SELFTEST checkpoint {milestone} could not be saved: {e.Message}");
+		}
+	}
+
+	/// <summary>The node a run from a checkpoint starts at (<see cref="StartFile"/>), or null if there is none.</summary>
+	private TilePos? SavedStart()
+	{
+		try {
+			string file = System.IO.Path.Combine(Main.SavePath, StartFile);
+			if (!System.IO.File.Exists(file))
+				return null;
+			string[] xy = System.IO.File.ReadAllText(file).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+			return xy.Length == 2 && int.TryParse(xy[0], out int x) && int.TryParse(xy[1], out int y) && WorldGen.InWorld(x, y, 10) ? new TilePos(x, y) : null;
+		}
+		catch (Exception e) {
+			Mod.Logger.Warn($"SELFTEST start position could not be read: {e.Message}");
+			return null;
 		}
 	}
 
@@ -514,6 +548,26 @@ public sealed class SelfTestSystem : ModSystem
 			Note("eow arena", Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, Bot.Building.Blueprint.Arena(bot.Context.Ids), eowArena));
 		Note("Eater fight", NPC.AnyNPCs(NPCID.EaterofWorldsHead));
 		Note("Eater of Worlds defeated", NPC.downedBoss2);
+		Note("eow loot collected", NPC.downedBoss2 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill));
+		// Milestone 11 (docs M11_SPEC.md, the proposed scenario's list), in the plan's order.
+		Note("skeletron prep", plan.SkeletronPrepMet);
+		if (!milestoneSeen.Contains("dungeon found") && plan.DungeonFoundAt is TilePos dungeon) {
+			Mod.Logger.Info($"SELFTEST dungeon found at {dungeon} ({(plan.OldManAt != null ? "the Old Man" : "its bricks")}), us at {bot.FeetTile()}");
+			Note("dungeon found", true);
+		}
+		Note("old man met", plan.OldManMet);
+		if (!milestoneSeen.Contains("dungeon arena") && plan.DungeonArenaSite is TilePos dungeonArena)
+			Note("dungeon arena", Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, plan.DungeonArenaBlueprint(bot.Context.Ids), dungeonArena));
+		Note("night at the dungeon", !Main.dayTime && Main.time <= Bot.Brain.ProgressionPlanner.SummonByTime && !NPC.downedBoss3
+			&& plan.OldManAt is TilePos oldMan && oldMan.ChebyshevTo(bot.FeetTile()) <= Bot.Brain.ProgressionPlanner.DungeonArenaFarTiles
+			&& (milestoneSeen.Contains("dungeon arena") || plan.DungeonArenaOnOpenGround));
+		Note("skeletron summoned", NPC.AnyNPCs(NPCID.SkeletronHead));
+		Note("skeletron fight", Main.npc.Any(n => n != null && n.active && n.type == NPCID.SkeletronHead && n.life < n.lifeMax));
+		Note("skeletron defeated", NPC.downedBoss3);
+		if (!milestoneSeen.Contains("skeletron loot") && NPC.downedBoss3 && bot.Brain.Current is not (Bot.Skills.BossFightSkill or Bot.Skills.CollectDropsSkill)) {
+			Mod.Logger.Info($"SELFTEST skeletron loot: {Count(ItemID.HealingPotion)} healing potions (had {healingAtStart}), deaths {bot.Context.Deaths - deathsAtStart}");
+			Note("skeletron loot", true);
+		}
 	}
 
 	private void TrackRun(Player p, TerraBotPlayer bot, Scenario s)
@@ -549,6 +603,7 @@ public sealed class SelfTestSystem : ModSystem
 		result.Swords = bot.GameInfo.Count(ItemID.WoodenSword);
 		result.EyeDefeated = NPC.downedBoss1;
 		result.EvilBossDefeated = NPC.downedBoss2;
+		result.SkeletronDefeated = NPC.downedBoss3;
 		result.Milestones = string.Join(", ", milestones);
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		// The hotbar is restocked every 30 ticks, one swap at a time: a pickaxe crafted on the last tick can still be in

@@ -36,6 +36,8 @@ public sealed class RunResult
 	public bool EyeDefeated;
 	/// <summary>NPC.downedBoss2 at the end (the Eater of Worlds, or the Brain of Cthulhu in a Crimson world).</summary>
 	public bool EvilBossDefeated;
+	/// <summary>NPC.downedBoss3 at the end (Skeletron).</summary>
+	public bool SkeletronDefeated;
 	/// <summary>Real-world runs: the milestones reached, in order, with the tick each came at.</summary>
 	public string Milestones = "";
 	/// <summary>The planner's arena: null = finished (floor, open air, torches, campfire), else why not.</summary>
@@ -89,6 +91,12 @@ public sealed class Scenario
 	/// town NPCs, starting at the world spawn. For "does it actually play the game" runs.
 	/// </summary>
 	public bool RealWorld { get; init; }
+	/// <summary>
+	/// A real-world run started from a checkpoint begins where the player stood when it was saved (the checkpoint's start.txt,
+	/// SelfTestSystem.SaveCheckpoint), not at the world's spawn: the Skeletron fight from its "dungeon arena" checkpoint without
+	/// the walk of 1,225 tiles to the Dungeon again.
+	/// </summary>
+	public bool ResumeAtCheckpoint { get; init; }
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
 	public Action<Arena, int> During { get; init; }
 	/// <summary>The run also ends once the bot logs a line containing this (for skills that never finish on their own).</summary>
@@ -207,6 +215,25 @@ public sealed class Scenario
 			// 5 in-game days, the spec's budget (about 3 expected: the hunt for 45 eaters of souls about 1, the rest about 1.5).
 			TimeoutTicks = 5 * 86400,
 			Check = r => !r.EvilBossDefeated ? "the Eater of Worlds was not defeated" : null,
+		},
+		new() {
+			// Milestone 11: Skeletron (docs M11_SPEC.md section 6), /bot auto skeletron: the prep, the walk to the Dungeon, an
+			// arena by the Old Man, the night, the Curse, the fight. Started from a checkpoint after the Eye (selftest.ps1
+			// -FromCheckpoint ...\checkpoints\M10j\worm_food, or Eye_loot_collected): nothing in it needs the Eater of Worlds. From
+			// its own "dungeon arena" checkpoint it starts where that was saved, by the Dungeon (ResumeAtCheckpoint). Run it by name.
+			Name = "world_skeletron",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "auto",
+			AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Skeletron,
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			ResumeAtCheckpoint = true,
+			// 3 in-game days, the spec's budget: about 1 expected (the walk 0.25-0.5 of a day, the build 0.1-0.2, the wait for
+			// dusk, the fight under 5 minutes), and two nights more for failed tries (one summon a night).
+			TimeoutTicks = 3 * 86400,
+			Check = r => !r.SkeletronDefeated ? "Skeletron was not defeated" : null,
 		},
 		new() {
 			// Times path searches on the real world from the spawn (PathBench). Run it by name.

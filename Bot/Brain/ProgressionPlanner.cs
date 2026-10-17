@@ -753,7 +753,10 @@ public sealed class ProgressionPlanner
 		eyeArena.ForgetGivenUp();
 		evilArena.ForgetGivenUp();
 		dungeonArena.ForgetGivenUp();
-		dungeonArena.Width = Blueprint.DungeonArenaWidth;
+		if (dungeonArena.Site == null)
+			dungeonArena.Width = Blueprint.DungeonArenaWidth;
+		dungeonSideFlips = 0;
+		dungeonSideForced = null;
 		badBridges.Clear();
 		bridgeFailures = 0;
 		siteFailures = 0;

@@ -73,6 +73,9 @@ foreach ($ext in ".wld", ".twld") {
 	$src = Join-Path $saves "Worlds\$WorldFile$ext"
 	if (Test-Path $src) { Copy-Item $src (Join-Path $testDir "Worlds") -Force }
 }
+# Where a checkpoint was saved (its start.txt, SelfTestSystem.SaveCheckpoint): runs that resume there read it.
+$startFile = Join-Path $testDir "terrabot_start.txt"
+Remove-Item $startFile -ErrorAction SilentlyContinue
 if ($FromCheckpoint -ne "") {
 	if (-not (Test-Path $FromCheckpoint)) { throw "Checkpoint folder $FromCheckpoint not found" }
 	Get-ChildItem $FromCheckpoint -Include *.plr, *.tplr -File -Recurse | ForEach-Object { Copy-Item $_.FullName (Join-Path $testDir "Players") -Force }
@@ -81,6 +84,7 @@ if ($FromCheckpoint -ne "") {
 	$mapDir = Join-Path $testDir "Players\$Player"
 	New-Item -ItemType Directory -Force $mapDir | Out-Null
 	Get-ChildItem $FromCheckpoint -Include *.map -File -Recurse | ForEach-Object { Copy-Item $_.FullName $mapDir -Force }
+	Get-ChildItem $FromCheckpoint -Filter "start.txt" -File -Recurse | Select-Object -First 1 | ForEach-Object { Copy-Item $_.FullName $startFile -Force }
 	Write-Host "Starting from checkpoint $FromCheckpoint"
 }
 if ($Checkpoints) { Remove-Item (Join-Path $testDir "Checkpoints") -Recurse -Force -ErrorAction SilentlyContinue }
