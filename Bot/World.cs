@@ -15,6 +15,13 @@ public interface IWorldInfo
 	/// <summary>Is there a tree trunk tile (any tree kind) at this cell?</summary>
 	bool IsTreeTrunk(int x, int y);
 
+	/// <summary>
+	/// The wood the tree whose base trunk tile is at (x, y) drops when felled, by the ground it stands on (vanilla
+	/// WorldGen.KillTile_GetTreeDrops: corrupt grass gives Ebonwood, crimson grass Shadewood, jungle grass Rich Mahogany...);
+	/// 0 when it drops no wood (a gem tree) or there is no tree there.
+	/// </summary>
+	int TreeWood(int x, int y);
+
 	/// <summary>Could the item (furniture, block) be placed with its placement tile at (x, y) right now, ignoring
 	/// the player's own hitbox (the skill keeps clear of it)?</summary>
 	bool CanPlaceItem(int itemType, int x, int y);
@@ -84,6 +91,13 @@ public interface IInventory
 
 	/// <summary>Is there a free main-inventory slot (or a stack this item can join)?</summary>
 	bool HasRoomFor(int itemType);
+
+	/// <summary>
+	/// Would a drop of this item be picked up when touched: room for it (vanilla Player.ItemSpace: the main slots, the coin
+	/// slots for coins, the ammo slots for ammo) and nothing carried that stops pickups (Player.CanAcceptItemIntoInventory:
+	/// an Encumbering Stone anywhere in the inventory lets only hearts and mana stars through).
+	/// </summary>
+	bool CanPickUp(int itemType);
 
 	/// <summary>Is the item worn in an armour slot (head, body, legs) or an accessory slot?</summary>
 	bool IsEquipped(int itemType);
@@ -237,6 +251,11 @@ public sealed class GameIds
 	/// unless holding Down, and the paths walk flooded floors.
 	/// </summary>
 	public int[] FloatingAccessories { get; init; } = System.Array.Empty<int>();
+	/// <summary>
+	/// Items that, carried anywhere in the inventory, stop every pickup but hearts and mana stars (the Encumbering Stone:
+	/// Player.RefreshMechanicalAccsFromItemType sets preventAllItemPickups for it over all 58 slots, Player.UpdateEquips).
+	/// </summary>
+	public int[] PickupBlockers { get; init; } = System.Array.Empty<int>();
 	/// <summary>Thrown explosives whose blast breaks tiles (the Bomb, Dynamite), smallest blast first; empty = none known.</summary>
 	public ExplosiveInfo[] TileExplosives { get; init; } = System.Array.Empty<ExplosiveInfo>();
 

@@ -1003,8 +1003,14 @@ public sealed class ProgressionPlanner
 		if (src.EvilBiome && src.Kind is SourceKind.Hunt or SourceKind.Mine)
 			return ResolveEvilSource(item, src, more, target, claims, depth, ctx);
 		switch (src.Kind) {
-			case SourceKind.Tree:
-				return Do($"need {more} more {name} (gathering to {target})", new GatherWoodSkill(item, target));
+			case SourceKind.Tree: {
+				// Every other wood the need takes counts too (an any-wood recipe: Ebonwood from the Corruption's trees). Seen in
+				// game (measured run U28): Wooden Arrows' wood gathered as Wood only beside Ebonwood trees, "need 16 more Wood".
+				int[] woods = h.Accepts.Where(a => a != item && k.SourceOf(a).Kind == SourceKind.Tree).ToArray();
+				int woodTarget = target + woods.Sum(ctx.Inventory.Count);
+				return Do($"need {more} more {name}{(woods.Length > 0 ? " or other wood" : "")} (gathering to {woodTarget})",
+					new GatherWoodSkill(item, woodTarget) { Also = woods });
+			}
 			case SourceKind.Mine:
 				// Stone is also what the bot builds with on the way: seen in game, it mined exactly 20 stone for the furnace,
 				// used one to climb out of its hole on the way back to the bench, and went down for one more, forever.
