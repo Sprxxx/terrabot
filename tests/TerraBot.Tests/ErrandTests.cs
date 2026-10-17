@@ -231,13 +231,13 @@ public class ErrandTests
 		g.Refresh(ctx);
 		Assert.Same(shaft, access.NextSkill(ctx, brain.Planner));
 		Assert.DoesNotContain("resupply", access.Status);
-		// Short of the fight's 600: the remaining demand is resupplied.
+		// Short of the fight's 600 on the way down: still the shaft (the arrows are the fight phase's demand; E5 went for wood in the Underworld).
 		g.Items[FakeGame.WoodenArrow] = 500;
 		g.Refresh(ctx);
-		ISkill more = access.NextSkill(ctx, brain.Planner);
-		output.WriteLine($"{access.Status} -> {more?.Describe()}");
-		Assert.NotSame(shaft, more);
-		Assert.StartsWith("resupply", access.Status);
+		Assert.Same(shaft, access.NextSkill(ctx, brain.Planner));
+		Assert.DoesNotContain("resupply", access.Status);
+		Assert.Contains(access.RemainingDemand(ctx), n => n is BridgeBlocks);
+		Assert.DoesNotContain(access.RemainingDemand(ctx), n => n is HaveItem);
 	}
 
 	[Fact]

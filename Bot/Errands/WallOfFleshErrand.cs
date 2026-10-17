@@ -166,13 +166,23 @@ public sealed class WallOfFleshErrand : Errand
 	public override (int MinX, int MaxX, int StandY)? FightDeck(BotContext ctx) =>
 		Phase != PreparePhase && Phase != DescendPhase && DownThere(ctx) && planner is ProgressionPlanner p ? p.HellbridgeArena : null;
 
+	/// <summary>
+	/// What each phase still needs: the way down and the bridge, the bridge's blocks; the fight, its arrows. Not the fight's arrows
+	/// while the bridge is built: arrows shot at the Underworld's fliers put the count under the fight's 600, and the resupply went
+	/// looking for wood for arrows down there ("GatherWood 17/20 [walking to a tree]"), where a Bone Serpent killed the bot (E5,
+	/// 2026-10-17). The arrows are seen to once, before the summon.
+	/// </summary>
 	public override IEnumerable<Need> RemainingDemand(BotContext ctx)
 	{
-		if (Phase == LootPhase)
-			yield break;
-		yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), ProgressionPlanner.WofFightArrows, "arrows for the fight");
-		if (Phase != FightPhase)
-			yield return new BridgeBlocks("bridge blocks") { Batch = BridgeBatch };
+		switch (Phase) {
+			case DescendPhase:
+			case BridgePhase:
+				yield return new BridgeBlocks("bridge blocks") { Batch = BridgeBatch };
+				break;
+			case FightPhase:
+				yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), ProgressionPlanner.WofFightArrows, "arrows for the fight");
+				break;
+		}
 	}
 
 	/// <summary>Blocks got at a time for the bridge once down there (the Underworld's ash, mined where the bot stands): a stretch, not the whole bridge first (policy).</summary>

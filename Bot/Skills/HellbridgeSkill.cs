@@ -252,9 +252,18 @@ public sealed class HellbridgeSkill : ISkill
 	/// </summary>
 	private SkillStatus Unmineable(BotContext ctx, TilePos cell)
 	{
+		CellKind k = ctx.Grid.Get(cell.X, cell.Y);
+		if ((k & CellKind.Hazard) != 0)
+			return Fail(ctx, Unbreakable(ctx, cell));
+		// A platform, a slope, a pot, a chain: frame-important, so the paths never mine them (TerrariaBlockActions.BreakTicks), but a
+		// pickaxe takes them, as a player clears a ruined house's floor. Seen in game (E5, 2026-10-17): "the cell (2413,1040) in the
+		// bridge's way cannot be mined at pick power 45 (tile 19)", a platform two rows over the deck; the bridge stopped there twice.
+		if (!k.IsSolid() || k.IsPlatform() || k.IsShaped()) {
+			State = $"mining the tile at {cell} (a pickaxe takes it)";
+			return Act(ctx, cell, place: false);
+		}
 		var above = new TilePos(cell.X, cell.Y - 1);
-		bool hot = (ctx.Grid.Get(cell.X, cell.Y) & CellKind.Hazard) != 0;
-		if (!hot && ctx.World != null && ctx.World.TileTypeAt(above.X, above.Y) >= 0 && !ctx.Grid.Get(above.X, above.Y).IsSolid()) {
+		if (ctx.World != null && ctx.World.TileTypeAt(above.X, above.Y) >= 0 && !ctx.Grid.Get(above.X, above.Y).IsSolid()) {
 			State = $"mining the tile on {cell} first ({above})";
 			return Act(ctx, above, place: false);
 		}

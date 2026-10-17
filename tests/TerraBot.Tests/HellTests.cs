@@ -323,6 +323,32 @@ public class HellTests
 		Assert.Equal(70, bridge.End);
 	}
 
+	/// <summary>E5 (2026-10-17): "the cell (2413,1040) in the bridge's way cannot be mined at pick power 45 (tile 19)": a platform two rows over the deck, which a pickaxe takes.</summary>
+	[Fact]
+	public void TheHellbridge_MinesAPlatformInItsWay_ThoughThePathsCallItUnbreakable()
+	{
+		var (g, ctx) = OnTheTower();
+		var platform = new TilePos(60, BridgeRow - 2);
+		g.Grid.Set(platform.X, platform.Y, CellKind.Platform);
+		g.Blocks.Unbreakable.Add(platform); // the paths: frame-important, never mined
+		g.Furniture[platform] = 19;
+		g.PickaxeRemoves.Add(19);
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		bridge.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		for (int t = 0; t < 20000 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = bridge.Tick(ctx);
+			g.Step(ctx);
+			if (!g.Furniture.ContainsKey(platform) && g.Grid.Get(platform.X, platform.Y).IsPlatform())
+				g.Grid.Set(platform.X, platform.Y, CellKind.Empty); // the pickaxe took it
+		}
+		output.WriteLine($"{s}: {bridge.FailureReason}, end {bridge.End}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.False(g.Furniture.ContainsKey(platform), "the platform mined");
+		Assert.Equal(70, bridge.End);
+	}
+
 	/// <summary>world_wof E4 (2026-10-17): knocked off the bridge, the fight went on 25 rows down on the Underworld's floor and died there.</summary>
 	[Fact]
 	public void AFight_KnockedOffTheDeck_WalksBackOntoIt_First()
