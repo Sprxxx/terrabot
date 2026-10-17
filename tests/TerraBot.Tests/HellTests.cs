@@ -202,6 +202,27 @@ public class HellTests
 		Assert.DoesNotContain(((TestLog)ctx.Log).Lines, l => l.Contains("the shaft goes on from column"));
 	}
 
+	/// <summary>
+	/// In game (S2) the straight shaft mined into a water pocket at row 418 and filled 16 rows deep: minutes of surfacing and diving
+	/// for three rows. A water pocket beside the shaft's line is stepped round as lava is, so the shaft stays dry.
+	/// </summary>
+	[Fact]
+	public void TheHellevator_SteersRoundAWaterPocket_TheShaftStaysDry()
+	{
+		FakeGame g = Hell();
+		for (int x = ShaftX + 2; x <= ShaftX + 6; x++)
+			for (int y = 16; y <= 20; y++)
+				g.Grid.Set(x, y, CellKind.Water);
+		BotContext ctx = Context(g);
+		var shaft = new HellevatorSkill(ShaftX, BridgeRow - 1);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, shaft, 30000);
+		output.WriteLine($"{s} at {g.Sim.Node}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("lava or water beside the shaft"));
+		for (int y = 16; y <= 20; y++)
+			Assert.True(g.Grid.Get(ShaftX + 2, y).IsLiquid(), $"the pocket was opened at row {y}");
+	}
+
 	/// <summary>The Hell world with the bot standing on the tower's roof at its east end, ready to bridge east.</summary>
 	private (FakeGame, BotContext) OnTheTower(int blocks = 300)
 	{

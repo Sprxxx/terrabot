@@ -10,7 +10,11 @@ public enum ShaftKind
 {
 	/// <summary>The floor's cells mined, the body comes down onto ground (or into a web) within a safe fall, no lava met.</summary>
 	Dig,
-	/// <summary>Lava would come in (beside, above or in a cell mined) or be fallen into: <see cref="ShaftRow.Cells"/> are the lava cells.</summary>
+	/// <summary>
+	/// A liquid would come in (lava, or water or honey, beside, above or in a cell mined) or lava would be fallen into:
+	/// <see cref="ShaftRow.Cells"/> are its cells. Water too: seen in game (S2), the shaft at x 2155 mined into a water pocket at row
+	/// 418, the water filled the shaft 16 rows deep, and the bot surfaced and dived again for minutes, three rows in two.
+	/// </summary>
 	Lava,
 	/// <summary>A cell the pickaxe may not or cannot mine (too hard, protected), or a hazard the body cannot pass.</summary>
 	Hard,
@@ -60,16 +64,16 @@ public static class StraightShaft
 					return new ShaftRow(ShaftKind.Hard, new[] { c }, feet, $"{c} cannot be mined");
 				cells.Add(c);
 			}
-			else if (k.HasLava())
+			else if (k.IsLiquid() && !k.IsSolid() && LiquidOutside(g, col, new TilePos(x, r)))
 				lava.Add(new TilePos(x, r));
 			else if (!k.IsPassable())
 				return new ShaftRow(ShaftKind.Hard, new[] { new TilePos(x, r) }, feet, $"a hazard at ({x},{r})");
 		}
 		foreach (TilePos c in cells) {
-			if (g.Get(c.X, c.Y).HasLava())
+			if (g.Get(c.X, c.Y).IsLiquid())
 				AddOnce(lava, c);
 			foreach (TilePos n in new[] { new TilePos(c.X - 1, c.Y), new TilePos(c.X + 1, c.Y), new TilePos(c.X, c.Y - 1) })
-				if (g.Get(n.X, n.Y).HasLava())
+				if (g.Get(n.X, n.Y).IsLiquid() && !g.Get(n.X, n.Y).IsSolid() && LiquidOutside(g, col, n))
 					AddOnce(lava, n);
 		}
 		// Where the body comes to rest once the row is open (or from where it is, nothing to mine): the first row under it with a
@@ -97,6 +101,12 @@ public static class StraightShaft
 		return open ? new ShaftRow(ShaftKind.Open, cells, f, f == feet ? "on a floor with nothing to mine" : "")
 			: new ShaftRow(ShaftKind.Dig, cells, f, "");
 	}
+
+	/// <summary>
+	/// A liquid cell that is not the shaft's own: outside its two columns, or in them but lava (water already in the shaft, from an
+	/// earlier trip, is fallen through: a soft landing, not a pocket to step round).
+	/// </summary>
+	private static bool LiquidOutside(ITileGrid g, int col, TilePos c) => c.X < col || c.X > col + 1 || g.Get(c.X, c.Y).HasLava();
 
 	/// <summary>A cell the falling body stops on: a block (whole or shaped), a platform, or a cobweb (it holds the body, slowly).</summary>
 	private static bool Stops(CellKind k) => k.IsSolid() || k.IsPlatform();

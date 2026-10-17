@@ -327,11 +327,11 @@ public sealed class HellevatorSkill : ISkill
 				return SkillStatus.Running;
 			case ShaftKind.Lava:
 				if (StepOver(ctx, n) is int over) {
-					ctx.Log.Info($"Hellevator: lava under the shaft at {string.Join(" ", row.Cells)}; stepping over to column {over} (clear for {StepOverLookRows} rows)");
+					ctx.Log.Info($"Hellevator: lava or water beside the shaft at {string.Join(" ", row.Cells)}; stepping over to column {over} (clear for {StepOverLookRows} rows)");
 					col = over;
 					return SkillStatus.Running;
 				}
-				ctx.Log.Info($"Hellevator: lava under the shaft at {string.Join(" ", row.Cells)} and no clear column within {Slack}; a leg round it");
+				ctx.Log.Info($"Hellevator: lava or water beside the shaft at {string.Join(" ", row.Cells)} and no clear column within {Slack}; a leg round it");
 				legNext = true;
 				return null;
 			default:
