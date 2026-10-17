@@ -254,6 +254,8 @@ public sealed class BossFightSkill : ISkill
 			ctx.Log.Info($"Boss fight: boss {BossType} defeated after {fightTicks} ticks, {Dodges} dodges, life {ctx.Combat.Life}/{ctx.Combat.LifeMax}"
 				+ (IsWorm ? $", up to {maxSegmentsSeen} segments seen at once" : ""));
 			State = "won";
+			if (IsWallOfFlesh)
+				LogWallSummary(ctx, "defeated");
 			return SkillStatus.Succeeded;
 		}
 		deathsAtStart ??= ctx.Deaths;
@@ -270,8 +272,13 @@ public sealed class BossFightSkill : ISkill
 		EntityInfo? boss = IsWorm ? segments.Cast<EntityInfo?>().FirstOrDefault()
 			: IsWallOfFlesh ? WallOfFleshPattern.Wall(ctx.Hostiles) // the mouth, or an eye in view at its x with its life
 			: ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault();
-		if (IsWallOfFlesh && boss is EntityInfo wall)
+		if (IsWallOfFlesh && boss is EntityInfo wall) {
 			WallLastSeen = (wall.CenterX, wall.Type == BossType ? wall.CenterY : WallLastSeen?.Y ?? wall.CenterY);
+			if (wallFirstTick < 0) {
+				wallFirstTick = ctx.Tick;
+				wallFirstX = ctx.Node.X;
+			}
+		}
 		// A worm's bar shows the life of all its segments, wherever they are (IWorldInfo.BossBarLife): one burrowed out of view
 		// is still up. A fight taken up again with the worm out of view (after a pause, or a new instance of this job) does not
 		// summon a second time: the Worm Food is used up, and the game allows no second head while one lives (SummonItemCheck).
@@ -322,6 +329,7 @@ public sealed class BossFightSkill : ISkill
 					ctx.Log.Info($"Boss fight: {b.Name} at {b.Life}/{b.LifeMax}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax}, {ctx.Combat.AmmoCount} arrows, {Dodges} dodges");
 				}
 				bossLifeSeen = Math.Min(bossLifeSeen, b.Life);
+				bossLifeMax = b.LifeMax;
 			}
 		}
 		else if (++goneTicks == 1)
@@ -1174,8 +1182,30 @@ public sealed class BossFightSkill : ISkill
 	private void Heal(BotContext ctx)
 	{
 		bool want = ctx.Combat.LifeFraction < System.Math.Max(HealBelow, FightSkill.HealAt(ctx)) && ctx.Combat.CanQuickHeal && !healPressedLastTick;
+		if (want)
+			Heals++;
 		ctx.Output.QuickHeal = want;
 		healPressedLastTick = want;
+	}
+
+	/// <summary>Quick-heals pressed in the fight.</summary>
+	public int Heals { get; private set; }
+	/// <summary>Wall of Flesh: the tick and the column the Wall was first seen at, for the summary (the distance the fight went).</summary>
+	private long wallFirstTick = -1;
+	private int wallFirstX, bossLifeMax;
+
+	/// <summary>
+	/// The Wall of Flesh fight's numbers (spec S0: they set the bridge's length): its ticks since the Wall was seen, the Wall's life
+	/// taken (so the DPS), the distance the bot went, the lasers seen, the dodges, the heals, the arrows left.
+	/// </summary>
+	private void LogWallSummary(BotContext ctx, string how)
+	{
+		long ticks = wallFirstTick >= 0 ? ctx.Tick - wallFirstTick : fightTicks;
+		int taken = how == "defeated" ? bossLifeMax : bossLifeSeen < int.MaxValue ? bossLifeMax - bossLifeSeen : 0;
+		float dps = ticks > 0 ? taken * 60f / ticks : 0f;
+		ctx.Log.Info($"Boss fight: Wall of Flesh {how}: {ticks} ticks ({ticks / 60f:0} s) since it was seen, {taken} life taken ({dps:0.0} a second), "
+			+ $"from x {wallFirstX} to {ctx.Node.X} ({Math.Abs(ctx.Node.X - wallFirstX)} tiles), {LasersSeen} lasers came at us, {Dodges} dodges, {Heals} heals, "
+			+ $"life {ctx.Combat.Life}/{ctx.Combat.LifeMax}, {ctx.Combat.AmmoCount} arrows");
 	}
 
 	private static T Start<T>(BotContext ctx, T skill) where T : ISkill
@@ -1186,6 +1216,8 @@ public sealed class BossFightSkill : ISkill
 
 	private SkillStatus Fail(BotContext ctx, string reason)
 	{
+		if (IsWallOfFlesh && seenBoss)
+			LogWallSummary(ctx, "failed: " + reason);
 		FailureReason = reason;
 		State = "failed: " + reason;
 		ctx.Log.Warn($"Boss fight failed: {reason}");
