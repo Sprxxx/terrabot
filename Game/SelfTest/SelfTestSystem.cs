@@ -39,7 +39,7 @@ public sealed class SelfTestSystem : ModSystem
 	/// </summary>
 	public static readonly string[] CheckpointMilestones = { "full armour", "max life 200", "arena site", "Eye of Cthulhu defeated", "Eye loot collected",
 		// Milestone 10's: the Eater fight measured from the Worm Food in hand, not after the chunk hunt and the mushrooms again.
-		"vile powder 30", "worm food" };
+		"vile powder 30", "worm food", "eow arena" };
 	private const int StartDelayTicks = 180;
 	private const int SettleTicks = 30;
 
@@ -504,6 +504,9 @@ public sealed class SelfTestSystem : ModSystem
 		Note("rotten chunks 15", Count(ItemID.RottenChunk) >= Bot.Brain.ProgressionPlanner.WormFoodChunks || food);
 		Note("vile powder 30", Count(ItemID.VilePowder) >= Bot.Brain.ProgressionPlanner.WormFoodPowder || food);
 		Note("worm food", food);
+		// The Eater of Worlds' arena in the corruption, built (or the Eye's, lying in the zone), before the summon (spec G9).
+		if (!milestoneSeen.Contains("eow arena") && plan.EvilArenaSite is TilePos eowArena)
+			Note("eow arena", Bot.Brain.ProgressionPlanner.ArenaReady(bot.Context, Bot.Building.Blueprint.Arena(bot.Context.Ids), eowArena));
 		Note("Eater fight", NPC.AnyNPCs(NPCID.EaterofWorldsHead));
 		Note("Eater of Worlds defeated", NPC.downedBoss2);
 	}

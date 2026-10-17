@@ -35,8 +35,13 @@ public sealed record PickaxeAtLeast(int Power, IReadOnlyList<int> Items, string 
 /// <summary>A house (<see cref="Building.Blueprint.SmallHouse"/>) that passes the game's housing check, optionally with a heart lantern hung inside.</summary>
 public sealed record HouseBuilt(string Label, bool HeartLantern = false) : Need(Label);
 
-/// <summary>A boss arena (<see cref="Building.Blueprint.Arena"/>) near the house: flat floor, open air, torches, a campfire.</summary>
-public sealed record ArenaBuilt(string Label) : Need(Label);
+/// <summary>
+/// A boss arena (<see cref="Building.Blueprint.Arena"/>): flat floor, open air, torches, a campfire. Near the house (the Eye
+/// of Cthulhu's), or with <see cref="InEvilBiome"/> on the evil biome's surface, where the Corruption zone holds at its middle
+/// (the Eater of Worlds': Worm Food works only in the zone, Player.cs:43462, and the worm dives and despawns once no player
+/// is in it, NPC.cs:55436-55481; docs M10_SPEC.md G9).
+/// </summary>
+public sealed record ArenaBuilt(string Label, bool InEvilBiome = false) : Need(Label);
 
 /// <summary>The item is worn (armour).</summary>
 /// <summary>
@@ -189,16 +194,49 @@ public sealed class ProgressionPlanner
 
 	/// <summary>Top-left tile of the house being built or already built (kept across re-plans).</summary>
 	public TilePos? HouseSite { get; private set; }
-	/// <summary>Top-left tile of the boss arena being built or already built.</summary>
-	public TilePos? ArenaSite { get; private set; }
-	private readonly List<TilePos> badArenaSites = new();
-	private readonly List<TilePos> badArenaCells = new();
-	private int arenaFailures;
+	/// <summary>
+	/// One boss arena's memory, kept across re-plans: its site (top-left tile, being built or built), the sites and cells
+	/// given up, the builds failed in a row, and "no site to be had" (the boss fought on open ground). The Eye's arena by the
+	/// house, and the Eater of Worlds' in the corruption (<see cref="ArenaBuilt.InEvilBiome"/>): the same arena code, each with
+	/// its own memory.
+	/// </summary>
+	private sealed class ArenaSlot
+	{
+		public TilePos? Site;
+		public readonly List<TilePos> BadSites = new(), BadCells = new();
+		public int Failures;
+		public bool OnOpenGround;
+
+		public void ForgetGivenUp()
+		{
+			BadSites.Clear();
+			BadCells.Clear();
+			OnOpenGround = false;
+			Failures = 0;
+		}
+
+		public void Reset()
+		{
+			Site = null;
+			ForgetGivenUp();
+		}
+	}
+
+	private readonly ArenaSlot eyeArena = new(), evilArena = new();
+
+	/// <summary>Top-left tile of the boss arena by the house, being built or already built.</summary>
+	public TilePos? ArenaSite { get => eyeArena.Site; private set => eyeArena.Site = value; }
 	/// <summary>
 	/// No arena site near the house nor farther out: the boss is fought on open ground, as the fight does without an arena
 	/// (<see cref="BossFightSkill.Arena"/> null). Kept until the given-up sites are forgotten (<see cref="ForgetGivenUp"/>).
 	/// </summary>
-	public bool ArenaOnOpenGround { get; private set; }
+	public bool ArenaOnOpenGround => eyeArena.OnOpenGround;
+	/// <summary>Top-left tile of the Eater of Worlds' arena in the corruption (built for it, or the Eye's lying in the zone).</summary>
+	public TilePos? EvilArenaSite => evilArena.Site;
+	/// <summary>No arena site in the corruption either: the worm is fought on its open ground (<see cref="EvilGround"/>).</summary>
+	public bool EvilArenaOnOpenGround => evilArena.OnOpenGround;
+	/// <summary>The Eater of Worlds' arena stage (<see cref="ArenaBuilt.InEvilBiome"/>).</summary>
+	public const string EvilArenaLabel = "arena in the corruption";
 	/// <summary>Keep the arena this many tiles clear of the house (bosses kill town NPCs; the guides keep them apart).</summary>
 	public const int ArenaHouseGap = 4;
 	/// <summary>Night left (ticks) needed to summon a night boss: the Eye took about 2.5 min on Classic; 4.5 min with margin.</summary>
@@ -272,9 +310,11 @@ public sealed class ProgressionPlanner
 	/// <item>(f) 30 vile powder (G7), which its recipe resolves as (d) the vile mushrooms it still needs, picked from the
 	/// corruption's grass (G5), then (e) a placed bottle, glass from sand at the furnace (G6), then the crafts: as stages of
 	/// their own, each craft of 5 powder from 1 mushroom left the mushroom stage short again.</item>
-	/// <item>(g) Worm Food at the demon altar (G8), (h) summoned in the corruption, by day or night, and fought (G9, G10).</item>
+	/// <item>(g) Worm Food at the demon altar (G8), (h) an arena on the corruption's surface (G9: built, or the Eye's if it lies
+	/// in the zone), (i) summoned there, by day or night, and fought (G10).</item>
 	/// </list>
-	/// The summon's parts are each moot once what they go into is carried (<see cref="StepToward"/>).
+	/// The summon's parts are each moot once what they go into is carried (<see cref="StepToward"/>), and all the prep once the
+	/// worm is up (<see cref="BossUp"/>).
 	/// </summary>
 	private static IEnumerable<Need> EvilBossStages(GameIds ids)
 	{
@@ -288,6 +328,7 @@ public sealed class ProgressionPlanner
 		yield return new PrepFor(boss, new StepToward(food, new HaveItem(ids.RottenChunk, WormFoodChunks, "rotten chunks")));
 		yield return new PrepFor(boss, new StepToward(food, new HaveItem(ids.VilePowder, WormFoodPowder, "vile powder")));
 		yield return new PrepFor(boss, new StepToward(Array.Empty<(int, int)>(), new HaveItem(ids.WormFood, 1, "worm food")));
+		yield return new PrepFor(boss, new ArenaBuilt(EvilArenaLabel, InEvilBiome: true));
 		yield return new BossDefeated(boss, ids.WormFood, new[] { ids.EvilBossBody, ids.EvilBossTail }, "Eater of Worlds") { NightOnly = false, InEvilBiome = true };
 	}
 
@@ -331,12 +372,10 @@ public sealed class ProgressionPlanner
 		homePlace = null;
 		lastRestEnd = long.MinValue / 2;
 		HouseSite = null;
-		ArenaSite = null;
+		eyeArena.Reset();
+		evilArena.Reset();
 		searchedFor.Clear();
 		badSites.Clear();
-		badArenaSites.Clear();
-		badArenaCells.Clear();
-		ArenaOnOpenGround = false;
 		badBridges.Clear();
 		bridgeFailures = 0;
 		Bridges.Clear();
@@ -344,7 +383,6 @@ public sealed class ProgressionPlanner
 		stationExplores = 0;
 		stationHeading = null;
 		siteFailures = 0;
-		arenaFailures = 0;
 		evilGround = null;
 		evilGroundAt = long.MinValue / 2;
 	}
@@ -605,17 +643,18 @@ public sealed class ProgressionPlanner
 			return;
 		}
 		if (skill is BuildSkill arena && !arena.Blueprint.IsHouse) {
+			ArenaSlot slot = arena.Blueprint.InEvilBiome ? evilArena : eyeArena;
 			if (status == SkillStatus.Succeeded)
-				arenaFailures = 0;
-			else if (status == SkillStatus.Failed && ++arenaFailures >= MaxBuildFailuresPerSite) {
-				ctx.Log.Info($"Auto: giving up on the arena site {arena.Origin}{(arena.FailedCell is TilePos fc ? $" (nothing would go at {fc}: no site over it either)" : "")}");
-				badArenaSites.Add(arena.Origin);
+				slot.Failures = 0;
+			else if (status == SkillStatus.Failed && ++slot.Failures >= MaxBuildFailuresPerSite) {
+				ctx.Log.Info($"Auto: giving up on the {arena.Blueprint.Name} site {arena.Origin}{(arena.FailedCell is TilePos fc ? $" (nothing would go at {fc}: no site over it either)" : "")}");
+				slot.BadSites.Add(arena.Origin);
 				// The cell that failed, not just the origin: seen in game (measured run S16), the next site was one column
 				// over, with the same cell in its floor, eleven times over (12 game hours).
 				if (arena.FailedCell is TilePos cell)
-					badArenaCells.Add(cell);
-				ArenaSite = null;
-				arenaFailures = 0;
+					slot.BadCells.Add(cell);
+				slot.Site = null;
+				slot.Failures = 0;
 			}
 			return;
 		}
@@ -639,13 +678,11 @@ public sealed class ProgressionPlanner
 	{
 		stuck = null;
 		badSites.Clear();
-		badArenaSites.Clear();
-		badArenaCells.Clear();
-		ArenaOnOpenGround = false;
+		eyeArena.ForgetGivenUp();
+		evilArena.ForgetGivenUp();
 		badBridges.Clear();
 		bridgeFailures = 0;
 		siteFailures = 0;
-		arenaFailures = 0;
 		stationExplores = 0;
 	}
 
@@ -711,6 +748,17 @@ public sealed class ProgressionPlanner
 		ctx.EvilErrand = false;
 		RememberStations(ctx);
 		ProtectBuilt(ctx);
+		// A boss up comes before everything (a chest or a crystal in sight, the night's hunt): its fight is the job until it is
+		// over, and a reflex (surfacing for breath) goes back to it. Seen in game (measured run M10j): the worm out of view
+		// after the bot surfaced from a chasm's water, the plan went on to a work bench and arrows, then mushrooms for a new
+		// Worm Food, with the worm still up.
+		if (BossUpInThePlan(ctx) is BossDefeated up) {
+			costs.Clear();
+			costEvaluations = 0;
+			stuck = null;
+			if (Resolve(up, new Dictionary<int, int>(), 0, ctx) is ISkill fight)
+				return fight;
+		}
 		if (recallNext) {
 			recallNext = false;
 			if (ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
@@ -849,9 +897,10 @@ public sealed class ProgressionPlanner
 			PickaxeAtLeast p => ctx.PickPower >= p.Power ? null : Resolve(new HaveItem(p.Items, 1, p.Label), claims, depth + 1, ctx),
 			HaveItem h => ResolveItem(h, claims, depth, ctx),
 			HouseBuilt hb => ResolveHouse(hb.HeartLantern && LanternFromASpareCrystal(ctx), claims, depth, ctx),
-			ArenaBuilt => ResolveArena(claims, depth, ctx),
+			ArenaBuilt ab => ResolveArena(ab, claims, depth, ctx),
 			BossDefeated b => ResolveBoss(b, claims, depth, ctx),
-			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
+			// The prep for a boss is moot once it is down, and while it is up: the fight is on.
+			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) || BossUp(ctx, pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
 			FromBag fb => ResolveFromBag(fb.Inner, depth, ctx),
 			StepToward st => st.Made.Any(m => m.Item > 0 && ctx.Inventory.Count(m.Item) >= m.Count) ? null
 				: Resolve(st.Inner, new Dictionary<int, int>(claims), depth, ctx),
@@ -1199,41 +1248,74 @@ public sealed class ProgressionPlanner
 	/// none there either, the boss is fought on open ground (<see cref="ArenaOnOpenGround"/>): the arena is a convenience,
 	/// not a need. Seen in game (measured runs U8cp and U9): "no arena site" was a stop, five rests and auto mode off, the
 	/// Eye never summoned, with max life 200, the bow and the arrows in hand.
+	/// <para>
+	/// The Eater of Worlds' arena (<see cref="ArenaBuilt.InEvilBiome"/>) is the same arena with its own memory
+	/// (<see cref="EvilArenaSite"/>), looked for round <see cref="EvilGround"/> instead of the house, its site's evil-biome cost
+	/// inverted (<see cref="Blueprint.InEvilBiome"/>): it is wanted in the Corruption zone, where Worm Food works and the worm
+	/// stays (spec G9). The Eye's arena does if it is ready and lies in the zone (the M10 world's at (1948,278) did, before
+	/// fix-arena2 made such sites dear). Seen in game (measured runs M10e and M10j): summoned where the Worm Food was made, in a
+	/// pocket 130 rows down, then on the corruption's open ground at (1874,291); "no room to run from the worm's head" 20 and
+	/// 11 times, the bot killed in the pocket, and on the open ground run down a chasm into water at (1921,358), the worm lost.
+	/// </para>
 	/// </summary>
-	private ISkill ResolveArena(Dictionary<int, int> claims, int depth, BotContext ctx)
+	private ISkill ResolveArena(ArenaBuilt need, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
-		Blueprint bp = Blueprint.Arena(ctx.Ids);
-		if (ArenaSite is TilePos done && ArenaReady(ctx, bp, done))
+		bool evil = need.InEvilBiome;
+		ArenaSlot slot = evil ? evilArena : eyeArena;
+		Blueprint bp = Blueprint.Arena(ctx.Ids, inEvilBiome: evil);
+		string name = evil ? "arena in the corruption" : "arena";
+		if (evil) {
+			ctx.EvilErrand = true;
+			if (slot.Site == null && !slot.OnOpenGround && EyeArenaInTheZone(ctx) is TilePos eye) {
+				slot.Site = eye;
+				ctx.Log.Info($"Auto: the arena at {eye} lies in the corruption ({ctx.CorruptionAround(Middle(bp, eye))} corruption tiles round its middle): "
+					+ "the Eater of Worlds is fought there");
+			}
+		}
+		if (slot.Site is TilePos done && ArenaReady(ctx, bp, done))
 			return null;
-		if (ArenaSite == null && ArenaOnOpenGround)
+		if (slot.Site == null && slot.OnOpenGround)
 			return null;
-		if (ArenaSite == null) {
-			TilePos anchor = HouseSite ?? (KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node);
+		if (slot.Site == null) {
+			TilePos anchor;
+			if (evil) {
+				if (EvilGround(ctx) is not TilePos ground)
+					return ExploreForEvilBiome(ctx, "for the Eater of Worlds' arena");
+				anchor = ground;
+			}
+			else
+				anchor = HouseSite ?? (KnownStations.TryGetValue(ctx.Ids.WorkBenchTile, out TilePos bench) ? bench : ctx.Node);
 			var keepOut = new List<(TilePos, TilePos)>();
 			if (HouseSite is TilePos h) {
 				Blueprint house = Blueprint.SmallHouse(ctx.Ids);
 				keepOut.Add((new TilePos(h.X - ArenaHouseGap, h.Y - ArenaHouseGap),
 					new TilePos(h.X + house.Width - 1 + ArenaHouseGap, h.Y + house.Height - 1 + ArenaHouseGap)));
 			}
-			foreach (TilePos c in badArenaCells)
+			// Not over the Eye's arena (its floor is protected once ready): beside it, or on it when it lies in the zone (above).
+			if (evil && eyeArena.Site is TilePos e)
+				keepOut.Add((e, new TilePos(e.X + bp.Width - 1, e.Y + bp.Height - 1)));
+			foreach (TilePos c in slot.BadCells)
 				keepOut.Add((c, c));
-			ArenaSite = SiteFinder.Find(ctx, bp, anchor, badArenaSites, keepOut);
-			if (ArenaSite == null) {
-				ctx.Log.Info($"Auto: no arena site ({bp.Width} wide, at most {bp.MaxEdits} edits) within {bp.SearchRadius} tiles of {anchor}: "
-					+ $"{SiteFinder.Explain(ctx, bp, anchor, keepOut, badArenaSites)}; looking within {Blueprint.ArenaFarSearchRadius}");
-				Blueprint far = Blueprint.Arena(ctx.Ids, searchRadius: Blueprint.ArenaFarSearchRadius);
-				ArenaSite = SiteFinder.Find(ctx, far, anchor, badArenaSites, keepOut);
-				if (ArenaSite == null) {
-					ArenaOnOpenGround = true;
-					ctx.Log.Info($"Auto: no arena site within {far.SearchRadius} tiles of {anchor} either: "
-						+ $"{SiteFinder.Explain(ctx, far, anchor, keepOut, badArenaSites)}; the boss will be fought on open ground");
+			slot.Site = SiteFinder.Find(ctx, bp, anchor, slot.BadSites, keepOut);
+			if (slot.Site == null) {
+				ctx.Log.Info($"Auto: no {name} site ({bp.Width} wide, at most {bp.MaxEdits} edits) within {bp.SearchRadius} tiles of {anchor}: "
+					+ $"{SiteFinder.Explain(ctx, bp, anchor, keepOut, slot.BadSites)}; looking within {Blueprint.ArenaFarSearchRadius}");
+				Blueprint far = Blueprint.Arena(ctx.Ids, searchRadius: Blueprint.ArenaFarSearchRadius, inEvilBiome: evil);
+				slot.Site = SiteFinder.Find(ctx, far, anchor, slot.BadSites, keepOut);
+				if (slot.Site == null) {
+					slot.OnOpenGround = true;
+					ctx.Log.Info($"Auto: no {name} site within {far.SearchRadius} tiles of {anchor} either: "
+						+ $"{SiteFinder.Explain(ctx, far, anchor, keepOut, slot.BadSites)}; the boss will be fought on open ground");
 					return null;
 				}
 			}
-			ctx.Log.Info($"Auto: arena site {ArenaSite.Value} ({SiteFinder.Edits(ctx, bp, ArenaSite.Value)} edits"
-				+ $"{(SiteFinder.InEvilBiome(ctx, bp, ArenaSite.Value) ? $", in the evil biome: each step costs {SiteFinder.EvilStepFactor}x" : "")})");
+			TilePos chosen = slot.Site.Value;
+			bool inEvil = SiteFinder.InEvilBiome(ctx, bp, chosen);
+			ctx.Log.Info($"Auto: {name} site {chosen} ({SiteFinder.Edits(ctx, bp, chosen)} edits"
+				+ (evil ? $", {ctx.CorruptionAround(Middle(bp, chosen))} corruption tiles round its middle" : "")
+				+ (inEvil != evil ? $", {(evil ? "off" : "in")} the evil biome: each step costs {SiteFinder.EvilStepFactor}x" : "") + ")");
 		}
-		TilePos site = ArenaSite.Value;
+		TilePos site = slot.Site.Value;
 		int blocks = 0;
 		for (int x = 0; x < bp.Width; x++)
 			for (int y = 0; y < bp.Height; y++)
@@ -1253,26 +1335,40 @@ public sealed class ProgressionPlanner
 		// caves. Seen in game (measured runs U19 and U22): max life 200 came 160+ rows down, and the build's first walk, to
 		// fell a tree by the arena, went through the caves with fights for about 5 game hours.
 		if (UpFirst(ctx, site) is WalkToSkill up)
-			return Do($"up to the surface before building the arena at {site}", up);
-		return Do($"building the arena at {site}", new BuildSkill(bp, site));
+			return Do($"up to the surface before building the {name} at {site}", up);
+		return Do($"building the {name} at {site}", new BuildSkill(bp, site));
 	}
 
-	private (TilePos?, TilePos?, bool, int) protectedFor = (null, null, false, 0);
+	/// <summary>Where a player stands in the arena's middle (the fight's centre, and where the zone is counted).</summary>
+	private static TilePos Middle(Blueprint bp, TilePos site) => new(site.X + bp.Width / 2, site.Y + bp.StandRow);
+
+	/// <summary>The Eye's arena, if it is ready and the Corruption zone holds at its middle (<see cref="BotContext.CorruptionAround"/>).</summary>
+	private TilePos? EyeArenaInTheZone(BotContext ctx)
+	{
+		if (eyeArena.Site is not TilePos s)
+			return null;
+		Blueprint bp = Blueprint.Arena(ctx.Ids);
+		return ArenaReady(ctx, bp, s) && ctx.CorruptionAround(Middle(bp, s)) >= BotContext.CorruptionZoneTiles ? s : null;
+	}
+
+	private (TilePos?, TilePos?, bool, TilePos?, bool, int) protectedFor = (null, null, false, null, false, 0);
 
 	/// <summary>
 	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house,
-	/// the arena's floor once the arena is ready, and the chasm bridges. Rebuilt only when a site changes, the arena gets
-	/// ready (or not) or a bridge is built. Until it is ready the arena's floor is the build's to put back
+	/// the arenas' floors once each arena is ready, and the chasm bridges. Rebuilt only when a site changes, an arena gets
+	/// ready (or not) or a bridge is built. Until it is ready an arena's floor is the build's to put back
 	/// (<see cref="Blueprint.RebuildBlocks"/>): seen in game (measured run U23), the floor bridged over a dip, protected from
 	/// the moment the site was picked, shut the walk in under it ("no path from (1950,251) ... rows 251..374").
 	/// </summary>
 	private void ProtectBuilt(BotContext ctx)
 	{
 		Blueprint arena = Blueprint.Arena(ctx.Ids);
-		bool arenaReady = ArenaSite is TilePos ready && ArenaReady(ctx, arena, ready);
-		if (protectedFor == (HouseSite, ArenaSite, arenaReady, Bridges.Count) && ctx.Protected != null)
+		bool eyeReady = eyeArena.Site is TilePos ready && ArenaReady(ctx, arena, ready);
+		bool evilReady = evilArena.Site is TilePos evilSite && ArenaReady(ctx, arena, evilSite);
+		var key = (HouseSite, eyeArena.Site, eyeReady, evilArena.Site, evilReady, Bridges.Count);
+		if (protectedFor == key && ctx.Protected != null)
 			return;
-		protectedFor = (HouseSite, ArenaSite, arenaReady, Bridges.Count);
+		protectedFor = key;
 		var cells = new HashSet<TilePos>();
 		if (HouseSite is TilePos h) {
 			Blueprint house = Blueprint.SmallHouse(ctx.Ids);
@@ -1281,12 +1377,12 @@ public sealed class ProgressionPlanner
 					if (house.At(x, y) != PlanCell.None)
 						cells.Add(new TilePos(h.X + x, h.Y + y));
 		}
-		if (arenaReady && ArenaSite is TilePos a) {
-			for (int x = 0; x < arena.Width; x++)
-				for (int y = 0; y < arena.Height; y++)
-					if (arena.At(x, y) == PlanCell.Block)
-						cells.Add(new TilePos(a.X + x, a.Y + y));
-		}
+		foreach ((bool isReady, TilePos? at) in new[] { (eyeReady, eyeArena.Site), (evilReady, evilArena.Site) })
+			if (isReady && at is TilePos a)
+				for (int x = 0; x < arena.Width; x++)
+					for (int y = 0; y < arena.Height; y++)
+						if (arena.At(x, y) == PlanCell.Block)
+							cells.Add(new TilePos(a.X + x, a.Y + y));
 		foreach (ChasmOpening o in Bridges)
 			for (int x = o.X0; x <= o.X1; x++)
 				cells.Add(new TilePos(x, o.Row));
@@ -1309,9 +1405,14 @@ public sealed class ProgressionPlanner
 	}
 
 	/// <summary>The arena's columns and the feet row of a player standing on its floor, if there is one.</summary>
-	public (int MinX, int MaxX, int StandY)? ArenaBounds(BotContext ctx)
+	public (int MinX, int MaxX, int StandY)? ArenaBounds(BotContext ctx) => Bounds(ctx, eyeArena.Site);
+
+	/// <summary>The Eater of Worlds' arena in the corruption (<see cref="EvilArenaSite"/>), as <see cref="ArenaBounds"/>.</summary>
+	public (int MinX, int MaxX, int StandY)? EvilArenaBounds(BotContext ctx) => Bounds(ctx, evilArena.Site);
+
+	private static (int MinX, int MaxX, int StandY)? Bounds(BotContext ctx, TilePos? site)
 	{
-		if (ArenaSite is not TilePos s)
+		if (site is not TilePos s)
 			return null;
 		Blueprint bp = Blueprint.Arena(ctx.Ids);
 		return (s.X + 1, s.X + bp.Width - 2, s.Y + bp.StandRow); // inside the end posts
@@ -1344,7 +1445,7 @@ public sealed class ProgressionPlanner
 	{
 		if (ctx.World.BossDefeated(b.Npc))
 			return null;
-		bool bossHere = ctx.Hostiles.Any(h => h.Type == b.Npc);
+		bool bossHere = BossUp(ctx, b.Npc);
 		if (!bossHere) {
 			ISkill sub = Resolve(new HaveItem(b.SummonItem, 1, ctx.Knowledge.ItemName(b.SummonItem)), claims, depth + 1, ctx);
 			if (sub != null || stuck != null)
@@ -1385,21 +1486,37 @@ public sealed class ProgressionPlanner
 			new BossFightSkill(b.SummonItem, b.Npc, b.Minions) { Arena = arena });
 	}
 
+	/// <summary>
+	/// Is the boss up? A part of it in view (any segment of a worm: the head may be the part out of sight), or, for a worm,
+	/// its health bar showing life (<see cref="IWorldInfo.BossBarLife"/>): a burrowed worm is out of view but still on the bar,
+	/// as a player reads it. The Eye of Cthulhu fights in view (BossPerceptionRadiusPx, 200 tiles round the bot).
+	/// </summary>
+	public static bool BossUp(BotContext ctx, int npc)
+	{
+		int[] parts = WormPattern.SegmentTypes(npc);
+		return ctx.Hostiles.Any(h => parts.Contains(h.Type)) || WormPattern.IsWormBoss(npc) && ctx.World != null && ctx.World.BossBarLife(npc) > 0;
+	}
+
+	/// <summary>The plan's boss that is up and not yet defeated, if any (<see cref="BossUp"/>).</summary>
+	private BossDefeated BossUpInThePlan(BotContext ctx) => ctx.World == null ? null
+		: StagesFor(Plan, ctx.Ids).OfType<BossDefeated>().FirstOrDefault(b => !ctx.World.BossDefeated(b.Npc) && BossUp(ctx, b.Npc));
+
 	// ---------- the evil biome (Milestone 10: the Eater of Worlds by Worm Food, docs M10_SPEC.md) ----------
 
 	/// <summary>Within this many tiles of the summon spot, the summon is made there (the arena's own tolerance).</summary>
 	public const int SummonSpotTiles = ArenaCentreTolerance;
 
 	/// <summary>
-	/// The evil biome's boss, its summon item in hand: to where the Corruption zone holds (the arena if it lies in it, as the
-	/// M10 world's at (1948,278) does; else <see cref="EvilGround"/>), rest to full, summon and fight, at any time of day.
+	/// The evil biome's boss, its summon item in hand: to where the Corruption zone holds (its arena, <see cref="EvilArenaBounds"/>,
+	/// or the Eye's if that lies in the zone; else <see cref="EvilGround"/>), rest to full, summon and fight, at any time of day.
 	/// Worm Food does nothing outside the zone (Player.cs:43462), and the worm dives away and despawns once no player is in
 	/// it (NPC.cs:55436). The Eye's night rules are its own (<see cref="BossDefeated.NightOnly"/>).
 	/// </summary>
 	private ISkill ResolveEvilBoss(BossDefeated b, bool bossHere, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		ctx.EvilErrand = true;
-		var arena = ArenaBounds(ctx) is (int x0, int x1, int y) a && ctx.CorruptionAround(new TilePos((x0 + x1) / 2, y)) >= BotContext.CorruptionZoneTiles ? a : ((int, int, int)?)null;
+		var arena = EvilArenaBounds(ctx)
+			?? (ArenaBounds(ctx) is (int x0, int x1, int y) a && ctx.CorruptionAround(new TilePos((x0 + x1) / 2, y)) >= BotContext.CorruptionZoneTiles ? a : ((int, int, int)?)null);
 		if (!bossHere) {
 			TilePos? stretch = arena is (int sx0, int sx1, int sy) ? new TilePos((sx0 + sx1) / 2, sy) : ctx.InEvilBiome(ctx.Node) ? ctx.Node : EvilGround(ctx);
 			if (stretch is TilePos st) {

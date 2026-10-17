@@ -55,6 +55,14 @@ public interface IWorldInfo
 	/// <summary>Has the world recorded this boss NPC type as defeated (NPC.downedBoss1 and friends)?</summary>
 	bool BossDefeated(int npcType);
 
+	/// <summary>
+	/// The life the boss's health bar at the foot of the screen shows, 0 when there is none: what a player reads to know the
+	/// boss is still up while none of it is in sight. The Eater of Worlds' bar sums the life of every active segment, wherever
+	/// it is (vanilla Terraria.GameContent.UI.BigProgressBar.EaterOfWorldsProgressBar.ValidateAndCollectNecessaryInfo, lines
+	/// 34-41): a worm burrowed out of sight still shows there.
+	/// </summary>
+	int BossBarLife(int npcType);
+
 	/// <summary>Has the player seen this cell (revealed on the world map, vanilla Main.Map.IsRevealed)? Off the world: true.</summary>
 	bool IsRevealed(int x, int y);
 

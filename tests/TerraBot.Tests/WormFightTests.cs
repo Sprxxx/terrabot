@@ -51,6 +51,23 @@ public class WormFightTests
 	}
 
 	[Fact]
+	public void AnEaterOfSoulsAboutToBite_IsShotFirst_TheWormAfter()
+	{
+		// Measured run M10k: held in a pocket, hit by segments and the zone's eaters of souls in turn, none of which the boss
+		// fight shot; dead in the fight. One 5 tiles off is shot before a segment 7 tiles off; one far off is left to the worm.
+		var eater = new EntityInfo(7, 6, "Eater of Souls", 92 * 16f, 21 * 16f, 30, 30, 0f, 0f, 40, 40, 22, FakeGame.FlyingAi);
+		var (_, ctx, fight) = Setup(97 * 16f, 0f, Arena, Seg(2, Bod, 90, 18), eater);
+		fight.Tick(ctx);
+		output.WriteLine($"{fight.Describe()}: target {fight.TargetId}");
+		Assert.Equal(7, fight.TargetId);
+		Assert.Contains("Eater of Souls", fight.State);
+		ctx.Tick = 1;
+		ctx.Hostiles = new[] { Seg(2, Bod, 90, 18), eater with { X = 60 * 16f } };
+		fight.Tick(ctx);
+		Assert.Equal(2, fight.TargetId);
+	}
+
+	[Fact]
 	public void Shoots_TheNearestSegmentInAClearLine()
 	{
 		// Nearest a body in the ground (no line to it), then a body in the air 6 tiles left and up, then the head farther.
@@ -177,6 +194,91 @@ public class WormFightTests
 		Assert.Equal(SkillStatus.Failed, s);
 		Assert.Equal(WormPattern.GoneTicks + 1, t);
 		Assert.Contains("the worm left", fight.FailureReason);
+	}
+
+	[Fact]
+	public void NoSegmentInView_ButItsBarShowsLife_TheFightWaitsForTheWorm_BackOnTheArena()
+	{
+		// Measured run M10j: "no segment of the worm in view" at (1914,361), in a chasm's water, the worm at 8597 of 10050 on
+		// its bar, and the fight was over: the Worm Food used up for nothing. Burrowed out of view, the worm is still up.
+		var (g, ctx, fight) = Setup(97 * 16f, 0f, Arena, Seg(1, Head, 80, 27), Seg(2, Tail, 82, 27));
+		fight.Tick(ctx);
+		ctx.Hostiles = System.Array.Empty<EntityInfo>();
+		g.BossBars[Head] = 8597;
+		for (int t = 1; t <= 3 * WormPattern.GoneTicks; t++) {
+			ctx.Tick = t;
+			Assert.Equal(SkillStatus.Running, fight.Tick(ctx));
+		}
+		output.WriteLine($"waiting: {fight.Describe()}");
+		Assert.Equal("", fight.FailureReason);
+
+		// Knocked off the arena's east end (columns 50-145) meanwhile: back onto it, the worm still out of view.
+		ctx.Body = ctx.Body with { X = 152 * 16f, VX = 0f };
+		ctx.Tick++;
+		Assert.Equal(SkillStatus.Running, fight.Tick(ctx));
+		output.WriteLine($"off the arena: {fight.Describe()}");
+		Assert.Contains("walking back to the arena", fight.State);
+
+		// Its bar empty: despawned, the fight is over.
+		g.BossBars[Head] = 0;
+		ctx.Tick++;
+		Assert.Equal(SkillStatus.Failed, fight.Tick(ctx));
+		Assert.Contains("the worm left", fight.FailureReason);
+	}
+
+	[Fact]
+	public void AFightTakenUp_WithTheWormUpOutOfView_DoesNotSummonAgain()
+	{
+		// Measured run M10j: the fight paused for breath ("surfacing (pausing Boss)") with the worm out of view. Taken up again,
+		// the worm is on its bar, the Worm Food is used up: no summon (the game allows none while a head lives), a wait for it.
+		var (g, ctx, fight) = Setup(97 * 16f, 0f, Arena);
+		g.BossBars[Head] = 8597;
+		Assert.Equal(0, g.Count(WormFood));
+		SkillStatus s = fight.Tick(ctx);
+		output.WriteLine($"{fight.Describe()}: {fight.FailureReason}");
+		Assert.Equal(SkillStatus.Running, s);
+		Assert.NotEqual("summoning", fight.State);
+		Assert.Equal("", fight.FailureReason);
+	}
+
+	[Fact]
+	public void WithoutAnArena_DownAChasmDeeperThanASafeFall_ClimbsBackToWhereTheFightBegan()
+	{
+		// Measured run M10j: no arena, the fight began at (1874,291) on the corruption's open ground; the bot ran down a chasm
+		// to (1921,358), under water, where the worm was lost. A walk never drops deeper than a safe fall on its own.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 25; y++)
+			rows.Add(y == 24 ? "...S" + new string('.', 196) : new string('.', 200));
+		for (int y = 25; y < 70; y++) {
+			char[] r = new string('#', 200).ToCharArray();
+			if (y < 65)
+				for (int x = 118; x <= 125; x++)
+					r[x] = '.'; // a chasm 40 rows deep
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.HasRanged = true;
+		ctx.Combat.Projectile = new Core.Physics.ProjectileModel(9f, 15, 0.1f, 16f);
+		ctx.Body = new Core.Physics.BodyState { X = 97 * 16f, Y = 25 * 16f - P.Height, ReleaseJump = true };
+		ctx.Hostiles = new[] { Seg(1, Head, 80, 27), Seg(2, Tail, 82, 27) };
+		var fight = new BossFightSkill(WormFood, Head);
+		fight.Start(ctx);
+		fight.Tick(ctx); // the fight's centre: (97,24)
+
+		// Within a safe fall of the start: fought on from there.
+		ctx.Tick = 1;
+		ctx.Body = new Core.Physics.BodyState { X = 120 * 16f, Y = (24 + P.SafeFallTiles + 1) * 16f - P.Height, ReleaseJump = true };
+		fight.Tick(ctx);
+		output.WriteLine($"at {ctx.Node}: {fight.Describe()}");
+		Assert.DoesNotContain("walking back", fight.State);
+
+		// At the chasm's floor, 40 rows down: back up.
+		ctx.Tick = 2;
+		ctx.Body = new Core.Physics.BodyState { X = 120 * 16f, Y = 65 * 16f - P.Height, ReleaseJump = true };
+		Assert.Equal(SkillStatus.Running, fight.Tick(ctx));
+		output.WriteLine($"at {ctx.Node}: {fight.Describe()}");
+		Assert.Contains("walking back to where the fight began", fight.State);
 	}
 
 	[Fact]

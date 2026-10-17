@@ -57,12 +57,14 @@ public static class SiteFinder
 
 	/// <summary>
 	/// A site's cost: its build steps (edits and items to place) at <see cref="StepScore"/> each, times
-	/// <see cref="EvilStepFactor"/> in the evil biome, plus the columns from <paramref name="around"/> to its middle.
+	/// <see cref="EvilStepFactor"/> in the evil biome, plus the columns from <paramref name="around"/> to its middle. For an
+	/// arena wanted in the evil biome (<see cref="Blueprint.InEvilBiome"/>, the Eater of Worlds') the factor is inverted: off
+	/// the biome it is the dear one, a cost and not a ban (what the map shows of the zone undercounts it).
 	/// </summary>
 	public static long Score(BotContext ctx, Blueprint bp, TilePos origin, int edits, TilePos around)
 	{
 		long steps = edits + bp.Items.Count;
-		if (!bp.IsHouse && InEvilBiome(ctx, bp, origin))
+		if (!bp.IsHouse && InEvilBiome(ctx, bp, origin) != bp.InEvilBiome)
 			steps *= EvilStepFactor;
 		return steps * StepScore + Math.Abs(origin.X + Shift(bp) - around.X);
 	}
@@ -197,7 +199,9 @@ public static class SiteFinder
 				Count(reason, cell);
 				continue;
 			}
-			Count(edits > bp.MaxEdits ? "too many edits" : !bp.IsHouse && InEvilBiome(ctx, bp, origin) ? "fine, in the evil biome" : "fine");
+			bool evil = !bp.IsHouse && InEvilBiome(ctx, bp, origin);
+			Count(edits > bp.MaxEdits ? "too many edits" : bp.IsHouse || evil == bp.InEvilBiome ? "fine"
+				: evil ? "fine, in the evil biome" : "fine, off the evil biome");
 			if (edits < fewest) {
 				fewest = edits;
 				fewestAt = origin;

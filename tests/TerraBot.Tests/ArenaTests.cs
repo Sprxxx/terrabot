@@ -314,6 +314,33 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_TheEaterOfWorldsArena_WantsTheEvilBiome_TheCostInverted()
+	{
+		// The same field as above: the corruption west of the house, a pond east. The Eater of Worlds' arena is wanted in the
+		// Corruption zone (Worm Food works only there, and the worm despawns once no player is in it): the site off the biome
+		// is the dear one now. Measured runs M10e and M10j: with no arena in the zone, the worm was fought in a pocket and on
+		// the corruption's broken open ground, and lost both times.
+		FakeGame g = EarlyGameTests.FieldFrom(520, 210);
+		for (int x = 0; x <= 200; x++)
+			for (int y = 25; y < 30; y++)
+				g.TileTypes[new TilePos(x, y)] = y == 25 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		for (int x = 230; x <= 300; x++)
+			g.Grid.Set(x, 24, CellKind.Water);
+		BotContext ctx = g.CreateContext(output);
+		var anchor = new TilePos(320, 24); // nearer the clean ground past the pond than the corruption
+		Blueprint eye = Blueprint.Arena(FakeGame.Ids, searchRadius: Blueprint.ArenaFarSearchRadius);
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, searchRadius: Blueprint.ArenaFarSearchRadius, inEvilBiome: true);
+		Assert.True(eater.InEvilBiome);
+		Assert.False(eye.InEvilBiome);
+		TilePos? eyeSite = SiteFinder.Find(ctx, eye, anchor), eaterSite = SiteFinder.Find(ctx, eater, anchor);
+		output.WriteLine($"the Eye's {eyeSite}, the worm's {eaterSite}; {SiteFinder.Explain(ctx, eater, anchor)}");
+		Assert.False(Evil(ctx, eyeSite.Value), $"the Eye's site {eyeSite}");
+		Assert.True(Evil(ctx, eaterSite.Value), $"the worm's site {eaterSite}");
+		// A cost, not a ban: with no evil ground in reach, the worm's arena still has a site.
+		Assert.NotNull(SiteFinder.Find(ctx, Blueprint.Arena(FakeGame.Ids, searchRadius: 20, inEvilBiome: true), new TilePos(420, 24)));
+	}
+
+	[Fact]
 	public void BuildSkill_Arena_UnderItsOwnFloor_TakesABlockOutToGetOnTop_AndPutsItBack()
 	{
 		// Measured run U23: the arena floor bridged over a dip at (1953..1991, 248); the walk from the house came up the dip
