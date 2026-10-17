@@ -472,6 +472,9 @@ public sealed class BuildSkill : ISkill
 		return a.Outside && bx1 >= Origin.X && bx0 < Origin.X + bp.Width && by0 < Origin.Y + bp.Height && by1 >= Origin.Y;
 	}
 
+	/// <summary>Optional items that would not go down, left out of this build.</summary>
+	private readonly HashSet<PlanItem> leftOut = new();
+
 	/// <summary>The cell whose action failed <see cref="MaxFailuresPerCell"/> times and failed the build, if that is why.</summary>
 	public TilePos? FailedCell { get; private set; }
 
@@ -485,6 +488,15 @@ public sealed class BuildSkill : ISkill
 		walk = null;
 		if (n < MaxFailuresPerCell)
 			return SkillStatus.Running;
+		// An optional item (an arena's campfire or torch) that will not go down is left out, not the build failed. Seen in game
+		// (measured run M10l, world_eow): the arena in the corruption at (1872,239), its campfire at (1919,244) "failed (no
+		// effect after 90 ticks)" 3 times, the build failed and the site was given up, no other site found, and the worm was
+		// fought on open ground and killed the bot.
+		if (bp.Items.FirstOrDefault(it => it.Optional && new TilePos(Origin.X + it.X, Origin.Y + it.Y) == cell) is PlanItem extra && extra.ItemType > 0) {
+			leftOut.Add(extra);
+			ctx.Log.Info($"Build: leaving the {ctx.Knowledge?.ItemName(extra.ItemType) ?? extra.ItemType.ToString()} at {cell} out ({why}, {n} tries): the {bp.Name} works without it");
+			return SkillStatus.Running;
+		}
 		FailedCell = cell;
 		return Fail(ctx, $"{why} at {cell}");
 	}
@@ -583,7 +595,7 @@ public sealed class BuildSkill : ISkill
 
 		// 4./5. Furniture, then the door from outside.
 		foreach (PlanItem it in bp.Items.OrderBy(i => i.PlaceLast)) {
-			if (placedItems.Contains(it))
+			if (placedItems.Contains(it) || leftOut.Contains(it))
 				continue;
 			if (ctx.Inventory.Count(it.ItemType) <= 0) {
 				problem = $"missing item {it.ItemType}";

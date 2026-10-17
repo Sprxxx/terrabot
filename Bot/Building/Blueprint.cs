@@ -18,8 +18,11 @@ public enum PlanCell
 	Clear,
 }
 
-/// <summary>A multi-tile item placed at a cell rectangle of the plan (table, chair, torch, door).</summary>
-public readonly record struct PlanItem(int ItemType, int X, int Y, int Width, int Height, bool PlaceLast = false)
+/// <summary>
+/// A multi-tile item placed at a cell rectangle of the plan (table, chair, torch, door). <paramref name="Optional"/>: a
+/// comfort the plan works without (an arena's campfire and torches), left out if it will not go down (BuildSkill).
+/// </summary>
+public readonly record struct PlanItem(int ItemType, int X, int Y, int Width, int Height, bool PlaceLast = false, bool Optional = false)
 {
 	public bool Covers(int x, int y) => x >= X && x < X + Width && y >= Y && y < Y + Height;
 }
@@ -175,10 +178,10 @@ public sealed class Blueprint
 		for (int y = ArenaClearance - ArenaEndPostHeight; y < ArenaClearance; y++)
 			rows[y] = "#" + rows[y].Substring(1, width - 2) + "#";
 		int top = ArenaClearance - 1, mid = width / 2;
-		var items = new List<PlanItem> { new(ids.Campfire, mid - 1, top - 1, 3, 2) };
+		var items = new List<PlanItem> { new(ids.Campfire, mid - 1, top - 1, 3, 2, Optional: true) };
 		for (int x = ArenaTorchSpacing / 2; x < width; x += ArenaTorchSpacing)
 			if (x < mid - 2 || x > mid + 2)
-				items.Add(new PlanItem(ids.Torch, x, top, 1, 1));
+				items.Add(new PlanItem(ids.Torch, x, top, 1, 1, Optional: true));
 		return new Blueprint(inEvilBiome ? "boss arena in the evil biome" : "boss arena", rows, items, inside: new TilePos(mid, top), outsideStand: new TilePos(mid, top), wallItem: 0) {
 			IsHouse = false, ChopTrees = true, ReserveBlocksOnly = true, RebuildBlocks = true, MaxEdits = 600, SearchRadius = searchRadius,
 			InEvilBiome = inEvilBiome,

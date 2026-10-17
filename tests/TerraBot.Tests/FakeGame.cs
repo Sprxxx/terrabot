@@ -283,10 +283,13 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	private bool Free(int x, int y) => Grid.Get(x, y) == CellKind.Empty && !Furniture.ContainsKey(new TilePos(x, y)) && !IsTreeTrunk(x, y);
 
+	/// <summary>Items the game refuses to place anywhere (a test's stand-in for a spot the game will not take).</summary>
+	public readonly HashSet<int> RefusedItems = new();
+
 	public bool CanPlaceItem(int itemType, int x, int y)
 	{
 		int tile = TilePlacedBy(itemType);
-		if (tile < 0)
+		if (tile < 0 || RefusedItems.Contains(itemType))
 			return false;
 		var (w, h, ox, oy) = Footprint(itemType);
 		int x0 = x - ox, y0 = y - oy;

@@ -185,6 +185,24 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void BuildSkill_Arena_ACampfireThatWillNotGoDown_IsLeftOut_TheArenaStillReady()
+	{
+		// Measured run M10l: the arena in the corruption, its campfire "failed (no effect after 90 ticks)" 3 times; the build
+		// failed, the site was given up, no other site, and the worm was fought on open ground and killed the bot.
+		FakeGame g = EarlyGameTests.Field(140);
+		GiveArenaKit(g);
+		g.RefusedItems.Add(FakeGame.Campfire);
+		BotContext ctx = g.CreateContext(output);
+		Blueprint bp = Blueprint.Arena(FakeGame.Ids);
+		var site = new TilePos(20, 25 - bp.Height + 1);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, new BuildSkill(bp, site), 60 * 60 * 6);
+		output.WriteLine($"{s} after {g.Sim.Ticks} ticks; placed {g.Sim.Placed}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(ProgressionPlanner.ArenaReady(ctx, bp, site));
+		Assert.Equal(1, g.Count(FakeGame.Campfire)); // left out, still in the bag
+	}
+
+	[Fact]
 	public void ArenaPlan_FromDeepDown_GoesUpToTheSurfaceFirst_NotThroughTheCaves()
 	{
 		// Measured runs U19 and U22: max life 200 came 160+ rows down, and the build's first walk (to fell a tree by the arena)

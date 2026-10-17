@@ -1401,7 +1401,7 @@ public sealed class ProgressionPlanner
 				if (c == PlanCell.Clear && !bp.Items.Any(it => it.Covers(x, y)) && (ctx.Grid.Get(wx, wy).IsBlock() || ctx.World.IsTreeTrunk(wx, wy)))
 					return false;
 			}
-		return bp.Items.All(it => BuildSkill.IsPlaced(ctx, bp, site, it));
+		return bp.Items.All(it => it.Optional || BuildSkill.IsPlaced(ctx, bp, site, it)); // a campfire left out: still an arena
 	}
 
 	/// <summary>The arena's columns and the feet row of a player standing on its floor, if there is one.</summary>
