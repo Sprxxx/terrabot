@@ -47,8 +47,7 @@ public sealed class ReadyForBossSkill : ISkill
 		// Standing still to drink is for a quiet moment: with a hostile near or a shot coming, the fight goes on and dodges (review,
 		// 2026-10-17: nothing dodges or heals while this runs). What is mid-use finishes first.
 		if (current == null && ThreatNear(ctx)) {
-			if (Used + Summoned + tried.Count > 0 || summons > 0)
-				ctx.Log.Info("Ready: cut short, a hostile near");
+			ctx.Log.Info($"Ready: cut short, a hostile within {QuietTiles} tiles or a shot coming ({Used} used, {Summoned} summoned)");
 			return SkillStatus.Succeeded;
 		}
 		if (current != null) {
@@ -85,8 +84,11 @@ public sealed class ReadyForBossSkill : ISkill
 
 	private bool logged;
 
-	/// <summary>A hostile (not a spared one) within this many tiles, or a shot coming, cuts the readying short.</summary>
-	public const int QuietTiles = 25;
+	/// <summary>
+	/// A hostile (not a spared one) within this many tiles, or a shot this near, cuts the readying short. Each use is a third of a
+	/// second; seen in game (world_wof E27, 2026-10-18): at 25 tiles the Underworld's fliers always cut it, nothing was eaten.
+	/// </summary>
+	public const int QuietTiles = 8;
 
 	private static bool ThreatNear(BotContext ctx)
 	{
