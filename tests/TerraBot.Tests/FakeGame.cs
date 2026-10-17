@@ -763,7 +763,12 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 
 	/// <summary>Items thrown with the Throw key and still in the air: top-left and velocity (px, px/tick).</summary>
-	public readonly List<(int Item, float X, float Y, float VX, float VY)> Flying = new();
+	public readonly List<(int Item, float X, float Y, float VX, float VY, int Age)> Flying = new();
+	/// <summary>
+	/// How far (px, past the hitbox) the player pulls items in once their 100-tick no-grab delay is over, at 7 px/tick (Player.GrabItems:
+	/// 42 by default; a Journey character's placement-range power adds 240). 0: no pull (the thrown item falls on).
+	/// </summary>
+	public float GrabRangePx;
 	/// <summary>Throw presses that dropped an item, items lost in lava, and the Wall of Flesh's spawns (the doll in lava, the Guide alive).</summary>
 	public int Throws, BurntItems, WofSpawns;
 	/// <summary>Where the Wall spawned (its mouth's top-left, px) and the way it travels (-1 west, +1 east).</summary>
@@ -787,14 +792,23 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		if (press && o.ThrowItem > 0 && swingTimer == 0 && Count(o.ThrowItem) > 0) {
 			Items[o.ThrowItem]--;
 			Throws++;
-			Flying.Add((o.ThrowItem, cx - 7f, cy - 13f, 4f * facing + Sim.State.VX, -2f));
+			Flying.Add((o.ThrowItem, cx - 7f, cy - 13f, 4f * facing + Sim.State.VX, -2f, 0));
 		}
 		for (int i = Flying.Count - 1; i >= 0; i--) {
-			var (item, x, y, vx, vy) = Flying[i];
-			vy = Math.Min(vy + 0.1f, 7f);
-			vx *= 0.95f;
-			if (Math.Abs(vx) < 0.1f)
-				vx = 0f;
+			var (item, x, y, vx, vy, age) = Flying[i];
+			age++;
+			PhysicsParams pp = PhysicsParams.Default;
+			float left = Sim.State.X - GrabRangePx, top = Sim.State.Y - GrabRangePx;
+			if (GrabRangePx > 0f && age > 100 && x + 14f > left && x < left + pp.Width + 2 * GrabRangePx && y + 26f > top && y < top + pp.Height + 2 * GrabRangePx) {
+				float dx = cx - (x + 7f), dy = cy - (y + 13f), d = MathF.Max(1f, MathF.Sqrt(dx * dx + dy * dy));
+				(vx, vy) = (dx / d * 7f, dy / d * 7f);
+			}
+			else {
+				vy = Math.Min(vy + 0.1f, 7f);
+				vx *= 0.95f;
+				if (Math.Abs(vx) < 0.1f)
+					vx = 0f;
+			}
 			x += vx;
 			y += vy;
 			int tx = (int)MathF.Floor((x + 7f) / 16f), ty = (int)MathF.Floor((y + 26f) / 16f);
@@ -815,7 +829,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				Drops.Add(new DropInfo(nextDropId++, item, ItemName(item), 1, x, ty * 16f - 26f, 14, 26));
 				continue;
 			}
-			Flying[i] = (item, x, y, vx, vy);
+			Flying[i] = (item, x, y, vx, vy, age);
 		}
 	}
 
@@ -884,7 +898,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			Stations = seenStations,
 			Origin = TreeSight < int.MaxValue ? n : null,
 		};
-		ctx.Drops = Drops.ToList();
+		// Items in the air are in sight as drops are (Main.item holds both).
+		ctx.Drops = Drops.Concat(Flying.Select((f, k) => new DropInfo(5000 + k, f.Item, ItemName(f.Item), 1, f.X, f.Y, 14, 26))).ToList();
 		ctx.TownNpcs = TownNpcs.ToList();
 		ctx.Shots = Shots.ToList();
 		ctx.Hostiles = Slimes.Select(s => new EntityInfo(s.id, 1, "Slime", s.x, s.y, 24, 24, 0, 0, s.life, 40, 7, SlimeAi)).Concat(ExtraHostiles).ToList();

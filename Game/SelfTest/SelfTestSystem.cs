@@ -228,6 +228,7 @@ public sealed class SelfTestSystem : ModSystem
 					Main.time = 0;
 				}
 				SpawnsOn = s.RealWorld;
+				FarReach(p, s);
 				if (s.RealWorld) {
 					// The world as it is: its town NPCs, its enemies, the character's own inventory, at the spawn.
 					s.Inventory?.Invoke(p);
@@ -482,6 +483,26 @@ public sealed class SelfTestSystem : ModSystem
 			parts.Add($"x {x}: {what}");
 		}
 		return string.Join("; ", parts);
+	}
+
+	/// <summary>The Journey character's placement-range power as it was before the scenarios (null: not yet read, or not Journey).</summary>
+	private bool? farReachBefore;
+
+	/// <summary>
+	/// A Journey character's "infinite placement range" power (Scenario.NoFarReach): off for the scenarios that ask, as it was for the
+	/// rest (a test fixture's toggle, as the power's button in the Journey menu: APerPlayerTogglePower.SetEnabledState).
+	/// </summary>
+	private void FarReach(Player p, Scenario s)
+	{
+		if (p.difficulty != PlayerDifficultyID.Creative)
+			return;
+		var power = Terraria.GameContent.Creative.CreativePowerManager.Instance.GetPower<Terraria.GameContent.Creative.CreativePowers.FarPlacementRangePower>();
+		farReachBefore ??= power.IsEnabledForPlayer(p.whoAmI);
+		bool on = !s.NoFarReach && farReachBefore.Value;
+		if (power.IsEnabledForPlayer(p.whoAmI) != on) {
+			power.SetEnabledState(p.whoAmI, on);
+			Mod.Logger.Info($"SELFTEST {s.Name}: Journey's placement-range power {(on ? "on" : "off")} (it pulls items in from 240 px farther)");
+		}
 	}
 
 	/// <summary>The floor under the node, as far as it goes either way: an arena's (MinX, MaxX, StandY) for the boss fight.</summary>

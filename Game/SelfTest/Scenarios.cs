@@ -118,6 +118,14 @@ public sealed class Scenario
 	public int ArenaHeight { get; init; }
 	/// <summary>Run only when asked for by name (not in "all"): long, or changing the world for the rest (Hardmode).</summary>
 	public bool ByName { get; init; }
+	/// <summary>
+	/// A Journey character's "infinite placement range" power off for the run (it is on by default, CreativePowers.cs:744-753):
+	/// with it the player pulls items in from 240 px farther (Player.GetItemGrabRange, Player.cs:34313; PullItem_Pickup at 7 px/tick,
+	/// 34086), and the thrown Guide Voodoo Doll was pulled back out of the lava's top. Seen in game (m12_synthetic_2, Pepi in
+	/// Journey): every doll fell to row 1055 at 7 px/tick, then rose at (-1.7,-6.8) toward the bot 100 ticks after the throw, when
+	/// its no-grab delay ran out (Player.cs:6003). The M12 world's character is Classic, without it.
+	/// </summary>
+	public bool NoFarReach { get; init; }
 	/// <summary>Called every running tick with the tick number (for mid-run world changes).</summary>
 	public Action<Arena, int> During { get; init; }
 	/// <summary>The run also ends once the bot logs a line containing this (for skills that never finish on their own).</summary>
@@ -752,6 +760,7 @@ public sealed class Scenario
 				ArenaCentreX = WorldMiddle + 300,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
+				NoFarReach = true,
 				Mode = "wof",
 				MaxLife = 200,
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
@@ -769,6 +778,7 @@ public sealed class Scenario
 				ArenaCentreX = WorldMiddle - 300,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
+				NoFarReach = true,
 				Mode = "wof",
 				MaxLife = 200,
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
@@ -786,6 +796,7 @@ public sealed class Scenario
 				ArenaCentreX = WorldMiddle + 300,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
+				NoFarReach = true,
 				Mode = "wof",
 				MaxLife = 200,
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
@@ -802,6 +813,7 @@ public sealed class Scenario
 				ArenaCentreX = WorldMiddle + 300,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
+				NoFarReach = true,
 				Mode = "wof",
 				MaxLife = 200,
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
@@ -822,6 +834,7 @@ public sealed class Scenario
 				ArenaCentreX = WorldMiddle + 850,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
+				NoFarReach = true,
 				Mode = "wof",
 				EnemyType = Terraria.ID.NPCID.Guide,
 				MaxLife = 200,
@@ -837,6 +850,7 @@ public sealed class Scenario
 				ArenaCentreX = WorldMiddle + 850,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
+				NoFarReach = true,
 				Mode = "wof",
 				EnemyType = Terraria.ID.NPCID.Guide,
 				MaxLife = 200,
@@ -854,6 +868,7 @@ public sealed class Scenario
 				ArenaCentreX = WorldMiddle + 300,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
+				NoFarReach = true,
 				Mode = "auto",
 				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Hellbridge,
 				BridgeLength = 60,

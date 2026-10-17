@@ -45,6 +45,9 @@ public sealed class ThrowItemSkill : ISkill
 	private Phase phase;
 	private int phaseTicks, presses, countBefore, stillTicks;
 	private (float X, float Y)? lastSeen;
+	private bool fell;
+	/// <summary>Rising faster than this (px/tick) after it fell: pulled, not bounced (items do not bounce off liquid or tiles).</summary>
+	public const float PulledUpSpeed = 3f;
 
 	public int ItemType { get; }
 	/// <summary>The side to throw to: -1 west, +1 east.</summary>
@@ -150,6 +153,14 @@ public sealed class ThrowItemSkill : ISkill
 					stillTicks = moved ? 0 : stillTicks + 1;
 					if (phaseTicks % TrackTicks == 0 && lastSeen is (float px, float py))
 						ctx.Log.Info($"Throw: the {What} at {item.Tile} ({item.X:0},{item.Y:0} px), moving ({item.X - px:0.0},{item.Y - py:0.0}) px/tick, {phaseTicks} ticks after the throw");
+					// Falling, then rising fast toward us: a grab range reaches it (a magnet, Journey's placement range: Player.GrabItems
+					// pulls at 7 px/tick once the 100-tick no-grab delay is over, Player.cs:34073-34090), and the bot picks it up again.
+					if (lastSeen is (float qx, float qy)) {
+						if (item.Y - qy > 1f)
+							fell = true;
+						else if (fell && item.Y - qy < -PulledUpSpeed)
+							return Fail(ctx, $"the {What} was pulled back toward us from {item.Tile} ({phaseTicks} ticks after the throw): an item grab range reaches it");
+					}
 					lastSeen = (item.X, item.Y);
 					if (stillTicks >= RestTicks)
 						return Fail(ctx, $"the {What} did not reach lava: it lies at {item.Tile} ({phaseTicks} ticks after the throw)");

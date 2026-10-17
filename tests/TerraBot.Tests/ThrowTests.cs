@@ -117,6 +117,20 @@ public class ThrowTests
 	}
 
 	[Fact]
+	public void ADollPulledBackByAGrabRange_IsSaidSo()
+	{
+		// Seen in game (m12_synthetic_2): a Journey character's placement-range power pulls items from 282 px; the doll rose out of
+		// the lava's top at 7 px/tick once its no-grab delay was over, 100 ticks after the throw.
+		var (g, ctx) = Setup();
+		g.GrabRangePx = 42f + 240f;
+		var t = DollThrow(1);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, t, 400));
+		output.WriteLine(t.FailureReason);
+		Assert.Contains("pulled back", t.FailureReason);
+		Assert.Equal(0, g.WofSpawns);
+	}
+
+	[Fact]
 	public void TheThrowKey_IsHeldOneTickOnly()
 	{
 		var (g, ctx) = Setup(dolls: 3);
