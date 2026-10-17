@@ -114,6 +114,19 @@ public sealed class BossFightSkill : ISkill
 	private int maxSegmentsSeen;
 	private long lastWormLog = long.MinValue / 2;
 	private readonly System.Collections.Generic.Dictionary<int, (float X, float Y, long Tick)> lastPositions = new();
+	/// <summary>Worm: the last node stood on where the game's flag said the zone held (<see cref="CombatInfo.InEvilZone"/>).</summary>
+	private TilePos? lastInZone;
+	/// <summary>Worm: the farthest columns west and east the kiting goes, from where the zone was lost in this fight.</summary>
+	private int? zoneWest, zoneEast;
+	/// <summary>Worm: the tick the zone was lost, while it is.</summary>
+	private long? zoneLostAt;
+
+	/// <summary>
+	/// Columns kept inside where the zone was seen to end (the flag lost there, in this fight or where the bot stood before,
+	/// <see cref="BotContext.Zone"/>): a hit knocks the bot a tile or two (as <see cref="ArenaHardMargin"/>), and braking
+	/// before the bound is the kiting's own (<see cref="Move"/>).
+	/// </summary>
+	public const int ZoneSlack = 2;
 
 	/// <summary>
 	/// The arena's columns and the feet row of standing on its floor: kite inside it (turning points from its ends),
@@ -178,7 +191,10 @@ public sealed class BossFightSkill : ISkill
 			return Fail(ctx, "died");
 		if (ctx.BodyIssue != null)
 			return SkillStatus.Running;
-		centre ??= Arena is (int ax0, int ax1, int ay) ? new TilePos((ax0 + ax1) / 2, ay) : ctx.Node;
+		// A worm's fight on the arena from where the Worm Food is used, the planner's spot where the zone holds
+		// (ProgressionPlanner.EvilSummonSpot), not necessarily the arena's middle.
+		centre ??= Arena is (int ax0, int ax1, int ay) && !(IsWorm && ctx.Node.Y == ay && ctx.Node.X >= ax0 && ctx.Node.X <= ax1)
+			? new TilePos((ax0 + ax1) / 2, ay) : ctx.Node;
 
 		// A worm: its nearest segment stands for it.
 		EntityInfo? boss = IsWorm ? segments.Cast<EntityInfo?>().FirstOrDefault()
@@ -205,6 +221,10 @@ public sealed class BossFightSkill : ISkill
 				return Fail(ctx, "no bow with arrows");
 			if (summon == null && ctx.Inventory.Count(SummonItem) <= 0)
 				return Fail(ctx, "no summon item");
+			// Worm Food does nothing out of the Corruption zone (Player.cs:43462), and the worm would not stay (NPC.cs:55436):
+			// the planner finds where it holds (the bot's look at it here is kept, BotContext.Zone).
+			if (summon == null && IsWorm && ctx.Combat.InEvilZone == false)
+				return Fail(ctx, $"not in the Corruption zone at {ctx.Node}: the summon would do nothing here");
 			summon ??= Start(ctx, new UseItemSkill(SummonItem));
 			SkillStatus s = summon.Tick(ctx);
 			if (s == SkillStatus.Failed)
@@ -255,6 +275,8 @@ public sealed class BossFightSkill : ISkill
 		if (!ctx.Combat.HasRanged)
 			return Fail(ctx, "out of arrows");
 
+		if (IsWorm)
+			TrackZone(ctx);
 		bool walkingBack = BackToArena(ctx);
 		if (!walkingBack)
 			Move(ctx, boss);
@@ -289,6 +311,8 @@ public sealed class BossFightSkill : ISkill
 			State = "kiting";
 		if (walkingBack)
 			State = $"walking back to {(Arena != null ? "the arena" : "where the fight began")}, " + State;
+		if (zoneLostAt != null)
+			State = "out of the zone, " + State;
 		Heal(ctx);
 		return SkillStatus.Running;
 	}
@@ -373,8 +397,17 @@ public sealed class BossFightSkill : ISkill
 			// the floor, and every tick the next walk began. Seen in game (measured run U11cp): knocked down to (2084,272),
 			// 5 rows under the floor and within 6 tiles of the middle, "off the arena, walking back" 6460 times while the Eye
 			// of Cthulhu killed the bot.
-			goal = () => new GoalStandOnRow(standY, x0, x1, ctx.Physics);
+			// A worm's: onto the part of it the zone holds over (ZoneBounds); there the kiting keeps within it.
+			var (zw, ze) = IsWorm ? ZoneBounds(ctx) : (int.MinValue, int.MaxValue);
+			int gx0 = Math.Max(x0, zw), gx1 = Math.Min(x1, ze);
+			goal = () => gx0 <= gx1 ? new GoalStandOnRow(standY, gx0, gx1, ctx.Physics) : new GoalStandOnRow(standY, x0, x1, ctx.Physics);
 			place = "the arena";
+		}
+		else if (IsWorm && zoneLostAt != null && lastInZone is TilePos held && n.ChebyshevTo(held) > ZoneSlack) {
+			// No arena, out of the zone: back to where it last held, by a walk (the ground may not be flat).
+			off = true;
+			goal = () => new GoalNearTile(held, ZoneSlack, ctx.Physics);
+			place = $"the zone (it last held at {held})";
 		}
 		else if (IsWorm) {
 			// No arena: the worm's leash (MoveFreely), and no deeper than a safe fall under where the fight began: a walk never
@@ -408,6 +441,70 @@ public sealed class BossFightSkill : ISkill
 			backToArena.Start(ctx);
 		}
 		return WalkBack(ctx);
+	}
+
+	/// <summary>
+	/// Worm: the evil biome's zone as the game shows it (<see cref="CombatInfo.InEvilZone"/>; the worm dives and despawns once
+	/// no player is in it, NPC.cs:55436). In it, where the bot stands is where it last held; out of it, the side it was lost on
+	/// gets a bound <see cref="ZoneSlack"/> columns short of here, never past where it last held, and the kiting heads back
+	/// in (<see cref="MoveFreely"/>; with no arena, a walk back, <see cref="BackToArena"/>). Seen in game (measured runs M10m and
+	/// M10n, world_eow): on the arena at (1872,239), kiting east to (1935,245) and from (1933,245), past x 1933 where the game's
+	/// count fell under 300, and "the worm left: no segment in view for 320 ticks, not defeated, its bar empty", twice.
+	/// </summary>
+	private void TrackZone(BotContext ctx)
+	{
+		ctx.NoteZone();
+		if (ctx.Combat.InEvilZone is not bool inZone)
+			return;
+		TilePos n = ctx.Node;
+		if (inZone) {
+			if (ctx.Body.Grounded)
+				lastInZone = n;
+			if (zoneLostAt is long lost) {
+				ctx.Log.Info($"Boss fight: back in the Corruption zone at {n} after {ctx.Tick - lost} ticks");
+				zoneLostAt = null;
+			}
+			return;
+		}
+		if (zoneLostAt != null)
+			return;
+		// The bound from where it was lost, not from each tick out of it: the flag lags the body (the game's scene scan), and
+		// on the way back in it still reads "out" a little inside where it was lost.
+		TilePos held = lastInZone ?? centre.Value;
+		zoneLostAt = ctx.Tick;
+		ctx.Log.Info($"Boss fight: out of the Corruption zone at {n} (it last held at {held}): back towards it");
+		int side = Math.Sign(n.X - held.X);
+		if (side == 0)
+			side = Math.Sign(n.X - centre.Value.X);
+		if (side > 0)
+			zoneEast = Math.Max(held.X, Math.Min(zoneEast ?? int.MaxValue, n.X - 1 - ZoneSlack));
+		else if (side < 0)
+			zoneWest = Math.Min(held.X, Math.Max(zoneWest ?? int.MinValue, n.X + 1 + ZoneSlack));
+	}
+
+	/// <summary>
+	/// Worm: the columns the kiting keeps to for the zone (int.MinValue / MaxValue where nothing bounds it): the bounds from
+	/// where it was lost in this fight (<see cref="TrackZone"/>), and on the arena the nearest columns of its floor either side
+	/// of where it last held that the bot saw it not hold on (<see cref="BotContext.Zone"/>: the build walked the whole floor),
+	/// <see cref="ZoneSlack"/> short of them.
+	/// </summary>
+	private (int West, int East) ZoneBounds(BotContext ctx)
+	{
+		int west = zoneWest ?? int.MinValue, east = zoneEast ?? int.MaxValue;
+		if (Arena is (int x0, int x1, int y)) {
+			int from = (lastInZone ?? centre.Value).X;
+			for (int x = from + 1; x <= x1; x++)
+				if (ctx.Zone.At(new TilePos(x, y)) == false) {
+					east = Math.Min(east, Math.Max(from, x - 1 - ZoneSlack));
+					break;
+				}
+			for (int x = from - 1; x >= x0; x--)
+				if (ctx.Zone.At(new TilePos(x, y)) == false) {
+					west = Math.Max(west, Math.Min(from, x + 1 + ZoneSlack));
+					break;
+				}
+		}
+		return (west, east);
 	}
 
 	private bool WalkBack(BotContext ctx)
@@ -459,8 +556,18 @@ public sealed class BossFightSkill : ISkill
 			minX = Math.Max(minX, (centre.Value.X - HardHalfWidth) * 16f);
 			maxX = Math.Min(maxX, (centre.Value.X + HardHalfWidth + 1) * 16f - p.Width);
 		}
-		if (IsWorm)
+		if (IsWorm) {
+			// Within the zone (ZoneBounds), its ends walls to the planner as the arena's are. Out past one (the zone lost there):
+			// a wall where the body is, so the only way on is back in (the planner would put a body past a wall back at it).
+			var (zw, ze) = ZoneBounds(ctx);
+			if (zw > int.MinValue)
+				minX = Math.Max(minX, zw * 16f);
+			if (ze < int.MaxValue)
+				maxX = Math.Min(maxX, (ze + 1) * 16f - p.Width);
+			minX = Math.Min(minX, ctx.Body.X);
+			maxX = Math.Max(maxX, ctx.Body.X);
 			KiteWorm(ctx, minX, maxX);
+		}
 		else {
 			TrackDash(ctx, boss, cx, cy);
 			Kite(ctx, boss, floorY, minX, maxX);

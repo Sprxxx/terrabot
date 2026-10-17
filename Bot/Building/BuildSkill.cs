@@ -59,14 +59,64 @@ public static class SiteFinder
 	/// A site's cost: its build steps (edits and items to place) at <see cref="StepScore"/> each, times
 	/// <see cref="EvilStepFactor"/> in the evil biome, plus the columns from <paramref name="around"/> to its middle. For an
 	/// arena wanted in the evil biome (<see cref="Blueprint.InEvilBiome"/>, the Eater of Worlds') the factor is inverted: off
-	/// the biome it is the dear one, a cost and not a ban (what the map shows of the zone undercounts it).
+	/// the biome it is the dear one, a cost and not a ban (what the map shows of the zone undercounts it), and a thin zone
+	/// round its middle costs more (<see cref="ZoneShortfall"/>).
 	/// </summary>
 	public static long Score(BotContext ctx, Blueprint bp, TilePos origin, int edits, TilePos around)
 	{
 		long steps = edits + bp.Items.Count;
 		if (!bp.IsHouse && InEvilBiome(ctx, bp, origin) != bp.InEvilBiome)
 			steps *= EvilStepFactor;
+		if (!bp.IsHouse && bp.InEvilBiome)
+			steps += ZoneShortfall(ctx, bp, origin);
 		return steps * StepScore + Math.Abs(origin.X + Shift(bp) - around.X);
+	}
+
+	/// <summary>
+	/// How far above the zone's threshold (<see cref="BotContext.CorruptionZoneTiles"/>) the worm's arena wants the count round
+	/// its middle once built (<see cref="CorruptionOnceBuilt"/>): the slope the game's count was seen to fall by round the
+	/// M10 arena (<see cref="ZoneSlopePerColumn"/>) over the columns the kiting goes from the fight's centre before turning
+	/// (<see cref="BossFightSkill.ArenaHalfWidth"/>).
+	/// </summary>
+	public const int ZoneMargin = ZoneSlopePerColumn * BossFightSkill.ArenaHalfWidth;
+
+	/// <summary>
+	/// The game's Corruption count, read from the measured run M10m's checkpoint worlds (world_eow) along the arena's stand row
+	/// 245: 358 at its middle (1920) before the build and 346 after it, 300 at x 1932 and 291 at 1936; 46 over 12 columns, about
+	/// 4 a column. The bot's own count there was 306, and the fights (M10m, M10n) kited east past 1932 and lost the worm.
+	/// </summary>
+	public const int ZoneSlopePerColumn = 4;
+
+	/// <summary>
+	/// The worm's arena's cost for too thin a zone: a build step for each tile the count round its middle once built falls
+	/// short of <see cref="ZoneMargin"/> over the threshold, at most <see cref="ZoneMargin"/> steps (a middle under the
+	/// threshold is off the zone, <see cref="EvilStepFactor"/>). A preference, not a ban: the M10 site (306, 6 over) costs 74
+	/// steps more than one with the margin.
+	/// </summary>
+	public static int ZoneShortfall(BotContext ctx, Blueprint bp, TilePos origin) =>
+		Math.Clamp(ZoneMargin - (CorruptionOnceBuilt(ctx, bp, origin, Middle(bp, origin)) - BotContext.CorruptionZoneTiles), 0, ZoneMargin);
+
+	/// <summary>Where a player stands in the arena's middle (the fight's centre, and where the zone is counted).</summary>
+	public static TilePos Middle(Blueprint bp, TilePos origin) => new(origin.X + bp.Width / 2, origin.Y + bp.StandRow);
+
+	/// <summary>
+	/// <see cref="BotContext.CorruptionAround"/> round <paramref name="t"/> once the plan at <paramref name="origin"/> is built:
+	/// without the seen tiles in its open cells, which the build mines or clears (the floor's blocks it keeps, and what it
+	/// places there, dirt or stone, counts nothing). Built already, nothing is left there to take off. Seen in game (measured
+	/// run M10m, its checkpoint worlds before and after the build): the arena at (1872,239) took 12-15 off the game's count
+	/// round its stand row.
+	/// </summary>
+	public static int CorruptionOnceBuilt(BotContext ctx, Blueprint bp, TilePos origin, TilePos t)
+	{
+		int n = ctx.CorruptionAround(t);
+		var (x0, x1, y0, y1) = BotContext.CorruptionCounted(t);
+		for (int x = Math.Max(x0, origin.X); x <= Math.Min(x1, origin.X + bp.Width - 1); x++)
+			for (int y = Math.Max(y0, origin.Y); y <= Math.Min(y1, origin.Y + bp.Height - 1); y++) {
+				PlanCell c = bp.At(x - origin.X, y - origin.Y);
+				if (c != PlanCell.None && c != PlanCell.Block)
+					n -= ctx.CorruptionWeightAt(x, y);
+			}
+		return n;
 	}
 
 	/// <summary>
@@ -89,10 +139,13 @@ public static class SiteFinder
 	/// </summary>
 	public static bool InEvilBiome(BotContext ctx, Blueprint bp, TilePos origin)
 	{
-		var mid = new TilePos(origin.X + bp.Width / 2, origin.Y + bp.StandRow);
-		bool middle = ctx.InEvilBiome(mid) || ctx.CorruptionAround(mid) >= BotContext.CorruptionZoneTiles;
-		if (!bp.InEvilBiome || !middle)
-			return middle;
+		var mid = Middle(bp, origin);
+		if (!bp.InEvilBiome)
+			return ctx.InEvilBiome(mid) || ctx.CorruptionAround(mid) >= BotContext.CorruptionZoneTiles;
+		// The worm's arena: the zone as it will be once built (CorruptionOnceBuilt), the tiles its build clears not counted.
+		int Zone(TilePos t) => CorruptionOnceBuilt(ctx, bp, origin, t);
+		if (!ctx.InEvilBiome(mid) && Zone(mid) < BotContext.CorruptionZoneTiles)
+			return false;
 		// The Eater of Worlds' arena: the Corruption zone (vanilla SceneMetrics.CorruptionTileThreshold, 300 in the scan round
 		// the player) must hold over the whole floor, its ends too, where the kiting takes the bot; the worm dives and despawns
 		// once no player is in it. Seen in game (measured run M10m, world_eow): the arena at (1872,239) had 306 corruption tiles
@@ -100,7 +153,7 @@ public static class SiteFinder
 		// ticks, not defeated, its bar empty", the Worm Food spent.
 		var west = new TilePos(origin.X + 1, mid.Y);
 		var east = new TilePos(origin.X + bp.Width - 2, mid.Y);
-		return ctx.CorruptionAround(west) >= BotContext.CorruptionZoneTiles && ctx.CorruptionAround(east) >= BotContext.CorruptionZoneTiles;
+		return Zone(west) >= BotContext.CorruptionZoneTiles && Zone(east) >= BotContext.CorruptionZoneTiles;
 	}
 
 	/// <summary>Arenas are searched by their middle (see <see cref="Find"/>); houses, small, by their left edge as before.</summary>
@@ -371,6 +424,8 @@ public sealed class BuildSkill : ISkill
 			ctx.Reserved = null;
 		if (rebuilt != null && ReferenceEquals(ctx.Rebuilt, rebuilt))
 			ctx.Rebuilt = null;
+		// The build changed the tiles there: what the chunks round it count (the Corruption zone's tiles among them) is stale.
+		ctx.RecountChunks(Origin.X, Origin.Y, Origin.X + bp.Width - 1, Origin.Y + bp.Height - 1);
 	}
 
 	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>

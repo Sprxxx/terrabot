@@ -377,6 +377,68 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_TheWormsArena_CountsTheZoneAsItWillBeOnceBuilt_NotWithTheTilesItsBuildClears()
+	{
+		// Measured run M10m (world_eow; the game's count read from its checkpoint worlds before and after the build): the arena
+		// at (1872,239) took 12-15 off the Corruption count round its stand row, and the zone then held west of x 1933 only.
+		// Here the corruption is two rows deep at x 0-300, and an ebonstone mound stands where the arena's open air goes
+		// (x 130-157, rows 18-24): counted, the zone holds at both ends of the floor; once the build has mined it, not at its
+		// west end.
+		FakeGame g = EarlyGameTests.FieldFrom(520, 210);
+		for (int x = 0; x <= 300; x++)
+			for (int y = 25; y <= 26; y++)
+				g.TileTypes[new TilePos(x, y)] = y == 25 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		for (int x = 130; x <= 157; x++)
+			for (int y = 18; y <= 24; y++) {
+				g.Grid.Set(x, y, CellKind.Solid);
+				g.TileTypes[new TilePos(x, y)] = FakeGame.TileEbonstone;
+			}
+		BotContext ctx = g.CreateContext(output);
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, inEvilBiome: true);
+		var origin = new TilePos(62, 18); // the floor on the ground at row 25, the middle at x 110
+		int row = origin.Y + eater.StandRow;
+		var west = new TilePos(origin.X + 1, row);
+		var mid = SiteFinder.Middle(eater, origin);
+		output.WriteLine($"west end: {ctx.CorruptionAround(west)} counted, {SiteFinder.CorruptionOnceBuilt(ctx, eater, origin, west)} once built; "
+			+ $"middle: {ctx.CorruptionAround(mid)} counted, {SiteFinder.CorruptionOnceBuilt(ctx, eater, origin, mid)} once built");
+		Assert.True(ctx.CorruptionAround(west) >= BotContext.CorruptionZoneTiles);
+		// The mound less the two blocks of it in the east end post (x 157, rows 23-24), which the build keeps.
+		Assert.Equal(ctx.CorruptionAround(mid) - (28 * 7 - 2), SiteFinder.CorruptionOnceBuilt(ctx, eater, origin, mid));
+		Assert.True(SiteFinder.CorruptionOnceBuilt(ctx, eater, origin, west) < BotContext.CorruptionZoneTiles);
+		Assert.False(SiteFinder.InEvilBiome(ctx, eater, origin), "the zone is counted with the mound the build mines");
+	}
+
+	[Fact]
+	public void SiteFinder_TheWormsArena_WithNoSiteFullyInTheZone_PrefersTheThickestZone_NotTheNearestSite()
+	{
+		// Measured runs M10m and M10n (world_eow): no site had the zone at both ends of its floor, and the one chosen, at
+		// (1872,239), had 306 corruption tiles round its middle by the bot's count, 6 over the zone's 300; the game's count
+		// held the zone over its west part only, and the fights kited out of it. Here the corruption (x 100-259, two rows deep,
+		// a third at x 150-210) is too thin for any floor's ends; sites off it all cost the same, and the nearest to the
+		// anchor, east of the corruption, had none of it round its middle.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 25; y++)
+			rows.Add(y == 24 ? new string('.', 330) + "S" + new string('.', 189) : new string('.', 520));
+		for (int y = 25; y < 45; y++)
+			rows.Add(new string('#', 520));
+		var g = new FakeGame(rows.ToArray());
+		for (int x = 100; x <= 259; x++)
+			for (int y = 25; y <= (x >= 150 && x <= 210 ? 27 : 26); y++)
+				g.TileTypes[new TilePos(x, y)] = y == 25 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		BotContext ctx = g.CreateContext(output);
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, searchRadius: Blueprint.ArenaFarSearchRadius, inEvilBiome: true);
+		var anchor = new TilePos(330, 24);
+		TilePos site = SiteFinder.Find(ctx, eater, anchor).Value;
+		TilePos mid = SiteFinder.Middle(eater, site);
+		int count = SiteFinder.CorruptionOnceBuilt(ctx, eater, site, mid);
+		output.WriteLine($"site {site}: {count} round its middle {mid}, {SiteFinder.ZoneShortfall(ctx, eater, site)} short of the margin; "
+			+ SiteFinder.Explain(ctx, eater, anchor));
+		Assert.False(SiteFinder.InEvilBiome(ctx, eater, site), "no site has the zone at both ends here");
+		Assert.True(count >= BotContext.CorruptionZoneTiles, $"{count} round the middle of the site {site}");
+		Assert.True(SiteFinder.ZoneShortfall(ctx, eater, site) < SiteFinder.ZoneMargin);
+	}
+
+	[Fact]
 	public void BuildSkill_Arena_UnderItsOwnFloor_TakesABlockOutToGetOnTop_AndPutsItBack()
 	{
 		// Measured run U23: the arena floor bridged over a dip at (1953..1991, 248); the walk from the house came up the dip
