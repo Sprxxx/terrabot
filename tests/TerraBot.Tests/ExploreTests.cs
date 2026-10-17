@@ -155,6 +155,54 @@ public class ExploreTests
 		Assert.False(ctx.ExploresWithoutOre.ContainsKey(FakeGame.IronOre));
 	}
 
+	[Fact]
+	public void OreOnTheMap_AStepBelowTheDepthFloor_IsGoneBackFor()
+	{
+		// Measured run U22: the floor at row 436 the whole armour phase, and iron seen at (2029,441) and (2122,443), 5-7 rows
+		// under it, sat on the map; once the +25 step came the bot went back for it and had 33 iron in about 2.5 game hours.
+		// 140 wide, the bot at (3,24) on grass, stone down to row 79; an iron vein at columns 100-115 from row oreTop, seen (on
+		// the map) and 97 tiles off: beyond the 40 in sight.
+		static FakeGame Ground(int oreTop)
+		{
+			var rows = Enumerable.Repeat(new string('.', 140), 25).ToList();
+			rows[24] = "...S" + new string('.', 136);
+			rows.Add(new string('#', 140));
+			rows.Add(new string('#', 140));
+			while (rows.Count < 80)
+				rows.Add(new string('s', 140));
+			rows.Add(new string('@', 140));
+			var g = new FakeGame(rows.ToArray());
+			for (int x = 100; x <= 115; x++)
+				for (int y = oreTop; y < oreTop + 3; y++)
+					g.TileTypes[new TilePos(x, y)] = FakeGame.TileIron;
+			return g;
+		}
+		FakeGame g = Ground(29);
+		BotContext ctx = g.CreateContext(output);
+		ctx.Combat.WeaponDamage = BotContext.GoodWeaponDamage;
+		ctx.CavernY = 26 - BotContext.ArmedMargin; // the floor at row 26: the vein 3-5 rows under it
+		var mine = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, mine, 60 * 60 * 2);
+		output.WriteLine($"{s}: {mine.Describe()} {mine.FailureReason}; iron {g.Count(FakeGame.IronOre)}");
+		foreach (string l in ((TestLog)ctx.Log).Lines.Where(l => l.StartsWith("Mine") || l.StartsWith("Explore")).Take(8))
+			output.WriteLine(l);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("on the map") && l.Contains("below the depth floor"));
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(g.Count(FakeGame.IronOre) >= 3);
+
+		// More than a step (DepthBonusStep) under the floor, not: a cost up to the next step, not the floor gone.
+		FakeGame g2 = Ground(26 + BotContext.DepthBonusStep + 1);
+		BotContext ctx2 = g2.CreateContext(output);
+		ctx2.Combat.WeaponDamage = BotContext.GoodWeaponDamage;
+		ctx2.CavernY = 26 - BotContext.ArmedMargin; // the floor at row 26 again
+		Assert.NotEmpty(g2.FindTiles(FakeGame.TileIron, new TilePos(105, 52), 5)); // on the map
+		var capped = new MineSkill(FakeGame.IronOre, FakeGame.TileIron, 3);
+		EarlyGameTests.RunSkill(g2, ctx2, capped, 5);
+		output.WriteLine(capped.Describe());
+		Assert.DoesNotContain(((TestLog)ctx2.Log).Lines, l => l.Contains("on the map"));
+		Assert.Contains(((TestLog)ctx2.Log).Lines, l => l.Contains("exploring"));
+	}
+
 	/// <summary>
 	/// 100 wide, open sky to row 9 (the bot at (50,9)), solid ground to row 120: an antlion charger seen 70 rows under the
 	/// start, so the zone its sighting makes in weak gear (<see cref="BotContext.BiomeZoneRadius"/>) spans the whole width.

@@ -114,6 +114,25 @@ public sealed class MineSkill : ISkill
 	/// </summary>
 	public int? OtherOreTaken { get; private set; }
 	public int MinedOwn { get; private set; }
+	/// <summary>
+	/// The ore and its <see cref="Also"/> ores: the tier group. An exploration's "found" check is <see cref="PickTarget"/>,
+	/// which takes any of them, so an exploration that found none found none of the group: it counts against each
+	/// (<see cref="BotContext.ExploresWithoutOre"/>, and the planner's fruitless count), and ore found clears them all.
+	/// Seen in game (measured run U22): counted per ore, silver's fruitless count (from a silver job's failure at t235652)
+	/// stayed while iron's was cleared, so silver ore cost twice iron's, and at d4 +5.5h the plan dropped "Silver Ore x68
+	/// (have 28)", 40 short, for "Iron Ore x60 (have 3)", 57 short; 15 such switches over 47 game hours, the stock split at
+	/// iron 30/60 and silver 34/68 for 31 hours, and 66 ore left over at full armour.
+	/// </summary>
+	public IEnumerable<int> TierGroup => Also.Select(a => a.Item).Prepend(ItemType).Distinct();
+	/// <summary>
+	/// Failed for want of ore after explorations that ran at the gear's depth floor (the deepest row they reached within
+	/// <see cref="ExploreSkill.FallbackDepth"/> of <see cref="BotContext.DeepestRow"/>, where they dig no deeper): the ground
+	/// within the floor is looked through, and the planner goes a step deeper before a trip to new ground
+	/// (ProgressionPlanner.TravelForOre). Ore only, not a life crystal (its own floor, ValuableDepthMargin deeper).
+	/// </summary>
+	public bool ExploredToFloor { get; private set; }
+	/// <summary>The deepest row this job's explorations took the bot to (int.MinValue: none yet).</summary>
+	private int deepestExplored = int.MinValue;
 	public int Mined { get; private set; }
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
@@ -199,6 +218,8 @@ public sealed class MineSkill : ISkill
 		}
 		if (sub != null) {
 			SkillStatus s = sub.Tick(ctx);
+			if (sub is ExploreSkill)
+				deepestExplored = Math.Max(deepestExplored, ctx.Node.Y);
 			if (Valuable(ctx) && sub is ExploreSkill)
 				NoteCrystalSearch(ctx);
 			if (s == SkillStatus.Running)
@@ -231,7 +252,7 @@ public sealed class MineSkill : ISkill
 		}
 		// An other tier's vein mined (Also): finish it, then hand back to the planner, which picks the tier again.
 		if (tookAlt && target == null && alt is (int altItem, int altTile)) {
-			if (veinExtra < MaxVeinExtra && lastMined is TilePos lm && NearestOf(ctx, altTile, lm, VeinRadius) is TilePos moreAlt) {
+			if (veinExtra < MaxVeinExtra && lastMined is TilePos lm && NearestOf(ctx, altTile, lm, VeinRadius, out _) is TilePos moreAlt) {
 				veinExtra++;
 				target = moreAlt;
 				mineTicks = 0;
@@ -274,19 +295,25 @@ public sealed class MineSkill : ISkill
 			return SkillStatus.Running;
 		// Counted on the context per item: a fight pauses the skill and the planner starts it afresh, and a count of its
 		// own went back to 0 each time (world_eye run 42: 12 game hours of the same first leg, never reaching the give-up).
-		int explores = ctx.ExploresWithoutOre[ItemType] = ctx.ExploresWithoutOre.GetValueOrDefault(ItemType) + 1;
+		// Against every ore of the tier group (TierGroup): the exploration looks for all of them.
+		int explores = 1 + TierGroup.Max(i => ctx.ExploresWithoutOre.GetValueOrDefault(i));
+		foreach (int i in TierGroup)
+			ctx.ExploresWithoutOre[i] = explores;
 		if (explores > MaxExplores) {
 			// Given up: the next job (after travelling to new ground) starts counting afresh. Kept, every later job failed at
 			// once, each a "fruitless" mine, and the travel target went out 120 tiles further each time (1,900 in run 47).
-			ctx.ExploresWithoutOre.Remove(ItemType);
+			ClearExplores(ctx);
 			ctx.PatrolPasses.Remove(ItemType); // and the next job walks the evil surface again first
-			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations in a row");
+			int floor = ctx.DeepestRow;
+			ExploredToFloor = !Valuable(ctx) && Bias == ExploreBias.Down && floor < int.MaxValue
+				&& Math.Max(deepestExplored, ctx.Node.Y) + ExploreSkill.FallbackDepth > floor;
+			return Fail(ctx, $"no {Label(ctx)} found after {MaxExplores} explorations in a row" + (ExploredToFloor ? $", down to the depth floor (row {floor})" : ""));
 		}
 		// Standing somewhere off limits (a biome zone, the underground desert): no exploring here, but somewhere new. Seen in
 		// game (world_eye run 59): explorations in the underground desert went on until antlion chargers killed the bot.
 		// The planner walks the bot out (ProgressionPlanner.LeaveOffLimits).
 		if (ctx.OffLimitsOutright(ctx.Node)) {
-			ctx.ExploresWithoutOre.Remove(ItemType);
+			ClearExplores(ctx);
 			return Fail(ctx, $"no {Label(ctx)} seen, and the explorations from here would be off limits");
 		}
 		// In a zone where monsters were seen, in full armour: a cost, not a ban, so the exploring weighs its way out (leg
@@ -295,12 +322,16 @@ public sealed class MineSkill : ISkill
 		if (ctx.OffLimits(ctx.Node))
 			ctx.Log.Info($"Mine: in a zone where monsters were seen at {ctx.Node}; exploring out of it in full armour");
 		// Ore seen before and still on the map: back for it before new ground (a player looks at the map). Not stone or dirt:
-		// those are everywhere.
-		if (!ctx.Ids.BuildingBlocks.Contains(ItemType) && Nearest(ctx, ctx.Node, MapSearchRadius) is TilePos known) {
+		// those are everywhere. Ore of the tier group too (Also): the explorations count against it as well (TierGroup), so
+		// an iron job leaving silver on the map would send the plan on a trip past it.
+		if (!ctx.Ids.BuildingBlocks.Contains(ItemType) && OnTheMap(ctx, out (int Item, int Tile)? other) is TilePos known) {
 			target = known;
+			alt = other;
 			mineTicks = 0;
 			arrivedOutOfReach = 0;
-			ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, but some at {known} on the map ({known.ChebyshevTo(ctx.Node)} tiles away); going back for it");
+			string some = other is (int otherItem, _) ? $"{ctx.Knowledge?.ItemName(otherItem) ?? $"item {otherItem}"}, which does as well," : "some";
+			string depth = known.Y > ctx.DeepestRow ? $", {known.Y - ctx.DeepestRow} rows below the depth floor (row {ctx.DeepestRow})" : "";
+			ctx.Log.Info($"Mine: no {Label(ctx)} within {SearchRadius} tiles, but {some} at {known} on the map ({known.ChebyshevTo(ctx.Node)} tiles away{depth}); going back for it");
 			return SkillStatus.Running;
 		}
 		// Only tiles the player has seen count (no x-ray): go and look, down into caves and through the ground.
@@ -395,7 +426,7 @@ public sealed class MineSkill : ISkill
 			Mined++;
 			lastMined = t;
 			unreachableInARow = 0;
-			ctx.ExploresWithoutOre.Remove(ItemType); // exploring found ore that got mined: only fruitless explorations in a row count
+			ClearExplores(ctx); // exploring found ore that got mined: only fruitless explorations in a row count
 			ctx.PatrolPasses.Remove(ItemType); // likewise passes along the evil surface
 			target = null;
 			sub?.Stop(ctx);
@@ -488,7 +519,58 @@ public sealed class MineSkill : ISkill
 	}
 
 	/// <summary>The nearest tile of this kind within <paramref name="radius"/> of <paramref name="around"/> that mining would take on.</summary>
-	private TilePos? Nearest(BotContext ctx, TilePos around, int radius) => NearestOf(ctx, TileType, around, radius);
+	private TilePos? Nearest(BotContext ctx, TilePos around, int radius) => NearestOf(ctx, TileType, around, radius, out _);
+
+	/// <summary>The fruitless explorations of this job's tier group are forgotten (ore found, or given up).</summary>
+	private void ClearExplores(BotContext ctx)
+	{
+		foreach (int i in TierGroup)
+			ctx.ExploresWithoutOre.Remove(i);
+	}
+
+	/// <summary>
+	/// The ore on the map (within <see cref="MapSearchRadius"/>) to go back for: this job's own or one of <see cref="Also"/>,
+	/// whichever costs least (<see cref="NearestOf"/>); <paramref name="other"/> is the Also ore taken, null for its own.
+	/// </summary>
+	private TilePos? OnTheMap(BotContext ctx, out (int Item, int Tile)? other)
+	{
+		other = null;
+		TilePos? best = NearestOf(ctx, TileType, ctx.Node, MapSearchRadius, out float bestCost);
+		foreach (var a in Also)
+			if (NearestOf(ctx, a.Tile, ctx.Node, MapSearchRadius, out float c) is TilePos o && c < bestCost) {
+				best = o;
+				bestCost = c;
+				other = a;
+			}
+		return best;
+	}
+
+	/// <summary>
+	/// Rows below the depth floor (<see cref="BotContext.DeepestRow"/>) that ore (in sight, or on the map) is still gone for,
+	/// while the floor has a step to go (<see cref="BotContext.MaxDepthBonus"/>): the next step's worth
+	/// (<see cref="BotContext.DepthBonusStep"/>), weighed as a cost (<see cref="BelowFloorRowTiles"/>), not banned. Seen in game
+	/// (measured run U22): with defence under 8 the floor stayed at row 436 through the armour phase, and the iron seen at
+	/// (2029,441) and (2122,443), 5-7 rows under it, sat on the map while the bot explored at the floor and went on a trip
+	/// west and back (10.2 game hours) that found no ore; after the +25 step it went back for them and had 33 iron in about
+	/// 2.5 game hours. Exploring itself keeps to the floor (ExploreSkill); the planner takes the step (ProgressionPlanner).
+	/// </summary>
+	public static int BelowFloorAllowance(BotContext ctx) =>
+		ctx.DeepestRow < int.MaxValue - BotContext.DepthBonusStep && ctx.DepthBonus < BotContext.MaxDepthBonus ? BotContext.DepthBonusStep : 0;
+
+	/// <summary>
+	/// Each row below the floor counts as this many tiles of distance: a full step down (<see cref="BotContext.DepthBonusStep"/>)
+	/// weighs as much as the map lookup's whole reach (<see cref="MapSearchRadius"/>), so ore within the floor anywhere on the
+	/// map comes first, and ore below it before new ground.
+	/// </summary>
+	public const int BelowFloorRowTiles = MapSearchRadius / BotContext.DepthBonusStep;
+
+	/// <summary>
+	/// <see cref="BelowFloorAllowance"/> for this job: ore only (a life crystal has its own margin, ValuableDepthMargin; stone
+	/// and dirt are everywhere). In sight as on the map, so the found check of an exploration at the floor sees that ore too.
+	/// </summary>
+	private int StepBelow(BotContext ctx) => Valuable(ctx) || ctx.Ids.BuildingBlocks.Contains(ItemType) ? 0 : BelowFloorAllowance(ctx);
+
+	private static float BelowFloorCost(TilePos c, int floor, int below) => below > 0 && c.Y > floor ? (c.Y - floor) * (float)BelowFloorRowTiles : 0f;
 
 	/// <summary>The tile of this ore to go for, else (none in sight) one of an <see cref="Also"/> ore; sets <see cref="alt"/>.</summary>
 	private TilePos? PickTarget(BotContext ctx)
@@ -513,22 +595,24 @@ public sealed class MineSkill : ISkill
 	/// The nearest tile of the type within <paramref name="radius"/> that mining would take on, failures lately (on this job
 	/// or an earlier one: BotContext.MineFailures) counted as distance.
 	/// </summary>
-	private TilePos? NearestOf(BotContext ctx, int tile, TilePos around, int radius)
+	private TilePos? NearestOf(BotContext ctx, int tile, TilePos around, int radius, out float cost)
 	{
 		TilePos? best = null;
 		float bestDist = float.MaxValue;
+		int floor = ctx.DeepestRow, below = StepBelow(ctx);
 		foreach (TilePos c in Find(ctx, tile, around, radius)) {
 			int d = c.ChebyshevTo(around);
 			if (d >= bestDist)
 				break; // nearest first: none further on can beat it
-			if (bad.Contains(c) || !ctx.InMiningReach(c, around, radius) || !WouldMine(ctx, ctx.Moves, c, Valuable(ctx)))
+			if (bad.Contains(c) || !ctx.InMiningReach(c, around, radius) || WhyNotMine(ctx, ctx.Moves, c, Valuable(ctx), below) != null)
 				continue;
-			float dist = d + ctx.MineFailureCost(c, radius);
+			float dist = d + ctx.MineFailureCost(c, radius) + BelowFloorCost(c, floor, below);
 			if (dist < bestDist) {
 				bestDist = dist;
 				best = c;
 			}
 		}
+		cost = bestDist;
 		return best;
 	}
 
@@ -591,11 +675,13 @@ public sealed class MineSkill : ISkill
 		MoveContext moves = ctx.Moves;
 		TilePos? best = null;
 		float bestScore = float.MaxValue;
+		int floor = ctx.DeepestRow, below = StepBelow(ctx);
 		foreach (TilePos c in Find(ctx, tileType, node, SearchRadius)) {
-			if (bad.Contains(c) || !ctx.InMiningReach(c, node, SearchRadius) || !WouldMine(ctx, moves, c, Valuable(ctx)))
+			if (bad.Contains(c) || !ctx.InMiningReach(c, node, SearchRadius) || WhyNotMine(ctx, moves, c, Valuable(ctx), below) != null)
 				continue;
-			// Given up on lately, by this job or an earlier one: after the tiles not tried yet.
-			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y) + ctx.MineFailureCost(c, SearchRadius);
+			// Given up on lately, by this job or an earlier one: after the tiles not tried yet. Below the floor (StepBelow):
+			// after the tiles within it.
+			float score = Math.Abs(c.X - node.X) + 1.5f * Math.Abs(c.Y - node.Y) + ctx.MineFailureCost(c, SearchRadius) + BelowFloorCost(c, floor, below);
 			// The row the bot stands on, under its feet and a step either side, last: seen in the settle scenario, it mined
 			// the stone it stood on tile by tile, placing a block each time to keep its footing, and the count never rose.
 			if (c.Y == node.Y + 1 && c.X >= node.X - 1 && c.X <= node.X + 2)
@@ -623,7 +709,8 @@ public sealed class MineSkill : ISkill
 	/// it, the gear's depth and the biomes the gear is too weak for still do. Seen in game: a crystal passed by with no
 	/// reason given (user report, 2026-10-15); every skip now has one.
 	/// </summary>
-	public static string WhyNotMine(BotContext ctx, MoveContext moves, TilePos c, bool valuable = false)
+	/// <remarks><paramref name="belowFloor"/>: rows below the gear's depth floor still taken (<see cref="BelowFloorAllowance"/>).</remarks>
+	public static string WhyNotMine(BotContext ctx, MoveContext moves, TilePos c, bool valuable = false, int belowFloor = 0)
 	{
 		if (ctx.UnreachableTiles.Contains(c))
 			return "could not get to it lately";
@@ -638,6 +725,8 @@ public sealed class MineSkill : ISkill
 		// A crystal a little deeper than ore, in a full set of armour (measured run S4: four crystals seen below row 701, while
 		// the bot explored six game days for others and found one).
 		int deepest = valuable && ctx.Combat.FullArmour && ctx.DeepestRow < int.MaxValue - ValuableDepthMargin ? ctx.DeepestRow + ValuableDepthMargin : ctx.DeepestRow;
+		if (belowFloor > 0 && deepest < int.MaxValue - belowFloor)
+			deepest += belowFloor;
 		if (c.Y > deepest)
 			return $"below row {deepest}, deeper than the gear allows";
 		// A crystal in a biome: worth going in for in a full set of armour (defense 8+, CavernDefense), as a player does; the

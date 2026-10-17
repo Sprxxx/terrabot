@@ -294,6 +294,14 @@ public sealed class ProgressionPlanner
 	/// <summary>Mining for this item found none around here (more travel, and a higher cost for it in recipes).</summary>
 	public void NoteFruitless(int item) => fruitlessMines[item] = fruitlessMines.GetValueOrDefault(item) + 1;
 
+	/// <summary>
+	/// A mining job's tier group (MineSkill.TierGroup: its ore and the Also ores its explorations looked for as well) per ore,
+	/// as the last job for it had it: a trip for one is a trip for all (<see cref="TravelForOre"/>).
+	/// </summary>
+	private readonly Dictionary<int, int[]> tierGroups = new();
+	/// <summary>Ores whose last fruitless job explored down to the depth floor (MineSkill.ExploredToFloor).</summary>
+	private readonly HashSet<int> fruitlessAtFloor = new();
+
 	/// <summary>The known items of a list (0 = not in this game's ids), each once.</summary>
 	private static int[] Tiers(params int[] items) => items.Where(i => i > 0).Distinct().ToArray();
 
@@ -494,22 +502,31 @@ public sealed class ProgressionPlanner
 			ctx.Log.Info($"Auto: no way down for the night's mining ({skill.FailureReason}); the house instead tonight");
 		}
 		if (skill is MineSkill mine) {
+			// Counted and cleared for the job's whole tier group (MineSkill.TierGroup): its explorations looked for all of it.
+			// Seen in game (measured run U10): iron stayed "fruitless" from t41400 while 145+ iron ore was mined by silver
+			// jobs, and the plan kept choosing "Silver Ore x40 (have 3)" for the pickaxe, 25.6 game hours. Measured run U22:
+			// cleared for the ore found only, silver's count from t235652 stayed while iron's went, silver cost twice iron, and
+			// the plan dropped "Silver Ore x68 (have 28)", 40 short, for "Iron Ore x60 (have 3)", 57 short (d4 +5.5h); 15
+			// switches between the tiers in 47 game hours. With the counts equal, CheapestToFinish chooses on the shortfall.
+			int[] group = mine.TierGroup.ToArray();
+			foreach (int g in group)
+				tierGroups[g] = group;
 			if (status == SkillStatus.Succeeded) {
 				exitTarget = null; // ore found after all: no trip
-				// The ore found is the one mined: the other tier's when the job took that (MineSkill.Also), not the one it was
-				// for. Seen in game (measured run U10): iron stayed "fruitless" from t41400 while 145+ iron ore was mined by
-				// silver jobs, so the plan kept choosing "Silver Ore x40 (have 3)" for the pickaxe, 25.6 game hours.
-				if (mine.OtherOreTaken is int other) {
-					fruitlessMines.Remove(other);
-					travelledFor.Remove(other);
-				}
-				if (mine.OtherOreTaken == null || mine.MinedOwn > 0) {
-					fruitlessMines.Remove(mine.ItemType);
-					travelledFor.Remove(mine.ItemType);
+				foreach (int g in group) {
+					fruitlessMines.Remove(g);
+					travelledFor.Remove(g);
+					fruitlessAtFloor.Remove(g);
 				}
 			}
 			else if (status == SkillStatus.Failed && mine.FailureReason.Contains("explorations"))
-				NoteFruitless(mine.ItemType);
+				foreach (int g in group) {
+					NoteFruitless(g);
+					if (mine.ExploredToFloor)
+						fruitlessAtFloor.Add(g);
+					else
+						fruitlessAtFloor.Remove(g);
+				}
 			if (status == SkillStatus.Failed && mine.FailureReason.Contains("would be off limits") && ctx.SpawnTile is TilePos spawn
 				&& spawn.ChebyshevTo(ctx.Node) > TravelArrivedTiles) {
 				leaveTarget = spawn;
@@ -2118,7 +2135,24 @@ public sealed class ProgressionPlanner
 		if (travelDest == null) {
 			if (fails == 0 || travelledFor.TryGetValue(item, out int t) && t >= fails)
 				return null;
-			travelledFor[item] = fails;
+			// A trip for one ore of a tier group is one for the others (the job looked for them all: MineSkill.TierGroup).
+			foreach (int g in tierGroups.GetValueOrDefault(item) ?? new[] { item })
+				travelledFor[g] = Math.Max(travelledFor.GetValueOrDefault(g), g == item ? fails : fruitlessMines.GetValueOrDefault(g));
+			// The explorations ran at the depth floor (MineSkill.ExploredToFloor): the ground within it is looked through, and
+			// the next step down is right below, so that before a trip. Seen in game (measured run U22): with the floor at row
+			// 436 the whole armour phase (explorations at rows 419-436), the trip west and back took 10.2 game hours (d3 +9.5h to
+			// +19.7h, as far as off-limits ground at (1858,295)) and found no ore, and the step came only with "nowhere to
+			// travel" at d3 +23.4h; at +25 the bot went back for iron seen at rows 441-443 and had 33 in about 2.5 hours, at
+			// +100 about 70 ore in 5 hours.
+			if (fruitlessAtFloor.Contains(item)) {
+				int floor = ctx.DeepestRow;
+				if (StepDeeper(ctx)) {
+					foreach (int g in tierGroups.GetValueOrDefault(item) ?? new[] { item })
+						fruitlessAtFloor.Remove(g);
+					ctx.Log.Info($"Auto: no more {name} found down to the depth floor (row {floor}); going {ctx.DepthBonus} rows deeper than the gear alone allows (down to row {ctx.DeepestRow}) before travelling to new ground");
+					return null;
+				}
+			}
 			// Nowhere to go (seen in game, world_eye run 68: between a corruption and a desert, every way crosses one):
 			// no trip, and no recall potion drunk for one either (five were, in a minute, each followed by mining from the spawn).
 			// Instead: back to the spawn to look from there, and from there deeper (run 70: auto mode stopped, every job failing).
@@ -2172,16 +2206,27 @@ public sealed class ProgressionPlanner
 	/// <summary>Where the last "nowhere to travel" for crystals looked on from the crystal band instead of the spawn.</summary>
 	private TilePos? crystalNoTripAt;
 
+	/// <summary>
+	/// One step deeper than the gear alone allows (<see cref="BotContext.DepthBonus"/>), if the bonus has a step to go and the
+	/// last step was <see cref="DeeperEveryTicks"/> ago: iron and silver each ran out at once and the bonus went from 25 to
+	/// 50 rows within seconds (world_eye run 72). The fruitless explorations are forgotten: the ground below is new.
+	/// </summary>
+	private bool StepDeeper(BotContext ctx)
+	{
+		if (ctx.DepthBonus >= BotContext.MaxDepthBonus || ctx.Tick - lastDeeperTick < DeeperEveryTicks)
+			return false;
+		lastDeeperTick = ctx.Tick;
+		ctx.DepthBonus += BotContext.DepthBonusStep;
+		ctx.ExploresWithoutOre.Clear();
+		return true;
+	}
+
 	private ISkill NoTripPossible(BotContext ctx, int item, string name)
 	{
-		// Deeper each time (wherever the bot is: mining from the spawn wanders far before it fails), but a step at a time:
-		// iron and silver each ran out at once and the bonus went from 25 to 50 rows within seconds (world_eye run 72).
-		if (ctx.DepthBonus < BotContext.MaxDepthBonus && ctx.Tick - lastDeeperTick >= DeeperEveryTicks) {
-			lastDeeperTick = ctx.Tick;
-			ctx.DepthBonus += BotContext.DepthBonusStep;
-			ctx.ExploresWithoutOre.Clear();
+		// Deeper each time (wherever the bot is: mining from the spawn wanders far before it fails), but a step at a time
+		// (StepDeeper).
+		if (StepDeeper(ctx))
 			ctx.Log.Info($"Auto: no more {name} within reach and nowhere to travel; going {ctx.DepthBonus} rows deeper than the gear alone allows (down to row {ctx.DeepestRow})");
-		}
 		// Crystals, in the crystal band or with a search there to go back to (MineSkill.SearchToResume): on from there, not back
 		// to the spawn and down through the rows above the band again. Unless the last time was here too (the search here got
 		// nowhere since): then the spawn, as before. Seen in game (measured run U9): "back to the spawn to look from there" 11
