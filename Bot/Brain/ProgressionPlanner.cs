@@ -1052,6 +1052,34 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>
+	/// The day's work for a craft whose ingredient waits for the night (a night-only hunt): the recipe's stations that need work
+	/// (a demon altar to find, a station to place), as a player looks for the altar by day while the lenses come at night. Null
+	/// when none does, or one is stuck (the night's wait stands then; the station's trouble comes up when it is its turn). Seen
+	/// in game (Journey run J3, Journey Test, 2026-10-17): the Suspicious Looking Eye's ingredients first, the lenses waiting for
+	/// the night, the altar was not looked at until the sixth lens, at day 9; the days went to "exploring for the corruption to
+	/// hunt for Rotten Chunk", the next boss's prep (82 heartbeats), and the run ended "exploring for a DemonAltar".
+	/// </summary>
+	private ISkill StationsByDay(RecipeInfo recipe, string name, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		string waiting = Status;
+		foreach (int station in recipe.Stations) {
+			nightOnlyByDay = false;
+			ISkill s = Resolve(new StationPlaced(station, ctx.Knowledge.TileName(station)), claims, depth + 1, ctx);
+			if (stuck != null) {
+				stuck = null;
+				break;
+			}
+			if (s != null && !nightOnlyByDay) {
+				Status = $"by day, the {ctx.Knowledge.TileName(station)} for {name} ({waiting}): {Status}";
+				return s;
+			}
+		}
+		Status = waiting;
+		nightOnlyByDay = true;
+		return null;
+	}
+
+	/// <summary>
 	/// A night-only stage waiting for dark by day (the Eye's lenses from demon eyes, the Eye's summon: <see cref="nightOnlyByDay"/>):
 	/// the day goes to the plan's later stages, in their order, and after the plan's last one to the next milestone's prep
 	/// (<see cref="NextMilestonePrep"/>), as a player spends the day on the work the plan needs anyway. Null when none of it is
@@ -1376,6 +1404,9 @@ public sealed partial class ProgressionPlanner
 		int crafts = (more + recipe.ResultStack - 1) / recipe.ResultStack;
 		foreach (Ingredient ing in recipe.Ingredients) {
 			ISkill sub = Resolve(new HaveItem(ing.Accepts, ing.Stack * crafts, k.ItemName(ing.Item)), claims, depth + 1, ctx);
+			// An ingredient waiting for the night (the Eye's lenses): its stations first, by day.
+			if (sub != null && nightOnlyByDay && stuck == null && StationsByDay(recipe, name, claims, depth, ctx) is ISkill station)
+				return station;
 			if (sub != null || stuck != null)
 				return sub;
 		}

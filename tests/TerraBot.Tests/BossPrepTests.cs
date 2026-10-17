@@ -431,6 +431,33 @@ public class BossPlannerTests
 		Assert.IsType<ExploreSkill>(new ProgressionPlanner().ResolveForTest(Eye, hc));
 	}
 
+	/// <summary>
+	/// Journey run J3 (Journey Test): by day, 2 of the 6 lenses, no altar seen: the Eye's stage waited for the night (its lenses
+	/// first), and the altar was not looked for until the sixth lens; the run ended "exploring for a DemonAltar". By day the
+	/// summon's station is the work: the altar looked for.
+	/// </summary>
+	[Fact]
+	public void ByDay_LensesShort_TheAltarIsLookedFor_NotTheNightWaitedFor()
+	{
+		FakeGame g = ProgressionTests.Mine(width: 200, sky: 60);
+		g.Items[FakeGame.Lens] = 2;
+		g.IsNight = false;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{p.Status} -> {s?.Describe()}");
+		Assert.IsType<ExploreSkill>(s);
+		Assert.Contains("exploring for a tile26", p.Status); // the fake names the altar tile26
+		// With the altar known, the day's wait for the night as before.
+		g.AddAltar(30, 59);
+		g.Refresh(ctx);
+		var q = new ProgressionPlanner();
+		ISkill t = q.ResolveForTest(Eye, ctx);
+		output.WriteLine($"{q.Status} -> {t?.Describe()}");
+		Assert.IsNotType<ExploreSkill>(t);
+	}
+
 	[Fact]
 	public void GenArea_ColumnsAndRoom()
 	{

@@ -23,7 +23,7 @@ public class NightWaitTests
 
 	/// <summary>
 	/// Every stage of the boss plan before the Eye met, by day, in the M10-like corrupt world: stations, a house, iron gear worn
-	/// (defense 9), the bow and the Eye's 500 arrows, max life 200, and the arena on open ground (no site in a world this small).
+	/// (defense 9), the bow and the Eye's 500 arrows, max life 200, the arena, and a demon altar seen.
 	/// </summary>
 	private (FakeGame, BotContext, ProgressionPlanner) TheEyeNext(string plan = ProgressionPlanner.Plans.Boss, BotBrain brain = null)
 	{
@@ -63,6 +63,8 @@ public class NightWaitTests
 		p.OnSkillFinished(build, built, ctx);
 		build.Stop(ctx);
 		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.BossArrows;
+		// The summon's altar seen too (by day the summon's station is looked for first: ProgressionPlanner.StationsByDay).
+		g.AddAltar(150, Feet - 1); // past the house and the arena
 		g.Refresh(ctx);
 		return (g, ctx, p);
 	}
