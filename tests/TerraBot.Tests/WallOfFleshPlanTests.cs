@@ -312,6 +312,19 @@ public class WallOfFleshPlanTests
 		Assert.Equal((Row, bridge.ToX), (row, to));
 		Assert.True(back <= bridge.FromX, $"the flight end {back} (the tower's roof counts as deck)");
 		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("on a hellbridge already built"));
+
+		// E21 (2026-10-17): the deck standing is shorter than the plan's length (a run resumed mid-way): not done; the plan goes on
+		// to the length, the summon end outward over lava where it can, the flight end for the rest.
+		p.Reset(ProgressionPlanner.Plans.WallOfFlesh);
+		p.Scheduler = ProgressionPlanner.Schedulers.Operation;
+		p.BridgeLength = Bridge + 40;
+		g.Refresh(ctx);
+		ISkill more = Next(p, ctx);
+		Assert.False(p.HellbridgeDone, p.Status);
+		var (row2, back2, to2) = Assert.IsType<(int, int, int)>(p.Hellbridge);
+		Assert.Equal(Bridge + 40, to2 - back2);
+		Assert.IsType<HellbridgeSkill>(more);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("short of the plan's"));
 	}
 
 	[Fact]

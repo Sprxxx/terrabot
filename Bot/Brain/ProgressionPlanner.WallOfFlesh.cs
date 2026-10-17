@@ -473,14 +473,32 @@ public sealed partial class ProgressionPlanner
 			int west = HellbridgeSkill.BridgeEnd(ctx.Grid, row, n.X, westLimit, ctx);
 			if (east - west >= BridgeLength / ResumedBridgeShare) {
 				bridgeDir = east - n.X <= n.X - west ? 1 : -1;
+				int dir0 = bridgeDir;
+				int stTo = dir0 > 0 ? east : west, stBack = dir0 > 0 ? west : east;
+				// Shorter than the plan's length (a run resumed mid-way: E21, 2026-10-17, 2,255 of 3,829 columns taken as the whole bridge,
+				// "done" at once, the fight's run short by half): the summon end goes on outward, over the lava (the last column with lava
+				// under where the doll lands), and what that cannot cover the flight end takes.
+				int shortfall = BridgeLength - (east - west);
+				if (shortfall > 0) {
+					int toLimit = dir0 > 0 ? eastLimit : westLimit;
+					int toWanted = dir0 > 0 ? Math.Min(stTo + shortfall, toLimit) : Math.Max(stTo - shortfall, toLimit);
+					int lavaEnd = LastLavaColumn(ctx, toWanted, stTo, dir0, row) ?? stTo;
+					shortfall -= Math.Abs(lavaEnd - stTo);
+					stTo = lavaEnd;
+					if (shortfall > 0) {
+						int backLimit = dir0 > 0 ? westLimit : eastLimit;
+						stBack = dir0 > 0 ? Math.Max(stBack - shortfall, backLimit) : Math.Min(stBack + shortfall, backLimit);
+					}
+				}
 				toEndKnown = backEndKnown = int.MinValue;
 				bridgeEndsTick = -1;
 				bridgeKnown = true;
 				bridgeRow = row;
 				bridgeFrom = n.X;
-				bridgeTo = bridgeDir > 0 ? east : west;
-				bridgeBack = bridgeDir > 0 ? west : east;
-				ctx.Log.Info($"Auto: on a hellbridge already built on row {row}, x {west}-{east}: the summon end is x {bridgeTo}");
+				bridgeTo = stTo;
+				bridgeBack = stBack;
+				ctx.Log.Info($"Auto: on a hellbridge already built on row {row}, x {west}-{east}: the summon end is x {bridgeTo}"
+					+ (stTo != (dir0 > 0 ? east : west) || stBack != (dir0 > 0 ? west : east) ? $"; short of the plan's {BridgeLength}: on to x {bridgeTo} and x {bridgeBack}" : ""));
 				return;
 			}
 		}
