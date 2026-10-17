@@ -72,6 +72,9 @@ public class BuildingTests
 		TilePos site = SiteFinder.Find(ctx, bp, g.Grid.Markers['S']).Value;
 		var build = new BuildSkill(bp, site);
 		Assert.Equal(SkillStatus.Succeeded, Run(g, ctx, build, 60 * 120));
+		// The chair faces its table (user report, 2026-10-17: "the chair is facing away from the table").
+		PlanItem chair = bp.Items.Single(i => i.ItemType == FakeGame.Chair);
+		Assert.Equal(-1, g.PlacedFacing.Where(kv => kv.Key.X == site.X + chair.X).Select(kv => kv.Value).Single());
 		Assert.Null(g.CheckHousing(site.X + bp.Inside.X, site.Y + bp.Inside.Y));
 		Assert.Null(ctx.Reserved);
 		Assert.Equal(40, g.Walls.Count);

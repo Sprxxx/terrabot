@@ -21,8 +21,10 @@ public enum PlanCell
 /// <summary>
 /// A multi-tile item placed at a cell rectangle of the plan (table, chair, torch, door). <paramref name="Optional"/>: a
 /// comfort the plan works without (an arena's campfire and torches), left out if it will not go down (BuildSkill).
+/// <see cref="Face"/>: the way the player faces when it is placed (-1 left, 1 right, 0 any): a chair takes the placer's
+/// direction (Player.PlaceThing passes Player.direction to TileObject.CanPlace), so a chair beside its table faces it.
 /// </summary>
-public readonly record struct PlanItem(int ItemType, int X, int Y, int Width, int Height, bool PlaceLast = false, bool Optional = false)
+public readonly record struct PlanItem(int ItemType, int X, int Y, int Width, int Height, bool PlaceLast = false, bool Optional = false, int Face = 0)
 {
 	public bool Covers(int x, int y) => x >= X && x < X + Width && y >= Y && y < Y + Height;
 }
@@ -138,7 +140,7 @@ public sealed class Blueprint
 		},
 		new[] {
 			new PlanItem(ids.Table, 4, 3, 3, 2),
-			new PlanItem(ids.Chair, 7, 3, 1, 2),
+			new PlanItem(ids.Chair, 7, 3, 1, 2, Face: -1), // facing the table on its left
 			new PlanItem(ids.Torch, 9, 2, 1, 1),
 			new PlanItem(ids.Door, 0, 2, 1, 3, PlaceLast: true),
 		}.Concat(heartLantern ? new[] { new PlanItem(ids.HeartLantern, 2, 1, 1, 2) } : Array.Empty<PlanItem>()).ToArray(),
@@ -190,7 +192,7 @@ public sealed class Blueprint
 		return new Blueprint(shared == 0 ? "NPC room" : shared < 0 ? "NPC room (left wall shared)" : "NPC room (right wall shared)", rows,
 			new[] {
 				new PlanItem(ids.Table, 3, 3, 3, 2),
-				new PlanItem(ids.Chair, 6, 3, 1, 2),
+				new PlanItem(ids.Chair, 6, 3, 1, 2, Face: -1), // facing the table on its left
 				new PlanItem(ids.Torch, 8, 2, 1, 1),
 				new PlanItem(ids.Door, door, 2, 1, 3, PlaceLast: true),
 			},

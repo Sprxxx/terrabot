@@ -540,7 +540,7 @@ public sealed class BuildSkill : ISkill
 
 	private enum Kind { Chop, Mine, Block, Wall, Item, Wait }
 
-	private readonly record struct Action(Kind Kind, TilePos Cell, TilePos Aim, int Item, (TilePos Min, TilePos Max)? Keep, bool Outside);
+	private readonly record struct Action(Kind Kind, TilePos Cell, TilePos Aim, int Item, (TilePos Min, TilePos Max)? Keep, bool Outside, int Face = 0);
 
 	private readonly Blueprint bp;
 	private readonly Dictionary<TilePos, int> failures = new();
@@ -667,6 +667,13 @@ public sealed class BuildSkill : ISkill
 			if (++actionTicks > MaxTicksPerAction)
 				return Failed(ctx, a.Cell, $"no effect after {MaxTicksPerAction} ticks");
 			State = $"{a.Kind} {a.Cell}";
+			// Turned the way the item is to face first (a chair to its table): a tap towards it, as a player turns (Player.direction
+			// follows velocity.X between swings). User report (2026-10-17): "the chair is facing away from the table".
+			if (a.Face != 0 && ctx.Combat.Facing != a.Face) {
+				if (ctx.Combat.ItemAnimation == 0)
+					ctx.Output.Horizontal = a.Face;
+				return SkillStatus.Running;
+			}
 			ctx.Output.UseItem = true;
 			ctx.Output.Aim(a.Aim.X, a.Aim.Y);
 			switch (a.Kind) {
@@ -838,7 +845,7 @@ public sealed class BuildSkill : ISkill
 			}
 			var min = new TilePos(Origin.X + it.X, Origin.Y + it.Y);
 			var max = new TilePos(min.X + it.Width - 1, min.Y + it.Height - 1);
-			return new Action(Kind.Item, min, AimFor(ctx, it), it.ItemType, (min, max), it.PlaceLast);
+			return new Action(Kind.Item, min, AimFor(ctx, it), it.ItemType, (min, max), it.PlaceLast, it.Face);
 		}
 		return null;
 	}

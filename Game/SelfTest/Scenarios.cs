@@ -633,7 +633,11 @@ public sealed class Scenario
 				// life crystal used) lets the Nurse come after him (SpawnAllowed_Nurse, NPC.cs:2101). The game moves them in itself:
 				// Main.UpdateTime_SpawnTownNPCs picks one every 7200 ticks of day, then WorldGen.SpawnTownNPC takes an empty valid
 				// room when a random tile update lands on its walls; so the run starts at dawn, with the whole day for it.
+				// By name, on a world where time runs: with Journey's time frozen (the default test world's saved powers) no NPC
+				// is ever picked (run 2026-10-17 on Pepi: rooms valid, "0/2 housed" at the timeout). PASS on Peppe, Noxious Vision
+				// of Organs: the Merchant and the Nurse in the bot's two rooms after 24271 ticks.
 				Name = "npc_housing",
+				ByName = true,
 				Rows = Grid(Repeat(new string('.', 70), 16),
 					"..S" + new string('.', 67),
 					new string(',', 70),

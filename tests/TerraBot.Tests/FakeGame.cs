@@ -901,8 +901,12 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 
 	/// <summary>Stations and tables are solid-top (Platform), doors solid, chairs and torches not in the way.</summary>
+	/// <summary>The way the body faced when each piece of furniture was placed (its top-left cell).</summary>
+	public readonly Dictionary<TilePos, int> PlacedFacing = new();
+
 	private void PlaceFurniture(int itemType, int x, int y)
 	{
+		PlacedFacing[new TilePos(x, y)] = facing;
 		int tile = TilePlacedBy(itemType);
 		var (w, h, ox, oy) = Footprint(itemType);
 		for (int cx = x - ox; cx < x - ox + w; cx++)

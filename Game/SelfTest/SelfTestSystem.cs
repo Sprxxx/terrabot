@@ -819,6 +819,12 @@ public sealed class SelfTestSystem : ModSystem
 				result.NpcRoomHousing ??= why == null ? null : $"{o}: {why}";
 			}
 			result.NpcRooms = bot.Brain.Planner.NpcRooms.Count;
+			// Which way each chair faces (TileID.Chairs frameX: 0 left, 18 right), the chair beside its table to face it.
+			foreach (var (o, plan) in rooms)
+				for (int cx = o.X; cx < o.X + plan.Width; cx++)
+					for (int cy = o.Y; cy < o.Y + plan.Height; cy++)
+						if (Main.tile[cx, cy].HasTile && Main.tile[cx, cy].TileType == TileID.Chairs && Main.tile[cx, cy].TileFrameY % 40 == 0)
+							Mod.Logger.Info($"SELFTEST {s.Name}: chair at ({cx},{cy}) faces {(Main.tile[cx, cy].TileFrameX / 18 % 2 == 0 ? "left" : "right")}");
 			foreach (TownNpcHome n in bot.GameInfo.TownNpcHomes()) {
 				var at = rooms.Where(r => !n.Homeless && n.Home.X >= r.Origin.X && n.Home.X < r.Origin.X + r.Plan.Width && n.Home.Y >= r.Origin.Y && n.Home.Y < r.Origin.Y + r.Plan.Height)
 					.Select(r => (TilePos?)r.Origin).FirstOrDefault();
