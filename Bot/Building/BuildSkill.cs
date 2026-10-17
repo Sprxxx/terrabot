@@ -90,7 +90,17 @@ public static class SiteFinder
 	public static bool InEvilBiome(BotContext ctx, Blueprint bp, TilePos origin)
 	{
 		var mid = new TilePos(origin.X + bp.Width / 2, origin.Y + bp.StandRow);
-		return ctx.InEvilBiome(mid) || ctx.CorruptionAround(mid) >= BotContext.CorruptionZoneTiles;
+		bool middle = ctx.InEvilBiome(mid) || ctx.CorruptionAround(mid) >= BotContext.CorruptionZoneTiles;
+		if (!bp.InEvilBiome || !middle)
+			return middle;
+		// The Eater of Worlds' arena: the Corruption zone (vanilla SceneMetrics.CorruptionTileThreshold, 300 in the scan round
+		// the player) must hold over the whole floor, its ends too, where the kiting takes the bot; the worm dives and despawns
+		// once no player is in it. Seen in game (measured run M10m, world_eow): the arena at (1872,239) had 306 corruption tiles
+		// round its middle; kiting east to (1935,245) the bot left the zone, and "the worm left: no segment in view for 320
+		// ticks, not defeated, its bar empty", the Worm Food spent.
+		var west = new TilePos(origin.X + 1, mid.Y);
+		var east = new TilePos(origin.X + bp.Width - 2, mid.Y);
+		return ctx.CorruptionAround(west) >= BotContext.CorruptionZoneTiles && ctx.CorruptionAround(east) >= BotContext.CorruptionZoneTiles;
 	}
 
 	/// <summary>Arenas are searched by their middle (see <see cref="Find"/>); houses, small, by their left edge as before.</summary>

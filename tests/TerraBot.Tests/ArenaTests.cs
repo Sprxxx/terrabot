@@ -359,6 +359,24 @@ public class ArenaTests
 	}
 
 	[Fact]
+	public void SiteFinder_TheEaterOfWorldsArena_HasTheZoneAtBothEnds_NotJustItsMiddle()
+	{
+		// Measured run M10m: the arena at (1872,239), 306 corruption tiles round its middle; kiting east the bot left the zone
+		// and the worm despawned ("its bar empty"). The corruption here is x 0-200; the anchor east of it.
+		FakeGame g = EarlyGameTests.FieldFrom(520, 210);
+		for (int x = 0; x <= 200; x++)
+			for (int y = 25; y < 30; y++)
+				g.TileTypes[new TilePos(x, y)] = y == 25 ? FakeGame.TileCorruptGrass : FakeGame.TileEbonstone;
+		BotContext ctx = g.CreateContext(output);
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, searchRadius: Blueprint.ArenaFarSearchRadius, inEvilBiome: true);
+		TilePos site = SiteFinder.Find(ctx, eater, new TilePos(260, 24)).Value;
+		int row = site.Y + eater.StandRow;
+		int west = ctx.CorruptionAround(new TilePos(site.X + 1, row)), east = ctx.CorruptionAround(new TilePos(site.X + eater.Width - 2, row));
+		output.WriteLine($"site {site}: corruption round its west end {west}, east end {east} (the zone wants {BotContext.CorruptionZoneTiles})");
+		Assert.True(west >= BotContext.CorruptionZoneTiles && east >= BotContext.CorruptionZoneTiles, $"site {site}: ends {west}/{east}");
+	}
+
+	[Fact]
 	public void BuildSkill_Arena_UnderItsOwnFloor_TakesABlockOutToGetOnTop_AndPutsItBack()
 	{
 		// Measured run U23: the arena floor bridged over a dip at (1953..1991, 248); the walk from the house came up the dip
