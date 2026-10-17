@@ -39,7 +39,11 @@ public sealed class TerrariaTileGrid : ITileGrid
 			// tile 230 only in "For the Worthy". Seen in game (measured run U28): in the desert at (2344,297), cactus columns
 			// read as thorns round the bot's body, every search expanded only its start node ("no path ... expanded 1"), and
 			// the blast-out found no way either; a fight's knockback freed it.
-			if (TileID.Sets.TouchDamageImmediate[type] > 0 && Collision.CanTileHurt(type, x, y, null))
+			// And what burns: hellstone, hellstone brick, meteorite (TileID.Sets.TouchDamageHot: 37, 58, 76, 230, 684) set the
+			// player on fire unless it walks on fire (Collision.CanTileHurt with the player: fireWalk). Seen in game (measured
+			// run M12b, world_wof): after a fight on the hellbridge the loot walk went down to row 1049, onto the Underworld's
+			// floor, "Physics params changed: run 1.665" (burning), and "Peppe was reduced to charcoal" at (2442,1041).
+			if ((TileID.Sets.TouchDamageImmediate[type] > 0 || TileID.Sets.TouchDamageHot[type]) && Collision.CanTileHurt(type, x, y, Main.LocalPlayer))
 				k |= CellKind.Hazard;
 			// A pressure plate (TileID.Sets.PressurePlate: 135, 428, 442) sets off whatever is wired to it when stepped on: not
 			// to be walked on, jumped over like thorns. Seen in game (measured run U17): walking to look for floor for a bench at
