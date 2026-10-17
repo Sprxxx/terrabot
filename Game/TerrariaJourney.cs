@@ -68,6 +68,24 @@ public sealed class TerrariaJourney : IJourney
 	public bool IsResearched(int itemType) =>
 		Enabled && itemType > 0 && Main.LocalPlayerCreativeTracker.ItemSacrifices.TryGetSacrificeNumbers(itemType, out int have, out int need) && have >= need;
 
+	private List<int> researched;
+	private uint researchedAt;
+
+	/// <summary>Every item researched to its cap (<see cref="IsResearched"/> over all items), worked out again every 600 game ticks.</summary>
+	public IReadOnlyList<int> ResearchedItems()
+	{
+		if (!Enabled)
+			return System.Array.Empty<int>();
+		if (researched == null || Main.GameUpdateCount - researchedAt >= 600 || Main.GameUpdateCount < researchedAt) {
+			researched = new List<int>();
+			for (int t = 1; t < Terraria.ModLoader.ItemLoader.ItemCount; t++)
+				if (IsResearched(t))
+					researched.Add(t);
+			researchedAt = Main.GameUpdateCount;
+		}
+		return researched;
+	}
+
 	public IReadOnlyList<(int Type, int Carried)> Researchable()
 	{
 		var list = new List<(int, int)>();

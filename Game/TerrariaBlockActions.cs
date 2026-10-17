@@ -37,6 +37,26 @@ public sealed class TerrariaBlockActions : IBlockActions
 	public string RangedName { get; private set; } = "";
 	public int AmmoCount { get; private set; }
 	public float ShotSpeed { get; private set; }
+
+	/// <summary>
+	/// The arrow's speed as the game fires it (vanilla Player.PickAmmo, Player.cs:54701-54713): a quiver worn (Magic, Molten or
+	/// Stalker's Quiver, Player.magicQuiver) x1.1, then the Archery buff x1.2 while under 20, capped at 20. Without these the aim would
+	/// lead every shot for a slower arrow once one is worn or drunk. Read from the worn items and the buff, not the per-tick flags,
+	/// which the game resets at the start of each update.
+	/// </summary>
+	public static float ArrowSpeed(Player p, Item bow, float speed)
+	{
+		if (bow.useAmmo != AmmoID.Arrow)
+			return speed;
+		for (int a = 3; a < 10; a++)
+			if (p.IsItemSlotUnlockedAndUsable(a) && p.armor[a].type is ItemID.MagicQuiver or ItemID.MoltenQuiver or ItemID.StalkersQuiver) {
+				speed *= 1.1f;
+				break;
+			}
+		if (p.HasBuff(BuffID.Archery) && speed < 20f)
+			speed = Math.Min(20f, speed * 1.2f);
+		return speed;
+	}
 	public int AxeSlot { get; private set; } = -1;
 	public int AxePower { get; private set; }
 
@@ -105,7 +125,7 @@ public sealed class TerrariaBlockActions : IBlockActions
 				if (!p.inventory[i].IsAir && p.inventory[i].ammo == AmmoID.Arrow)
 					AmmoCount += p.inventory[i].stack;
 			Item ammo = AmmoCount > 0 ? p.ChooseAmmo(bow) : null;
-			ShotSpeed = bow.shootSpeed + (ammo?.shootSpeed ?? 0f);
+			ShotSpeed = ArrowSpeed(p, bow, bow.shootSpeed + (ammo?.shootSpeed ?? 0f));
 		}
 		if (PickSlot >= 0) {
 			Item pick = p.inventory[PickSlot];
@@ -132,9 +152,9 @@ public sealed class TerrariaBlockActions : IBlockActions
 	/// slimes, zombies, skeletons). By raw damage per tick the copper shortsword (5 in 12 ticks) beat the wooden sword
 	/// (7 in 25), but against a yellow slime it did a point or two a hit; the bot swung for minutes and died.
 	/// </summary>
-	private static float WeaponScore(Item it) => IsMeleeWeapon(it) ? Math.Max(1f, it.damage - TypicalDefense / 2f) * 60f / Math.Max(1, it.useAnimation) : 0f;
+	internal static float WeaponScore(Item it) => IsMeleeWeapon(it) ? Math.Max(1f, it.damage - TypicalDefense / 2f) * 60f / Math.Max(1, it.useAnimation) : 0f;
 	private const int TypicalDefense = 8;
-	private static float RangedScore(Item it) => IsArrowWeapon(it) ? it.damage * 60f / Math.Max(1, it.useAnimation) : 0f;
+	internal static float RangedScore(Item it) => IsArrowWeapon(it) ? it.damage * 60f / Math.Max(1, it.useAnimation) : 0f;
 	private static float BlockScore(Item it) => IsThrowawayBlock(it) ? (IsCheapBlock(it.createTile) ? 1_000_000 : 0) + it.stack : 0f;
 
 	private static readonly (string what, Func<Item, float> score, float margin)[] Kinds = {

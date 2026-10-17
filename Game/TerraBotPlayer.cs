@@ -64,6 +64,7 @@ public sealed class TerraBotPlayer : ModPlayer
 
 	public override void Initialize()
 	{
+		GameInfo.Journey = Journey;
 		Context = new BotContext {
 			Grid = CachedTileGrid.Instance,
 			Blocks = Blocks,
@@ -577,6 +578,9 @@ public sealed class TerraBotPlayer : ModPlayer
 		}
 		k.BestHealLife = bestHeal;
 		k.PotionSickTicks = Player.potionDelay;
+		k.Mana = Player.statMana;
+		k.ManaMax = Player.statManaMax2;
+		k.MinionSlotsFree = Player.maxMinions - Player.slotsMinions;
 		k.Breath = Player.breath;
 		k.BreathMax = Player.breathMax;
 		k.Defense = Player.statDefense;

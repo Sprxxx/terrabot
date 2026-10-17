@@ -74,6 +74,12 @@ public sealed class UseItemSkill : ISkill
 
 	public UseItemSkill(int itemType) => ItemType = itemType;
 
+	/// <summary>
+	/// Point the mouse this far from the body's centre (px) while using it: a minion staff spawns its minion at the cursor, clamped
+	/// to the player's reach (vanilla Player.SpawnMinionOnCursor, Player.cs:50633-50646). Null: the mouse is left alone.
+	/// </summary>
+	public (float X, float Y)? MouseOffset { get; init; }
+
 	public string Describe() => $"Use item {ItemType}";
 	public void Start(BotContext ctx)
 	{
@@ -105,6 +111,11 @@ public sealed class UseItemSkill : ISkill
 		ctx.Output.Tool = ToolRequest.Item;
 		ctx.Output.ToolItem = ItemType;
 		ctx.Output.UseItem = true;
+		if (MouseOffset is (float mx, float my)) {
+			ctx.Output.HasMouseAim = true;
+			ctx.Output.MouseX = ctx.Body.CenterX(ctx.Physics) + mx;
+			ctx.Output.MouseY = ctx.Body.CenterY(ctx.Physics) + my;
+		}
 		pressed = true;
 		return SkillStatus.Running;
 	}

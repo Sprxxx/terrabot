@@ -185,7 +185,7 @@ public class ResearchModTests
 		}
 		var log = ((TestLog)ctx.Log).Lines;
 		int researched = log.FindIndex(l => l.StartsWith($"Journey: researched 1 item{Accessory}"));
-		int worn = log.FindIndex(l => l == $"Gear: wearing item{Accessory}");
+		int worn = log.FindIndex(l => l.StartsWith($"Gear: wearing item{Accessory} "));
 		output.WriteLine($"researched at line {researched}, worn at line {worn}");
 		Assert.True(g.Journey.IsResearched(Accessory));
 		Assert.Contains(g.Journey.Duplicated, d => d.Type == Accessory);

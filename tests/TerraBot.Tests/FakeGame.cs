@@ -682,6 +682,35 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public readonly Dictionary<(int Item, ToolKind Kind), int> ToolPowers = new();
 	public int ToolPower(int itemType, ToolKind kind) => ToolPowers.GetValueOrDefault((itemType, kind));
 	public IReadOnlyList<int> UnwornAccessories() => Accessories.Where(a => Count(a) > 0 && !Equipped.Contains(a)).ToList();
+	/// <summary>Accessories' worth by type (Game/AccessoryValue.cs in the game); unlisted ones are worth 1.</summary>
+	public readonly Dictionary<int, float> AccessoryValues = new();
+	public IReadOnlyList<int> WornAccessories() => Equipped.Where(Accessories.Contains).ToList();
+
+	/// <summary>Buff items (potions, food) by type, with the buff each gives; used up on use, the buff then on (<see cref="ActiveBuffs"/>).</summary>
+	public readonly Dictionary<int, int> BuffItems = new();
+	public readonly HashSet<int> ActiveBuffs = new();
+	public IReadOnlyList<int> FightBuffItems() => BuffItems
+		.Where(kv => (Count(kv.Key) > 0 || Journey.DuplicationAllowed && Journey.IsResearched(kv.Key)) && !ActiveBuffs.Contains(kv.Value)).Select(kv => kv.Key).ToList();
+	/// <summary>Minion staves: item, mana, slots; a use summons one minion (<see cref="Minions"/>) while slots and mana allow.</summary>
+	public readonly List<(int Item, int Mana, float Slots)> Staves = new();
+	public int Minions, MaxMinions = 1, Mana = 20;
+	/// <summary>Where the mouse pointed for the last minion summoned (null: not aimed).</summary>
+	public (float X, float Y)? LastMinionMouse;
+	public IReadOnlyList<(int Item, int Mana, float Slots)> SummonStaves() => Staves.Where(s => Count(s.Item) > 0).ToList();
+	public float AccessoryScore(int itemType, bool worn) =>
+		!Accessories.Contains(itemType) || worn && !Equipped.Contains(itemType) ? 0f : AccessoryValues.GetValueOrDefault(itemType, 1f);
+	public int AccessorySlots => 5;
+	public bool TrySwapAccessory(int wornType, int carriedType)
+	{
+		if (!Accessories.Contains(wornType) || !Equipped.Contains(wornType) || Count(carriedType) <= 0 || !Accessories.Contains(carriedType)
+			|| carriedType != wornType && Equipped.Contains(carriedType))
+			return false;
+		Equipped.Remove(wornType);
+		Items[wornType] = Count(wornType) + 1;
+		Items[carriedType]--;
+		Equipped.Add(carriedType);
+		return true;
+	}
 
 	/// <summary>Armour by item type: its slot and defence (tests register what they need).</summary>
 	public readonly Dictionary<int, (ArmorSlot Slot, int Defense)> Armor = new();
@@ -819,6 +848,21 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		if (o.Tool == ToolRequest.Pickaxe && o.UseItem && o.HasAim && Furniture.TryGetValue(new TilePos(o.AimX, o.AimY), out int any)
 			&& (PickaxeRemoves.Contains(any) || any == 21 && ChestEmptyAt(new TilePos(o.AimX, o.AimY))) && Sim.InToolRange(new TilePos(o.AimX, o.AimY)))
 			Furniture.Remove(new TilePos(o.AimX, o.AimY));
+		// A buff item used up and its buff on; a staff's use summons a minion (the game spawns it at the cursor).
+		if (o.Tool == ToolRequest.Item && o.UseItem && swingTimer == 0 && BuffItems.TryGetValue(o.ToolItem, out int buff) && Count(o.ToolItem) > 0) {
+			Items[o.ToolItem]--;
+			ActiveBuffs.Add(buff);
+			swingTimer = 17;
+		}
+		else if (o.Tool == ToolRequest.Item && o.UseItem && swingTimer == 0 && Staves.Any(s => s.Item == o.ToolItem) && Count(o.ToolItem) > 0) {
+			var staff = Staves.First(s => s.Item == o.ToolItem);
+			if (Mana >= staff.Mana && Minions < MaxMinions) {
+				Mana -= staff.Mana;
+				Minions++;
+				LastMinionMouse = o.HasMouseAim ? (o.MouseX, o.MouseY) : null;
+			}
+			swingTimer = 28;
+		}
 		// Using a life crystal: +20 max life up to 400.
 		if (o.Tool == ToolRequest.Item && o.ToolItem == LifeCrystal && o.UseItem && Count(LifeCrystal) > 0 && LifeMax < 400 && ++useTicks >= 30) {
 			useTicks = 0;
@@ -1145,6 +1189,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		ctx.Combat.Facing = facing;
 		ctx.Combat.LifeMax = LifeMax;
 		ctx.Combat.LifeMaxBase = LifeMax;
+		ctx.Combat.Mana = Mana;
+		ctx.Combat.ManaMax = 20;
+		ctx.Combat.MinionSlotsFree = MaxMinions - Minions;
 		ctx.Combat.Life = Life < 0 ? LifeMax : Life;
 		Blocks.BlockCount = Count(StoneBlock) + Count(DirtBlock);
 		if (refreshes++ % 20 == 0)

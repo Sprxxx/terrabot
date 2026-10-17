@@ -87,6 +87,79 @@ public class ErrandTests
 		g.Sim.State = new BodyState { X = Body.CanonicalLeft(SpawnX, ctx.Physics), Y = Body.StandingTop(HellTests.SurfaceFeet, ctx.Physics), ReleaseJump = true };
 	}
 
+	/// <summary>
+	/// world_wof E26 (2026-10-17): a life crystal mined on the way back down after a death stayed in the hotbar to the end of the run,
+	/// max life 240: only the plan's own pass used crystals, and the errand never asks the plan. The user: "a heart crystal in the
+	/// hotbar, unused". Now a carried crystal is used whatever runs, the errand going on.
+	/// </summary>
+	[Fact]
+	public void ACrystalCarriedMidErrand_IsUsedAtOnce_AndTheSameErrandGoesOn()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 3000, () => access.Phase == WallOfFleshErrand.DescendPhase && g.Sim.Node.Y >= HellTests.SurfaceFeet + 5);
+		// On the way down, two crystals in the bag and life short of 400 (as after the E26 death's re-descent).
+		g.LifeMax = ProgressionPlanner.MaxCrystalLife - 2 * ProgressionPlanner.LifePerCrystal;
+		g.Items[FakeGame.LifeCrystal] = 2;
+		Run(g, ctx, brain, 600, () => g.LifeMax >= ProgressionPlanner.MaxCrystalLife);
+		output.WriteLine($"max life {g.LifeMax}, crystals {g.Count(FakeGame.LifeCrystal)}, {brain.Describe()}");
+		Assert.Equal(ProgressionPlanner.MaxCrystalLife, g.LifeMax);
+		Assert.Equal(0, g.Count(FakeGame.LifeCrystal));
+		Assert.Contains(log.Lines, l => l.Contains("Habit: using a carried life crystal"));
+		Assert.Same(access, brain.Errand);
+	}
+
+	/// <summary>
+	/// world_wof E26 (2026-10-17): the five accessory slots held a Depth Meter (it works from the bag) and a Step Stool through the
+	/// Wall fight, filled in the order things were found; a worn accessory was never swapped out. The user: "before each boss fight,
+	/// we should strive to equip the best gear possible". The best carried ones are worn, the worst worn one gives way.
+	/// </summary>
+	[Fact]
+	public void AccessoriesAreRanked_TheWorstWornOneGivesWay_AndOneWorthNothingIsNeverWorn()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		TestLog log = Log(ctx);
+		const int depthMeter = 18, stool = 4341, aglet = 285, cloud = 53, shield = 156, band = 111;
+		foreach (int a in new[] { depthMeter, stool, aglet, cloud, FakeGame.HermesBoots, shield, band })
+			g.Accessories.Add(a);
+		g.AccessoryValues[depthMeter] = 0f; // an information accessory: worth nothing worn
+		g.AccessoryValues[stool] = 0f;
+		g.AccessoryValues[aglet] = 2f;
+		g.AccessoryValues[cloud] = 4.5f;
+		g.AccessoryValues[FakeGame.HermesBoots] = 5.2f;
+		g.AccessoryValues[shield] = 8f;
+		g.AccessoryValues[band] = 5f;
+		// Worn as E26 had them (five slots full); the shield and the band carried.
+		g.Equipped.UnionWith(new[] { depthMeter, stool, aglet, cloud, FakeGame.HermesBoots });
+		g.Items[shield] = 1;
+		g.Items[band] = 1;
+		Run(g, ctx, brain, 60 * 6, () => false);
+		var worn = g.Equipped.Where(g.Accessories.Contains).ToList();
+		output.WriteLine($"worn: {string.Join(", ", worn)}");
+		foreach (string l in log.Lines.Where(l => l.StartsWith("Gear:")))
+			output.WriteLine(l);
+		Assert.Contains(shield, worn);
+		Assert.Contains(band, worn);
+		Assert.DoesNotContain(depthMeter, worn);
+		Assert.DoesNotContain(stool, worn);
+		Assert.Equal(5, worn.Count);
+		Assert.Equal(1, g.Count(depthMeter)); // in the bag, where it works
+		// Nothing better left: no more swaps.
+		int swaps = log.Lines.Count(l => l.Contains("in place of"));
+		Run(g, ctx, brain, 60 * 4, () => false);
+		Assert.Equal(swaps, log.Lines.Count(l => l.Contains("in place of")));
+		// One worth nothing is not put into a free slot either.
+		g.Equipped.Remove(aglet);
+		g.Items[aglet] = 1;
+		g.Items[depthMeter] = 1;
+		g.Accessories.Add(aglet);
+		Run(g, ctx, brain, 60 * 2, () => false);
+		Assert.Contains(aglet, g.Equipped);
+		Assert.DoesNotContain(depthMeter, g.Equipped);
+	}
+
 	[Fact]
 	public void ThePlan_ProposesTheWallOfFleshErrand_AtTheUnderworldStage_WithTheRowsPackingList()
 	{

@@ -130,6 +130,8 @@ public sealed class BossFightSkill : ISkill
 	public const int GoneTicks = 90;
 
 	private ISkill summon;
+	/// <summary>The fight potions, food and minions used before the summon (<see cref="ReadyForBossSkill"/>).</summary>
+	private ReadyForBossSkill ready;
 	private UseItemSkill escape;
 	private string escapeWhy;
 	private bool escapeLogged;
@@ -364,6 +366,13 @@ public sealed class BossFightSkill : ISkill
 			// The Bloody Spine likewise out of the Crimson zone (Player.cs:43549-43552), and the Brain would sink away (NPC.cs:33385).
 			if (summon == null && InZone && ctx.Combat.InEvilZone == false)
 				return Fail(ctx, $"not in the {ZoneName} zone at {ctx.Node}: the summon would do nothing here");
+			// Ready first: the fight potions and food carried, and the minions the staves carried give (ReadyForBossSkill). It never
+			// fails the fight: what could not be used is left.
+			ready ??= Start(ctx, new ReadyForBossSkill());
+			if (ready.Tick(ctx) == SkillStatus.Running) {
+				State = "getting ready: " + ready.Describe();
+				return SkillStatus.Running;
+			}
 			summon ??= Start(ctx, Summon?.Invoke() ?? new UseItemSkill(SummonItem));
 			SkillStatus s = summon.Tick(ctx);
 			if (s == SkillStatus.Failed)

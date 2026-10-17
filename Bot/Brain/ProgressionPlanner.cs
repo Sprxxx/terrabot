@@ -790,6 +790,9 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	private bool LanternFromASpareCrystal(BotContext ctx) =>
 		ctx.Inventory.Count(ctx.Ids.HeartLantern) > 0 || ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 || !LanternStillNeeded(ctx);
 
+	/// <summary>Life crystals the plan keeps rather than uses: one for the heart lantern while it is still wanted and max life is in.</summary>
+	public int CrystalsKept(BotContext ctx) => LanternStillNeeded(ctx) && ctx.Combat.LifeMaxBase >= BossLife ? 1 : 0;
+
 	public static bool LifeCrystalUseful(BotContext ctx) => ctx.Ids.LifeCrystal > 0 && ctx.Combat.LifeMaxBase > 0 && ctx.Combat.LifeMaxBase < MaxCrystalLife;
 
 	/// <summary>Max life one life crystal adds (vanilla Player.ItemCheck_UseLifeCrystal: UseHealthMaxIncreasingItem(20) while ConsumedLifeCrystals &lt; 15, Player.cs:45568-45576).</summary>
@@ -1266,7 +1269,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			if (CrystalsForResearch(ctx))
 				return Do($"researching {ctx.Inventory.Count(ctx.Ids.LifeCrystal)} life crystals (max life {ctx.Combat.LifeMaxBase})", new ResearchSkill(ctx.Ids.LifeCrystal));
 			// Life first; a crystal is kept for the heart lantern only once max life is in (see LanternFromASpareCrystal).
-			int keep = LanternStillNeeded(ctx) && ctx.Combat.LifeMaxBase >= BossLife ? 1 : 0;
+			int keep = CrystalsKept(ctx);
 			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > keep && !HoldCrystalsForResearch(ctx))
 				return Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase})", new UseItemSkill(ctx.Ids.LifeCrystal));
 			// Journey, researched: a click in the duplication menu, and every use up to the most crystals give (a stack is 9999).

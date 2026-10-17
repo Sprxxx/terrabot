@@ -188,6 +188,34 @@ public interface IInventory
 	int ArmorDefense(int itemType) => 0;
 	/// <summary>The item worn in the slot, or -1.</summary>
 	int Worn(ArmorSlot slot) => -1;
+
+	/// <summary>Accessories worn in the usable accessory slots (vanilla Player.armor[3..9] that count), one entry each.</summary>
+	IReadOnlyList<int> WornAccessories() => System.Array.Empty<int>();
+
+	/// <summary>
+	/// What the accessory is worth worn, in defence points: the worn one's (<paramref name="worn"/>), else the best carried one of
+	/// that type (prefixes differ between copies), or with none carried, the type's own worth (no prefix: Journey's duplicates). 0 for one that does nothing worn (an information accessory works from the bag)
+	/// or that the bot keeps off (body physics it does not model). The game's table: Game/AccessoryValue.cs.
+	/// </summary>
+	float AccessoryScore(int itemType, bool worn) => 1f;
+
+	/// <summary>
+	/// Carried items worth using right before a boss fight whose buff is not on now, best first, one per buff: the fight potions
+	/// (Summoning first, then Ironskin, Endurance, Regeneration, Archery, Swiftness...), the best food above the Well Fed tier on now.
+	/// None that changes the body's physics in ways the bot does not model (Featherfall, Gravitation, Water Walking). The game's
+	/// list: TerrariaGameInfo.FightBuffs.
+	/// </summary>
+	IReadOnlyList<int> FightBuffItems() => System.Array.Empty<int>();
+
+	/// <summary>Usable accessory slots (5 in Classic; one more with the Demon Heart in Expert, two in Master).</summary>
+	int AccessorySlots => 5;
+	/// <summary>The item's worth as the bot's bow (damage per second, the game's hotbar rule; 0: not an arrow weapon).</summary>
+	float RangedScore(int itemType) => 0f;
+	/// <summary>The item's worth as the bot's melee weapon (the game's hotbar rule; 0: not one the bot swings).</summary>
+	float MeleeScore(int itemType) => 0f;
+
+	/// <summary>Carried minion staves, the most damage first: the item, its mana cost, the minion slots one use takes.</summary>
+	IReadOnlyList<(int Item, int Mana, float Slots)> SummonStaves() => System.Array.Empty<(int, int, float)>();
 }
 
 public enum CraftResult
@@ -216,6 +244,13 @@ public interface ICrafter
 
 	/// <summary>Take a worn accessory off into a free inventory slot, like shift-clicking it. False if it could not.</summary>
 	bool TryTakeOff(int itemType);
+
+	/// <summary>
+	/// Swap a carried accessory into the slot of a worn one, the worn one into the bag slot (a plain slot swap, as dragging it there
+	/// does), under the game's rules (no duplicates beside it, one pair of wings, tModLoader's CanEquipAccessory). The carried
+	/// one may be the same type as the worn one: its best-prefixed copy. False if it could not.
+	/// </summary>
+	bool TrySwapAccessory(int wornType, int carriedType) => false;
 
 	/// <summary>Trash the smallest stack of this item, like ctrl-clicking it (vanilla ItemSlot quick trash). False if none.</summary>
 	bool TryTrash(int itemType);

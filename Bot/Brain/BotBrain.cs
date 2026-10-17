@@ -689,21 +689,84 @@ public sealed class BotBrain
 	}
 
 	/// <summary>
-	/// Put on carried accessories while a slot is free (Hermes Boots from a chest, a Band of Regeneration...), but none that
-	/// holds the body at the water's surface: the paths wade to flooded floors. Seen in game (measured run S5): an Inner Tube
-	/// from a chest, worn, held the bot afloat over a flooded hole at vy -3 (vanilla Player.TryFloatingInFluid) for 278
-	/// heartbeats, every walk failing "never landed" and every work bench with it.
+	/// Wear the best accessories carried (<see cref="IInventory.AccessoryScore"/>, the game's table in Game/AccessoryValue.cs): the
+	/// best into a free slot, and with every slot full, the best carried one in place of the worst worn one when it is worth more
+	/// (a better-prefixed copy of a worn one too), one swap a call. None that does nothing worn (an information accessory works from
+	/// the bag) or that the bot keeps off. Seen in game (world_wof E26, 2026-10-17): the five slots filled in the order things were
+	/// found, a Depth Meter and a Step Stool among them, through the Wall fight; the user: "before each boss fight, we should strive
+	/// to equip the best gear possible". None that holds the body at the water's surface either: the paths wade to flooded floors
+	/// (measured run S5: an Inner Tube held the bot afloat over a flooded hole, vanilla Player.TryFloatingInFluid, for 278 heartbeats).
 	/// </summary>
 	private static void WearAccessories(BotContext ctx)
 	{
 		foreach (int item in ctx.Ids.FloatingAccessories)
 			if (ctx.Inventory.IsEquipped(item) && ctx.Crafter.TryTakeOff(item))
 				ctx.Log.Info($"Gear: taking off {ctx.Knowledge.ItemName(item)} (it floats the body on water; the paths wade to the floor)");
-		foreach (int item in ctx.Inventory.UnwornAccessories())
-			// Not the Guide Voodoo Doll, an accessory (Item.cs:6839-6845): worn, it is not in the bag to be thrown (docs M12_SPEC.md S6).
-			if (System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && item != ctx.Ids.GuideVoodooDoll && !ResearchFirst(ctx, item) && ctx.Crafter.TryEquip(item))
-				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)}");
+		// Not the Guide Voodoo Doll, an accessory (Item.cs:6839-6845): worn, it is not in the bag to be thrown (docs M12_SPEC.md S6).
+		bool Wearable(int item) => System.Array.IndexOf(ctx.Ids.FloatingAccessories, item) < 0 && item != ctx.Ids.GuideVoodooDoll && !ResearchFirst(ctx, item);
+		List<(int Item, float Score)> Carried() => ctx.Inventory.UnwornAccessories().Where(Wearable)
+			.Select(i => (Item: i, Score: ctx.Inventory.AccessoryScore(i, worn: false))).Where(c => c.Score > 0f).OrderByDescending(c => c.Score).ToList();
+		foreach (var (item, score) in Carried())
+			if (ctx.Crafter.TryEquip(item))
+				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)} (worth {score:0.#})");
+		var worn = ctx.Inventory.WornAccessories().Where(w => w != ctx.Ids.GuideVoodooDoll)
+			.Select(w => (Item: w, Score: ctx.Inventory.AccessoryScore(w, worn: true))).OrderBy(w => w.Score).ToList();
+		if (worn.Count == 0)
+			return;
+		// A better copy of a worn one (its prefix) first, else the best other one carried in place of the worst worn one.
+		foreach (var (item, score) in worn) {
+			float copy = ctx.Inventory.Count(item) > 0 ? ctx.Inventory.AccessoryScore(item, worn: false) : 0f;
+			if (copy > score + SwapMargin && Wearable(item) && ctx.Crafter.TrySwapAccessory(item, item)) {
+				ctx.Log.Info($"Gear: wearing a better {ctx.Knowledge.ItemName(item)} (worth {copy:0.#} over {score:0.#})");
+				return;
+			}
+		}
+		var (worst, worstScore) = worn[0];
+		foreach (var (item, score) in Carried()) {
+			if (score <= worstScore + SwapMargin)
+				break;
+			if (ctx.Crafter.TrySwapAccessory(worst, item)) {
+				ctx.Log.Info($"Gear: wearing {ctx.Knowledge.ItemName(item)} (worth {score:0.#}) in place of {ctx.Knowledge.ItemName(worst)} ({worstScore:0.#})");
+				return;
+			}
+		}
 	}
+
+	/// <summary>An accessory is swapped in only when it is worth this much more than the one it replaces (defence points).</summary>
+	public const float SwapMargin = 0.25f;
+
+	/// <summary>
+	/// Max life from a carried life crystal at once, whatever runs: the errand, the descent, the plan. Only the plan's own pass used
+	/// one, and an errand never asks the plan. Seen in game (world_wof E26, 2026-10-17): a crystal mined on the way back down after a
+	/// death stayed in the hotbar to the end of the run, max life 240 (the user: "a heart crystal in the hotbar, unused"); E10 and E16
+	/// alike. Laid over the running skill's controls for the use (the movement goes on), only while that skill holds no item and no
+	/// hostile is near: a fight, a placement or a swing comes first. Not a crystal the plan keeps (the heart lantern's, the Journey
+	/// research's).
+	/// </summary>
+	private void UseCarriedCrystal(BotContext ctx)
+	{
+		int crystal = ctx.Ids.LifeCrystal;
+		if (crystal <= 0 || ctx.Output.Tool != ToolRequest.None || ctx.BodyIssue != null || !ctx.Body.Grounded || !ProgressionPlanner.LifeCrystalUseful(ctx)
+			|| ProgressionPlanner.HoldCrystalsForResearch(ctx) || ctx.Inventory.Count(crystal) <= Planner.CrystalsKept(ctx))
+			return;
+		if (ctx.Combat.ItemAnimation > 0 && ctx.Combat.HeldItemType != crystal)
+			return; // another item's swing runs out first
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		foreach (EntityInfo h in ctx.Hostiles)
+			if (h.Damage > 0 && !ctx.Spared(h) && h.DistanceTo(cx, cy) <= CrystalUseHostileTiles * 16f)
+				return;
+		if (crystalLoggedAt != ctx.Inventory.Count(crystal)) {
+			crystalLoggedAt = ctx.Inventory.Count(crystal);
+			ctx.Log.Info($"Habit: using a carried life crystal (max life {ctx.Combat.LifeMaxBase}) during {Current?.Name ?? "nothing"}");
+		}
+		ctx.Output.Tool = ToolRequest.Item;
+		ctx.Output.ToolItem = crystal;
+		ctx.Output.UseItem = true;
+	}
+
+	/// <summary>No crystal is used with a hostile (not a spared one) this near (tiles): the fight first.</summary>
+	public const int CrystalUseHostileTiles = 12;
+	private int crystalLoggedAt = -1;
 
 	/// <summary>
 	/// Journey: an accessory not yet researched is researched first (ResearchHabit, a copy duplicated back), then worn, as the
@@ -1038,6 +1101,7 @@ public sealed class BotBrain
 			DropPickupBlockers(ctx);
 			ResearchHabit.TrashResearched(ctx, Current);
 			KeepRoom(ctx);
+			JourneyGear.Tick(ctx); // Journey: the best researched gear duplicated into the bag, worn below
 			WearAccessories(ctx);
 			WearBestArmour(ctx);
 			NoteEvilEnemies(ctx);
@@ -1137,6 +1201,8 @@ public sealed class BotBrain
 			return;
 
 		SkillStatus status = Current.Tick(ctx);
+		if (Auto && status == SkillStatus.Running)
+			UseCarriedCrystal(ctx);
 		// On the errand's deck (the hellbridge), shots are dodged whatever the work: the bridge and the crafting at its end took the
 		// sickles that threw the bot off it (E11, E12, 2026-10-17); only a fight dodged. The fights keep their own dodge.
 		if (status == SkillStatus.Running && ctx.Shots.Count > 0 && Current is not FightSkill && Current is not BossFightSkill

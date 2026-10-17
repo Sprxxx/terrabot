@@ -68,6 +68,11 @@ public sealed class CombatInfo
 	public bool CanQuickHeal { get; set; }
 	/// <summary>The most life one healing potion in the bag gives (vanilla Player.GetHealLife with quickHeal), 0 for none or not known.</summary>
 	public int BestHealLife { get; set; }
+	/// <summary>Mana now and at most (vanilla Player.statMana, statManaMax2): a staff costs some to use.</summary>
+	public int Mana { get; set; }
+	public int ManaMax { get; set; }
+	/// <summary>Minion slots not taken (vanilla Player.maxMinions - slotsMinions): another minion fits while at least its slots are free.</summary>
+	public float MinionSlotsFree { get; set; }
 	/// <summary>Ticks of potion sickness left (vanilla Player.potionDelay): above 0 just after a heal.</summary>
 	public int PotionSickTicks { get; set; }
 	/// <summary>Breath (Player.breath, 0..breathMax = 200): runs down under water, drowning at 0.</summary>

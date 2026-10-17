@@ -1047,8 +1047,193 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 			return false;
 		if (item.accessory && (!FreeAccessorySlot() || IsEquipped(itemType)))
 			return false; // never swap a worn accessory out; the same one twice is not allowed anyway
+		// Vanilla's right-click swaps a second pair of wings with the worn pair (ItemSlot.AccessorySwap): two pairs would flip forever.
+		if (item.accessory)
+			for (int a = AccessoryStart; a < AccessoryEnd; a++)
+				if (!player.armor[a].IsAir && (item.wingSlot > 0 && player.armor[a].wingSlot > 0
+					|| !Terraria.ModLoader.ItemLoader.CanAccessoryBeEquippedWith(player, player.armor[a], item)))
+					return false;
 		Terraria.UI.ItemSlot.SwapEquip(player.inventory, Terraria.UI.ItemSlot.Context.InventoryItem, slot);
 		return IsEquipped(itemType);
+	}
+
+	public IReadOnlyList<int> WornAccessories()
+	{
+		var list = new List<int>();
+		for (int a = AccessoryStart; a < AccessoryEnd; a++)
+			if (player.IsItemSlotUnlockedAndUsable(a) && !player.armor[a].IsAir && !list.Contains(player.armor[a].type))
+				list.Add(player.armor[a].type);
+		return list;
+	}
+
+	/// <summary>The bot's Journey adapter (set by TerraBotPlayer): researched items count as had, a duplication away.</summary>
+	public IJourney Journey { get; set; }
+
+	private bool Duplicable(int itemType) => Journey != null && Journey.Enabled && Journey.DuplicationAllowed && Journey.IsResearched(itemType);
+
+	public int AccessorySlots
+	{
+		get {
+			int n = 0;
+			for (int a = AccessoryStart; a < AccessoryEnd; a++)
+				if (player.IsItemSlotUnlockedAndUsable(a))
+					n++;
+			return n;
+		}
+	}
+
+	public float RangedScore(int itemType) =>
+		itemType > 0 && itemType < Terraria.ModLoader.ItemLoader.ItemCount ? TerrariaBlockActions.RangedScore(ContentSamples.ItemsByType[itemType]) : 0f;
+
+	public float MeleeScore(int itemType) =>
+		itemType > 0 && itemType < Terraria.ModLoader.ItemLoader.ItemCount ? TerrariaBlockActions.WeaponScore(ContentSamples.ItemsByType[itemType]) : 0f;
+
+	public float AccessoryScore(int itemType, bool worn)
+	{
+		float best = 0f;
+		if (worn) {
+			for (int a = AccessoryStart; a < AccessoryEnd; a++)
+				if (player.IsItemSlotUnlockedAndUsable(a) && player.armor[a].type == itemType && !player.armor[a].IsAir)
+					best = Math.Max(best, AccessoryValue.Of(player.armor[a]));
+			return best;
+		}
+		int group = AccessoryValue.GroupOf(itemType);
+		bool effectCounts = true;
+		if (group > 0)
+			for (int a = AccessoryStart; a < AccessoryEnd; a++)
+				if (player.IsItemSlotUnlockedAndUsable(a) && !player.armor[a].IsAir && player.armor[a].type != itemType
+					&& AccessoryValue.GroupOf(player.armor[a].type) == group)
+					effectCounts = false;
+		bool carried = false;
+		for (int i = 0; i < MainInventorySlots; i++)
+			if (player.inventory[i].type == itemType && !player.inventory[i].IsAir) {
+				carried = true;
+				best = Math.Max(best, AccessoryValue.Of(player.inventory[i], effectCounts));
+			}
+		if (!carried && itemType > 0 && itemType < Terraria.ModLoader.ItemLoader.ItemCount)
+			best = AccessoryValue.Of(ContentSamples.ItemsByType[itemType], effectCounts);
+		return best;
+	}
+
+	/// <summary>
+	/// Buffs worth having on for a boss fight, in the order they are drunk (Summoning first, so a staff fills two slots). Effects
+	/// (docs knowledge topics/buffs-food-and-furniture.md; vanilla Player.UpdateBuffs, Player.cs:8322-8586): Ironskin +8 defence,
+	/// Endurance -10 % damage, Regeneration +4 life regen, Archery +10 % arrow damage and x1.2 speed (the aim reads it,
+	/// TerrariaBlockActions.ArrowSpeed), Swiftness +25 % run speed (the physics reads run speeds each tick). Not Featherfall,
+	/// Gravitation or Water Walking: they change the body's physics in ways the bot does not model; not Battle (more spawns).
+	/// </summary>
+	private static readonly int[] FightBuffs = {
+		BuffID.Summoning, BuffID.Ironskin, BuffID.Endurance, BuffID.Regeneration, BuffID.Lifeforce, BuffID.Archery, BuffID.Wrath,
+		BuffID.Rage, BuffID.AmmoReservation, BuffID.Swiftness, BuffID.Thorns, BuffID.Heartreach, BuffID.ObsidianSkin, BuffID.Titan, BuffID.Warmth,
+	};
+
+	/// <summary>Well Fed's tiers (vanilla BuffID 26, 206, 207: Well Fed, Plenty Satisfied, Exquisitely Stuffed).</summary>
+	private static int FoodTier(int buff) => buff == BuffID.WellFed ? 1 : buff == BuffID.WellFed2 ? 2 : buff == BuffID.WellFed3 ? 3 : 0;
+
+	public IReadOnlyList<int> FightBuffItems()
+	{
+		var byBuff = new Dictionary<int, int>();
+		int foodItem = -1, foodTier = 0;
+		int activeFood = Math.Max(Math.Max(player.HasBuff(BuffID.WellFed) ? 1 : 0, player.HasBuff(BuffID.WellFed2) ? 2 : 0), player.HasBuff(BuffID.WellFed3) ? 3 : 0);
+		for (int i = 0; i < MainInventorySlots; i++) {
+			Item it = player.inventory[i];
+			if (it.IsAir || !it.consumable || it.buffType <= 0 || it.potion)
+				continue;
+			int tier = FoodTier(it.buffType);
+			if (tier > 0) {
+				if (tier > activeFood && tier > foodTier) {
+					foodItem = it.type;
+					foodTier = tier;
+				}
+				continue;
+			}
+			if (Array.IndexOf(FightBuffs, it.buffType) >= 0 && !player.HasBuff(it.buffType) && !byBuff.ContainsKey(it.buffType))
+				byBuff[it.buffType] = it.type;
+		}
+		// Journey: a researched potion or food not carried is a duplication away (ReadyForBossSkill duplicates it first).
+		if (Journey != null && Journey.Enabled && Journey.DuplicationAllowed)
+			foreach (int t in Journey.ResearchedItems()) {
+				if (t <= 0 || t >= Terraria.ModLoader.ItemLoader.ItemCount)
+					continue;
+				Item it = ContentSamples.ItemsByType[t];
+				if (!it.consumable || it.buffType <= 0 || it.potion)
+					continue;
+				int tier = FoodTier(it.buffType);
+				if (tier > 0) {
+					if (tier > activeFood && tier > foodTier) {
+						foodItem = t;
+						foodTier = tier;
+					}
+				}
+				else if (Array.IndexOf(FightBuffs, it.buffType) >= 0 && !player.HasBuff(it.buffType) && !byBuff.ContainsKey(it.buffType))
+					byBuff[it.buffType] = t;
+			}
+		if (SummonStaves().Count == 0)
+			byBuff.Remove(BuffID.Summoning); // a slot no staff fills
+		var list = FightBuffs.Where(byBuff.ContainsKey).Select(b => byBuff[b]).ToList();
+		if (foodItem > 0)
+			list.Add(foodItem);
+		return list;
+	}
+
+	public IReadOnlyList<(int Item, int Mana, float Slots)> SummonStaves()
+	{
+		var list = new List<(int Item, int Mana, float Slots, int Damage)>();
+		for (int i = 0; i < MainInventorySlots; i++) {
+			Item it = player.inventory[i];
+			if (it.IsAir || it.shoot <= ProjectileID.None || it.buffType <= 0 || list.Any(l => l.Item == it.type)
+				|| !ContentSamples.ProjectilesByType.TryGetValue(it.shoot, out Projectile pr) || !pr.minion)
+				continue;
+			list.Add((it.type, player.GetManaCost(it), Math.Max(pr.minionSlots, 0.01f), it.damage));
+		}
+		// Journey: researched staves too (duplicated before the use).
+		if (Journey != null && Journey.Enabled && Journey.DuplicationAllowed)
+			foreach (int t in Journey.ResearchedItems()) {
+				if (t <= 0 || t >= Terraria.ModLoader.ItemLoader.ItemCount || list.Any(l => l.Item == t))
+					continue;
+				Item it = ContentSamples.ItemsByType[t];
+				if (it.shoot > ProjectileID.None && it.buffType > 0 && ContentSamples.ProjectilesByType.TryGetValue(it.shoot, out Projectile pr) && pr.minion)
+					list.Add((t, player.GetManaCost(it), Math.Max(pr.minionSlots, 0.01f), it.damage));
+			}
+		return list.OrderByDescending(l => l.Damage).Select(l => (l.Item, l.Mana, l.Slots)).ToList();
+	}
+
+	/// <summary>A plain slot swap (dragging the carried accessory onto the worn one), with vanilla's and tModLoader's equip rules.</summary>
+	public bool TrySwapAccessory(int wornType, int carriedType)
+	{
+		if (player.whoAmI != Main.myPlayer)
+			return false;
+		int a = -1;
+		for (int s = AccessoryStart; s < AccessoryEnd; s++)
+			if (player.IsItemSlotUnlockedAndUsable(s) && !player.armor[s].IsAir && player.armor[s].type == wornType) {
+				a = s;
+				break;
+			}
+		int i = -1;
+		float best = -1f;
+		for (int s = 0; s < MainInventorySlots; s++) {
+			Item it = player.inventory[s];
+			if (!it.IsAir && it.type == carriedType && it.accessory && !it.vanity && AccessoryValue.Of(it) > best) {
+				best = AccessoryValue.Of(it);
+				i = s;
+			}
+		}
+		if (a < 0 || i < 0 || player.inventory[i].favorited)
+			return false;
+		Item incoming = player.inventory[i];
+		for (int s = AccessoryStart; s < AccessoryEnd; s++) {
+			if (s == a || player.armor[s].IsAir)
+				continue;
+			// Vanilla ItemSlot.AccCheck: no copy of it beside it, one pair of wings; tModLoader's mutual-exclusion hook.
+			if (player.armor[s].type == incoming.type || incoming.wingSlot > 0 && player.armor[s].wingSlot > 0
+				|| !Terraria.ModLoader.ItemLoader.CanAccessoryBeEquippedWith(player, player.armor[s], incoming))
+				return false;
+		}
+		if (!Terraria.ModLoader.ItemLoader.CanEquipAccessory(player, incoming, a, false))
+			return false;
+		(player.inventory[i], player.armor[a]) = (player.armor[a], player.inventory[i]);
+		Recipe.FindRecipes();
+		return player.armor[a].type == carriedType;
 	}
 
 	/// <summary>Shift-click a worn accessory back into the first free inventory slot (a plain slot swap).</summary>

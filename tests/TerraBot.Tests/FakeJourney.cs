@@ -70,6 +70,8 @@ public sealed class FakeJourney : IJourney
 	public bool PickupVanishes(int itemType) => On && AutoTrash && !ChecklistMode && IsResearched(itemType) && game.Count(itemType) <= 0;
 	public bool StationAtHand(int tileType) => On && StationsByResearch.Contains(tileType);
 
+	public IReadOnlyList<int> ResearchedItems() => Caps.Keys.Where(IsResearched).ToList();
+
 	public int Duplicate(int itemType)
 	{
 		if (!DuplicationAllowed || !IsResearched(itemType) || !game.HasRoomFor(itemType))

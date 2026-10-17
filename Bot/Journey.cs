@@ -47,6 +47,9 @@ public interface IJourney
 	/// </summary>
 	bool DuplicationAllowed => true;
 
+	/// <summary>Every item researched to its cap (what the duplication menu lists), refreshed every few seconds by the game.</summary>
+	IReadOnlyList<int> ResearchedItems() => System.Array.Empty<int>();
+
 	/// <summary>
 	/// A pickup of the item would be deleted, not put in the bag (Upgraded Research's "Auto-Trash picked up Researched items"):
 	/// a drop not worth walking to.
