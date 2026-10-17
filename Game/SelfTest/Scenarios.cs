@@ -495,12 +495,11 @@ public sealed class Scenario
 			Build = true,
 			DayTime = 3000,
 			ResumeAtCheckpoint = true,
-			// 7 in-game days: the spec's 6 (about 2.5 expected: the top-up 0.3, the shaft 0.5, the bridge 0.7-1, the doll hunt 0.3-1 with
-			// a long tail, the fight under 5 minutes; the rest the margin for one failed fight, a new doll and the Guide back by day) and a
-			// day for the unholy arrows hunted before the descent (WofUnholyArrows: from eow_arena 30 worm teeth, a devourer in 65 of the
-			// corruption's spawns, NPC.cs:86707 and 89094, a spawn every 100-300 ticks there, NPC.cs:86680-86705: a devourer every 2-4
-			// game hours, 3-8 teeth each, ItemDropDatabase.cs:1113).
-			TimeoutTicks = 7 * 86400,
+			// 6 in-game days, the spec's budget: about 2.5 expected (the top-up 0.3, the shaft 0.5, the bridge 0.7-1, the doll hunt
+			// 0.3-1 with a long tail, the fight under 5 minutes), the rest the margin for one failed fight (a new doll, the Guide back by day).
+			// The unholy arrows hunted before the descent (WofUnholyArrows, 150) cost nothing from eow_arena: the bot carries 150 and 15
+			// worm teeth there, 225 once the bag's are made (the inventories logged at the start of M12a and M12b).
+			TimeoutTicks = 6 * 86400,
 			Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
 		},
 		new() {
