@@ -82,6 +82,13 @@ unless `Scenario.Journey`; `selftest.ps1 -NoJourney` turns it off for real-world
 - Safety rule semantics: *never undermine* a falling block. Mining sand top-down as part of the path is fine,
   and intended.
 
+## Knowledge base (look here first)
+`Desktop\Projekt\terrabot\docs\knowledge` (README.md there): `game/` holds the game's own data as .tsv tables (items with stats
+and tooltips, recipes, NPCs, drop rates, shops, buffs, projectiles, tiles, set bonuses), exported by the game itself
+(`tools\selftest.ps1 -Scenarios none -NoBuild -Export <dir>`, Game/KnowledgeExport.cs; regenerate after a game update);
+`topics/` holds researched notes with sources and dates. Grep it before any web search, wiki fetch or decompile dig, point
+subagent briefs at it, and write new findings back into `topics/`.
+
 ## Verifying game behaviour (don't trust memory)
 tModLoader's API and vanilla physics change between versions. Before relying on a hook, field or constant, check:
 1. The XML docs: `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tModLoader.xml` (grep `M:Terraria.ModLoader.ModPlayer.`).

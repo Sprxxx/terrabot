@@ -166,6 +166,20 @@ public sealed class SelfTestSystem : ModSystem
 	{
 		if (!Enabled)
 			return;
+		// selftest.ps1 -Export <dir>: the game's data written for the knowledge base, then out (no scenario runs).
+		if (Program.LaunchParameters.TryGetValue(KnowledgeExport.Flag, out string exportDir) && !string.IsNullOrWhiteSpace(exportDir)) {
+			try {
+				KnowledgeExport.WriteAll(exportDir.Trim('"'), Mod.Logger);
+				Mod.Logger.Info($"SELFTEST EXPORT done: {exportDir}");
+			}
+			catch (Exception e) {
+				Mod.Logger.Error($"SELFTEST EXPORT failed: {e}");
+			}
+			phase = Phase.Done;
+			Mod.Logger.Info("SELFTEST EXIT");
+			Main.instance.Exit();
+			return;
+		}
 		phase = Phase.Waiting;
 		phaseTicks = 0;
 		index = 0;

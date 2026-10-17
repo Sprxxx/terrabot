@@ -47,7 +47,10 @@ param(
 	[string[]]$Mods = @(),
 	# The planner's scheduler (ProgressionPlanner.Schedulers): restart (stages from the top every pass), operation (a continuing
 	# job owns the bot) or errands (the stage's errand owns the bot, docs ERRAND_DESIGN.md). Default: the build's own (errands).
-	[string]$Scheduler = ""
+	[string]$Scheduler = "",
+	# The game's data (items, recipes, NPCs, drops, shops, buffs, projectiles, tiles, set bonuses) written as .tsv tables to this
+	# folder for the knowledge base, then the game exits; no scenario runs (Game/KnowledgeExport.cs).
+	[string]$Export = ""
 )
 $ErrorActionPreference = "Stop"
 
@@ -150,6 +153,7 @@ if ($Checkpoints) { $tmlArgs += @("-terrabotcheckpoints", "1") }
 if ($BudgetDays -gt 0) { $tmlArgs += @("-terrabotdays", ([string]$BudgetDays).Replace(",", ".")) }
 if ($NoJourney) { $tmlArgs += @("-terrabotnojourney", "1") }
 if ($Scheduler) { $tmlArgs += @("-terrabotscheduler", $Scheduler) }
+if ($Export) { $tmlArgs += @("-terrabotexport", "`"$Export`"") }
 Write-Host "Launching tModLoader:  $($tmlArgs -join ' ')"
 $started = Get-Date
 $proc = Start-Process -FilePath (Join-Path $TmlDir "dotnet\dotnet.exe") -ArgumentList $tmlArgs -WorkingDirectory $TmlDir -PassThru
