@@ -15,14 +15,23 @@ namespace TerraBot.Bot.Skills;
 /// using an item), then stand until the body is still: the item flies off at 4 px/tick plus the player's own speed
 /// (Player.cs:6005-6006).</item>
 /// <item>Press Throw for one tick (released the tick before: releaseThrow) and see the count drop by one.</item>
-/// <item>Watch for <see cref="Done"/> (the Wall here) for <see cref="WatchTicks"/>; if it does not come and the item lies in sight,
-/// it did not reach the lava: fail with where it lies (the planner picks it up again).</item>
+/// <item>Watch for <see cref="Done"/> (the Wall here) while the thrown item is in the air, its track logged; once it has lain still
+/// for <see cref="RestTicks"/> without that, it did not reach the lava: fail with where it lies (the planner picks it up again);
+/// at most <see cref="MaxWatchTicks"/>.</item>
 /// </list>
 /// </summary>
 public sealed class ThrowItemSkill : ISkill
 {
-	/// <summary>Ticks to see the thrown item's effect (spec S6: 120): a doll from a bridge 25 rows over lava falls in about 110.</summary>
-	public const int WatchTicks = 120;
+	/// <summary>
+	/// The longest watch: an item falls at 0.1 px/tick² up to 7 px/tick (Item.cs:50115-50116), so 25-36 rows from the hellbridge to
+	/// the lava (spec 5b) take 110-150 ticks after the throw's 2 px/tick rise; 600 is room for a deeper drop or a slow start. Seen in
+	/// game (doll_lava_east, 2026-10-17): the watch of 120 ended with the doll still in sight at 9 rows under the ledge.
+	/// </summary>
+	public const int MaxWatchTicks = 600;
+	/// <summary>An item seen in one place this long lies there (a falling one moves every tick): 30 ticks.</summary>
+	public const int RestTicks = 30;
+	/// <summary>The thrown item's place is logged this often while it is watched.</summary>
+	public const int TrackTicks = 30;
 	/// <summary>Ticks a pressed throw may take to show in the count (the drop happens in the same update; two for the perception).</summary>
 	public const int ThrowShowsTicks = 10;
 	public const int MaxPresses = 3;
@@ -34,7 +43,8 @@ public sealed class ThrowItemSkill : ISkill
 	private enum Phase { Face, Settle, Press, Pressed, Watch }
 
 	private Phase phase;
-	private int phaseTicks, presses, countBefore;
+	private int phaseTicks, presses, countBefore, stillTicks;
+	private (float X, float Y)? lastSeen;
 
 	public int ItemType { get; }
 	/// <summary>The side to throw to: -1 west, +1 east.</summary>
@@ -134,10 +144,19 @@ public sealed class ThrowItemSkill : ISkill
 					ctx.Log.Info(DoneText?.Invoke(ctx) ?? $"Throw: the {What} did what it was thrown for, {phaseTicks} ticks after the throw");
 					return SkillStatus.Succeeded;
 				}
-				if (phaseTicks < WatchTicks)
+				DropInfo? seen = ctx.Drops.Where(d => d.Type == ItemType).Cast<DropInfo?>().FirstOrDefault();
+				if (seen is DropInfo item) {
+					bool moved = lastSeen is not (float lx, float ly) || Math.Abs(item.X - lx) > 0.5f || Math.Abs(item.Y - ly) > 0.5f;
+					stillTicks = moved ? 0 : stillTicks + 1;
+					if (phaseTicks % TrackTicks == 0 && lastSeen is (float px, float py))
+						ctx.Log.Info($"Throw: the {What} at {item.Tile} ({item.X:0},{item.Y:0} px), moving ({item.X - px:0.0},{item.Y - py:0.0}) px/tick, {phaseTicks} ticks after the throw");
+					lastSeen = (item.X, item.Y);
+					if (stillTicks >= RestTicks)
+						return Fail(ctx, $"the {What} did not reach lava: it lies at {item.Tile} ({phaseTicks} ticks after the throw)");
+				}
+				if (phaseTicks < MaxWatchTicks)
 					return SkillStatus.Running;
-				DropInfo? lying = ctx.Drops.Where(d => d.Type == ItemType).Cast<DropInfo?>().FirstOrDefault();
-				return Fail(ctx, lying is DropInfo d ? $"the {What} did not reach lava: it lies at {d.Tile}" : $"nothing came of the {What} in {WatchTicks} ticks");
+				return Fail(ctx, seen is DropInfo d ? $"the {What} did not reach lava in {MaxWatchTicks} ticks: it is at {d.Tile}" : $"nothing came of the {What} in {MaxWatchTicks} ticks");
 		}
 		return SkillStatus.Running;
 	}

@@ -189,6 +189,14 @@ public class WallOfFleshPlanTests
 		g.Refresh(ctx);
 		Assert.True(ProgressionPlanner.InDanger(ctx));
 		ctx.SparedTypes.Add(FakeGame.VoodooDemonNpc);
+		// Over ground (the field's dirt under it): its doll would land there; fought as any other.
+		Assert.False(ctx.Spared(demon));
+		Assert.True(ProgressionPlanner.InDanger(ctx));
+		// Over lava: spared.
+		for (int x = 7; x <= 13; x++)
+			for (int y = 25; y <= 26; y++)
+				g.Grid.Set(x, y, CellKind.Lava);
+		Assert.True(ctx.Spared(demon));
 		Assert.False(ProgressionPlanner.InDanger(ctx));
 		var fight = new FightSkill();
 		fight.Start(ctx);
@@ -207,7 +215,7 @@ public class WallOfFleshPlanTests
 	}
 
 	/// <summary>The bot on the tower's roof in the Underworld, the brain in auto mode on the plan "hellbridge" (60 tiles).</summary>
-	private (FakeGame, BotContext, BotBrain) OnTheTowerAuto(bool guide)
+	private (FakeGame, BotContext, BotBrain) OnTheTowerAuto(bool guide, int demonX)
 	{
 		FakeGame g = HellTests.Hell();
 		var p = Core.Physics.PhysicsParams.Default;
@@ -223,8 +231,8 @@ public class WallOfFleshPlanTests
 		g.Items[FakeGame.WoodenArrow] = 200;
 		if (guide)
 			g.AliveTownNpcs.Add(FakeGame.GuideNpc);
-		// A Voodoo Demon (AI style 14, a flier) hanging over the lava 3 tiles past the tower's end, level with the bot.
-		g.ExtraHostiles.Add(new EntityInfo(5, FakeGame.VoodooDemonNpc, "Voodoo Demon", (HellTests.TowerTo + 4) * 16f, (Row - 3) * 16f, 30, 40, 0f, 0f, 140, 140, 32, 14));
+		// A Voodoo Demon (AI style 14, a flier) hanging over the lava at the column given, level with the bot.
+		g.ExtraHostiles.Add(new EntityInfo(5, FakeGame.VoodooDemonNpc, "Voodoo Demon", demonX * 16f, (Row - 3) * 16f, 30, 40, 0f, 0f, 140, 140, 32, 14));
 		var brain = new BotBrain();
 		brain.SetAuto(true, ctx, ProgressionPlanner.Plans.Hellbridge);
 		brain.Planner.BridgeLength = 40;
@@ -235,7 +243,8 @@ public class WallOfFleshPlanTests
 	[Fact]
 	public void TheVoodooRule_TheGuideAlive_TheDemonByTheBridgeIsNotFought_AndTheBridgeIsBuilt()
 	{
-		var (g, ctx, brain) = OnTheTowerAuto(guide: true);
+		// Over the lava 6 columns past where the 40-tile bridge from the tower's west end (x 36) ends: never over its deck.
+		var (g, ctx, brain) = OnTheTowerAuto(guide: true, demonX: HellTests.TowerFrom + 40 + 6);
 		bool fought = false;
 		int t = 0;
 		for (; t < 20000 && brain.Auto && !(brain.Planner.Complete && brain.Current == null); t++) {
@@ -254,7 +263,7 @@ public class WallOfFleshPlanTests
 	[Fact]
 	public void TheVoodooRule_NoGuide_TheDemonIsFoughtAsAnyOther()
 	{
-		var (g, ctx, brain) = OnTheTowerAuto(guide: false);
+		var (g, ctx, brain) = OnTheTowerAuto(guide: false, demonX: HellTests.TowerTo + 4);
 		bool fought = false;
 		for (int t = 0; t < 600 && !fought; t++) {
 			g.Refresh(ctx);

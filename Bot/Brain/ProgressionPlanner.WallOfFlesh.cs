@@ -242,6 +242,12 @@ public sealed partial class ProgressionPlanner
 			KnowBridge(ctx, n, row);
 		if (bridgeKnown && n.Y >= ctx.UnderworldRow)
 			return null;
+		// The bridge alone (the synthetic scenarios' plan) works from where the bot stands down there, never a shaft from the surface:
+		// seen in game (voodoo_rule, 2026-10-17), knocked into the lava and respawned at the world's spawn, it went down a real one.
+		if (Plan == Plans.Hellbridge) {
+			stuck = $"the hellbridge plan starts on the bridge's row in the Underworld (row {stand}), not at {n}";
+			return null;
+		}
 		ctx.DepthErrand = true;
 		if (shaftX == null) {
 			int from = ctx.SpawnTile?.X ?? n.X;

@@ -285,6 +285,19 @@ public sealed class TerraBotPlayer : ModPlayer
 	public string DescribePosition() =>
 		$"tile {FeetTile()} px ({Player.position.X:0.#},{Player.position.Y:0.#}) vel ({Player.velocity.X:0.##},{Player.velocity.Y:0.##})";
 
+	/// <summary>
+	/// Perceive now, as the next tick the bot is on would (the hotbar's tools and bow, life, the NPCs round it): for a skill started
+	/// before the bot is switched on (the self-test's setup). Seen in game (fight_wof, 2026-10-17): the first scenario of a batch
+	/// started its fight with "with 0 arrows, life 100/100", the context still the one from before the setup.
+	/// </summary>
+	public void PerceiveNow()
+	{
+		if (!IsLocal)
+			return;
+		Blocks.Refresh(Player);
+		RefreshContext();
+	}
+
 	private void RefreshContext()
 	{
 		// On a mount (a minecart picked up off a track, a mount item used): off it again, as a player presses the mount key.

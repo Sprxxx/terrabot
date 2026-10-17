@@ -253,6 +253,10 @@ public sealed class Scenario
 
 	/// <summary>The Wall of Flesh's synthetic scenarios: no Guide Voodoo Doll thrown by day or night matters (spec S5); the bow kit.</summary>
 	private static Action<Terraria.Player> DollKit(int dolls) => p => {
+		// The copied character's accessories off (a Treasure Magnet's 150 px pull, Item.treasureGrabRange, could take the thrown doll
+		// back): the kit's own only (WofKit), as the M10u character has none.
+		for (int a = 3; a < p.armor.Length; a++)
+			p.armor[a] = new Terraria.Item();
 		p.inventory[3] = new Terraria.Item(Terraria.ID.ItemID.DemonBow);
 		p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 999);
 		p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.HealingPotion, 10);
@@ -749,6 +753,8 @@ public sealed class Scenario
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
 				Mode = "wof",
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				EnemyType = Terraria.ID.NPCID.Guide,
 				Inventory = DollKit(1),
 				ExpectSuccess = false,
@@ -764,6 +770,8 @@ public sealed class Scenario
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
 				Mode = "wof",
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				EnemyType = Terraria.ID.NPCID.Guide,
 				Inventory = DollKit(1),
 				ExpectSuccess = false,
@@ -779,6 +787,8 @@ public sealed class Scenario
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
 				Mode = "wof",
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				Inventory = DollKit(1),
 				ExpectSuccess = false,
 				TimeoutTicks = 60 * 30,
@@ -793,6 +803,8 @@ public sealed class Scenario
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
 				Mode = "wof",
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				EnemyType = Terraria.ID.NPCID.Guide,
 				Inventory = DollKit(2),
 				ExpectSuccess = false,
@@ -854,8 +866,9 @@ public sealed class Scenario
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				Inventory = DollKit(0),
 				TimeoutTicks = 60 * 60 * 6,
+				// The rule (BotContext.Spared): never killed over lava; over the bridge's deck it may be fought (its doll would land there).
 				Check = r => r.LogHas("wall of flesh summoned") ? "the Wall was summoned (a Voodoo Demon killed over lava)"
-					: r.LogHas("shooting Voodoo Demon") ? "the Voodoo Demon was shot at"
+					: r.Deaths > 0 ? $"died {r.Deaths} time(s)"
 					: !r.LogHas("Hellbridge done") ? "the bridge was not finished" : null,
 			},
 			new() {

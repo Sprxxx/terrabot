@@ -163,7 +163,46 @@ public sealed class BotContext
 	/// spawns at once, Item.cs:50396-50425; docs M12_SPEC.md section 2d, G7). Set by the planner each pass.
 	/// </summary>
 	public System.Collections.Generic.HashSet<int> SparedTypes { get; } = new();
-	public bool Spared(in EntityInfo e) => SparedTypes.Count > 0 && SparedTypes.Contains(e.Type);
+
+	/// <summary>
+	/// Is this NPC spared now: of a spared type (<see cref="SparedTypes"/>) and over lava, where what it drops would burn? Over
+	/// ground (the hellbridge's deck, an ash knoll) it is fought as any other: the doll drops where it dies and falls straight down
+	/// (NPC loot, Item.NewItem at the NPC; items rest on blocks, Item.cs:50828), onto the ground to be picked up. The task's rule:
+	/// no Voodoo Demon killed over lava except as the summon. Seen in game (voodoo_rule, 2026-10-17): spared everywhere, one hit
+	/// the bot off the bridge's end into the lava (knockback 4.5) while it built on.
+	/// </summary>
+	public bool Spared(in EntityInfo e) => SparedTypes.Count > 0 && SparedTypes.Contains(e.Type) && OverLava(e);
+
+	/// <summary>Columns either side of the NPC's centre a drop may land in (loot spawns with a small sideways speed).</summary>
+	public const int SpareDropSlackTiles = 1;
+	/// <summary>Rows under the NPC looked down for what its drop would land on: the band's lava is at most ~40 rows under a flier.</summary>
+	public const int SpareDropRows = 80;
+
+	/// <summary>
+	/// Would a drop from the NPC meet lava before ground, in any of the columns round its centre (<see cref="SpareDropSlackTiles"/>)?
+	/// Nothing found within <see cref="SpareDropRows"/> counts as lava (the void over the lava sea).
+	/// </summary>
+	public bool OverLava(in EntityInfo e)
+	{
+		if (Grid == null)
+			return true;
+		int cx = (int)MathF.Floor(e.CenterX / 16f), top = (int)MathF.Floor(e.Bottom / 16f);
+		for (int x = cx - SpareDropSlackTiles; x <= cx + SpareDropSlackTiles; x++) {
+			bool ground = false;
+			for (int y = top; y <= top + SpareDropRows; y++) {
+				CellKind k = Grid.Get(x, y);
+				if (k.HasLava())
+					return true;
+				if (k.CanStandOn() || k.IsSolid()) {
+					ground = true;
+					break;
+				}
+			}
+			if (!ground)
+				return true;
+		}
+		return false;
+	}
 
 	/// <summary>
 	/// Is a spared NPC (<see cref="SparedTypes"/>) in the line of fire from (x0, y0) through (x1, y1) and on past it to

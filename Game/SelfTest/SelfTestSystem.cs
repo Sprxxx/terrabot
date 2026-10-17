@@ -317,6 +317,7 @@ public sealed class SelfTestSystem : ModSystem
 				healingAtStart = Enumerable.Range(0, 58).Where(i => p.inventory[i].type == ItemID.HealingPotion).Sum(i => p.inventory[i].stack);
 				bot.Context.DigAnyway = false; // a last resort from the scenario before (seen: it let a walk test undermine sand)
 				bot.Context.DepthBonus = 0;
+				bot.PerceiveNow(); // the skills below start from this scenario's hotbar, life and NPCs, not the last one's
 				if (s.Mode == "fight") {
 					bot.Brain.StartSkill(new Bot.Skills.FightSkill(), bot.Context);
 				}
@@ -334,7 +335,8 @@ public sealed class SelfTestSystem : ModSystem
 					// floor the bot stands on (the bridge, its arena), then the fight along it.
 					// The node from the player as placed (the bot's context is refreshed only once it is on, below).
 					var bridge = BridgeUnder(Body.NodeOf(p.position.X, p.position.Y, bot.LivePhysics));
-					Mod.Logger.Info($"SELFTEST {s.Name}: the bridge x {bridge.MinX}..{bridge.MaxX}, feet row {bridge.StandY}; the doll goes east into the lava");
+					Mod.Logger.Info($"SELFTEST {s.Name}: the bridge x {bridge.MinX}..{bridge.MaxX}, feet row {bridge.StandY}; the doll goes east into the lava; "
+						+ $"under the columns past its end: {LiquidPast(bridge.MaxX, bridge.StandY + 1)}");
 					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.GuideVoodooDoll, NPCID.WallofFlesh, bot.Context.Ids.WallOfFleshMinions) {
 						Arena = bridge,
 						Summon = () => Bot.Skills.WallOfFleshPattern.Summon(bot.Context.Ids, 1),
@@ -458,6 +460,28 @@ public sealed class SelfTestSystem : ModSystem
 				return;
 			}
 		}
+	}
+
+	/// <summary>What the first cell under the row is in each of the 8 columns past the end (the lava the doll is to fall into), for the log.</summary>
+	private static string LiquidPast(int endX, int row)
+	{
+		var parts = new List<string>();
+		for (int x = endX + 1; x <= endX + 8; x++) {
+			string what = "nothing";
+			for (int y = row + 1; y <= row + 60; y++) {
+				Tile t = Main.tile[x, y];
+				if (t.HasTile && Main.tileSolid[t.TileType]) {
+					what = $"tile {t.TileType} at row {y}";
+					break;
+				}
+				if (t.LiquidAmount > 0) {
+					what = $"{(t.LiquidType == LiquidID.Lava ? "lava" : t.LiquidType == LiquidID.Water ? "water" : $"liquid {t.LiquidType}")} {t.LiquidAmount} at row {y}";
+					break;
+				}
+			}
+			parts.Add($"x {x}: {what}");
+		}
+		return string.Join("; ", parts);
 	}
 
 	/// <summary>The floor under the node, as far as it goes either way: an arena's (MinX, MaxX, StandY) for the boss fight.</summary>
