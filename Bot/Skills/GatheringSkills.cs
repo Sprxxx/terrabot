@@ -113,6 +113,9 @@ public sealed class CollectDropsSkill : ISkill
 	private WalkToSkill walk;
 	private int walkTarget = -1;
 	private int standingTicks;
+	/// <summary>The goal of the walk that arrived by <see cref="walkTarget"/>, and the drop's distance (px) then: waited at, not walked to again.</summary>
+	private Core.Pathfinding.IGoal arrivedAt;
+	private float arrivedDist;
 	private int ticks;
 
 	public int Collected { get; private set; }
@@ -164,6 +167,7 @@ public sealed class CollectDropsSkill : ISkill
 			Collected++;
 			walk = null;
 			walkTarget = -1;
+			arrivedAt = null;
 		}
 		foreach (DropInfo d in ctx.Drops)
 			if (!skip.Contains(d.Id) && want(d) && Dist(d, cx, cy) <= radiusPx && TooDeep(ctx, d)) {
@@ -192,6 +196,17 @@ public sealed class CollectDropsSkill : ISkill
 		// 10 such stretches of 3 heartbeats or more in the run (47 Collect heartbeats of 240).
 		int kept = candidates.FindIndex(d => d.Id == walkTarget);
 		DropInfo target = candidates[kept >= 0 ? kept : 0];
+		// Arrived by it, and it is coming (no farther off than on arrival): stood still for it, not a walk afresh each tick.
+		// Seen in game (measured run world_wof M12d): a new walk every tick, each arriving at once, its target the tile the drop
+		// was being pulled through (Player.GrabItems): "WalkTo start: target (2406,257) -> StandAt(2406,257), bot at
+		// (2404,257)" and "reached" 4 times in a row, then (2406,256) 4 times.
+		if (walk == null && walkTarget == target.Id && arrivedAt != null && arrivedAt.IsGoal(ctx.Node) && Dist(target, cx, cy) <= arrivedDist + 1f) {
+			if (++standingTicks > StandGiveUpTicks && skip.Add(target.Id))
+				ctx.Log.Info($"Collect: giving up on {target.Name} x{target.Stack} at {target.Tile}: stood by it {StandGiveUpTicks} ticks at {ctx.Node} and it was not picked up");
+			State = $"waiting for {target.Name} x{target.Stack}";
+			return SkillStatus.Running;
+		}
+		arrivedAt = null;
 		if (walkTarget != target.Id || walk == null) {
 			// The give-up count belongs to the drop, not the walk: reset per walk, it never reached 30 (seen in game:
 			// a drop on a ledge out of grab range, the walk "arriving" every tick).
@@ -208,6 +223,8 @@ public sealed class CollectDropsSkill : ISkill
 		}
 		else if (s == SkillStatus.Succeeded) {
 			// Standing on it but it did not come to us (inventory full, or it is out of grab range).
+			arrivedAt = walk.Goal;
+			arrivedDist = Dist(target, cx, cy);
 			walk = null;
 			if (++standingTicks > StandGiveUpTicks && skip.Add(target.Id))
 				ctx.Log.Info($"Collect: giving up on {target.Name} x{target.Stack} at {target.Tile}: stood by it {StandGiveUpTicks} ticks at {ctx.Node} and it was not picked up");

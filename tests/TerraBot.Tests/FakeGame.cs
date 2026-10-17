@@ -724,7 +724,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		int tile = TileTypeAt(cell.X, cell.Y);
 		TileTypes.Remove(cell);
 		int item = tile switch { TileStone => StoneBlock, TileIron => IronOre, TileSilver => SilverOre, _ => DirtBlock };
-		int y = FallRow(cell.X, cell.Y);
+		int y = VanillaPickup ? cell.Y : FallRow(cell.X, cell.Y); // vanilla: it falls from the cell (MoveDrops)
 		Drops.Add(new DropInfo(nextDropId++, item, ItemName(item), 1, cell.X * 16f + 4, y * 16f + 4, 8, 8));
 	}
 
@@ -845,11 +845,97 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		}
 		cx = Sim.State.CenterX(p);
 		cy = Sim.State.CenterY(p);
+		if (VanillaPickup) {
+			MoveDrops(p);
+			return;
+		}
 		foreach (DropInfo d in Drops.ToList())
 			if (MathF.Abs(d.CenterX - cx) <= 42 && MathF.Abs(d.CenterY - cy) <= 42 && Count(EncumberingStone) == 0) {
 				Items[d.Type] = Count(d.Type) + d.Stack;
 				Drops.Remove(d);
 			}
+	}
+
+	/// <summary>
+	/// Drops move and are picked up as in the game instead of at once within 42 px of the body's centre: one whose box meets the
+	/// hitbox grown by Player.defaultItemGrabRange (42 px) a side is pulled (Player.GrabItems, PullItem_Common with xPullSpeed
+	/// 0.75: each axis gains Player.itemGrabSpeed 0.45 px/tick towards the player's centre up to itemGrabSpeedMax 4, the x cap
+	/// plus the body's speed, and 0.75 of that more while still moving away), any other falls (Item gravity 0.1 px/tick up to
+	/// 7); both stop against solid cells (Item.MoveInWorld, Collision.TileCollision); picked up when its box meets the hitbox.
+	/// Off by default (the tests written before it count on the instant pickup).
+	/// </summary>
+	public bool VanillaPickup;
+	private readonly Dictionary<int, (float VX, float VY)> dropVelocity = new();
+
+	private void MoveDrops(PhysicsParams p)
+	{
+		const float grab = 42f, speed = 0.45f, max = 4f, xPull = 0.75f;
+		BodyState b = Sim.State;
+		float pcx = b.X + p.Width / 2f, pcy = b.Y + p.Height / 2f;
+		for (int i = Drops.Count - 1; i >= 0; i--) {
+			DropInfo d = Drops[i];
+			if (Count(EncumberingStone) > 0)
+				break;
+			if (d.X < b.X + p.Width && b.X < d.X + d.Width && d.Y < b.Y + p.Height && b.Y < d.Y + d.Height) {
+				Items[d.Type] = Count(d.Type) + d.Stack;
+				Drops.RemoveAt(i);
+				dropVelocity.Remove(d.Id);
+				continue;
+			}
+			var (vx, vy) = dropVelocity.GetValueOrDefault(d.Id);
+			bool pulled = d.X < b.X + p.Width + grab && b.X - grab < d.X + d.Width && d.Y < b.Y + p.Height + grab && b.Y - grab < d.Y + d.Height;
+			if (pulled) {
+				if (pcx > d.CenterX) {
+					if (vx < max + b.VX)
+						vx += speed;
+					if (vx < 0f)
+						vx += speed * xPull;
+				}
+				else {
+					if (vx > -max + b.VX)
+						vx -= speed;
+					if (vx > 0f)
+						vx -= speed * xPull;
+				}
+				if (pcy > d.CenterY) {
+					if (vy < max)
+						vy += speed;
+					if (vy < 0f)
+						vy += speed * xPull;
+				}
+				else {
+					if (vy > -max)
+						vy -= speed;
+					if (vy > 0f)
+						vy -= speed * xPull;
+				}
+			}
+			else {
+				vy = Math.Min(vy + 0.1f, 7f);
+				vx *= 0.95f;
+			}
+			float x = d.X, y = d.Y;
+			if (vx != 0f && !BoxHitsSolid(x + vx, y, d.Width, d.Height))
+				x += vx;
+			else
+				vx = 0f;
+			if (vy != 0f && !BoxHitsSolid(x, y + vy, d.Width, d.Height))
+				y += vy;
+			else
+				vy = 0f;
+			dropVelocity[d.Id] = (vx, vy);
+			if (x != d.X || y != d.Y)
+				Drops[i] = d with { X = x, Y = y };
+		}
+	}
+
+	private bool BoxHitsSolid(float x, float y, int w, int h)
+	{
+		for (int tx = (int)MathF.Floor(x / 16f); tx <= (int)MathF.Floor((x + w - 0.01f) / 16f); tx++)
+			for (int ty = (int)MathF.Floor(y / 16f); ty <= (int)MathF.Floor((y + h - 0.01f) / 16f); ty++)
+				if (!Grid.InBounds(tx, ty) || Grid.Get(tx, ty).CanStandOn())
+					return true;
+		return false;
 	}
 
 	/// <summary>
