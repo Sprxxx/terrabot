@@ -133,6 +133,21 @@ public class NpcHousingTests
 		Assert.True(g.Count(FakeGame.Wood) < 40, $"wood left {g.Count(FakeGame.Wood)}");
 	}
 
+	/// <summary>world_wof E32 (2026-10-18): the Guide dead, his room taken by a homeless NPC; "waiting for the Guide" for two days.</summary>
+	[Fact]
+	public void TheGuideDead_AndNoRoomFree_ARoomIsBuiltRatherThanWaitedFor()
+	{
+		var (g, ctx, brain, house) = Settled();
+		g.Homes.Add(Living(18, "Nurse", house)); // the house taken
+		g.AliveTownNpcs.Remove(FakeGame.GuideNpc);
+		GiveRoomMaterials(g, 1);
+		g.Refresh(ctx);
+		ISkill next = brain.Planner.ResolveForTest(new TownNpcAlive(FakeGame.GuideNpc, "the Guide"), ctx);
+		output.WriteLine($"{brain.Planner.Status} -> {next?.Describe()}");
+		Assert.IsNotType<WaitSkill>(next);
+		Assert.Contains("no free room", brain.Planner.Status);
+	}
+
 	[Fact]
 	public void WhenTheNextMovesIn_AnotherRoomGoesOnTheRow()
 	{

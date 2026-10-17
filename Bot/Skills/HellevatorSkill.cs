@@ -360,6 +360,15 @@ public sealed class HellevatorSkill : ISkill
 				legNext = true;
 				return null;
 			}
+			// On a route from an earlier trip: a leg back to it, not a fresh column from here (the route below stays). Seen in game
+			// (world_wof E32, 2026-10-18): a fight chased a Skeleton 17 columns off at row 474, the dig went on from there, and the
+			// route recorded below (rows 585-704, round a water pocket) was thrown away for a fresh column through new pockets.
+			if (FollowsRoute && failedLegs < MaxFailedLegs - 1) {
+				ctx.Log.Info($"Hellevator: column {col} of the route not reached from {n}; a leg back to it");
+				alignTries = 0;
+				legNext = true;
+				return null;
+			}
 			ctx.Log.Info($"Hellevator: the shaft goes on from column {n.X} (column {col} not reached{(col != ShaftX ? $", x {ShaftX} planned" : "")})");
 			col = n.X;
 			Note(n.Y, col);

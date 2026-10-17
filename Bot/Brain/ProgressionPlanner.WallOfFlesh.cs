@@ -426,6 +426,13 @@ public sealed partial class ProgressionPlanner
 	{
 		if (need.Npc <= 0 || ctx.World == null || ctx.World.TownNpcAlive(need.Npc))
 			return null;
+		// The game moves a town NPC in only where a valid room is free (WorldGen.SpawnTownNPC). With none (a homeless NPC took the dead
+		// one's room) the wait never ends: a room first. Seen in game (world_wof E32, 2026-10-18): "waiting for the Guide" for over two
+		// game days, the Nurse and the Zoologist homeless before the summon took him.
+		if (HouseSite != null && Survey(ctx).Empty == 0 && ResolveNpcHousing(new Dictionary<int, int>(), 0, ctx) is ISkill room) {
+			Status = $"{need.Label} cannot move back in: no free room; {Status}";
+			return room;
+		}
 		return Do($"waiting for {need.Label} (none alive: the doll would be wasted; he moves back in by day)",
 			new WaitSkill(need.Label, c => c.World.TownNpcAlive(need.Npc), NightWaitTicks + NightLengthTicks));
 	}
