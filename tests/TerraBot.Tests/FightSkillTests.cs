@@ -570,6 +570,34 @@ public class FightSkillTests
 	}
 
 	[Fact]
+	public void TheNearFlierKilled_TheFightEnds_NotWaitingForAFarOneOutOfSight()
+	{
+		// Measured run M10d: fights started by eaters of souls in sight within 12 tiles went on waiting for the next ones, out
+		// of sight 13-40 tiles off: 33 of 240 heartbeats "waiting for it in the open". Here one comes in sight 8 tiles off and is
+		// killed after 60 ticks; another sits out of sight in the rock 25 tiles off.
+		ArrayTileGrid g = PitGrid(botX: 10, pitFrom: 70, pitTo: 71, pitDepth: 30, width: 80);
+		var sim = new SimWorld(g, PhysicsParams.Default, g.Markers['S']);
+		BotContext ctx = Archer(g, sim);
+		static EntityInfo EaterAt(int id, int tx, int ty) => new(id, 6, "Eater of Souls", tx * 16f + 8f - 15f, ty * 16f + 8f - 15f, 30, 30, 0, 0, 40, 40, 22, AiStyle: 5);
+		var near = EaterAt(30, 18, 5);
+		var far = EaterAt(31, 35, 25); // in the rock under the ground: never in sight
+		var skill = new FightSkill();
+		skill.Start(ctx);
+		SkillStatus st = SkillStatus.Running;
+		int t = 0;
+		for (; t < 60 * 30 && st == SkillStatus.Running; t++) {
+			ctx.Body = sim.State;
+			ctx.Hostiles = t < 60 ? new[] { near, far } : new[] { far };
+			ctx.Tick = t;
+			st = skill.Tick(ctx);
+			sim.Step(ctx.Output);
+		}
+		output.WriteLine($"{st} after {t} ticks: {skill.Describe()}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.True(t <= 60 + FightSkill.CalmTicks + 2, $"the fight went on {t - 60} ticks after the near one was gone");
+	}
+
+	[Fact]
 	public void KillsEnemyAhead_OnFlatGround()
 	{
 		var g = ArrayTileGrid.Parse(
