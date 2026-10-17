@@ -136,6 +136,19 @@ public static class WallOfFleshPattern
 		return speed2 > 0f && closing / speed2 <= ticks;
 	}
 
+	/// <summary>
+	/// The summon (spec S6): one Guide Voodoo Doll thrown <paramref name="facing"/> off the bridge's end into the lava, refused with
+	/// no Guide alive (the doll would be wasted, Item.cs:50409-50425), done once the Wall is in view or on its bar; says where it
+	/// came from ("wall of flesh summoned").
+	/// </summary>
+	public static ThrowItemSkill Summon(GameIds ids, int facing) => new(ids.GuideVoodooDoll, facing, "Guide Voodoo Doll") {
+		Refuse = c => c.World.TownNpcAlive(c.Ids.Guide) ? null : "no Guide alive: the doll would only burn (doll wasted, no Guide); he comes back by day",
+		Done = c => Wall(c.Hostiles) != null || c.World.BossBarLife(c.Ids.WallOfFlesh) > 0,
+		DoneText = c => Wall(c.Hostiles) is EntityInfo w
+			? $"Throw: wall of flesh summoned at ({(int)(w.CenterX / 16f)},{(int)(w.CenterY / 16f)}), {FromSide(Direction(w, c.Body.CenterX(c.Physics)))}, us at {c.Node}"
+			: $"Throw: wall of flesh summoned (on its bar, not in view), us at {c.Node}",
+	};
+
 	/// <summary>"from the east" / "from the west": the side a Wall travelling <paramref name="dir"/> came from.</summary>
 	public static string FromSide(int dir) => dir < 0 ? "from the east" : "from the west";
 

@@ -67,7 +67,7 @@ public sealed class SelfTestSystem : ModSystem
 	private int phaseTicks;
 	private List<Scenario> queue;
 	private int index;
-	private Arena arena;
+	private Arena arena, sharedArena;
 	private RunResult result;
 	private bool[,] before;
 	private TeeLog tee;
@@ -162,7 +162,7 @@ public sealed class SelfTestSystem : ModSystem
 		string filter = Program.LaunchParameters[LaunchFlag];
 		var names = string.IsNullOrWhiteSpace(filter) || filter == "all" ? null : new HashSet<string>(filter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 		// Real-world runs take up to an hour: only when asked for by name.
-		queue = Scenario.All.Where(s => names == null ? !s.RealWorld : names.Contains(s.Name)).ToList();
+		queue = Scenario.All.Where(s => names == null ? !s.RealWorld && !s.ByName : names.Contains(s.Name)).ToList();
 		Main.superFast = Program.LaunchParameters.TryGetValue(FastFlag, out string fast);
 		drawEvery = int.TryParse(fast, out int n) && n > 1 ? n : 1;
 		TerrariaGameInfo.XRay = Program.LaunchParameters.ContainsKey(XRayFlag);
@@ -205,7 +205,7 @@ public sealed class SelfTestSystem : ModSystem
 				if (phaseTicks < StartDelayTicks)
 					return;
 				Active = true;
-				arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2, queue.Max(q => q.Width));
+				sharedArena = arena = new Arena(Main.spawnTileX, Main.spawnTileY - 2, queue.Where(q => q.ArenaFloorRow <= 0).Select(q => q.Width).DefaultIfEmpty(0).Max());
 				double fullGravityRow = 60 + 10 * Math.Pow(Main.maxTilesX / 4200.0, 2) + Main.worldSurface / 6.0;
 				Mod.Logger.Info($"SELFTEST world: surface row {Main.worldSurface:0}, caverns from row {Main.rockLayer:0}, {Main.maxTilesX}x{Main.maxTilesY}");
 				Mod.Logger.Info($"SELFTEST arena x {arena.Left}..{arena.Left + arena.Width} y {arena.Top}..{arena.FloorY}, " +
@@ -216,6 +216,7 @@ public sealed class SelfTestSystem : ModSystem
 			case Phase.Setup: {
 				Scenario s = queue[index];
 				resumedFrom = null;
+				arena = sharedArena;
 				bot.SetEnabled(false, "selftest setup");
 				bot.StopAll("selftest setup");
 				Main.dayTime = true;
@@ -239,6 +240,12 @@ public sealed class SelfTestSystem : ModSystem
 					Next(Phase.Settle);
 					return;
 				}
+				// A scenario of its own place (the Underworld's): its own arena there, else the shared one by the spawn.
+				arena = s.ArenaFloorRow > 0
+					? new Arena(s.ArenaCentreX > 0 ? s.ArenaCentreX : Main.spawnTileX, s.ArenaFloorRow, s.Width, s.ArenaHeight > 0 ? s.ArenaHeight : s.Rows.Length + 4)
+					: sharedArena;
+				if (s.ArenaFloorRow > 0)
+					Mod.Logger.Info($"SELFTEST {s.Name}: its own arena x {arena.Left}..{arena.Left + arena.Width} y {arena.Top}..{arena.FloorY} (the world's middle column {Main.maxTilesX / 2}, the Underworld from row {Main.UnderworldLayer})");
 				// Every NPC goes, town NPCs included: the Guide shoots arrows at hostiles and would help the bot.
 				// (This is the throw-away copy of the world in the self-test save folder.)
 				for (int i = 0; i < Main.maxNPCs; i++)
@@ -318,6 +325,16 @@ public sealed class SelfTestSystem : ModSystem
 					// Skeletron's fight (Milestone 11): summoned by the Old Man's Curse button unless the head is up already.
 					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(0, NPCID.SkeletronHead, NPCID.SkeletronHand) {
 						Summon = () => new Bot.Skills.ChatButtonSkill(NPCID.OldMan, "Old Man"),
+					}, bot.Context);
+				}
+				else if (s.Mode == "wof") {
+					// The Wall of Flesh (Milestone 12, docs M12_SPEC.md section 10): one Guide Voodoo Doll thrown east off the end of the
+					// floor the bot stands on (the bridge, its arena), then the fight along it.
+					var bridge = BridgeUnder(bot.Context.Node);
+					Mod.Logger.Info($"SELFTEST {s.Name}: the bridge x {bridge.MinX}..{bridge.MaxX}, feet row {bridge.StandY}; the doll goes east into the lava");
+					bot.Brain.StartSkill(new Bot.Skills.BossFightSkill(ItemID.GuideVoodooDoll, NPCID.WallofFlesh, bot.Context.Ids.WallOfFleshMinions) {
+						Arena = bridge,
+						Summon = () => Bot.Skills.WallOfFleshPattern.Summon(bot.Context.Ids, 1),
 					}, bot.Context);
 				}
 				else if (s.Mode == "boss") {
@@ -437,6 +454,17 @@ public sealed class SelfTestSystem : ModSystem
 				return;
 			}
 		}
+	}
+
+	/// <summary>The floor under the node, as far as it goes either way: an arena's (MinX, MaxX, StandY) for the boss fight.</summary>
+	private static (int MinX, int MaxX, int StandY) BridgeUnder(TilePos node)
+	{
+		int y = node.Y + 1, x0 = node.X, x1 = node.X + 1;
+		while (WorldGen.SolidTile(x0 - 1, y))
+			x0--;
+		while (WorldGen.SolidTile(x1 + 1, y))
+			x1++;
+		return (x0, x1, node.Y);
 	}
 
 	/// <summary>Spawns the scenario's enemy type at every 'E' marker (net-ID variants via SetDefaults).</summary>
@@ -624,6 +652,9 @@ public sealed class SelfTestSystem : ModSystem
 		result.EyeDefeated = NPC.downedBoss1;
 		result.EvilBossDefeated = NPC.downedBoss2;
 		result.SkeletronDefeated = NPC.downedBoss3;
+		result.HardMode = Main.hardMode;
+		result.Dolls = bot.GameInfo.Count(ItemID.GuideVoodooDoll);
+		result.GuideAlive = NPC.AnyNPCs(NPCID.Guide);
 		result.Milestones = string.Join(", ", milestones);
 		result.SwordOnHotbar = Enumerable.Range(0, 10).Any(i => Main.LocalPlayer.inventory[i].type == ItemID.WoodenSword);
 		// The hotbar is restocked every 30 ticks, one swap at a time: a pickaxe crafted on the last tick can still be in
