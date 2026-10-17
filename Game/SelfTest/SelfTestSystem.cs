@@ -81,6 +81,8 @@ public sealed class SelfTestSystem : ModSystem
 	private bool spawnFailed;
 	private int lifeAtStart;
 	private int healingAtStart;
+	/// <summary>Where a resumed real-world run started (Scenario.ResumeAtCheckpoint), or null at the spawn.</summary>
+	private TilePos? resumedFrom;
 	private int deathsAtStart;
 	/// <summary>Ticks between heartbeat lines during a scenario (30 game seconds).</summary>
 	/// <summary>Mode "surface": ticks under water before surfacing starts (breath about 140/200, as when the brain's reflex fires).</summary>
@@ -213,6 +215,7 @@ public sealed class SelfTestSystem : ModSystem
 
 			case Phase.Setup: {
 				Scenario s = queue[index];
+				resumedFrom = null;
 				bot.SetEnabled(false, "selftest setup");
 				bot.StopAll("selftest setup");
 				Main.dayTime = true;
@@ -229,6 +232,7 @@ public sealed class SelfTestSystem : ModSystem
 					var startAt = new TilePos(Main.spawnTileX - 1, Main.spawnTileY - 1);
 					if (s.ResumeAtCheckpoint && SavedStart() is TilePos resume) {
 						startAt = resume;
+						resumedFrom = resume;
 						Mod.Logger.Info($"SELFTEST resuming at {resume}, where the checkpoint was saved (the spawn is at ({Main.spawnTileX},{Main.spawnTileY}))");
 					}
 					Arena.PlacePlayer(p, startAt);
@@ -327,6 +331,14 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (s.Mode == "auto") {
 					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
+					// Resumed away from the spawn: the stations in the house there, as the run that saved the checkpoint knew them
+					// (the planner's memory is not saved with the world). Else the plan's first stages made a work bench, a furnace
+					// and an anvil anew where the checkpoint was saved, 1,225 tiles from the house for the Skeletron runs.
+					if (resumedFrom != null)
+						foreach (var kv in bot.GameInfo.ScanStations(new TilePos(Main.spawnTileX, Main.spawnTileY - 1))) {
+							bot.Brain.Planner.KnownStations[kv.Key] = kv.Value;
+							Mod.Logger.Info($"SELFTEST resumed: the station {(TileID.Search.TryGetName(kv.Key, out string tn) ? tn : kv.Key.ToString())} at {kv.Value} by the spawn is known");
+						}
 				}
 				else if (s.Mode == "pathbench" || s.Mode == "arenasite") {
 					// Run once things have settled (Running phase, tick 120): PathBench.
