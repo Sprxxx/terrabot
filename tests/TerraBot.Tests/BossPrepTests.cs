@@ -457,6 +457,39 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AnAltarGivenUp_InSightAsAnotherOfItsCells_IsNotTakenBackOverTheOneChosen()
+	{
+		// Measured run U30: the altar at (1748,411) given up 42 times in 13 game hours, each time taken back from sight as
+		// (1750,411), (1749,412) or (1748,412) over the farther one just chosen.
+		FakeGame g = ProgressionTests.Mine(width: 120);
+		for (int x = 26; x <= 36; x++)
+			for (int y = 27; y <= 35; y++) {
+				bool inside = x > 27 && x < 35 && y > 28 && y < 34;
+				g.Grid.Set(x, y, inside ? CellKind.Empty : CellKind.Solid);
+				if (!inside)
+					g.Blocks.Unbreakable.Add(new TilePos(x, y));
+			}
+		g.AddAltar(30, 32);
+		g.AddAltar(80, 23);
+		g.Items[FakeGame.Lens] = 6;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		for (int i = 0; i < ProgressionPlanner.MaxStationWalkFailures; i++) {
+			var walk = Assert.IsType<WalkToSkill>(p.ResolveForTest(Eye, ctx));
+			Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g, ctx, walk, 6000));
+			p.OnSkillFinished(walk, SkillStatus.Failed, ctx);
+		}
+		Assert.IsType<WalkToSkill>(p.ResolveForTest(Eye, ctx));
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos chosen) && chosen.X >= 80, $"{chosen}");
+		// The next pass begins with what is in sight: the given-up altar, by another of its cells.
+		ctx.Seen = new Surroundings { Stations = new System.Collections.Generic.Dictionary<int, TilePos> { [FakeGame.TileDemonAltar] = new TilePos(32, 33) } };
+		p.SeeStationsForTest(ctx);
+		Assert.True(p.KnownStations.TryGetValue(FakeGame.TileDemonAltar, out TilePos known) && known.X >= 80, $"taken back: {known}");
+	}
+
+	[Fact]
 	public void AnAltarNoWalkGetsTo_WithRecallPotionsCarried_IsNotWalkedToAgainFromHome_TheNextOneIs()
 	{
 		// Measured run U30 (world_eye): "no way back to the DemonAltar (2 walks failed); drinking a recall potion to go home",

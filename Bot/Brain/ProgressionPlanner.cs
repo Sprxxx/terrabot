@@ -2592,6 +2592,10 @@ public sealed class ProgressionPlanner
 	/// </summary>
 	private readonly Dictionary<TilePos, long> failedStationSites = new();
 
+	/// <summary>A cell of a station no walk got to lately (<see cref="failedStationSites"/>, within <see cref="FailedTripTicks"/>).</summary>
+	private bool GivenUpSite(TilePos t, BotContext ctx) =>
+		failedStationSites.Any(f => ctx.Tick - f.Value < FailedTripTicks && f.Key.ChebyshevTo(t) <= StationSiteTiles);
+
 	/// <summary>
 	/// A walk to a station nothing places (a demon altar) that ended "no path" where it got to, with explosives that break tiles in
 	/// the bag: a blast towards the station from there first (BlastOutSkill), not a failed walk, once per spot and station for
@@ -2630,7 +2634,7 @@ public sealed class ProgressionPlanner
 	/// </summary>
 	private TilePos? FindReachableUnplaceable(int tile, BotContext ctx)
 	{
-		bool Usable(TilePos t) => !failedStationSites.Any(f => ctx.Tick - f.Value < FailedTripTicks && f.Key.ChebyshevTo(t) <= StationSiteTiles);
+		bool Usable(TilePos t) => !GivenUpSite(t, ctx);
 		TilePos? near = ctx.World.FindTiles(tile, ctx.Node, StationSearchRadius).Where(Usable).Cast<TilePos?>().FirstOrDefault();
 		if (near != null)
 			return near;
@@ -2674,8 +2678,13 @@ public sealed class ProgressionPlanner
 
 	private void RememberStations(BotContext ctx)
 	{
+		// Not a station given up on (FindReachableUnplaceable's rule): seen in game (measured run U30), the DemonAltar at
+		// (1748,411) was given up "not that one again for a day, another one" 42 times in 13 game hours from t673200, and each
+		// time the next pass took it back from sight, as (1750,411), (1749,412) or (1748,412), 17 tiles off, over the farther
+		// altar the search had just chosen.
 		foreach (var kv in ctx.Seen.Stations)
-			KnownStations[kv.Key] = kv.Value;
+			if (!GivenUpSite(kv.Value, ctx))
+				KnownStations[kv.Key] = kv.Value;
 		// Against where the scan was made, not where the bot is now: right after a respawn the scan is still from where it
 		// died, and the work bench at the spawn counted as gone (seen in game: a new bench after every death, 60 wood).
 		TilePos node = ctx.Seen.Origin ?? ctx.Node;
@@ -3079,6 +3088,9 @@ public sealed class ProgressionPlanner
 	public string ResolveForTestStuck => stuck;
 
 	/// <summary>Resolve a single need against the current state (tests).</summary>
+	/// <summary>The stations in sight taken into what the planner knows, as each pass begins (tests).</summary>
+	public void SeeStationsForTest(BotContext ctx) => RememberStations(ctx);
+
 	public ISkill ResolveForTest(Need need, BotContext ctx)
 	{
 		ctx.EvilErrand = false;
