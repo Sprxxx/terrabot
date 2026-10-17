@@ -562,6 +562,29 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void WithTheBagFullOfGear_AndALoneStackOfBlocks_ACraftStillMakesRoom()
+	{
+		// Measured run M10m: "crafting 30 Vile Powder" blocked 6+ game hours again, nothing trashed: a lone stack of a building
+		// block (neither kept nor trashed) kept the relaxed pass for crafts from ever coming.
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.Stations[FakeGame.TileBench] = ctx.Node;
+		g.Items[FakeGame.Wood] = 30;
+		g.Items[FakeGame.DirtBlock] = 50; // one stack of a building block
+		for (int junk = 900; junk < 905; junk++) {
+			g.Items[junk] = 1;
+			g.Gear.Add(junk);
+		}
+		g.SlotLimit = g.Stacks().Count; // full
+		g.Refresh(ctx);
+		var craft = new CraftSkill(FakeGame.WoodenSword);
+		SkillStatus st = EarlyGameTests.RunSkill(g, ctx, craft, 600);
+		output.WriteLine($"{st}: {craft.Describe()} {craft.FailureReason}");
+		Assert.Equal(SkillStatus.Succeeded, st);
+		Assert.Equal(50, g.Count(FakeGame.DirtBlock)); // the blocks stay
+	}
+
+	[Fact]
 	public void WithTheBagFull_ADropThatDoesNotFit_IsNotGoneFor()
 	{
 		// Measured run M10f: 50 of 240 heartbeats Collect, "fetching Goodie Bag x1 got 0" over and over beside a full bag.

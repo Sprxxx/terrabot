@@ -427,46 +427,59 @@ public sealed class BotBrain
 			return;
 		for (int guard = 0; guard < MinFreeSlots && ctx.Inventory.FreeSlots < MinFreeSlots; guard++) {
 			IReadOnlyList<(int Type, int Stack)> stacks = ctx.Inventory.Stacks();
-			HashSet<int> kept = KeptItems(ctx, stacks);
-			if (craftFor >= 0 && guard > 0 || craftFor >= 0 && !stacks.Any(s => !kept.Contains(s.Type))) {
-				kept = KeptItems(ctx, stacks, gearToo: false);
+			var (trash, junk, cheapest) = PickTrash(ctx, stacks, KeptItems(ctx, stacks));
+			// For a craft with nothing trashable by the habit's rules: what is kept only for being gear may go too (the craft's
+			// own makings stay). Not "every stack kept" as the test for it: a lone stack of a building block is neither kept nor
+			// trashed, and with one in the bag the relaxed pass never came (measured run M10m: "crafting 30 Vile Powder" blocked
+			// 6+ game hours again, nothing trashed).
+			if (trash < 0 && craftFor >= 0) {
+				HashSet<int> kept = KeptItems(ctx, stacks, gearToo: false);
 				foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(craftFor))
 					foreach (Ingredient ing in r.Ingredients)
 						foreach (int a in ing.Accepts)
 							kept.Add(a);
+				(trash, junk, cheapest) = PickTrash(ctx, stacks, kept);
 			}
-			int junk = -1, junkStacks = 0;
-			long cheapest = long.MaxValue;
-			int cheap = -1;
-			foreach (var g in stacks.GroupBy(s => s.Type)) {
-				int n = g.Count();
-				bool block = ctx.Ids.BuildingBlocks.Contains(g.Key);
-				int value = ctx.Knowledge.ItemValue(g.Key);
-				// A kept thing that does not stack, carried several times over (one is kept): the spares are the bag's to trash.
-				// Seen in game (measured run M10b): nine Shackles (an accessory, so "gear") among 50 full slots; with nothing
-				// else to trash, 31 crafts failed "crafting stayed blocked (cursor item / full inventory)".
-				bool spare = !block && kept.Contains(g.Key) && n > 1 && g.All(s => s.Stack == 1);
-				if (!spare && (block ? n < 2 : kept.Contains(g.Key)))
-					continue;
-				if (value == 0) {
-					// Spare block stacks before the rest, then whatever has the most stacks.
-					int rank = (block ? 1000 : 0) + n;
-					if (rank > junkStacks) {
-						junkStacks = rank;
-						junk = g.Key;
-					}
-				}
-				else if (!block && (long)value * g.Min(s => s.Stack) < cheapest) {
-					cheapest = (long)value * g.Min(s => s.Stack);
-					cheap = g.Key;
-				}
-			}
-			int trash = junk >= 0 ? junk : cheap;
-			if (trash < 0 || !ctx.Crafter.TryTrash(trash))
+			if (trash < 0 || !ctx.Crafter.TryTrash(trash)) {
+				if (craftFor >= 0)
+					ctx.Log.Info($"Inventory: no room for the craft and nothing to trash ({(trash < 0 ? "all kept" : $"the {ctx.Knowledge.ItemName(trash)} would not go")})");
 				return;
+			}
 			ctx.Log.Info($"Inventory: {ctx.Inventory.FreeSlots} free slot(s) after trashing a stack of {ctx.Knowledge.ItemName(trash)}"
-				+ (junk >= 0 ? " (worth nothing)" : $" (worth {cheapest} copper, the least of anything not needed)"));
+				+ (junk ? " (worth nothing)" : $" (worth {cheapest} copper, the least of anything not needed)"));
 		}
+	}
+
+	/// <summary>The stack KeepRoom would trash with this kept set (-1 for none), whether it is worth nothing, and its worth.</summary>
+	private static (int Trash, bool Junk, long Cheapest) PickTrash(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks, HashSet<int> kept)
+	{
+		int junk = -1, junkStacks = 0;
+		long cheapest = long.MaxValue;
+		int cheap = -1;
+		foreach (var g in stacks.GroupBy(s => s.Type)) {
+			int n = g.Count();
+			bool block = ctx.Ids.BuildingBlocks.Contains(g.Key);
+			int value = ctx.Knowledge.ItemValue(g.Key);
+			// A kept thing that does not stack, carried several times over (one is kept): the spares are the bag's to trash.
+			// Seen in game (measured run M10b): nine Shackles (an accessory, so "gear") among 50 full slots; with nothing
+			// else to trash, 31 crafts failed "crafting stayed blocked (cursor item / full inventory)".
+			bool spare = !block && kept.Contains(g.Key) && n > 1 && g.All(s => s.Stack == 1);
+			if (!spare && (block ? n < 2 : kept.Contains(g.Key)))
+				continue;
+			if (value == 0) {
+				// Spare block stacks before the rest, then whatever has the most stacks.
+				int rank = (block ? 1000 : 0) + n;
+				if (rank > junkStacks) {
+					junkStacks = rank;
+					junk = g.Key;
+				}
+			}
+			else if (!block && (long)value * g.Min(s => s.Stack) < cheapest) {
+				cheapest = (long)value * g.Min(s => s.Stack);
+				cheap = g.Key;
+			}
+		}
+		return junk >= 0 ? (junk, true, 0) : (cheap, false, cheapest);
 	}
 
 	/// <summary>What the bag must keep: gear (tools, weapons, armour, potions, ammo), the plan's own items, and the ingredients (two recipes deep) of the gear to make.</summary>
