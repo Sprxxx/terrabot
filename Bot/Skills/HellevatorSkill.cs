@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Pathfinding;
@@ -116,10 +118,47 @@ public sealed class HellevatorSkill : ISkill
 	/// <summary>Where the descent ended (the bridge's start), once it has.</summary>
 	public TilePos? Landed { get; private set; }
 
-	public HellevatorSkill(int shaftX, int standRow)
+	public HellevatorSkill(int shaftX, int standRow, IReadOnlyList<(int Row, int Col)> route = null)
 	{
 		ShaftX = shaftX;
 		StandRow = standRow;
+		if (route != null)
+			this.route.AddRange(route.OrderBy(r => r.Row));
+		FollowsRoute = this.route.Count > 0;
+	}
+
+	/// <summary>
+	/// The shaft as it was dug: from each row on, the column it goes down (a step round lava or water, a leg, a column it went on from).
+	/// A later trip down follows it: down the open shaft already dug, onto the next column where it moved over, digging only where the
+	/// route is blocked now, and that new stretch replaces the route below it. Navigation design (docs NAVIGATION_GAPS.md section 5,
+	/// after Baritone's backtrack favoring): seen in game (world_wof E24, E28, 2026-10-18), every trip back after a death dug a fresh
+	/// column (2117, 2177, 2172, 2158, 2152), met new water and lava pockets, and took up to 15 game hours.
+	/// </summary>
+	public IReadOnlyList<(int Row, int Col)> Route => route;
+	private readonly List<(int Row, int Col)> route = new();
+	/// <summary>The trip was started with a route from an earlier one.</summary>
+	public bool FollowsRoute { get; }
+
+	/// <summary>The column the shaft goes down at <paramref name="row"/>: the route's, else the shaft's.</summary>
+	public int ColumnAt(int row)
+	{
+		int c = ShaftX;
+		foreach (var (r, x) in route) {
+			if (r > row)
+				break;
+			c = x;
+		}
+		return c;
+	}
+
+	/// <summary>The dig is on column <paramref name="c"/> from <paramref name="row"/> on: the route below is this branch now.</summary>
+	private void Note(int row, int c)
+	{
+		if (c == int.MinValue || ColumnAt(row) == c)
+			return; // as the route has it
+		route.RemoveAll(r => r.Row >= row);
+		if (ColumnAt(row) != c)
+			route.Add((row, c));
 	}
 
 	public string Describe() => $"Hellevator x {ShaftX} to row {StandRow} [{State}]"
@@ -196,13 +235,13 @@ public sealed class HellevatorSkill : ISkill
 		// Down there already (within the last leg's rows or under the row), far from the shaft: onto the row from here, never back up
 		// to the shaft. Seen in game (world_wof M12d): in the Underworld at (2152,1061) by the old shaft at 2155, the shaft moved to
 		// 2479, and the last leg walked the lava's edge 300 columns toward it, burnt to death twice.
-		if (leg == null && !forceFinal && StandRow - n.Y <= FinalLegRows && Math.Abs(n.X - ShaftX) > SeekTiles) {
+		if (leg == null && !forceFinal && StandRow - n.Y <= FinalLegRows && Math.Abs(n.X - ColumnAt(n.Y)) > SeekTiles) {
 			forceFinal = true;
 			seekX = n.X;
-			ctx.Log.Info($"Hellevator: down at {n} already, {Math.Abs(n.X - ShaftX)} columns from the shaft; onto row {StandRow} within {SeekTiles} of here");
+			ctx.Log.Info($"Hellevator: down at {n} already, {Math.Abs(n.X - ColumnAt(n.Y))} columns from the shaft; onto row {StandRow} within {SeekTiles} of here");
 		}
 		// Once begun, the walk to the shaft's top goes on to it (seen in game, S1: given up 40 columns off, the shaft was dug at 2115).
-		if (leg == null && !forceFinal && !approachGivenUp && (approach != null || Math.Abs(n.X - ShaftX) > ApproachTiles))
+		if (leg == null && !forceFinal && !approachGivenUp && (approach != null || Math.Abs(n.X - ColumnAt(n.Y)) > ApproachTiles))
 			return Approach(ctx, n);
 		// The straight drop, down to the last leg's rows (the ceiling and the open band over the lava are the last leg's).
 		if (leg == null && !forceFinal && !legNext && StandRow - n.Y > FinalLegRows && Straight(ctx, n) is SkillStatus dug)
@@ -212,10 +251,11 @@ public sealed class HellevatorSkill : ISkill
 			finalLeg = forceFinal || StandRow - n.Y <= LegRows;
 			legStartY = n.Y;
 			int to = Math.Min(n.Y + LegRows, StandRow);
-			int around = seekX ?? ShaftX;
+			int around = seekX ?? ColumnAt(n.Y);
+			int legX = ColumnAt(to);
 			IGoal goal = finalLeg
 				? new GoalStandOnRow(StandRow, around - SeekTiles, around + SeekTiles, ctx.Physics)
-				: new GoalRow(to, ShaftX, ctx.Physics) { Below = true, Accept = t => Math.Abs(t.X - ShaftX) <= Slack };
+				: new GoalRow(to, legX, ctx.Physics) { Below = true, Accept = t => Math.Abs(t.X - legX) <= Slack };
 			leg = new WalkToSkill(goal) { Quiet = true, Underground = true };
 			leg.Start(ctx);
 			State = finalLeg ? $"down onto row {StandRow} within {SeekTiles} of x {around}" : $"digging down to row {to}";
@@ -245,7 +285,8 @@ public sealed class HellevatorSkill : ISkill
 			lastLedgeY = n.Y;
 		}
 		// The straight dig goes on from where the leg came down (beside the shaft: back onto it first).
-		col = Math.Abs(n.X - ShaftX) <= Slack ? n.X : ShaftX;
+		col = Math.Abs(n.X - ColumnAt(n.Y)) <= Slack ? n.X : ColumnAt(n.Y);
+		Note(n.Y, col);
 		ctx.Log.Info($"Hellevator: at {n}, {StandRow - n.Y} rows to go");
 		return SkillStatus.Running;
 	}
@@ -257,8 +298,17 @@ public sealed class HellevatorSkill : ISkill
 	private SkillStatus? Straight(BotContext ctx, TilePos n)
 	{
 		var p = ctx.Physics;
-		if (col == int.MinValue)
-			col = ShaftX;
+		if (col == int.MinValue) {
+			col = ColumnAt(n.Y);
+			Note(n.Y, col);
+		}
+		// On a route from an earlier trip: where it moved over, onto its column (the dug way), never a fresh column beside it.
+		if (FollowsRoute && ctx.Body.Grounded && !steppingOver && ColumnAt(n.Y) != col) {
+			col = ColumnAt(n.Y);
+			alignTries = 0;
+			steppingOver = true;
+			ctx.Log.Info($"Hellevator: the dug shaft goes on at column {col} from row {n.Y} (the route of an earlier trip)");
+		}
 		if (!ctx.Body.Grounded) {
 			ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(col, p), p);
 			State = $"dropping down the shaft at x {col}";
@@ -305,12 +355,14 @@ public sealed class HellevatorSkill : ISkill
 				ctx.Log.Info($"Hellevator: column {col} (the step over the liquid) not reached from {n}; a leg round it instead");
 				steppingOver = false;
 				col = n.X;
+				Note(n.Y, col);
 				alignTries = 0;
 				legNext = true;
 				return null;
 			}
 			ctx.Log.Info($"Hellevator: the shaft goes on from column {n.X} (column {col} not reached{(col != ShaftX ? $", x {ShaftX} planned" : "")})");
 			col = n.X;
+			Note(n.Y, col);
 		}
 		steppingOver = false;
 		ShaftRow row = StraightShaft.Below(ctx.Moves, col, n.Y);
@@ -359,6 +411,7 @@ public sealed class HellevatorSkill : ISkill
 				if (StepOver(ctx, n) is int over) {
 					ctx.Log.Info($"Hellevator: lava or water beside the shaft at {string.Join(" ", row.Cells)}; stepping over to column {over} (clear for {StepOverLookRows} rows)");
 					col = over;
+					Note(n.Y, col);
 					alignTries = 0;
 					steppingOver = true;
 					return SkillStatus.Running;
@@ -433,6 +486,7 @@ public sealed class HellevatorSkill : ISkill
 		if (s == SkillStatus.Failed && sideways) {
 			approachGivenUp = true;
 			col = ctx.Node.X;
+			Note(ctx.Node.Y, col);
 			ctx.Log.Info($"Hellevator: no way over to the shaft's line from {ctx.Node} ({why}); the shaft goes on down from column {col}");
 			return SkillStatus.Running;
 		}

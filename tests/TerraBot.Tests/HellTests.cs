@@ -68,6 +68,35 @@ public class HellTests
 		Assert.True(g.Sim.Placed >= 2, "ledges in the shaft");
 	}
 
+	/// <summary>
+	/// Navigation (2026-10-18; world_wof E24, E28): each trip back down after a death dug a fresh column, through new pockets, up to 15
+	/// game hours. The shaft's route is recorded where it moves over round the lava, and a second trip with it goes down the dug way,
+	/// digging next to nothing.
+	/// </summary>
+	[Fact]
+	public void TheHellevator_RecordsItsRoute_AndASecondTripGoesDownTheDugWay()
+	{
+		FakeGame g = Hell();
+		BotContext ctx = Context(g);
+		var first = new HellevatorSkill(ShaftX, BridgeRow - 1);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, first, 30000));
+		int brokeFirst = g.Sim.Broken;
+		output.WriteLine($"route: {string.Join(", ", first.Route.Select(r => $"x {r.Col} from row {r.Row}"))}; broke {brokeFirst}");
+		Assert.NotEmpty(first.Route); // it moved over round the lava cell beside the shaft
+		Assert.Contains(first.Route, r => r.Col != ShaftX);
+		// Back at the top, as after a death; the second trip with the route.
+		var p = ctx.Physics;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(ShaftX, p), Y = Core.Pathfinding.Body.StandingTop(SurfaceFeet, p), ReleaseJump = true };
+		g.Refresh(ctx);
+		var second = new HellevatorSkill(ShaftX, BridgeRow - 1, first.Route);
+		Assert.True(second.FollowsRoute);
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, second, 30000));
+		int brokeSecond = g.Sim.Broken - brokeFirst;
+		output.WriteLine($"second trip broke {brokeSecond} cells, route now {string.Join(", ", second.Route.Select(r => $"x {r.Col} from row {r.Row}"))}");
+		Assert.True(brokeSecond <= brokeFirst / 4, $"the second trip dug {brokeSecond} cells (the first {brokeFirst})");
+		Assert.True(g.Grid.Get(LavaX, LavaY).HasLava(), "the lava cell was never opened");
+	}
+
 	[Fact]
 	public void TheHellevator_WithNoGroundUnderTheShaft_FailsSaying_SoThePlannerMovesIt()
 	{

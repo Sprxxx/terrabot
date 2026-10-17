@@ -170,12 +170,15 @@ public sealed class WallOfFleshErrand : Errand
 			return;
 		// The gear's depth limit does not hold on the expedition (BotContext.DeepestRow), as the plan's errand had it.
 		ctx.DepthErrand = true;
-		// The dig went on from another column (a cave between, HellevatorSkill.Approach): the errand's identity follows it, so the
-		// trip back after a death goes to the column actually dug, and the logs say where the shaft is.
-		if (shaft != null && shaft.Column != int.MinValue && Math.Abs(shaft.Column - ShaftX) > HellevatorSkill.Slack) {
-			ctx.Log.Info($"Errand {Id}: the shaft goes on at x {shaft.Column}, not x {ShaftX} (the dig moved over there); that is the shaft now");
-			ShaftX = shaft.Column;
-			Identity = $"the shaft at x {ShaftX}";
+		// The shaft as dug (its route, HellevatorSkill.Route) is kept: the trip back after a death goes down it, not down a fresh
+		// column from the top's. Seen in game (world_wof E28, 2026-10-18): the shaft adopted as the column the dig moved to, five times
+		// (2117, 2177, 2172, 2158, 2152), each trip back a fresh column through new pockets, up to 15 game hours.
+		if (shaft != null && shaft.Route.Count > 0 && !shaft.Route.SequenceEqual(ShaftRoute)) {
+			ShaftRoute = shaft.Route.ToList();
+			if (shaft.Route.Count > 1 && routeLogged != shaft.Route.Count) {
+				routeLogged = shaft.Route.Count;
+				ctx.Log.Info($"Errand {Id}: the shaft's route: {string.Join(", ", shaft.Route.Select(r => $"x {r.Col} from row {r.Row}"))}");
+			}
 		}
 		if (Phase != DescendPhase)
 			return;
@@ -198,6 +201,10 @@ public sealed class WallOfFleshErrand : Errand
 		Phase != PreparePhase && Phase != DescendPhase && DownThere(ctx) && planner is ProgressionPlanner p
 			? Phase == BridgePhase ? p.HellbridgeStanding(ctx) : p.HellbridgeArena
 			: null;
+
+	/// <summary>The shaft as dug, row by row (<see cref="HellevatorSkill.Route"/>): the trip back goes down it. Saved with the errand.</summary>
+	public List<(int Row, int Col)> ShaftRoute { get; private set; } = new();
+	private int routeLogged;
 
 	/// <summary>A chest in the deck's way the bridge stopped at (<see cref="HellbridgeSkill.Chest"/>): looted next, once per cell.</summary>
 	private TilePos? lootChest;
@@ -294,7 +301,7 @@ public sealed class WallOfFleshErrand : Errand
 		if (Phase == DescendPhase || !DownThere(ctx)) {
 			// The way down, or back down after a death in a later phase (the shaft is dug: a series of drops).
 			if (shaft == null) {
-				shaft = new HellevatorSkill(ShaftX, StandRow);
+				shaft = new HellevatorSkill(ShaftX, StandRow, ShaftRoute);
 				Status = Phase != DescendPhase ? $"back down {Identity} to the {Phase}" : DeepestRow > int.MinValue || Frontier > int.MinValue ? $"back down {Identity} to the frontier at row {Frontier}" : $"down {Identity} to row {StandRow}";
 			}
 			return shaft;
@@ -468,6 +475,7 @@ public sealed class WallOfFleshErrand : Errand
 		s["blasts"] = Blasts.ToString();
 		s["columnChanged"] = ColumnChanged ? "1" : "0";
 		s["failedColumns"] = string.Join(",", failedColumns);
+		s["shaftRoute"] = string.Join(";", ShaftRoute.Select(r => $"{r.Row}:{r.Col}"));
 		return s;
 	}
 
@@ -482,6 +490,9 @@ public sealed class WallOfFleshErrand : Errand
 		landed = state.GetValueOrDefault("landed", "0") == "1";
 		Blasts = int.TryParse(state.GetValueOrDefault("blasts", "0"), out int bl) ? bl : 0;
 		ColumnChanged = state.GetValueOrDefault("columnChanged", "0") == "1";
+		ShaftRoute = state.GetValueOrDefault("shaftRoute", "").Split(';', StringSplitOptions.RemoveEmptyEntries)
+			.Select(e => e.Split(':')).Where(a => a.Length == 2 && int.TryParse(a[0], out _) && int.TryParse(a[1], out _))
+			.Select(a => (int.Parse(a[0]), int.Parse(a[1]))).ToList();
 		foreach (string c in state.GetValueOrDefault("failedColumns", "").Split(',', StringSplitOptions.RemoveEmptyEntries))
 			if (int.TryParse(c, out int fc))
 				failedColumns.Add(fc);
