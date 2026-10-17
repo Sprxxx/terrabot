@@ -2485,6 +2485,14 @@ public sealed partial class ProgressionPlanner
 	/// are so new ones grow, some of them mushrooms, and with none to cut the known stretch is walked to and fro
 	/// (MineSkill.PatrolEvilSurface, CutPlantsSkill; measured run M10b: 4 of 6 in 5 game days).
 	/// </summary>
+	/// <summary>
+	/// Wanders round the evil biome's ground a hunt for worm teeth makes before it gives up: a devourer is 1 in 65 of the Corruption's
+	/// spawns (NPC.cs:86707, 89094), the rest eaters of souls, at a spawn every 100-300 ticks with few NPCs near (NPC.cs:86680-86705):
+	/// one every 2-4 game hours. A wander is a walk of 30-60 tiles and a wait of <see cref="HuntSkill.WaitTicks"/>, about 450 ticks;
+	/// <see cref="HuntSkill.MaxWanders"/> (12, an hour and a half) would give up between two devourers; 60 is about 7.5 game hours.
+	/// </summary>
+	public const int RareHuntWanders = 60;
+
 	private ISkill ResolveEvilSource(int item, ItemSource src, int more, int target, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		ctx.EvilErrand = true;
@@ -2496,7 +2504,7 @@ public sealed partial class ProgressionPlanner
 			if (bridgeFirst != null || stuck != null)
 				return bridgeFirst;
 			return Do($"need {more} more {name} (hunting to {target} in the {ctx.Ids.EvilName} round {ground})",
-				new HuntSkill(item, src.NpcAiStyle, target) { Ground = ground });
+				new HuntSkill(item, src.NpcAiStyle, target) { Ground = ground, WanderLimit = src.NpcAiStyle == WormPattern.WormAiStyle ? RareHuntWanders : HuntSkill.MaxWanders });
 		}
 		var mine = new MineSkill(item, src.TileType, target) { FrameX = src.FrameX, Bias = ExploreBias.Sideways, PatrolEvilSurface = true };
 		bool known = ctx.World.FindTiles(src.TileType, ctx.Node, MineSkill.MapSearchRadius)

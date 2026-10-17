@@ -318,6 +318,21 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void TheHuntForWormTeeth_WaitsLongerForItsRarePrey()
+	{
+		// A devourer is 1 in 65 of the corruption's spawns (NPC.cs:86707): the 12 wanders of a hunt for eaters of souls' chunks are
+		// about an hour and a half, and would give up between two of them.
+		FakeGame g = CorruptWorld();
+		BotContext ctx = Armoured(g);
+		var p = new ProgressionPlanner();
+		var teeth = Assert.IsType<HuntSkill>(p.ResolveForTest(new HaveItem(FakeGame.WormTooth, 6, "worm teeth"), ctx));
+		output.WriteLine($"{p.Status} -> {teeth.Describe()}");
+		Assert.Equal((FakeGame.WormAi, ProgressionPlanner.RareHuntWanders), (teeth.AiStyle, teeth.WanderLimit));
+		var chunks = Assert.IsType<HuntSkill>(new ProgressionPlanner().ResolveForTest(new HaveItem(FakeGame.RottenChunk, 15, "rotten chunks"), ctx));
+		Assert.Equal(HuntSkill.MaxWanders, chunks.WanderLimit);
+	}
+
+	[Fact]
 	public void TheHuntForRottenChunks_GoesIntoTheCorruption_InFullArmour_ForTheErrandOnly()
 	{
 		FakeGame g = CorruptWorld();
