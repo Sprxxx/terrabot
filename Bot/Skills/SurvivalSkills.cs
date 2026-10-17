@@ -192,7 +192,7 @@ public sealed class HuntSkill : ISkill
 		TilePos goal;
 		if ((ctx.Combat.InTown || evilHere) && townWalks < MaxTownWalks && wanderFrom == null) {
 			if (townWalks++ == 0) {
-				wanderDir = evilHere ? AwayFromEvil(ctx, node) : ctx.SaferSide(node);
+				wanderDir = evilHere || Ground == null && EvilOneSide(ctx, node) ? AwayFromEvil(ctx, node) : ctx.SaferSide(node);
 				ctx.Log.Info($"Hunt: {(evilHere ? "on the evil biome's ground (its own spawns, not this prey)" : "in town (nothing spawns here)")}; walking out of it {(wanderDir > 0 ? "east" : "west")}");
 			}
 			goal = new TilePos(node.X + wanderDir * WanderTiles, node.Y - 10);
@@ -220,6 +220,16 @@ public sealed class HuntSkill : ISkill
 			if (wandersOut[Side(dir)] >= OpenWanderSteps)
 				wandersOut[Side(dir)] = 0;
 			goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], System.Math.Min(from.Y, SpawnsAboveRow ?? int.MaxValue) - 10);
+			// A wander onto the evil biome's ground ends that side, as a wander back into town does (its spawns are its own).
+			// Seen in game (measured run U26): out of town west, the lens hunt's sweep went on west into the corruption,
+			// (2065,272) to (1920,265), and fought eaters of souls for 6 game hours, one lens short.
+			if (Ground == null && townSide == 0 && Brain.ProgressionPlanner.SurfaceAt(ctx.Grid, goal.X) is TilePos landing && ctx.InEvilBiome(landing)) {
+				townSide = dir;
+				wandersOut[Side(dir)] = 0;
+				dir = -dir;
+				ctx.Log.Info($"Hunt: {landing} is the evil biome's ground (its own spawns, not this prey); sweeping the other way");
+				goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], System.Math.Min(from.Y, SpawnsAboveRow ?? int.MaxValue) - 10);
+			}
 		}
 		waitTicks = WaitTicks;
 		ctx.Log.Info($"Hunt: nothing to hunt in sight, wandering towards {goal}");
@@ -228,6 +238,13 @@ public sealed class HuntSkill : ISkill
 	}
 
 	private static int Side(int dir) => dir > 0 ? 1 : 0;
+
+	/// <summary>The evil biome lies on one side within a few wanders (more of it one way than the other).</summary>
+	private static bool EvilOneSide(BotContext ctx, TilePos node)
+	{
+		int span = WanderTiles * OpenWanderSteps;
+		return ctx.CorruptionAround(new TilePos(node.X + span, node.Y)) != ctx.CorruptionAround(new TilePos(node.X - span, node.Y));
+	}
 
 	/// <summary>The side (+1 east, -1 west) with less of the evil biome a wander's length off.</summary>
 	private static int AwayFromEvil(BotContext ctx, TilePos node) =>

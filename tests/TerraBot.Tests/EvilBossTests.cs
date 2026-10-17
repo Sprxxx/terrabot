@@ -669,6 +669,34 @@ public class EvilBossTests
 	}
 
 	[Fact]
+	public void ALensHunt_BesideTheCorruption_SweepsAwayFromIt_NotIntoIt()
+	{
+		// Measured run U26: out of town west, the lens hunt swept on west into the corruption and fought eaters of souls for 6
+		// game hours, one lens short. Here the hunt starts on plain ground 70 tiles west of the corruption.
+		FakeGame g = CorruptWorld();
+		BotContext ctx = Armoured(g);
+		g.Items[FakeGame.IronBroadsword] = 1;
+		g.IsNight = true;
+		MoveTo(g, ctx, CorruptFrom - 70, Feet);
+		g.Refresh(ctx);
+		Assert.False(ctx.InEvilBiome(ctx.Node));
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
+		hunt.Start(ctx);
+		var goals = new System.Collections.Generic.List<int>();
+		for (int t = 0; t < 60 * 60 * 3 && goals.Count < 4; t++) {
+			g.Refresh(ctx);
+			hunt.Tick(ctx);
+			g.Step(ctx);
+			var m = System.Text.RegularExpressions.Regex.Match(hunt.Describe(), @"\[wandering\] > WalkTo \((\d+),(\d+)\)");
+			if (m.Success && (goals.Count == 0 || goals[^1] != int.Parse(m.Groups[1].Value)))
+				goals.Add(int.Parse(m.Groups[1].Value));
+		}
+		output.WriteLine($"{hunt.Describe()}; wanders to x {string.Join(", ", goals)} (the corruption from x {CorruptFrom})");
+		Assert.NotEmpty(goals);
+		Assert.DoesNotContain(goals, x => ProgressionPlanner.SurfaceAt(g.Grid, x) is TilePos c && ctx.InEvilBiome(c)); // its spawns, not demon eyes
+	}
+
+	[Fact]
 	public void ALensHunt_StartedOnTheCorruption_WalksOutOfIt_AwayFromTheBiome()
 	{
 		// Measured run U23: the lens hunts of nights 6 and 7 wandered by the arena site in the corruption and fought eaters of
