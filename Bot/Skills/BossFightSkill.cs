@@ -1009,7 +1009,7 @@ public sealed class BossFightSkill : ISkill
 		wallX = w.CenterX;
 		wallNear = near;
 		// The far edge of the stand: the band's, but not where the eyes are beyond an arrow's reach (Ballistics.MaxTicks of flight).
-		float reach = ctx.Combat.Projectile.Speed * ctx.Combat.Projectile.UpdatesPerTick * Ballistics.MaxTicks * ArrowReachShare;
+		float reach = ctx.Combat.Projectile.Speed * ctx.Combat.Projectile.UpdatesPerTick * WallFlightTicks * ArrowReachShare;
 		float far = Math.Max(near + WallOfFleshPattern.RunFromTiles * 16f + 16f,
 			Math.Min(near + (WallOfFleshPattern.BandWidthTiles - WallOfFleshPattern.StopShortTiles) * 16f, reach));
 		bool was = wallRunning;
@@ -1027,8 +1027,15 @@ public sealed class BossFightSkill : ISkill
 		}
 	}
 
-	/// <summary>The share of an arrow's flight in <see cref="Ballistics.MaxTicks"/> that is taken as its reach across (it rises and falls on the way).</summary>
+	/// <summary>The share of an arrow's flight in <see cref="WallFlightTicks"/> that is taken as its reach across (it rises and falls on the way).</summary>
 	public const float ArrowReachShare = 0.85f;
+	/// <summary>
+	/// Wall of Flesh: arrow flights up to this long are aimed (Ballistics.Lead). Below half its life the band starts 62 tiles off
+	/// (the Hungry's 57-tile reach and 5), some 100 ticks of an arrow's flight straight across and more on the arc that reaches it,
+	/// past the 120 the other fights aim within; a wooden arrow lives 1200 ticks (Projectile.cs:924-933), so its fall, not its
+	/// life, is the limit.
+	/// </summary>
+	public const int WallFlightTicks = 240;
 
 	/// <summary>
 	/// The dodge planner's bound on the Wall's side (the hitbox's left edge, px): the band's near edge, or where the body is if it is
@@ -1103,7 +1110,7 @@ public sealed class BossFightSkill : ISkill
 			if (!FightSkill.ClearShot(ctx, cx, cy, e.CenterX, e.CenterY))
 				return false;
 			float tolerance = Math.Max(12f, Math.Min(e.Width, e.Height) * 0.5f - 8f);
-			s = Ballistics.Lead(cx, cy, e.CenterX, e.CenterY, e.VX, e.VY, ctx.Combat.Projectile, tolerance);
+			s = Ballistics.Lead(cx, cy, e.CenterX, e.CenterY, e.VX, e.VY, ctx.Combat.Projectile, tolerance, WallFlightTicks);
 			if (s.Hits && FightSkill.ArcClear(ctx, cx, cy, s, ctx.Combat.Projectile) && !ctx.SparedInLine(cx, cy, s.AimX, s.AimY, FightSkill.RangedRange * 2f)) {
 				TargetId = e.Id;
 				wallTargetWhat = what;
