@@ -808,6 +808,12 @@ public sealed class BotContext
 	/// </summary>
 	public System.Collections.Generic.Dictionary<int, int> ExploresWithoutOre { get; } = new();
 	/// <summary>
+	/// Per ore item: legs walked by explorations that something else cut off (a fight's aftermath, a chest, a recall),
+	/// short of a whole exploration's worth (Skills.ExploreSkill.MaxLegs): such an exploration is taken off
+	/// <see cref="ExploresWithoutOre"/> again until its legs and the others' add up to one (MineSkill.Stop). Cleared with it.
+	/// </summary>
+	public System.Collections.Generic.Dictionary<int, int> ExploreLegsCut { get; } = new();
+	/// <summary>
 	/// Per item that grows back on the evil biome's surface: passes along it in a row that found none (MineSkill,
 	/// Skills.PatrolSkill), across restarts of the skill, as <see cref="ExploresWithoutOre"/>.
 	/// </summary>

@@ -163,8 +163,38 @@ public sealed class MineSkill : ISkill
 
 	public void Stop(BotContext ctx)
 	{
+		if (sub is ExploreSkill cut)
+			NoteCutExploration(ctx, cut.LegsWalked);
 		sub?.Stop(ctx);
 		sub = null;
+	}
+
+	/// <summary>
+	/// The job is stopped in the middle of an exploration (something else came first: a chest, a recall, the plan after a
+	/// fight): one that walked legs to new ground has not looked through its ground, and the next job's exploration goes on
+	/// from where it left off, so it is taken off the count of fruitless ones (BotContext.ExploresWithoutOre) while the legs
+	/// of such explorations add up to less than one whole (ExploreSkill.MaxLegs; BotContext.ExploreLegsCut), so the give-up
+	/// still comes after as many legs. One that walked none still counts (world_eye run 42: a fight every few seconds
+	/// restarted the job and with it the same first leg for 12 game hours). Seen in game (measured run U29, d3 +3.7h to
+	/// +13.5h): the crystal search near the spawn walked 10 legs into the band before a recall cut it off and 4 more before a
+	/// chest did, both counted whole, and the next job failed "after 3 explorations in a row" and went to new ground at
+	/// (1735,269), off limits there; U28 (d3 +16.1h) likewise after 3 legs cut off by a chest.
+	/// </summary>
+	private void NoteCutExploration(BotContext ctx, int legsWalked)
+	{
+		if (legsWalked <= 0)
+			return;
+		int cut = TierGroup.Max(i => ctx.ExploreLegsCut.GetValueOrDefault(i)) + legsWalked;
+		bool whole = cut >= ExploreSkill.MaxLegs;
+		foreach (int i in TierGroup) {
+			ctx.ExploreLegsCut[i] = whole ? cut - ExploreSkill.MaxLegs : cut;
+			if (!whole && ctx.ExploresWithoutOre.TryGetValue(i, out int n)) {
+				if (n <= 1)
+					ctx.ExploresWithoutOre.Remove(i);
+				else
+					ctx.ExploresWithoutOre[i] = n - 1;
+			}
+		}
 	}
 
 	/// <summary>Paused for a reflex: the sub-skills pause too, and go on from where they were (their plans kept).</summary>
@@ -208,6 +238,12 @@ public sealed class MineSkill : ISkill
 			}
 			sub?.Stop(ctx);
 			sub = null;
+			// The amount is in: no fruitless explorations carried to the next job. Mining a tile clears them, but the drop
+			// reaches the bag a tick or more after it leaves the world, and in that gap the job, its drop collected and none
+			// in sight, counted one more and began exploring (measured runs U25-U29: "Mine: no Life Crystal seen within 40
+			// tiles; exploring" between the pickup and "Mine done" after every crystal, U25 02:54:54.344); the next crystal
+			// job began at 1 of its MaxExplores.
+			ClearExplores(ctx);
 			ctx.Log.Info($"Mine done: {Label(ctx)} {have}/{Amount}, mined {Mined} tile(s)");
 			State = "done";
 			return SkillStatus.Succeeded;
@@ -584,8 +620,10 @@ public sealed class MineSkill : ISkill
 	/// <summary>The fruitless explorations of this job's tier group are forgotten (ore found, or given up).</summary>
 	private void ClearExplores(BotContext ctx)
 	{
-		foreach (int i in TierGroup)
+		foreach (int i in TierGroup) {
 			ctx.ExploresWithoutOre.Remove(i);
+			ctx.ExploreLegsCut.Remove(i);
+		}
 	}
 
 	/// <summary>

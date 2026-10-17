@@ -231,6 +231,7 @@ public sealed class HuntSkill : ISkill
 				goal = new TilePos(from.X + dir * WanderTiles * ++wandersOut[Side(dir)], System.Math.Min(from.Y, SpawnsAboveRow ?? int.MaxValue) - 10);
 			}
 		}
+		goal = FloorUnder(ctx, goal);
 		waitTicks = WaitTicks;
 		ctx.Log.Info($"Hunt: nothing to hunt in sight, wandering towards {goal}");
 		Begin(ctx, new WalkToSkill(goal) { Quiet = true, Tolerance = 4 }, "wandering");
@@ -238,6 +239,29 @@ public sealed class HuntSkill : ISkill
 	}
 
 	private static int Side(int dir) => dir > 0 ? 1 : 0;
+
+	/// <summary>
+	/// A wander's goal in the open (some rows over where the bot stood) as the spot to stand on beneath it: the first floor
+	/// down its column, down to the row the prey spawns above (<see cref="SpawnsAboveRow"/>), else the world's surface row
+	/// (BotContext.SurfaceY: vanilla's surface prey spawns above it, NPC.SpawnNPC). The walk's own look down
+	/// (GoalResolver.StandNear) goes 40 rows; past that it stood at the goal itself, in the air, and placed blocks to.
+	/// Seen in game (measured run U29, night of d3): from (1984,233) on a corruption hill the wanders went to (2014,223),
+	/// (2039,217) ... (2139,193), each 10 rows over the last walk's end, 31 blocks placed a wander: a bridge rising into the
+	/// sky, which then was "the surface" for trips (ProgressionPlanner.SurfaceAt: up from the spawn at row 282 to rows
+	/// 205-221, new ground at (2335,193) and (2215,196)), and from which the bot was knocked at row 198 and killed by a
+	/// 79-row fall. The goal as it was if no floor is found so far down, or it is in the ground (the walk climbs to its top).
+	/// </summary>
+	private TilePos FloorUnder(BotContext ctx, TilePos goal)
+	{
+		Core.Grid.ITileGrid g = ctx.Grid;
+		if (g.Get(goal.X, goal.Y).CanStandOn())
+			return goal;
+		int lowest = SpawnsAboveRow ?? (ctx.SurfaceY > 0 ? ctx.SurfaceY : goal.Y + 40);
+		for (int y = goal.Y; y <= lowest; y++)
+			if (g.Get(goal.X, y + 1).CanStandOn())
+				return Core.Pathfinding.Body.IsStandable(g, new TilePos(goal.X, y)) ? new TilePos(goal.X, y) : goal;
+		return goal;
+	}
 
 	/// <summary>The evil biome lies on one side within a few wanders (more of it one way than the other).</summary>
 	private static bool EvilOneSide(BotContext ctx, TilePos node)

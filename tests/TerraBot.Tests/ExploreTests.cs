@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using TerraBot.Bot;
 using TerraBot.Bot.Brain;
@@ -765,6 +766,33 @@ public class CrystalBandTests
 	}
 
 	[Fact]
+	public void ATripToNewGround_IsNotToWhereTheFruitlessSearchJustWas()
+	{
+		// Measured run U29 (d8 +8.5h to d10 +23h): standing at (2331,193), the crystal trip's "new ground" was (2335,193), 4
+		// tiles off: the walk there ended at once, the job's three explorations ended at once over the ground it had explored,
+		// and the next trip went there again; 63,674 explorations in the run, 24,517 of them from (2331,193), and runs of
+		// 757 to 6,030 "travelling to new ground at (2335,193)" (later (2215,196)) in a row, the game clock running on.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 60; y++) {
+			char[] r = (y < 50 ? new string('.', 1300) : new string('#', 1300)).ToCharArray();
+			if (y == 49)
+				r[770] = 'S'; // 120 tiles east of the spawn: the first trip's ground
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray());
+		BotContext ctx = g.CreateContext(output);
+		ctx.SpawnTile = new TilePos(650, 49);
+		var p = new ProgressionPlanner();
+		p.NoteFruitless(FakeGame.LifeCrystal);
+		ISkill skill = p.ResolveForTest(new LifeAtLeast(200, "max life"), ctx);
+		output.WriteLine($"{p.Status} -> {skill?.Describe()}");
+		Assert.IsType<WalkToSkill>(skill);
+		var m = System.Text.RegularExpressions.Regex.Match(p.Status, @"new ground at \((\d+),(\d+)\)");
+		Assert.True(m.Success, p.Status);
+		Assert.True(System.Math.Abs(int.Parse(m.Groups[1].Value) - 770) > ExploreSkill.MaxLegTiles, $"new ground where the bot stands: {p.Status}");
+	}
+
+	[Fact]
 	public void ExploringForACrystal_AboveTheBand_PullsDownIntoIt()
 	{
 		// Measured run U9: 25% of the 288 crystal legs were above row 375, the top of the crystal band. A frontier down in the
@@ -795,5 +823,238 @@ public class CrystalBandTests
 		output.WriteLine(leg);
 		var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\)");
 		Assert.True(int.Parse(m.Groups[2].Value) >= 18, "into the cave pocket, deeper towards the band, not along the surface");
+	}
+
+	/// <summary>
+	/// The bag as the game adapter reads it: a drop picked up shows in the count a tick later (the drop gone from the
+	/// world first). Every other question goes to the fake as it is.
+	/// </summary>
+	private sealed class LaggedBag : IInventory
+	{
+		private readonly FakeGame g;
+		private readonly int item;
+		public int Shown;
+		public LaggedBag(FakeGame g, int item) { this.g = g; this.item = item; }
+		public int Count(int itemType) => itemType == item ? Shown : g.Count(itemType);
+		public bool HasRoomFor(int itemType) => g.HasRoomFor(itemType);
+		public bool CanPickUp(int itemType) => g.CanPickUp(itemType);
+		public bool IsEquipped(int itemType) => g.IsEquipped(itemType);
+		public System.Collections.Generic.IReadOnlyList<int> UnwornAccessories() => g.UnwornAccessories();
+		public int FreeSlots => g.FreeSlots;
+		public System.Collections.Generic.IReadOnlyList<(int Type, int Stack)> Stacks() => g.Stacks();
+		public bool IsGear(int itemType) => g.IsGear(itemType);
+	}
+
+	[Fact]
+	public void ACrystalMined_LeavesNoFruitlessExploration_ForTheNextJob()
+	{
+		// Measured runs U25-U29: after each crystal mined, "Mine: no Life Crystal seen within 40 tiles; exploring" and an
+		// "Explore start" came between the pickup and "Mine done" (U25 02:54:54.344, the drop collected, the bag's count a tick
+		// behind), and that exploration stayed counted: the next crystal job began at 1 of its 3. U29 (d3 +3.7h to +13.5h):
+		// two explorations near the spawn, and the third job failed "after 3 explorations in a row" before exploring at all.
+		var (g, ctx) = DeepCave(output);
+		g.AddHeart(44, 119);
+		var bag = new LaggedBag(g, FakeGame.LifeCrystal);
+		ctx.Inventory = bag;
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		for (int t = 0; t < 60 * 60 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = mine.Tick(ctx);
+			bag.Shown = g.Count(FakeGame.LifeCrystal); // what the next tick's read will show
+			g.Step(ctx);
+		}
+		output.WriteLine(string.Join("\n", ((TestLog)ctx.Log).Lines));
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Equal(0, ctx.ExploresWithoutOre.GetValueOrDefault(FakeGame.LifeCrystal));
+	}
+
+	/// <summary>Runs the job until <paramref name="until"/> holds (checked each tick), at most <paramref name="max"/> ticks.</summary>
+	private static void TicksUntil(FakeGame g, BotContext ctx, ISkill skill, System.Func<bool> until, int max)
+	{
+		for (int t = 0; t < max && !until(); t++) {
+			g.Refresh(ctx);
+			if (skill.Tick(ctx) != SkillStatus.Running)
+				break;
+			g.Step(ctx);
+		}
+	}
+
+	[Fact]
+	public void AnExplorationCutOff_AfterLegsToNewGround_IsNotCountedFruitless_UntilItsLegsMakeAWholeOne()
+	{
+		// Measured run U29 (d3 +3.7h to +13.5h): the crystal search near the spawn walked 10 legs into the band, to (2189,499),
+		// before a recall potion cut it off ("in the same place for 3 game hours"), and 4 more before a chest at (2160,537)
+		// did; each counted as a whole fruitless exploration, and the third job failed "after 3 explorations in a row" and
+		// went off to new ground at (1735,269). U28 (d3 +16.1h): 3 legs, cut off by a chest at (1983,331), counted the same.
+		var (g, ctx) = Pockets(100);
+		var log = (TestLog)ctx.Log;
+		int Legs(string n) => log.Lines.Count(l => l.StartsWith($"Explore: leg {n} to"));
+		var first = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		first.Start(ctx);
+		TicksUntil(g, ctx, first, () => Legs("3") > 0, 60 * 60 * 2); // two legs walked, the third begun
+		Assert.True(Legs("3") > 0, "the exploration did not get to its third leg");
+		first.Stop(ctx); // something else came first
+		Assert.Equal(0, ctx.ExploresWithoutOre.GetValueOrDefault(FakeGame.LifeCrystal));
+		Assert.Equal(2, ctx.ExploreLegsCut.GetValueOrDefault(FakeGame.LifeCrystal));
+		// Cut off before a leg got anywhere: counted, as before (world_eye run 42: a fight every few seconds restarted the job
+		// and its same first leg for 12 game hours).
+		var second = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		second.Start(ctx);
+		Ticks(g, ctx, second, 2);
+		Assert.Contains("Explore", second.Describe());
+		second.Stop(ctx);
+		Assert.Equal(1, ctx.ExploresWithoutOre.GetValueOrDefault(FakeGame.LifeCrystal));
+		// Legs of cut-off explorations that add up to a whole one's (ExploreSkill.MaxLegs): that one counts.
+		ctx.ExploreLegsCut[FakeGame.LifeCrystal] = ExploreSkill.MaxLegs - 1;
+		int before = log.Lines.Count;
+		var third = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		third.Start(ctx);
+		TicksUntil(g, ctx, third, () => log.Lines.Skip(before).Any(l => l.StartsWith("Explore: leg 3 to")), 60 * 60 * 2);
+		third.Stop(ctx);
+		Assert.Equal(2, ctx.ExploresWithoutOre.GetValueOrDefault(FakeGame.LifeCrystal));
+		Assert.Equal(1, ctx.ExploreLegsCut.GetValueOrDefault(FakeGame.LifeCrystal));
+	}
+
+	[Fact]
+	public void ExploringForACrystal_OverTheOreGroundExploredAlready_DigsOnThroughIt_ToTheFreshGroundBelow()
+	{
+		// Measured run U27 (d4 +0.5h, full armour, the gear's floor row 601, a crystal's 701): from the spawn, "the best way on
+		// from (2058,346), (2056,366), goes back to ground explored and seen already": three explorations ended after 2, 0
+		// and 0 legs within 1.4 seconds, the job failed, and the bot went to new ground at (1975,280). The ore phase had
+		// explored the ground round the spawn down to its floor (row 436-461; legs at x 1990-2210 to row ~450); six crystals
+		// lay under it at rows 525-602, x 2018-2201 (found in U24-U26). U28 the same at (2012,353), U27 again at (1963,318) x3.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 300; y++) {
+			char[] r = (y < 10 ? new string('.', 120) : new string('#', 120)).ToCharArray();
+			if (y >= 58 && y <= 60)
+				for (int x = 38; x <= 42; x++)
+					r[x] = '.';
+			if (y == 60)
+				r[40] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { RevealRadius = 0 };
+		for (int x = 0; x < 120; x++)
+			for (int y = 122; y < 300; y++)
+				g.Unrevealed.Add(new TilePos(x, y)); // seen down to row 121: the ore phase's ground
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 40;
+		ctx.Combat.Defense = 9;
+		ctx.Combat.ArmourPieces = 3;
+		Assert.Equal(190, ctx.DeepestRow);
+		foreach (var (x, y) in new[] { (42, 80), (38, 80), (42, 100), (65, 60), (15, 60) })
+			ctx.Explored.Add(new TilePos(x, y)); // its legs, every way on from here
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		Ticks(g, ctx, mine, 3);
+		var log = (TestLog)ctx.Log;
+		Assert.DoesNotContain(log.Lines, l => l.Contains("explored already"));
+		string leg = log.Lines.First(l => l.Contains("Explore: leg 1 to"));
+		output.WriteLine(leg);
+		var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\)");
+		Assert.True(int.Parse(m.Groups[2].Value) >= 110, $"through the ground explored already, to the fresh ground under it: {leg}");
+	}
+
+	[Fact]
+	public void ExploringForACrystal_ThroughGroundExploredAlready_StopsAtTheGearsFloor()
+	{
+		// The deaths of measured run U26 (rows 720-772, the gear's floor 626) stay out: below the gear's own floor ground
+		// explored already still ends the exploration (the crystal's floor, 100 rows deeper, is a cost there, not a way through).
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 300; y++) {
+			char[] r = (y < 10 ? new string('.', 120) : new string('#', 120)).ToCharArray();
+			if (y >= 178 && y <= 180)
+				for (int x = 38; x <= 42; x++)
+					r[x] = '.';
+			if (y == 180)
+				r[40] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { RevealRadius = 0 };
+		for (int x = 0; x < 120; x++)
+			for (int y = 232; y < 300; y++)
+				g.Unrevealed.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 40;
+		ctx.Combat.Defense = 9;
+		ctx.Combat.ArmourPieces = 3;
+		Assert.Equal(190, ctx.DeepestRow);
+		foreach (var (x, y) in new[] { (42, 200), (38, 200), (42, 220), (65, 180), (15, 180), (42, 160), (38, 160) })
+			ctx.Explored.Add(new TilePos(x, y));
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		Ticks(g, ctx, mine, 3);
+		var log = (TestLog)ctx.Log;
+		Assert.Contains(log.Lines, l => l.Contains("explored already"));
+	}
+
+	[Fact]
+	public void ExploringForACrystal_FromTheSurface_DigsDownIntoTheBand_NotAlongTheSurface()
+	{
+		// Measured run U28: 88 of its 133 crystal legs ended at rows 300-349, above the band's top (row 375), most of them
+		// frontiers along the surface ("leg 1 to (2406,304) (frontier) from (2346,298)", then (2436,309), (2466,318) ... 16
+		// legs to (2683,348)); U27 54 of 145. U25, whose search began in the band, 1 of 36. A frontier ahead always came
+		// before digging, whatever its depth; above the band a dig down into it now weighs against it.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 120; y++) {
+			char[] r = (y < 10 ? new string('.', 120) : new string('#', 120)).ToCharArray();
+			if (y == 9)
+				r[40] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { RevealRadius = 0 };
+		for (int x = 0; x < 120; x++)
+			for (int y = 12; y < 120; y++)
+				g.Unrevealed.Add(new TilePos(x, y)); // the surface seen, the ground under it not
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 100; // the crystal band from row 40
+		Assert.Equal(40, ctx.CrystalBandTop);
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		Ticks(g, ctx, mine, 3);
+		var log = (TestLog)ctx.Log;
+		string leg = log.Lines.First(l => l.Contains("Explore: leg 1 to"));
+		output.WriteLine(leg);
+		var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\)");
+		Assert.True(int.Parse(m.Groups[2].Value) >= 9 + ExploreSkill.FallbackDepth, $"down into the ground, not along the surface: {leg}");
+	}
+
+	[Fact]
+	public void ExploringForACrystal_FromTheSurface_ACaveGoingDown_StillBeatsDigging()
+	{
+		// The frontier-first rule's reason stays (measured run S1: ore found in 12 of 70 cave legs, fewer digging blind): a
+		// cave frontier deep enough to beat a dig's pull is still taken.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 120; y++) {
+			char[] r = (y < 10 ? new string('.', 120) : new string('#', 120)).ToCharArray();
+			if (y == 9)
+				r[40] = 'S';
+			if (y >= 48 && y <= 50)
+				foreach (int x0 in new[] { 5, 70 })
+					for (int x = x0; x <= x0 + 5; x++)
+						r[x] = '.'; // cave pockets in the band either way, seen, unseen rock round them
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { RevealRadius = 0 };
+		for (int x = 0; x < 120; x++)
+			for (int y = 12; y < 120; y++)
+				if (!((x >= 70 && x <= 75 || x >= 5 && x <= 10) && y >= 48 && y <= 51))
+					g.Unrevealed.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 100;
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		Ticks(g, ctx, mine, 3);
+		string leg = ((TestLog)ctx.Log).Lines.First(l => l.Contains("Explore: leg 1 to"));
+		output.WriteLine(leg);
+		Assert.Contains("(frontier)", leg);
+		var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\)");
+		Assert.True(int.Parse(m.Groups[2].Value) >= 48, $"into the cave in the band: {leg}");
 	}
 }

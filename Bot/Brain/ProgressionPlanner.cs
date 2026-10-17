@@ -2876,6 +2876,7 @@ public sealed class ProgressionPlanner
 		lastDeeperTick = ctx.Tick;
 		ctx.DepthBonus += BotContext.DepthBonusStep;
 		ctx.ExploresWithoutOre.Clear();
+		ctx.ExploreLegsCut.Clear();
 		return true;
 	}
 
@@ -2916,6 +2917,11 @@ public sealed class ProgressionPlanner
 	/// ground just searched). Not onto somewhere off limits, nor onto or across a desert's or evil biome's ground (run 56: the
 	/// spawn between a corruption and a desert, and every trip landed in one of them), nor above known off-limits ground
 	/// (run 60: the surface by the spawn, over the underground desert's edge). Null if nowhere.
+	/// <para>Nor within a leg's reach of where the bot stands (ExploreSkill.MaxLegTiles): that is the ground the fruitless job
+	/// just looked through. Seen in game (measured run U29, d8 +8.5h to d10 +23h): standing at (2331,193), the new ground
+	/// was (2335,193), 4 tiles off; the walk there ended at once, the explorations from there ended at once over ground
+	/// explored already, and the same trip came again: 63,674 explorations in the run (24,517 from (2331,193)), runs of 757
+	/// to 6,030 "travelling to new ground at (2335,193)" in a row, then the same at (2215,196).</para>
 	/// </summary>
 	private static TilePos? ChooseTravelDest(BotContext ctx, int fails, Dictionary<TilePos, long> failed)
 	{
@@ -2929,7 +2935,7 @@ public sealed class ProgressionPlanner
 		for (int i = 0; i < MaxTravelTiles / TravelTiles; i++) {
 			int r = (reach - TravelTiles + i * TravelTiles) % MaxTravelTiles + TravelTiles;
 			foreach (int d in new[] { dir, -dir })
-				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && !FailedLately(c) && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
+				if (SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && c.ChebyshevTo(ctx.Node) > ExploreSkill.MaxLegTiles && !FailedLately(c) && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
 					return c;
 		}
 		return null;

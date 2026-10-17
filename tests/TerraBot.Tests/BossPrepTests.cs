@@ -311,6 +311,45 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void AHuntsWander_FromHighGround_GoesToTheGroundBelow_NotABridgeIntoTheSky()
+	{
+		// Measured run U29 (night of d3): the lens hunt, from (1984,233) on a corruption hill, wandered to (2014,223), (2039,217),
+		// (2064,211), (2089,205), (2114,199), (2139,193): each goal 10 rows over where the last walk ended and more than 40
+		// rows over the ground, so the walk stood at the goal itself (GoalResolver.StandNear scans 40 rows) and placed 31
+		// blocks a wander, a bridge rising into the sky to row 193. The bridge then was "the surface" (ProgressionPlanner.
+		// SurfaceAt): trips "up to the surface before travelling at row 205-221" climbed to it from the spawn (row 282), the
+		// crystal trips went to new ground on it at (2335,193) and (2215,196), and the bot was knocked off it at row 198 and
+		// killed by a 79-row fall.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 120; y++) {
+			char[] r = new string(y >= 100 ? '#' : '.', 300).ToCharArray();
+			if (y >= 40 && y < 100)
+				for (int x = 148; x <= 152; x++)
+					r[x] = '#'; // a column of rock, the bot on top of it, 60 rows over the ground
+			if (y == 39)
+				r[150] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { IsNight = true };
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 110;
+		var hunt = new HuntSkill(FakeGame.Lens, FakeGame.DemonEyeAi, 6);
+		hunt.Start(ctx);
+		var log = (TestLog)ctx.Log;
+		for (int t = 0; t < 600 && !log.Lines.Any(l => l.Contains("wandering towards")); t++) {
+			g.Refresh(ctx);
+			ctx.Tick = t;
+			if (hunt.Tick(ctx) != SkillStatus.Running)
+				break;
+			g.Step(ctx);
+		}
+		string wander = log.Lines.First(l => l.Contains("wandering towards"));
+		output.WriteLine(wander);
+		var m = System.Text.RegularExpressions.Regex.Match(wander, @"towards \((\d+),(\d+)\)");
+		Assert.Equal(99, int.Parse(m.Groups[2].Value));
+	}
+
+	[Fact]
 	public void TheBowComesBeforeTheCrystals_SoTheNightHuntsCanShootDemonEyes()
 	{
 		// Measured run U5: the bow came at d9, after max life 200; the night hunts took 46 hits from demon eyes, most of them

@@ -137,6 +137,8 @@ public sealed class ExploreSkill : ISkill
 	private static int LegEndRow(BotContext ctx, TilePos t) => GoalResolver.StandNear(ctx.Grid, t, ctx.Physics, ctx.Moves.CanBreak).Feet.Y;
 	public ExploreBias Bias { get; }
 	public int Legs => legs;
+	/// <summary>Legs whose walk ended away from where it began (not failed at once, not gone nowhere): ground looked at.</summary>
+	public int LegsWalked { get; private set; }
 	public string State { get; private set; } = "new";
 	public string FailureReason { get; private set; } = "";
 	public string Name => "Explore";
@@ -217,25 +219,28 @@ public sealed class ExploreSkill : ISkill
 			// Keep the heading: a frontier that way, else dig on that way, and only then a frontier anywhere (turn round).
 			// Then a frontier anywhere in view (turning round costs it more): unexplored cave first, digging blind last, as a
 			// player. Seen in game (measured run S1): 287 blind digging legs against 141 into caves, ore found in 12 of 70.
-			TilePos? frontier = PickFrontier(ctx, node, aheadOnly: true) ?? PickFrontier(ctx, node, aheadOnly: false);
-			legWasFallback = frontier == null;
+			TilePos? frontier = PickFrontier(ctx, node, aheadOnly: true, out float frontierScore);
+			if (frontier == null)
+				frontier = PickFrontier(ctx, node, aheadOnly: false, out frontierScore);
 			// Digging on: straight down for ores and caves (2 blocks a tile; a diagonal through stone was 60-70 blocks a
 			// leg in game), a level tunnel along the surface.
 			// Not deeper than the gear allows (BotContext.DeepestRow): sideways once at the floor.
 			bool down = Bias == ExploreBias.Down && !downBlocked && node.Y + FallbackDepth <= Deepest(ctx);
-			legDown = frontier == null && down;
 			// Below the depth the gear allows (fell in, chased, knocked down): dig back up first. Seen in game: at row 480
 			// with a floor of 441 every leg was a level tunnel at that depth, and skeletons killed the bot there. A full leg
 			// up, not just to the floor: 4 rows below it, "up to the floor" was within the walk's tolerance, and 14 legs in
 			// a row ended at once without a step (world_eye run 36).
 			bool tooDeep = node.Y > Deepest(ctx);
+			if (frontier != null && DigIntoBandFirst(ctx, node, down, tooDeep, frontierScore))
+				frontier = null;
+			legWasFallback = frontier == null;
+			legDown = frontier == null && down;
 			TilePos t;
 			if (frontier is TilePos f)
 				t = f;
 			else {
-				int dy = tooDeep ? -FallbackDepth : down ? FallbackDepth : 0;
-				var ahead = new TilePos(node.X + heading * (dy != 0 ? FallbackSideways : FallbackStep), node.Y + dy);
-				DigPick? open = PickDig(ctx, node, ahead, tooDeep);
+				TilePos ahead = DigAhead(node, down, tooDeep);
+				DigPick? open = PickDig(ctx, node, ahead, tooDeep, out _);
 				// Every way off limits (inside a biome zone): give up rather than dig on into it. Seen in game (world_eye run
 				// 59): legs went on through the underground desert after an antlion charger was seen, and the bot died there.
 				// Not for a sighting's zone in full armour: that is a cost (BotContext.OffLimitsOutright).
@@ -255,7 +260,13 @@ public sealed class ExploreSkill : ISkill
 				// deep (that leg up is for safety), and only exploring down: along the surface, seen ground is the way across.
 				// Seen in game (measured run U22): 7 explorations in a row bounced 16 legs each between (2004,472) and
 				// (2033,472), 0.7 game hours each; 126 of 395 legs went back within 5 tiles of the leg before last (U19: 13%).
-				if (pick.SeenAndVisited && Bias == ExploreBias.Down && !tooDeep) {
+				// Nor when the best way is down through such ground, with room below it within the gear's own floor: that way leads
+				// on to fresh ground under it (PickDig carries a way down on through it within a leg; past a leg, this goes a dig at
+				// a time). Seen in game (measured run U27, d4 +0.5h, full armour, the gear's floor row 601): from the spawn, "the best
+				// way on from (2058,346), (2056,366), goes back to ground explored and seen already", three crystal explorations
+				// ended after 2, 0 and 0 legs, within 1.4 seconds, and the bot went to new ground at (1975,280); the ore phase had
+				// explored round the spawn down to about row 450, and six crystals lay under it at rows 525-602 (U24-U26).
+				if (pick.SeenAndVisited && Bias == ExploreBias.Down && !tooDeep && !DownWithRoomBelow(ctx, node, pick.At)) {
 					ctx.Log.Info($"Explore: the best way on from {node}, {pick.At}, goes back to ground explored and seen already; nothing new this way: ending after {legs} leg(s)");
 					return Fail(ctx, $"no {What}: every way on from {node} is over ground explored already");
 				}
@@ -304,6 +315,8 @@ public sealed class ExploreSkill : ISkill
 		}
 		if (!wentNowhere)
 			instantFails = 0;
+		if (ctx.Node.ChebyshevTo(legFrom) > 1)
+			LegsWalked++;
 		if (wentNowhere) {
 			ctx.Log.Info($"Explore: leg {legs} to {legTarget} went nowhere; turning round");
 			heading = -heading;
@@ -333,6 +346,57 @@ public sealed class ExploreSkill : ISkill
 	/// path", and leg 5 of the same exploration went to (2180,425), one column off, and ended the same way.
 	/// </summary>
 	public const int LegTolerance = 3;
+
+	/// <summary>Where digging on goes first: up when too deep, down when it may, else level, a step aside in the heading.</summary>
+	private TilePos DigAhead(TilePos node, bool down, bool tooDeep)
+	{
+		int dy = tooDeep ? -FallbackDepth : down ? FallbackDepth : 0;
+		return new TilePos(node.X + heading * (dy != 0 ? FallbackSideways : FallbackStep), node.Y + dy);
+	}
+
+	/// <summary>
+	/// Above the <see cref="Band"/> (exploring down, room to dig): does digging on down score better than the best frontier
+	/// in view (<paramref name="frontierScore"/>, the same terms)? Elsewhere a frontier comes before digging blind (caves
+	/// first, measured run S1), but above the band its rows are what is not looked for, and a frontier along the surface
+	/// only leads along it. Seen in game (measured run U28): 88 of 133 crystal legs ended at rows 300-349, above the band's
+	/// top (row 375), most of them frontiers along the surface, 16 legs from (2346,298) to (2683,348); U27 54 of 145; U25,
+	/// whose search began in the band, 1 of 36. A cave frontier going down still wins (its depth pulls as a dig's does).
+	/// </summary>
+	private bool DigIntoBandFirst(BotContext ctx, TilePos node, bool down, bool tooDeep, float frontierScore)
+	{
+		if (!down || tooDeep || Band is not (int top, _) || node.Y >= top)
+			return false;
+		return PickDig(ctx, node, DigAhead(node, down, tooDeep), tooDeep, out float digScore) is DigPick dig
+			&& !dig.SeenAndVisited && dig.At.Y > node.Y && digScore < frontierScore;
+	}
+
+	/// <summary>The deepest row a way down may go through ground explored already: the exploration's floor or the gear's own, the higher.</summary>
+	private int ThroughFloor(BotContext ctx) => Math.Min(Deepest(ctx), ctx.DeepestRow);
+
+	/// <summary>Is <paramref name="t"/> a way down from <paramref name="n"/> that ends within the gear's own floor, with a dig's depth more below it?</summary>
+	private bool DownWithRoomBelow(BotContext ctx, TilePos n, TilePos t) =>
+		t.Y > n.Y && LegEndRow(ctx, t) + FallbackDepth <= ThroughFloor(ctx);
+
+	/// <summary>
+	/// A way down <paramref name="w"/> over ground explored and seen already (near an earlier leg's target, nothing unseen
+	/// round it), carried on down a dig's depth at a time to the first spot that is not, within a leg of
+	/// <paramref name="n"/> (<see cref="MaxLegTiles"/>) and the gear's own floor (<see cref="ThroughFloor"/>; below it, as
+	/// in measured run U26's deaths at rows 720-772, ground explored already still ends the exploration). Null if none.
+	/// </summary>
+	private TilePos? ThroughExplored(BotContext ctx, TilePos n, TilePos w)
+	{
+		if (w.Y <= n.Y || !NearVisited(ctx, w.X, w.Y) || NearUnseen(ctx.World, w.X, w.Y))
+			return null;
+		int floor = ThroughFloor(ctx);
+		for (int y = w.Y + FallbackDepth; y - n.Y <= MaxLegTiles && y <= floor; y += FallbackDepth) {
+			var c = new TilePos(w.X, y);
+			if (Barred(ctx, c) || LegEndRow(ctx, c) > floor)
+				return null;
+			if (!NearVisited(ctx, c.X, c.Y) || NearUnseen(ctx.World, c.X, c.Y))
+				return c;
+		}
+		return null;
+	}
 
 	private static bool Barred(BotContext ctx, TilePos t) => ctx.OffLimitsOutright(t) || UnreachableNear(ctx, t);
 
@@ -394,7 +458,7 @@ public sealed class ExploreSkill : ISkill
 	/// of the 395 legs were at rows 400-499, 0.39 ore targets a leg, while rows 325-399 had 5.6% of them and 2.6 a leg (58 of
 	/// 204); at the floor the bot tunnelled to and fro at row 472 for 7 explorations with no way up offered.</para>
 	/// </summary>
-	private DigPick? PickDig(BotContext ctx, TilePos n, TilePos ahead, bool tooDeep)
+	private DigPick? PickDig(BotContext ctx, TilePos n, TilePos ahead, bool tooDeep, out float score0)
 	{
 		var ways = new List<TilePos> {
 			ahead,
@@ -415,6 +479,9 @@ public sealed class ExploreSkill : ISkill
 			options.Add(w);
 			if (ctx.OffLimitsOutright(w) && ToZoneEdge(ctx, n, w) is TilePos edge && !options.Contains(edge))
 				options.Add(edge);
+			// A way down over ground explored already: on through it to the fresh ground below (ThroughExplored).
+			if (Bias == ExploreBias.Down && !tooDeep && ThroughExplored(ctx, n, w) is TilePos deeper && !options.Contains(deeper))
+				options.Add(deeper);
 		}
 		DigPick? best = null;
 		float bestScore = float.MaxValue;
@@ -442,16 +509,17 @@ public sealed class ExploreSkill : ISkill
 				best = new DigPick(o, visited && seen);
 			}
 		}
+		score0 = bestScore;
 		return best;
 	}
 
-	/// <summary>The best frontier in view, or null.</summary>
-	private TilePos? PickFrontier(BotContext ctx, TilePos n, bool aheadOnly)
+	/// <summary>The best frontier in view, or null; <paramref name="bestScore"/> its score (float.MaxValue if none).</summary>
+	private TilePos? PickFrontier(BotContext ctx, TilePos n, bool aheadOnly, out float bestScore)
 	{
 		IWorldInfo w = ctx.World;
 		ITileGrid g = ctx.Grid;
 		TilePos? best = null;
-		float bestScore = float.MaxValue;
+		bestScore = float.MaxValue;
 		int up = Bias == ExploreBias.Down ? 10 : 20, down = Bias == ExploreBias.Down ? MaxLegTiles : 20;
 		if (n.Y > Deepest(ctx))
 			up = Math.Min(MaxLegTiles, n.Y - Deepest(ctx) + 10); // too deep: look up to back above the floor
