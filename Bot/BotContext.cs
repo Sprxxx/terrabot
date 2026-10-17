@@ -722,6 +722,13 @@ public sealed class BotContext
 	/// <summary>Cells path moves must neither mine nor fill (a building in progress); null or empty = none.</summary>
 	public System.Collections.Generic.IReadOnlySet<TilePos> Reserved { get; set; }
 	private ReservedBlocks reservedBlocks;
+	/// <summary>
+	/// Blocks of a build in progress that path moves may mine at the cost of placing them again (<see cref="RebuiltBlocks"/>):
+	/// the arena's floor. Seen in game (measured run U23): under the arena floor it had bridged over a dip, the walk to a
+	/// cell above it found "no path ... (start h 3, rows 251..374)" three times over, and the site was given up.
+	/// </summary>
+	public System.Collections.Generic.IReadOnlySet<TilePos> Rebuilt { get; set; }
+	private RebuiltBlocks rebuiltBlocks;
 
 	/// <summary>
 	/// Cells of what the bot has built (the house, the arena floor), kept off limits to path moves for good: walking,
@@ -814,6 +821,11 @@ public sealed class BotContext
 				if (protectedBlocks == null || !ReferenceEquals(protectedBlocks.Inner, vetoedBlocks) || !ReferenceEquals(protectedBlocks.Reserved, Protected))
 					protectedBlocks = new ReservedBlocks(vetoedBlocks, Protected);
 				inner = protectedBlocks;
+			}
+			if (Rebuilt != null && Rebuilt.Count > 0) {
+				if (rebuiltBlocks == null || !ReferenceEquals(rebuiltBlocks.Inner, inner) || !ReferenceEquals(rebuiltBlocks.Rebuilt, Rebuilt))
+					rebuiltBlocks = new RebuiltBlocks(inner, Rebuilt);
+				inner = rebuiltBlocks;
 			}
 			if (Reserved == null || Reserved.Count == 0)
 				return inner;

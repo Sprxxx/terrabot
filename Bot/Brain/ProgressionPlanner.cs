@@ -1230,7 +1230,8 @@ public sealed class ProgressionPlanner
 					return null;
 				}
 			}
-			ctx.Log.Info($"Auto: arena site {ArenaSite.Value} ({SiteFinder.Edits(ctx, bp, ArenaSite.Value)} edits)");
+			ctx.Log.Info($"Auto: arena site {ArenaSite.Value} ({SiteFinder.Edits(ctx, bp, ArenaSite.Value)} edits"
+				+ $"{(SiteFinder.InEvilBiome(ctx, bp, ArenaSite.Value) ? $", in the evil biome: each step costs {SiteFinder.EvilStepFactor}x" : "")})");
 		}
 		TilePos site = ArenaSite.Value;
 		int blocks = 0;
@@ -1256,17 +1257,22 @@ public sealed class ProgressionPlanner
 		return Do($"building the arena at {site}", new BuildSkill(bp, site));
 	}
 
-	private (TilePos?, TilePos?, int) protectedFor = (null, null, 0);
+	private (TilePos?, TilePos?, bool, int) protectedFor = (null, null, false, 0);
 
 	/// <summary>
 	/// Keep what was built off limits to path moves (<see cref="BotContext.Protected"/>): every cell of the house,
-	/// the arena's floor and the chasm bridges. Rebuilt only when a site changes or a bridge is built.
+	/// the arena's floor once the arena is ready, and the chasm bridges. Rebuilt only when a site changes, the arena gets
+	/// ready (or not) or a bridge is built. Until it is ready the arena's floor is the build's to put back
+	/// (<see cref="Blueprint.RebuildBlocks"/>): seen in game (measured run U23), the floor bridged over a dip, protected from
+	/// the moment the site was picked, shut the walk in under it ("no path from (1950,251) ... rows 251..374").
 	/// </summary>
 	private void ProtectBuilt(BotContext ctx)
 	{
-		if (protectedFor == (HouseSite, ArenaSite, Bridges.Count) && ctx.Protected != null)
+		Blueprint arena = Blueprint.Arena(ctx.Ids);
+		bool arenaReady = ArenaSite is TilePos ready && ArenaReady(ctx, arena, ready);
+		if (protectedFor == (HouseSite, ArenaSite, arenaReady, Bridges.Count) && ctx.Protected != null)
 			return;
-		protectedFor = (HouseSite, ArenaSite, Bridges.Count);
+		protectedFor = (HouseSite, ArenaSite, arenaReady, Bridges.Count);
 		var cells = new HashSet<TilePos>();
 		if (HouseSite is TilePos h) {
 			Blueprint house = Blueprint.SmallHouse(ctx.Ids);
@@ -1275,8 +1281,7 @@ public sealed class ProgressionPlanner
 					if (house.At(x, y) != PlanCell.None)
 						cells.Add(new TilePos(h.X + x, h.Y + y));
 		}
-		if (ArenaSite is TilePos a) {
-			Blueprint arena = Blueprint.Arena(ctx.Ids);
+		if (arenaReady && ArenaSite is TilePos a) {
 			for (int x = 0; x < arena.Width; x++)
 				for (int y = 0; y < arena.Height; y++)
 					if (arena.At(x, y) == PlanCell.Block)
