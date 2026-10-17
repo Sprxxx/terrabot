@@ -136,6 +136,36 @@ public class HellTests
 		Assert.DoesNotContain(((TestLog)ctx.Log).Lines, l => l.Contains("first") && l.Contains("columns from the shaft"));
 	}
 
+	/// <summary>
+	/// The user's hellevator, "a 2 wide drop down to hell": straight down the shaft's two columns, through cobwebs (world_wof's
+	/// shaft had them at rows 867-881, where the pathfinder legs wandered 50-70 columns off), round the lava cell beside the line,
+	/// never far from the column until the last leg's rows, and few cells broken beyond the shaft's own.
+	/// </summary>
+	[Fact]
+	public void TheHellevator_DigsAStraightTwoWideDrop_ThroughCobwebs_WithoutWandering()
+	{
+		FakeGame g = Hell();
+		for (int y = 40; y <= 48; y++)
+			for (int x = ShaftX - 3; x <= ShaftX + 4; x++)
+				g.Grid.Set(x, y, CellKind.Solid | CellKind.Web);
+		BotContext ctx = Context(g);
+		var shaft = new HellevatorSkill(ShaftX, BridgeRow - 1);
+		shaft.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		int maxOff = 0, t = 0;
+		for (; t < 30000 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = shaft.Tick(ctx);
+			g.Step(ctx);
+			if (g.Sim.Node.Y < BridgeRow - 1 - HellevatorSkill.FinalLegRows)
+				maxOff = System.Math.Max(maxOff, System.Math.Abs(g.Sim.Node.X - ShaftX));
+		}
+		output.WriteLine($"{s} at {g.Sim.Node} after {t} ticks, broken {g.Sim.Broken}, placed {g.Sim.Placed}, farthest {maxOff} columns off the shaft above the last leg");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(maxOff <= HellevatorSkill.Slack, $"{maxOff} columns off");
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("(straight, column"));
+	}
+
 	/// <summary>The Hell world with the bot standing on the tower's roof at its east end, ready to bridge east.</summary>
 	private (FakeGame, BotContext) OnTheTower(int blocks = 300)
 	{

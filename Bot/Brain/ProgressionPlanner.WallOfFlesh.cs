@@ -54,6 +54,12 @@ public sealed partial class ProgressionPlanner
 	/// <summary>Blocks carried over what is left of the bridge (spec S1: L + 100): ledges, pillars, a wall against a lava fall.</summary>
 	public const int BridgeBlockMargin = 100;
 	/// <summary>
+	/// Blocks carried down the hellevator (<see cref="ResolveBridgeBlocks"/> before the bridge is known): its ledges (one every
+	/// HellevatorSkill.LegRows of some 760 rows, 38), steps and walls on the way, and the bridge's first stretch; the shaft's own cells
+	/// and the Underworld's ash give the rest.
+	/// </summary>
+	public const int BridgeDepartureBlocks = 300;
+	/// <summary>
 	/// The hellbridge's row below the Underworld's first row (Main.UnderworldLayer): 42, the spec's row 1042 in the M12 world
 	/// (section 5b, measured on its save: the fewest cells to mine and no lava in the body's rows), 2 rows under the lowest the ash
 	/// ceiling's generated lower edge reaches (maxTilesY - 160, WorldGen.cs:10125-10136) and 13 over the rows the Underworld pass
@@ -120,8 +126,9 @@ public sealed partial class ProgressionPlanner
 			EndDescent(ctx, "interrupted by a death; the plan's stages from the top again (the surface's work comes first at home)");
 			return false;
 		}
-		if (bridgeKnown) {
-			EndDescent(ctx, "done: on the hellbridge's row in the Underworld");
+		// Down: on the bridge's row the first time (the bridge known from there), or back in the Underworld on a later trip.
+		if (bridgeKnown && ctx.UnderworldRow > 0 && ctx.Node.Y >= ctx.UnderworldRow) {
+			EndDescent(ctx, "done: down in the Underworld, the hellbridge's row " + bridgeRow);
 			return false;
 		}
 		return true;
@@ -401,8 +408,10 @@ public sealed partial class ProgressionPlanner
 			shaftX = from + BridgeDirection(ctx, from) * ShaftOffsetTiles;
 			ctx.Log.Info($"Auto: the hellevator goes down at x {shaftX} ({ShaftOffsetTiles} tiles {(bridgeDir > 0 ? "east" : "west")} of the spawn), to row {stand}");
 		}
-		if (Scheduler == Schedulers.Operation && descent == null && !bridgeKnown) {
-			descent = new Operation("descent", $"the hellevator at x {shaftX}", ctx.Deaths, ctx.Tick);
+		// Every trip down is the operation, the first and each one back after a death (seen in X2B: the trip back, not owned,
+		// went to a work bench and arrows "instead of going back to Hellevator").
+		if (Scheduler == Schedulers.Operation && descent == null) {
+			descent = new Operation(bridgeKnown ? "descent (back down)" : "descent", $"the hellevator at x {shaftX}", ctx.Deaths, ctx.Tick);
 			ctx.Log.Info($"Operation {descent.Name} start: {descent.Identity} to row {stand}; owns the bot until on the row, blocked, or a death");
 		}
 		return Do(bridgeKnown ? $"back down the hellevator at x {shaftX} to the hellbridge on row {row}" : $"down a hellevator at x {shaftX} to row {stand} in the Underworld",
@@ -478,7 +487,11 @@ public sealed partial class ProgressionPlanner
 	{
 		if (hellbridgeDone)
 			return null;
-		int left = BridgeLength;
+		// Before the descent, only what the way down takes (BridgeDepartureBlocks): the shaft itself gives the rest (two cells a row,
+		// some 1,500 for the 760 rows to the Underworld), and the Underworld its ash. Seen in game (X2B, 2026-10-17): all 3,929
+		// before leaving, the stone near home ran out under the gear's depth limit, and the bot went for "new ground at (2455,208)",
+		// the top of a big tree, building stone stairs up to it.
+		int left = bridgeKnown ? BridgeLength : Math.Min(BridgeLength, BridgeDepartureBlocks - BridgeBlockMargin);
 		if (bridgeKnown) {
 			var (toEnd, backEnd) = BridgeEnds(ctx);
 			left = Math.Abs(bridgeTo - toEnd) + Math.Abs(bridgeBack - backEnd);

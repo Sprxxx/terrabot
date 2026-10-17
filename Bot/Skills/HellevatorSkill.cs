@@ -8,6 +8,15 @@ namespace TerraBot.Bot.Skills;
 /// <summary>
 /// A hellevator (docs M12_SPEC.md section 1, S3, G4): a shaft dug down from the surface at <see cref="ShaftX"/> to the Underworld,
 /// ending standing on solid ground at the hellbridge's row (<see cref="StandRow"/>, the feet's).
+/// <para>
+/// A straight drop two columns wide, as a player digs one (the user, 2026-10-17: "I want it to dig a 2 wide drop down to hell"):
+/// standing on the shaft's column, the two cells under the feet mined, the body down into them, again (<see cref="Straight"/>,
+/// each row read first by <see cref="StraightShaft.Below"/>); no path search. Only where the column cannot go on (lava under it
+/// with no clear column within <see cref="Slack"/> to step over to, a cell the pickaxe cannot mine, a drop deeper than a safe fall)
+/// one leg below (as follows) takes it past, and the straight dig goes on from where that lands. Seen in game (world_wof M12d-X2B):
+/// with legs for the whole way, each a search for "20 rows down within 6 of the column", the bot dug about the caves 50-70
+/// columns off the shaft (cobwebs under it at rows 867-881, which no dig move passes), up and down between rows 786 and 885.
+/// </para>
 /// <list type="bullet">
 /// <item>Down in legs of <see cref="LegRows"/> rows, each a walk to "at or below the row" within <see cref="Slack"/> columns of
 /// the shaft (<see cref="GoalRow"/> with Below): the paths dig down tile by tile with no fall at all, and keep the lava rules (never
@@ -49,8 +58,21 @@ public sealed class HellevatorSkill : ISkill
 	/// </summary>
 	public const int ApproachTiles = SeekTiles;
 
-	private WalkToSkill leg, approach;
+	private WalkToSkill leg, approach, align;
 	private int failedApproaches;
+	/// <summary>The column the straight dig is on (the body's left one): the shaft's, or where a step round lava or a leg put it.</summary>
+	private int col = int.MinValue;
+	private int alignTries, openTicks, lastLedgeY = int.MinValue, lastLoggedY = int.MinValue;
+	private TilePos? mineCell;
+	private int mineTicks;
+	/// <summary>The next stretch is a leg (the straight dig could not go on: lava, a cell too hard, a deep drop).</summary>
+	private bool legNext;
+	/// <summary>Ticks on one cell of the floor before the straight dig gives that stretch to a leg (a pickaxe takes a stone in about 23).</summary>
+	public const int MineCellTicks = 240;
+	/// <summary>Tries to walk onto the shaft's column from beside it before the dig goes on from the column the body is on.</summary>
+	public const int MaxAlignTries = 2;
+	/// <summary>Rows of the column read ahead before stepping over to it round lava (<see cref="StraightShaft.TroubleAhead"/>).</summary>
+	public const int StepOverLookRows = 12;
 	/// <summary>The column the last leg seeks the row round: the shaft's, or the bot's when it is down there already far from it.</summary>
 	private int? seekX;
 	private bool finalLeg, forceFinal;
@@ -75,7 +97,8 @@ public sealed class HellevatorSkill : ISkill
 		StandRow = standRow;
 	}
 
-	public string Describe() => $"Hellevator x {ShaftX} to row {StandRow} [{State}]" + (leg != null ? " > " + leg.Describe() : approach != null ? " > " + approach.Describe() : "");
+	public string Describe() => $"Hellevator x {ShaftX} to row {StandRow} [{State}]"
+		+ (leg != null ? " > " + leg.Describe() : approach != null ? " > " + approach.Describe() : align != null ? " > " + align.Describe() : "");
 
 	public void Start(BotContext ctx)
 	{
@@ -90,12 +113,18 @@ public sealed class HellevatorSkill : ISkill
 		leg = null;
 		approach?.Stop(ctx);
 		approach = null;
+		align?.Stop(ctx);
+		align = null;
+		mineCell = null;
 	}
 
 	public void Pause(BotContext ctx)
 	{
 		leg?.Pause(ctx);
 		approach?.Pause(ctx);
+		align?.Stop(ctx);
+		align = null;
+		mineCell = null;
 	}
 
 	public void Resume(BotContext ctx)
@@ -149,7 +178,11 @@ public sealed class HellevatorSkill : ISkill
 		}
 		if (leg == null && !forceFinal && Math.Abs(n.X - ShaftX) > ApproachTiles)
 			return Approach(ctx, n);
+		// The straight drop, down to the last leg's rows (the ceiling and the open band over the lava are the last leg's).
+		if (leg == null && !forceFinal && !legNext && StandRow - n.Y > FinalLegRows && Straight(ctx, n) is SkillStatus dug)
+			return dug;
 		if (leg == null) {
+			legNext = false;
 			finalLeg = forceFinal || StandRow - n.Y <= LegRows;
 			legStartY = n.Y;
 			int to = Math.Min(n.Y + LegRows, StandRow);
@@ -181,10 +214,135 @@ public sealed class HellevatorSkill : ISkill
 			return SkillStatus.Running;
 		}
 		failedLegs = 0;
-		if (!finalLeg)
+		if (!finalLeg) {
 			PlaceLedge(ctx, n);
+			lastLedgeY = n.Y;
+		}
+		// The straight dig goes on from where the leg came down (beside the shaft: back onto it first).
+		col = Math.Abs(n.X - ShaftX) <= Slack ? n.X : ShaftX;
 		ctx.Log.Info($"Hellevator: at {n}, {StandRow - n.Y} rows to go");
 		return SkillStatus.Running;
+	}
+
+	/// <summary>
+	/// One tick of the straight drop on column <see cref="col"/>: falling (kept over the column), onto the column, the floor's two
+	/// cells mined, a ledge every <see cref="LegRows"/> rows, a step over round lava; null when this stretch needs a leg instead.
+	/// </summary>
+	private SkillStatus? Straight(BotContext ctx, TilePos n)
+	{
+		var p = ctx.Physics;
+		if (col == int.MinValue)
+			col = Math.Abs(n.X - ShaftX) <= Slack ? ShaftX : n.X;
+		if (!ctx.Body.Grounded) {
+			ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(col, p), p);
+			State = $"dropping down the shaft at x {col}";
+			return SkillStatus.Running;
+		}
+		if (lastLedgeY == int.MinValue)
+			lastLedgeY = n.Y;
+		if (lastLoggedY == int.MinValue || n.Y - lastLoggedY >= LegRows) {
+			lastLoggedY = n.Y;
+			ctx.Log.Info($"Hellevator: at {n}, {StandRow - n.Y} rows to go (straight, column {col})");
+		}
+		// A ledge every LegRows rows: a later trip down is a series of safe drops onto them (each mined and put back on the way).
+		if (n.Y - lastLedgeY >= LegRows && ledgeCell == null) {
+			lastLedgeY = n.Y;
+			PlaceLedge(ctx, n);
+			if (ledgeCell != null)
+				return SkillStatus.Running;
+		}
+		if (n.X != col) {
+			if (Math.Abs(n.X - col) <= Slack && alignTries < MaxAlignTries) {
+				if (align == null) {
+					align = new WalkToSkill(new TilePos(col, n.Y)) { Quiet = true, Underground = true, MaxNoPathAttempts = 1 };
+					align.Start(ctx);
+					alignTries++;
+				}
+				SkillStatus a = align.Tick(ctx);
+				State = $"onto the shaft's column x {col}";
+				if (a == SkillStatus.Running)
+					return SkillStatus.Running;
+				align.Stop(ctx);
+				align = null;
+				return SkillStatus.Running;
+			}
+			ctx.Log.Info($"Hellevator: the shaft goes on from column {n.X} (column {col} not reached{(col != ShaftX ? $", x {ShaftX} planned" : "")})");
+			col = n.X;
+		}
+		alignTries = 0;
+		ShaftRow row = StraightShaft.Below(ctx.Moves, col, n.Y);
+		switch (row.Kind) {
+			case ShaftKind.Dig: {
+				openTicks = 0;
+				TilePos? next = null;
+				foreach (TilePos c in row.Cells)
+					if (ctx.Grid.Get(c.X, c.Y).IsBlockTile()) {
+						next = c;
+						break;
+					}
+				if (next is not TilePos cell) {
+					State = "the floor is open; dropping";
+					return SkillStatus.Running;
+				}
+				if (mineCell != cell) {
+					mineCell = cell;
+					mineTicks = 0;
+				}
+				if (++mineTicks > MineCellTicks) {
+					ctx.Log.Info($"Hellevator: mining {cell} under the shaft did nothing in {MineCellTicks} ticks (it reads {ctx.Grid.Get(cell.X, cell.Y)}); a leg past it");
+					mineCell = null;
+					legNext = true;
+					return null;
+				}
+				ctx.Output.Tool = ToolRequest.Pickaxe;
+				ctx.Output.Aim(cell.X, cell.Y);
+				ctx.Output.UseItem = true;
+				ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(col, p), p);
+				State = $"digging {cell}";
+				return SkillStatus.Running;
+			}
+			case ShaftKind.Open:
+				// Dug before (the shaft from an earlier trip): nothing to mine, the body drops; or a platform under the feet.
+				ctx.Output.Down = true;
+				ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(col, p), p);
+				State = "dropping down the dug shaft";
+				if (row.LandFeet == n.Y && ++openTicks > LedgeTicks) {
+					openTicks = 0;
+					legNext = true;
+					return null;
+				}
+				return SkillStatus.Running;
+			case ShaftKind.Lava:
+				if (StepOver(ctx, n) is int over) {
+					ctx.Log.Info($"Hellevator: lava under the shaft at {string.Join(" ", row.Cells)}; stepping over to column {over} (clear for {StepOverLookRows} rows)");
+					col = over;
+					return SkillStatus.Running;
+				}
+				ctx.Log.Info($"Hellevator: lava under the shaft at {string.Join(" ", row.Cells)} and no clear column within {Slack}; a leg round it");
+				legNext = true;
+				return null;
+			default:
+				ctx.Log.Info($"Hellevator: the column cannot go on at {n} ({row.Kind}: {row.Why}); a leg past it");
+				legNext = true;
+				return null;
+		}
+	}
+
+	/// <summary>The nearest column within <see cref="Slack"/> whose floor and next rows are clear of lava, reachable on the feet row.</summary>
+	private int? StepOver(BotContext ctx, TilePos n)
+	{
+		Core.Pathfinding.MoveContext m = ctx.Moves;
+		for (int d = 2; d <= Slack; d++)
+			foreach (int c in new[] { col + d, col - d }) {
+				ShaftRow r = StraightShaft.Below(m, c, n.Y);
+				if (r.Kind is not (ShaftKind.Dig or ShaftKind.Open))
+					continue;
+				if (StraightShaft.TroubleAhead(m, c, n.Y + 1, StepOverLookRows) != null)
+					continue;
+				if (StraightShaft.SideStepsClear(m, n.X, c, n.Y))
+					return c;
+			}
+		return null;
 	}
 
 	/// <summary>
