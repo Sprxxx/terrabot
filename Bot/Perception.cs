@@ -23,6 +23,19 @@ public readonly record struct EntityInfo(
 	public float DistanceTo(float x, float y) => MathF.Sqrt((CenterX - x) * (CenterX - x) + (CenterY - y) * (CenterY - y));
 }
 
+/// <summary>
+/// A hostile projectile in sight (world pixels, top-left like Entity.position): an eye laser of the Wall of Flesh (projectile 83,
+/// NPC.cs:26668-26697), a Demon's scythe. <see cref="VX"/> and <see cref="VY"/> are its movement per tick, the velocity times
+/// 1 + extraUpdates (Projectile.Update moves it that many times a tick: the laser's extraUpdates 2 makes 9 px/tick 27,
+/// Projectile.cs:1817-1830). <see cref="TileCollide"/>: it stops on tiles.
+/// </summary>
+public readonly record struct ShotInfo(int Id, int Type, float X, float Y, int Width, int Height, float VX, float VY, int Damage, bool TileCollide = true)
+{
+	public float CenterX => X + Width * 0.5f;
+	public float CenterY => Y + Height * 0.5f;
+	public float DistanceTo(float x, float y) => MathF.Sqrt((CenterX - x) * (CenterX - x) + (CenterY - y) * (CenterY - y));
+}
+
 /// <summary>An item lying in the world.</summary>
 public readonly record struct DropInfo(int Id, int Type, string Name, int Stack, float X, float Y, int Width, int Height)
 {

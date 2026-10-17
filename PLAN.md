@@ -621,6 +621,11 @@ UI click would call:
   chat panel is drawn, which the fast self-test skips, so the handler runs with the game's guards: chat range
   (80 x 64 px round the player's centre), the Old Man's "Curse" button only at night and as
   `NPCLoader.SetChatButtons` leaves it, no Skeletron head up already (`TerrariaGameInfo.PressFirstChatButton`).
+* **Throwing an item** (Milestone 12, docs M12_SPEC.md section 2c) is the Throw control (`controlThrow`, held one tick:
+  `Player.dropItemCheck` drops the selected stack). A stack of one is first split off: one into an empty slot, as a
+  right-click on the stack and a click on an empty slot do, then onto the hotbar like dragging it; a favourite mark is
+  cleared as an alt-click does (`TerraBotPlayer.HoldOneToThrow`). A stack of N Guide Voodoo Dolls in lava kills N-1 more
+  town NPCs, so only one is ever thrown.
 
 ## Milestone 9: real-world play up to the Eye of Cthulhu (in progress)
 Scenario `world_eye`: the copied real world (Peppe on "Noxious Vision of Organs", a small Crimson world), the

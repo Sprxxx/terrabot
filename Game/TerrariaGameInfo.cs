@@ -105,6 +105,24 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		JungleTiles = new int[] { TileID.JungleGrass },
 		HealingPotion = ItemID.HealingPotion,
 		LesserHealingPotion = ItemID.LesserHealingPotion,
+		// Milestone 12 (docs M12_SPEC.md): the Wall of Flesh, the Guide and his Voodoo Doll, the Voodoo Demon, the Underworld.
+		Guide = NPCID.Guide,
+		GuideVoodooDoll = ItemID.GuideVoodooDoll,
+		WallOfFlesh = NPCID.WallofFlesh,
+		WallOfFleshEye = NPCID.WallofFleshEye,
+		TheHungry = NPCID.TheHungry,
+		TheHungryII = NPCID.TheHungryII,
+		LeechHead = NPCID.LeechHead,
+		LeechBody = NPCID.LeechBody,
+		LeechTail = NPCID.LeechTail,
+		VoodooDemon = NPCID.VoodooDemon,
+		HellforgeTile = TileID.Hellforge,
+		HellstoneTile = TileID.Hellstone,
+		AshTile = TileID.Ash,
+		Hellstone = ItemID.Hellstone,
+		Obsidian = ItemID.Obsidian,
+		AshBlock = ItemID.AshBlock,
+		ShadowScale = ItemID.ShadowScale,
 	};
 
 	/// <summary>
@@ -568,8 +586,13 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		NPCID.EaterofWorldsHead or NPCID.BrainofCthulhu => NPC.downedBoss2,
 		NPCID.SkeletronHead => NPC.downedBoss3,
 		NPCID.QueenBee => NPC.downedQueenBee,
+		// The Wall's death starts Hardmode (NPC.cs:85513, WorldGen.StartHardmode); there is no downed flag of its own.
+		NPCID.WallofFlesh => Main.hardMode,
 		_ => false,
 	};
+
+	/// <summary>An active town NPC of the type anywhere: its head is on the full-screen map (Main.cs:72101-72127), seen or not.</summary>
+	public bool TownNpcAlive(int npcType) => NPC.AnyNPCs(npcType);
 
 	/// <summary>
 	/// The boss bar's life: for the Eater of Worlds the sum over every active head, body and tail, as its bar counts them

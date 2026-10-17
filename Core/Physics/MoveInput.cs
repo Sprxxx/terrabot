@@ -48,6 +48,14 @@ public struct MoveInput
 	public bool QuickHeal;
 	/// <summary>Put the best arrows first in the ammo slots (a boss fight); otherwise the cheapest go first.</summary>
 	public bool BestAmmo;
+	/// <summary>
+	/// Press the Throw key (vanilla controlThrow, Player.cs:5927-5929) with one <see cref="ThrowItem"/> held: the game drops the
+	/// held stack in front of the player (Player.DropSelectedItem, Player.cs:5949-6030). The adapter first splits a bigger stack
+	/// so that exactly one is held. A press needs the key released the tick before (releaseThrow): hold it one tick only.
+	/// </summary>
+	public bool Throw;
+	/// <summary>The item type <see cref="Throw"/> throws one of.</summary>
+	public int ThrowItem;
 
 	public static MoveInput None => default;
 
@@ -84,6 +92,7 @@ public struct MoveInput
 		if (Down) sb.Append('D');
 		if (Jump) sb.Append('J');
 		if (QuickHeal) sb.Append(" heal");
+		if (Throw) sb.Append($" throw {ThrowItem}");
 		if (Tool != ToolRequest.None) {
 			sb.Append(' ').Append(Tool.ToString().ToLowerInvariant());
 			if (UseItem) sb.Append(" use");

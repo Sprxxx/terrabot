@@ -155,6 +155,52 @@ public sealed class BotContext
 	/// with their names; the Old Man at the Dungeon's entrance is how the Dungeon is found (docs M11_SPEC.md section 1c).
 	/// </summary>
 	public System.Collections.Generic.IReadOnlyList<EntityInfo> TownNpcs { get; set; } = Array.Empty<EntityInfo>();
+	/// <summary>Hostile projectiles in sight this tick (nearest first): the Wall of Flesh's eye lasers, for the dodge.</summary>
+	public System.Collections.Generic.IReadOnlyList<ShotInfo> Shots { get; set; } = Array.Empty<ShotInfo>();
+	/// <summary>
+	/// NPC types not to be fought nor shot, nor counted as danger, while the plan says so: the Voodoo Demon while the Guide lives
+	/// and the Wall of Flesh is not to be summoned yet (one killed over lava drops the Guide Voodoo Doll into it, and the Wall
+	/// spawns at once, Item.cs:50396-50425; docs M12_SPEC.md section 2d, G7). Set by the planner each pass.
+	/// </summary>
+	public System.Collections.Generic.HashSet<int> SparedTypes { get; } = new();
+	public bool Spared(in EntityInfo e) => SparedTypes.Count > 0 && SparedTypes.Contains(e.Type);
+
+	/// <summary>
+	/// Is a spared NPC (<see cref="SparedTypes"/>) in the line of fire from (x0, y0) through (x1, y1) and on past it to
+	/// <paramref name="reachPx"/> from the shooter? An arrow hits what it meets first, and an unholy one pierces 5 (Projectile.cs:954)
+	/// and flies on past its target: a shot along that line could kill it.
+	/// </summary>
+	public bool SparedInLine(float x0, float y0, float x1, float y1, float reachPx)
+	{
+		if (SparedTypes.Count == 0)
+			return false;
+		float dx = x1 - x0, dy = y1 - y0, len = MathF.Sqrt(dx * dx + dy * dy);
+		if (len < 1f)
+			return false;
+		dx /= len;
+		dy /= len;
+		foreach (EntityInfo e in Hostiles) {
+			if (!Spared(e))
+				continue;
+			// The nearest point of the ray (out to the reach) to the NPC's centre, against its half-size and an arrow's (10 px).
+			float t = Math.Clamp((e.CenterX - x0) * dx + (e.CenterY - y0) * dy, 0f, reachPx);
+			float px = x0 + dx * t, py = y0 + dy * t;
+			if (Math.Abs(px - e.CenterX) <= e.Width * 0.5f + SpareMarginPx && Math.Abs(py - e.CenterY) <= e.Height * 0.5f + SpareMarginPx)
+				return true;
+		}
+		return false;
+	}
+
+	/// <summary>Margin (px) round a spared NPC's hitbox for <see cref="SparedInLine"/>: about an arrow's own width (Projectile.SetDefaults 1: 10 px).</summary>
+	public const float SpareMarginPx = 10f;
+
+	/// <summary>
+	/// Items a stage of the plan wants (the Accepts of its item needs), set by the planner each pass: never trashed to make room
+	/// (BotBrain.KeepRoom). Seen in game (measured run M10u): Shadow Scales trashed at log lines 7864-7876; the Guide Voodoo Doll
+	/// is worth 1000 copper, cheap enough to be the stack trashed (docs M12_SPEC.md G10).
+	/// </summary>
+	public System.Collections.Generic.HashSet<int> NeededItems { get; } = new();
+
 	/// <summary>Items lying near the player this tick (nearest first).</summary>
 	public System.Collections.Generic.IReadOnlyList<DropInfo> Drops { get; set; } = Array.Empty<DropInfo>();
 	public CombatInfo Combat { get; set; } = new();
@@ -206,6 +252,27 @@ public sealed class BotContext
 	public int SurfaceY { get; set; }
 	/// <summary>Rows in the world (Main.maxTilesY); 0 = unknown.</summary>
 	public int WorldHeight { get; set; }
+	/// <summary>Columns in the world (Main.maxTilesX, the map's width); 0 = unknown.</summary>
+	public int WorldWidth { get; set; }
+	/// <summary>
+	/// The Underworld's first row (Main.UnderworldLayer = maxTilesY - 200, Main.cs:3295), or as set (tests); 0 = unknown. While the
+	/// Wall of Flesh lives, a player whose top is above this row is grabbed by The Tongue (Player.WOFTongue, Player.cs:20618-20621).
+	/// </summary>
+	public int UnderworldRow
+	{
+		get => underworldRow > 0 ? underworldRow : WorldHeight > UnderworldRows ? WorldHeight - UnderworldRows : 0;
+		set => underworldRow = value;
+	}
+	private int underworldRow;
+	/// <summary>The Underworld's depth in rows above the world's bottom (Main.UnderworldLayer, Main.cs:3295).</summary>
+	public const int UnderworldRows = 200;
+
+	/// <summary>
+	/// An errand to the Underworld (the Wall of Flesh's shaft, bridge and fight, docs M12_SPEC.md G3): no depth limit from the
+	/// gear (<see cref="DeepestRow"/>) while it is on. Set by the planner for its pass; the gear's limit keeps the bot out of the
+	/// caverns otherwise (defence below 16: about row 700 in the M12 world, BotContext.cs:753-786).
+	/// </summary>
+	public bool DepthErrand { get; set; }
 
 	/// <summary>
 	/// The rows life crystals are put in (vanilla WorldGen "Life Crystals" pass, tML 2026.08): each starts at a random row from
@@ -772,7 +839,7 @@ public sealed class BotContext
 	/// caverns in copper gear. Seen in game: exploring for iron in no armour went 200 tiles down, and skeletons, cave
 	/// bats and black slimes killed the bot 5 times in an hour. int.MaxValue = no limit.
 	/// </summary>
-	public int DeepestRow => CavernY <= 0 ? int.MaxValue
+	public int DeepestRow => CavernY <= 0 || DepthErrand ? int.MaxValue
 		: Combat.Defense < CavernDefense ? CavernY + (Combat.WeaponDamage >= GoodWeaponDamage ? ArmedMargin : ShallowMargin) + DepthBonus
 		: Combat.Defense < DeepDefense ? CavernY + CavernDepth + DepthBonus
 		: int.MaxValue;
