@@ -81,6 +81,35 @@ public class HellTests
 		Assert.True(g.Sim.Node.Y <= CeilingBottom, "never dropped into the open band");
 	}
 
+	/// <summary>
+	/// world_wof M12d (Peppe): the hellevator at x 2155 taken up again from a cave 570 columns off, its legs "no path" three times
+	/// ("no way down"), and the planner moved the shaft away, again and again, to x 3127. From far off the bot goes to the shaft's
+	/// top first, along the surface, and digs from there.
+	/// </summary>
+	[Fact]
+	public void TheHellevator_StartedFarFromItsShaft_GoesToTheShaftsTop_ThenDigs()
+	{
+		const int far = 560, cave = 50;
+		FakeGame g = Hell(600, far, TowerFrom, TowerTo);
+		// A cave far off and deep (the bot there, as after a crystal search): a pocket at rows 47-50.
+		for (int x = far - 3; x <= far + 3; x++)
+			for (int y = cave - 3; y <= cave; y++)
+				g.Grid.Set(x, y, CellKind.Empty);
+		var pp = Core.Physics.PhysicsParams.Default;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(far, pp), Y = Core.Pathfinding.Body.StandingTop(cave, pp), ReleaseJump = true };
+		BotContext ctx = Context(g);
+		ctx.SurfaceY = SurfaceFeet;
+		var shaft = new HellevatorSkill(ShaftX, BridgeRow - 1);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, shaft, 60000);
+		output.WriteLine($"{s}: {shaft.FailureReason} at {g.Sim.Node}, tick {ctx.Tick}, broken {g.Sim.Broken}, placed {g.Sim.Placed}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.InRange(g.Sim.Node.X, TowerFrom - 1, TowerTo);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("columns from the shaft") && l.Contains("to the shaft's top"));
+		// The way it went: up, along the surface, down the shaft (381 cells broken, 5558 ticks), not a tunnel through the rock to the
+		// shaft's line, leg by leg (1586 broken, 14152 ticks: in game the legs' searches gave out at 40001 nodes).
+		Assert.True(g.Sim.Broken < 800, $"broken {g.Sim.Broken}");
+	}
+
 	/// <summary>The Hell world with the bot standing on the tower's roof at its east end, ready to bridge east.</summary>
 	private (FakeGame, BotContext) OnTheTower(int blocks = 300)
 	{

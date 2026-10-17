@@ -20,7 +20,9 @@ namespace TerraBot.Bot.Skills;
 /// once within a leg of it, the last leg is a walk onto that row anywhere within <see cref="SeekTiles"/> of the shaft: through the
 /// ceiling and down onto ground on the row (the ruined tower's roof in the M12 world), no drop deeper than a safe fall.</item>
 /// </list>
-/// Fails with the reason when a leg finds no way (the planner moves the shaft).
+/// Started farther than <see cref="SeekTiles"/> from the shaft (a hellevator taken up again after a fight, a chest or another
+/// stage took the bot off), it first goes to the shaft's top: up to near the surface if deep, then along it (<see cref="Approach"/>).
+/// Fails with the reason when a leg finds no way (the planner moves the shaft), or when the way to the shaft is not found.
 /// </summary>
 public sealed class HellevatorSkill : ISkill
 {
@@ -39,8 +41,16 @@ public sealed class HellevatorSkill : ISkill
 	public const int MaxFailedLegs = 3;
 	/// <summary>Ticks to put a ledge in before going on without it.</summary>
 	public const int LedgeTicks = 60;
+	/// <summary>
+	/// Farther than this (columns) from the shaft, the bot goes to its top before digging: a leg's goal (<see cref="LegRows"/> down
+	/// within <see cref="Slack"/> of the shaft) hundreds of columns off is past the search's reach. Seen in game (world_wof M12d,
+	/// Peppe): the hellevator at x 2155 taken up again from a cave at (1581,663), its legs "no path" at 40001 nodes three times,
+	/// "no way down", and the planner moved the shaft east by 81 columns, again and again, to x 3127.
+	/// </summary>
+	public const int ApproachTiles = SeekTiles;
 
-	private WalkToSkill leg;
+	private WalkToSkill leg, approach;
+	private int failedApproaches;
 	private bool finalLeg, forceFinal;
 	private int failedLegs, ledges, legStartY;
 	private TilePos? ledgeCell;
@@ -63,7 +73,7 @@ public sealed class HellevatorSkill : ISkill
 		StandRow = standRow;
 	}
 
-	public string Describe() => $"Hellevator x {ShaftX} to row {StandRow} [{State}]" + (leg != null ? " > " + leg.Describe() : "");
+	public string Describe() => $"Hellevator x {ShaftX} to row {StandRow} [{State}]" + (leg != null ? " > " + leg.Describe() : approach != null ? " > " + approach.Describe() : "");
 
 	public void Start(BotContext ctx)
 	{
@@ -76,10 +86,21 @@ public sealed class HellevatorSkill : ISkill
 	{
 		leg?.Stop(ctx);
 		leg = null;
+		approach?.Stop(ctx);
+		approach = null;
 	}
 
-	public void Pause(BotContext ctx) => leg?.Pause(ctx);
-	public void Resume(BotContext ctx) => leg?.Resume(ctx);
+	public void Pause(BotContext ctx)
+	{
+		leg?.Pause(ctx);
+		approach?.Pause(ctx);
+	}
+
+	public void Resume(BotContext ctx)
+	{
+		leg?.Resume(ctx);
+		approach?.Resume(ctx);
+	}
 
 	/// <summary>Standing on the stand row on solid ground (the bridge's start).</summary>
 	public static bool Arrived(BotContext ctx, int standRow) =>
@@ -116,6 +137,8 @@ public sealed class HellevatorSkill : ISkill
 				return SkillStatus.Running;
 			}
 		}
+		if (leg == null && !forceFinal && Math.Abs(n.X - ShaftX) > ApproachTiles)
+			return Approach(ctx, n);
 		if (leg == null) {
 			finalLeg = forceFinal || StandRow - n.Y <= LegRows;
 			legStartY = n.Y;
@@ -151,6 +174,59 @@ public sealed class HellevatorSkill : ISkill
 			PlaceLedge(ctx, n);
 		ctx.Log.Info($"Hellevator: at {n}, {StandRow - n.Y} rows to go");
 		return SkillStatus.Running;
+	}
+
+	/// <summary>
+	/// The way to the shaft from far off: deep down, up to near the surface's height first (a walk to one far tile from the caves
+	/// wanders them, ProgressionPlanner.ExitWalk); then to the shaft's top, the highest ground within <see cref="Slack"/> of it.
+	/// </summary>
+	private SkillStatus Approach(BotContext ctx, TilePos n)
+	{
+		if (approach == null) {
+			int surface = Brain.ProgressionPlanner.SurfaceRow(ctx);
+			if (surface > 0 && n.Y > surface + Brain.ProgressionPlanner.TravelFromSurfaceRows) {
+				int row = surface + Brain.ProgressionPlanner.TravelFromSurfaceRows - 3;
+				approach = new WalkToSkill(new GoalRow(row, n.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true };
+				State = $"up to row {row}, {Math.Abs(n.X - ShaftX)} columns from the shaft";
+			}
+			else {
+				TilePos top = ShaftTop(ctx);
+				approach = new WalkToSkill(new GoalNearTile(top, Slack, ctx.Physics)) { Quiet = true };
+				State = $"to the shaft's top at {top}";
+			}
+			ctx.Log.Info($"Hellevator: {Math.Abs(n.X - ShaftX)} columns from the shaft at {n}; {State} first");
+			approach.Start(ctx);
+		}
+		SkillStatus s = approach.Tick(ctx);
+		if (s == SkillStatus.Running)
+			return SkillStatus.Running;
+		string why = approach.FailureReason;
+		approach.Stop(ctx);
+		approach = null;
+		if (s == SkillStatus.Failed && ++failedApproaches >= MaxFailedLegs)
+			return Fail(ctx, $"no way to the shaft at x {ShaftX} from {ctx.Node} ({failedApproaches} walks failed{(string.IsNullOrEmpty(why) ? "" : ": " + why)})");
+		if (s == SkillStatus.Succeeded)
+			failedApproaches = 0;
+		return SkillStatus.Running;
+	}
+
+	/// <summary>The highest ground to stand on within <see cref="Slack"/> columns of the shaft, coming down from the sky.</summary>
+	private TilePos ShaftTop(BotContext ctx)
+	{
+		TilePos best = new(ShaftX, Math.Max(1, ctx.SurfaceY));
+		bool found = false;
+		for (int x = ShaftX - Slack; x <= ShaftX + Slack; x++)
+			for (int y = 1; y < ctx.Node.Y + 400 && y < StandRow; y++) {
+				if (ctx.Grid.Get(x, y + 1).CanStandOn() && Body.IsStandable(ctx.Grid, new TilePos(x, y))) {
+					if (!found || y < best.Y || y == best.Y && Math.Abs(x - ShaftX) < Math.Abs(best.X - ShaftX))
+						best = new TilePos(x, y);
+					found = true;
+					break;
+				}
+				if (found && y > best.Y)
+					break;
+			}
+		return best;
 	}
 
 	/// <summary>
