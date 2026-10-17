@@ -63,6 +63,13 @@ public sealed class FallArrest
 			return;
 		}
 		Track(ctx, s);
+		// On a rope (a climb's): no fall counts there (the game resets fallStart every tick on it, Player.cs:25214), and the hold
+		// is the climb's. Sliding down a long rope read as a fall deeper than safe.
+		if (s.OnRope) {
+			fallStart = (int)(s.Y / Body.TileSize);
+			Stop();
+			return;
+		}
 		if (s.Grounded) {
 			if (arrested)
 				ctx.Log.Info($"Fall: landed at {ctx.Node}, {(int)(s.Y / Body.TileSize) - arrestFrom} rows below where the fall began (row {arrestFrom})");

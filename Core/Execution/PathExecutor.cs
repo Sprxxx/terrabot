@@ -190,10 +190,12 @@ public sealed class PathExecutor
 			CatchCell = null;
 			// A jump or a drop lands on its To; an ArrestedDrop's catch only while it can still be made (CatchCell), after that the
 			// fall is no longer the step's.
-			PlannedLanding = step.Kind is MoveKind.Jump or MoveKind.Drop or MoveKind.DropThrough || step.Kind == MoveKind.Climb && jumpPhase == JumpPhase.Air ? step.To : null;
+			PlannedLanding = step.Kind is MoveKind.Jump or MoveKind.Drop or MoveKind.DropThrough || step.Kind == MoveKind.Climb && jumpPhase == JumpPhase.Air
+				|| step.Kind == MoveKind.ClimbDown && climbPhase == ClimbPhase.Top ? step.To : null;
 			bool ok = step.Kind switch {
 				MoveKind.Jump => TickJump(s, step, out input, out advanced),
 				MoveKind.Climb => TickClimb(s, step, out input, out advanced),
+				MoveKind.ClimbDown => TickClimbDown(s, step, out input, out advanced),
 				MoveKind.Pillar => TickPillar(s, step, out input, out advanced),
 				MoveKind.ArrestedDrop => TickArrestedDrop(s, step, out input, out advanced),
 				_ => TickGroundMove(s, step, out input, out advanced),
@@ -324,7 +326,7 @@ public sealed class PathExecutor
 
 	private int Budget(in PathStep step) => step.Kind switch {
 		MoveKind.Jump => 150 + (step.Template?.Ticks ?? 60) * 2,
-		MoveKind.Climb => 150 + (int)(step.Cost * 3),
+		MoveKind.Climb or MoveKind.ClimbDown => 150 + (int)(step.Cost * 3),
 		MoveKind.Drop or MoveKind.DropThrough or MoveKind.ArrestedDrop => 120 + (int)(step.Cost * 3),
 		MoveKind.Pillar => 180 + (int)(step.Cost * 3),
 		_ => 60 + (int)(step.Cost * 4),
@@ -457,6 +459,10 @@ public sealed class PathExecutor
 				return RideOff(step, node);
 			bool aligned = settled && node == step.From && Math.Abs(s.X - startX) <= JumpLibrary.AlignTolerance
 				&& Math.Abs(s.VX) <= 0.05f && !lastJumpPressed && s.ReleaseJump; // templates assume take-off from rest
+			// Hanging on a rope (a plan made there): off it with the jump as it hangs, a few px off the node's column; steering to
+			// align would take it off the rope (Player.cs:25157-25190).
+			if (s.OnRope && node.ChebyshevTo(step.From) <= 1 && !lastJumpPressed && s.ReleaseJump)
+				aligned = true;
 			if (!aligned) {
 				input.Horizontal = Arrive.Steer(s.X, s.VX, startX, p, 1f);
 				Phase = "Jump align";
@@ -480,8 +486,10 @@ public sealed class PathExecutor
 		input = MoveInput.None;
 		advanced = false;
 		TilePos node = Body.NodeOf(s, p);
-		if (!jumpController.TookOff) {
-			// Running jump, still on the run-up: must stay on the start row between start and take-off node.
+		if (!jumpController.TookOff && t.RunupTiles > 0) {
+			// Running jump, still on the run-up: must stay on the start row between start and take-off node. (A standing jump takes
+			// off at once: a climb's from the hang, which may read a row off the planned one; measured in rope_long_up, the climb
+			// stopped at row 181 for a hang planned at 180, and the jump was taken for one that "left the run-up".)
 			int dir = Math.Sign(t.Dx);
 			int along = dir * (node.X - origin.X);
 			if (settled && (node.Y != origin.Y || along < -1 || along > t.RunupTiles + 1)) {
@@ -597,6 +605,94 @@ public sealed class PathExecutor
 		input.Climb = !advanced;
 		return ok;
 	}
+
+	/// <summary>
+	/// Down a rope (<see cref="MoveKind.ClimbDown"/>): over the rope's column, Down held (through the platforms under the feet and
+	/// onto the rope, which the game takes hold of while Down is held); on the rope, Down until it lets go at the foot (the step's
+	/// Via); then the fall to To, Down let go of (a platform there would be dropped through) and steered to To's column. The rope
+	/// is held all the way (<see cref="MoveInput.Climb"/>). Reuses <see cref="climbPhase"/>: Align over the rope, Up on it (here
+	/// the slide down), Top the fall after it.
+	/// </summary>
+	private bool TickClimbDown(in BodyState s, in PathStep step, out MoveInput input, out bool advanced)
+	{
+		PhysicsParams p = ctx.Physics;
+		input = MoveInput.None;
+		advanced = false;
+		TilePos foot = step.Via ?? step.To;
+		TilePos node = Body.NodeOf(s, p);
+		float onRope = foot.X * Body.TileSize + Body.TileSize / 2f - p.Width / 2f;
+		climbTicks++;
+		if (climbPhase == ClimbPhase.Align) {
+			if (s.OnRope) {
+				climbPhase = ClimbPhase.Up;
+			}
+			else if (climbTicks > 1 && !settled) {
+				// Dropped through, falling onto the rope: Down held, steered over it, until the game takes hold.
+				input.Climb = true;
+				input.Down = true;
+				input.Horizontal = Arrive.Steer(s.X, s.VX, onRope, p, 1f);
+				Phase = "ClimbDown onto the rope";
+				if (climbTicks > MaxGrabTicks * 3 && node.Y > step.From.Y + MaxGapRowsOnTheWay) {
+					Finish(ExecStatus.OffPath, $"step {StepIndex} climb down: falling at {node}, no hold taken of the rope at column {foot.X}");
+					return false;
+				}
+				return true;
+			}
+			else {
+				if (settled && node.ChebyshevTo(step.From) > 1) {
+					if (TryResync(node)) {
+						advanced = true;
+						return true;
+					}
+					Finish(ExecStatus.OffPath, $"step {StepIndex} climb down: expected to start over the rope at {step.From}, standing at {node}");
+					return false;
+				}
+				input.Climb = true;
+				if (Math.Abs(s.X - onRope) > RopeAlignTolerance || Math.Abs(s.VX) > 0.5f) {
+					input.Horizontal = Arrive.Steer(s.X, s.VX, onRope, p, 1f);
+					climbTicks = 1;
+					Phase = "ClimbDown align";
+					return true;
+				}
+				input.Down = true;
+				Phase = "ClimbDown: down through";
+				return true;
+			}
+		}
+		if (climbPhase == ClimbPhase.Up) {
+			// A rope to the ground: on the floor still holding it, the slide is over.
+			if (s.OnRope && settled && node.Y >= foot.Y - 1) {
+				if (At(node, step.To) || TryResync(node)) {
+					advanced = true;
+					return true;
+				}
+				Finish(ExecStatus.OffPath, $"step {StepIndex} climb down {step.From}->{step.To}: stopped on the rope at {node}");
+				return false;
+			}
+			if (s.OnRope) {
+				input.Climb = true;
+				input.Down = true;
+				Phase = $"ClimbDown sliding (row {node.Y}, foot {foot.Y})";
+				return true;
+			}
+			climbPhase = ClimbPhase.Top; // let go at the foot
+		}
+		// The fall from the rope's foot to the landing.
+		if (settled) {
+			if (At(node, step.To) || TryResync(node)) {
+				advanced = true;
+				return true;
+			}
+			Finish(ExecStatus.OffPath, $"step {StepIndex} climb down {step.From}->{step.To} landed at {node}");
+			return false;
+		}
+		input.Horizontal = Arrive.Steer(s.X, s.VX, Body.CanonicalLeft(step.To.X, p), p, 1f);
+		Phase = "ClimbDown: falling from the foot";
+		return true;
+	}
+
+	/// <summary>Rows a climb down may fall before the rope is taken hold of: the gap to its top (ClimbDownMove.MaxGapRows) and a few more.</summary>
+	public const int MaxGapRowsOnTheWay = 8;
 
 	/// <summary>
 	/// Performs the step's break/place actions in order. Returns 1 when all are done (or there are none),

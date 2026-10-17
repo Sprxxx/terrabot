@@ -86,4 +86,63 @@ public class ClimbTests
 		output.WriteLine($"{t:0.0} ticks for 18 tiles");
 		Assert.InRange(t, 80f, 110f);
 	}
+
+	/// <summary>A house over a rope of 36 rows, deeper than a safe fall (MaxDrop 23): 'S' on its floor, 'G' at the rope's foot.</summary>
+	private static string[] LongRope(bool down)
+	{
+		var rows = new List<string> {
+			"@@@@@@@@@@@@@@@@@@@@",
+			"@..................@",
+			"@..................@",
+			"@..................@",
+			"@..................@",
+			"@..................@",
+			"@..................@",
+			"@@@@@@@@=====@@@@@@@",
+		};
+		rows[6] = down ? "@........S.........@".Substring(0, 20) : rows[6];
+		for (int y = 8; y <= 43; y++) {
+			char[] r = (y < 36 ? "@@@@@@@@.....@@@@@@@" : "....................").ToCharArray();
+			r[10] = '|';
+			if (y == 43)
+				r[9] = down ? 'G' : 'S';
+			rows.Add(new string(r));
+		}
+		if (!down)
+			rows[6] = "@.........G........@";
+		rows.Add(new string('@', 20));
+		return rows.ToArray();
+	}
+
+	[Fact]
+	public void DownALongRope_SlidDown_NotAFallTooFarNorADigDown()
+	{
+		PathResult r = Plan(LongRope(down: true), tools: true);
+		Assert.Equal(PathStatus.Found, r.Status);
+		PathStep down = Assert.Single(r.Steps, s => s.Kind == MoveKind.ClimbDown);
+		Assert.Equal(new TilePos(10, 43), down.Via); // the rope to the ground: stood on the floor still holding it
+		Assert.Equal(new TilePos(10, 43), down.To);
+		Assert.DoesNotContain(r.Steps, s => s.HasActions);
+	}
+
+	[Fact]
+	public void UpALongRope_Climbed()
+	{
+		PathResult r = Plan(LongRope(down: false), tools: true);
+		Assert.Equal(PathStatus.Found, r.Status);
+		Assert.Single(r.Steps, s => s.Kind == MoveKind.Climb);
+		Assert.DoesNotContain(r.Steps, s => s.Kind == MoveKind.Pillar || s.HasActions);
+	}
+
+	[Fact]
+	public void DownAShortRope_IsADropThrough_AsBefore()
+	{
+		var rows = RopeHouse();
+		rows[6] = "@........S.........@";
+		rows[3] = "@..................@";
+		rows[28] = rows[28].Replace('S', 'G');
+		PathResult r = Plan(rows, tools: false);
+		Assert.Equal(PathStatus.Found, r.Status);
+		Assert.DoesNotContain(r.Steps, s => s.Kind == MoveKind.ClimbDown);
+	}
 }

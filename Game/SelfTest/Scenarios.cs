@@ -165,6 +165,25 @@ public sealed class Scenario
 
 	private static string Set(string row, int x, char c) => row.Remove(x, 1).Insert(x, c.ToString());
 
+	/// <summary>A room over a 36-row rope shaft: start and goal at the room's floor and at the rope's foot (or the other way).</summary>
+	private static string[] LongRope(bool down)
+	{
+		var rows = new List<string> { new string('@', 20) };
+		for (int y = 1; y <= 6; y++)
+			rows.Add("@" + new string('.', 18) + "@");
+		rows.Add("@@@@@@@@=====@@@@@@@");
+		for (int y = 8; y <= 43; y++) {
+			char[] r = (y < 36 ? "@@@@@@@@.....@@@@@@@" : "@..................@").ToCharArray();
+			r[10] = '|';
+			if (y == 43)
+				r[8] = down ? 'G' : 'S';
+			rows.Add(new string(r));
+		}
+		rows[6] = Set(rows[6], down ? 9 : 10, down ? 'S' : 'G');
+		rows.Add(new string('@', 20));
+		return rows.ToArray();
+	}
+
 	private static readonly string[] Corridor = {
 		"@@@@@@@@@@@@@@@@@@@@",
 		"@.........#........@",
@@ -1098,6 +1117,19 @@ public sealed class Scenario
 				TimeoutTicks = 60 * 30,
 				Check = r => r.LifeLost > 0 ? $"hurt by its own blast ({r.LifeLost} life)" : r.Broken == 0 ? "the wall still stands"
 					: !r.LogHas("is open") ? "no blast seen" : null,
+			},
+			// A rope of 36 rows (deeper than a safe fall) from the platforms of a room's floor down a shaft to the ground, as in the
+			// StartWithBase house over Journey Test's spawn but longer (2026-10-17): up it (ClimbMove), down it (ClimbDownMove), with no
+			// digging or building; down, no life lost (a plain drop there is 36 rows, a fall that hurts).
+			new() {
+				Name = "rope_long_up",
+				Rows = LongRope(down: false),
+				Check = r => r.Placed > 0 || r.Broken > 0 ? $"{r.Placed} placed, {r.Broken} broken (not up the rope)" : null,
+			},
+			new() {
+				Name = "rope_long_down",
+				Rows = LongRope(down: true),
+				Check = r => r.LifeLost > 0 ? $"{r.LifeLost} life lost on the way down" : r.Placed > 0 || r.Broken > 0 ? $"{r.Placed} placed, {r.Broken} broken" : null,
 			},
 			new() {
 				Name = "walk_flat",

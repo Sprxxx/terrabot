@@ -334,6 +334,17 @@ public sealed class WalkToSkill : ISkill
 
 	public SkillStatus Tick(BotContext ctx)
 	{
+		SkillStatus status = TickWalk(ctx);
+		// On a rope while the walk goes on (a climb, a re-plan made hanging there): keep hold of it (MoveInput.Climb), the game
+		// adapter lets go of a rope only for a walk that is not on it. Seen in game (self-test rope_long_up): the climb's step ended
+		// at the rope's top, the re-plan's first tick held nothing, the adapter let go, and the body fell 32 rows back, 24 times.
+		if (status == SkillStatus.Running && ctx.Body.OnRope)
+			ctx.Output.Climb = true;
+		return status;
+	}
+
+	private SkillStatus TickWalk(BotContext ctx)
+	{
 		ctx.Output = MoveInput.None;
 		if (ctx.BodyIssue != null) {
 			State = "paused: " + ctx.BodyIssue;

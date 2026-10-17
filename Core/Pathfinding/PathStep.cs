@@ -26,6 +26,8 @@ public enum MoveKind
 	ArrestedDrop,
 	/// <summary>Take hold of a rope over the body, climb it to the top (<see cref="PathStep.Via"/>, the hang) and jump off to To.</summary>
 	Climb,
+	/// <summary>Drop onto a rope under the feet holding Down, slide down it, let go at its foot (Via) and land on To.</summary>
+	ClimbDown,
 }
 
 /// <summary>One edge of a planned path. Cost is in game ticks.</summary>
