@@ -81,9 +81,10 @@ Coordinates are tile coordinates: x to the right, y downward. The HUD shows your
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1
 ```
-This opens tModLoader in a separate, throw-away save folder, using copies of your `Pepi` character and the
-`Enchanting Outskirts` world; your real saves are only read. It plays 32 scenarios in an arena above the
-spawn and prints PASS/FAIL for each:
+This opens tModLoader in a separate, throw-away save folder, using copies of one of your characters and worlds
+(`-Player <name> -World "<name>"`; without them, the ones named in `tools/selftest.local.ps1` if you make one, else
+the most recently played); your real saves are only read. It plays 32 scenarios in an arena above the spawn and
+prints PASS/FAIL for each:
 - walking, ledge jump, gap jump, running jump over an 8-tile gap (and refusing one with no run-up room),
   dropping through platforms, a drop without fall damage, an unreachable target;
 - tunnel, dig down, pillar, bridging a wide pit;
@@ -113,10 +114,10 @@ Then it quits. It takes about 40 minutes, most of it the settle and boss chains.
 in the background. Run a subset with `-Scenarios "name1,name2"`. Claude can run this on its own; the manual
 scripts below are for things the self-test can't see, such as how the overlay looks or a real world's trees.
 
-`Enchanting Outskirts` is a Journey world, where the Eye of Cthulhu has half its life and hits for 1–4. To test
-on Classic, use the `Peppe` character and the `Noxious Vision of Organs` world:
+The world's difficulty matters: on a Journey world the Eye of Cthulhu has half its life and hits for 1–4. To test
+on Classic, name a Classic character and world (`-WorldFile` when the file is not the name with underscores):
 ```bash
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1 -Scenarios eye_of_cthulhu -Player Peppe -World "Noxious Vision of Organs" -WorldFile Noxious_Vision_of_Organs
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/selftest.ps1 -Scenarios eye_of_cthulhu -Player <character> -World "<world name>"
 ```
 Each result line reports hits taken, total damage and deaths.
 

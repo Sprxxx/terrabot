@@ -7,3 +7,4 @@ tests/**/bin/
 tests/**/obj/
 TestResults/
 .selftest/
+tools/selftest.local.ps1

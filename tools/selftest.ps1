@@ -19,9 +19,11 @@
 #>
 param(
 	[string]$Scenarios = "all",
-	[string]$Player = "Pepi",
-	[string]$World = "Enchanting Outskirts",
-	[string]$WorldFile = "Enchanting_Outskirts",
+	# The character and world to copy in. Empty: tools\selftest.local.ps1 (untracked, sets them for this PC), else the most
+	# recently played ones. WorldFile is the world's file name without .wld (its name with underscores for spaces unless given).
+	[string]$Player = "",
+	[string]$World = "",
+	[string]$WorldFile = "",
 	[string]$TmlDir = "C:\Program Files (x86)\Steam\steamapps\common\tModLoader",
 	[int]$TimeoutMinutes = 20,
 	[switch]$NoBuild,
@@ -51,6 +53,26 @@ $ErrorActionPreference = "Stop"
 
 $repo = Split-Path $PSScriptRoot -Parent
 $saves = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "My Games\Terraria\tModLoader"
+
+# Which saves to copy: the parameters, else tools\selftest.local.ps1, else the character and world played most recently.
+$localDefaults = Join-Path $PSScriptRoot "selftest.local.ps1"
+if (Test-Path $localDefaults) {
+	$given = @{ Player = $Player; World = $World; WorldFile = $WorldFile }
+	. $localDefaults
+	foreach ($k in $given.Keys) { if ($given[$k]) { Set-Variable -Name $k -Value $given[$k] } }
+}
+if (-not $Player) {
+	$newest = Get-ChildItem (Join-Path $saves "Players") -Filter *.plr -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+	if (-not $newest) { throw "No character found in $saves\Players; pass -Player" }
+	$Player = $newest.BaseName
+}
+if (-not $World -and -not $WorldFile) {
+	$newest = Get-ChildItem (Join-Path $saves "Worlds") -Filter *.wld -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+	if (-not $newest) { throw "No world found in $saves\Worlds; pass -World" }
+	$WorldFile = $newest.BaseName
+}
+if (-not $WorldFile) { $WorldFile = $World -replace ' ', '_' }
+if (-not $World) { $World = $WorldFile -replace '_', ' ' }
 $testDir = Join-Path $repo ".selftest\SaveData"
 $logDir = Join-Path $TmlDir "tModLoader-Logs"
 

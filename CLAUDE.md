@@ -5,7 +5,7 @@ fresh world → Moon Lord with no human input. `PLAN.md` has the design rational
 `README.md` has the in-game test script the user follows.
 
 ## Setup facts (verified 2026-10-10)
-- Repo / mod folder: `C:\Users\karlf\Documents\My Games\Terraria\tModLoader\ModSources\TerraBot` (git, branch `main`).
+- Repo / mod folder: `%USERPROFILE%\Documents\My Games\Terraria\tModLoader\ModSources\TerraBot` (git, branch `main`).
   `ModSources\tModLoader.targets` is a hand-written shim importing
   `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tMLMod.targets` (tML regenerates it when you open
   Develop Mods; content is identical).
