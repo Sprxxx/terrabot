@@ -124,9 +124,15 @@ public class WallOfFleshPlanTests
 		p.OnSkillFinished(bridge, SkillStatus.Succeeded, ctx);
 		int TowerFrom = from, ToEnd = from + Bridge; // the names below: the arena's ends
 
-		// S5: at its far end with no doll, the hunt; there the Voodoo Demon is not spared.
+		// S5: at its far end with no doll, the hunt (waiting back from the end's opened columns, E36); there the Voodoo Demon is not spared.
 		g.Refresh(ctx);
-		var hunt = Assert.IsType<WaitSkill>(Next(p, ctx));
+		ISkill toHunt = Next(p, ctx);
+		if (toHunt is WalkToSkill backFromTheEnd) {
+			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, backFromTheEnd, 4000));
+			g.Refresh(ctx);
+			toHunt = Next(p, ctx);
+		}
+		var hunt = Assert.IsType<WaitSkill>(toHunt);
 		Assert.Equal("a Guide Voodoo Doll", hunt.What);
 		Assert.True(p.HellbridgeDone);
 		p.SpareRules(ctx); // as the brain does each tick

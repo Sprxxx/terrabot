@@ -93,6 +93,8 @@ public sealed partial class ProgressionPlanner
 	public const int ShaftShiftTiles = 2 * HellevatorSkill.SeekTiles + 1;
 	/// <summary>Spec S5: Voodoo Demons are shot only from the bridge's last 100 tiles.</summary>
 	public const int HuntTiles = 100;
+	/// <summary>The hunt for a Voodoo Demon waits this far back from the landing columns opened at the bridge's end.</summary>
+	public const int HuntBackTiles = 10;
 	/// <summary>
 	/// Never summon within this many columns of the world's middle (spec 3a, risk 9): the Wall comes from the doll's half of the
 	/// world (NPC.SpawnWOF), and a doll near the middle could land on either side.
@@ -809,8 +811,13 @@ public sealed partial class ProgressionPlanner
 		if (ctx.Inventory.Count(doll) <= 0 && ctx.Infinite(doll))
 			return Do("duplicating a Guide Voodoo Doll (researched)", new DuplicateSkill(doll, 1));
 		if (ctx.Inventory.Count(doll) <= 0) {
-			if (!NearBridgeEnd(ctx, HuntTiles)) {
-				int lo = Math.Min(bridgeTo, bridgeTo - dir * HuntTiles), hi = Math.Max(bridgeTo, bridgeTo - dir * HuntTiles);
+			// Not at the very end: the columns opened for the doll are a fall into the lava beside it, and the hunt waits for hours.
+			// Seen in game (world_wof E36, 2026-10-18): waiting there, Hellbats' knockbacks took the bot past the end, and the walk back
+			// jumped the opened columns and fell 37 rows.
+			int back = LandingTo + HuntBackTiles;
+			if (!NearBridgeEnd(ctx, HuntTiles) || NearBridgeEnd(ctx, back - 2)) {
+				int near = bridgeTo - dir * back, far = bridgeTo - dir * HuntTiles;
+				int lo = Math.Min(near, far), hi = Math.Max(near, far);
 				return Do($"to the hellbridge's far end to hunt a Voodoo Demon (x {bridgeTo})", new WalkToSkill(new GoalStandOnRow(stand, lo, hi - 1, ctx.Physics)) { Quiet = true });
 			}
 			huntOn = true;
