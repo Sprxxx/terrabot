@@ -100,6 +100,8 @@ public sealed class Scenario
 	public bool ResetBosses { get; init; }
 	/// <summary>Clear NPC.downedBoss3 (throw-away copy of the world): the Old Man stays, Skeletron can be summoned.</summary>
 	public bool ResetSkeletron { get; init; }
+	/// <summary>Clear NPC.downedBoss2 (throw-away copy of the world): the evil boss counts as not yet beaten (fight_boc's pass is its flag).</summary>
+	public bool ResetEvilBoss { get; init; }
 	/// <summary>Armour to wear (head, body, legs item types), empty = none.</summary>
 	public int[] Wear { get; init; } = System.Array.Empty<int>();
 	/// <summary>Main.time at the start for a day scenario (27000 = mid-morning; 0 = dawn, 15 minutes of daylight).</summary>
@@ -232,6 +234,28 @@ public sealed class Scenario
 		p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.HealingPotion, 10);
 		p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.RecallPotion, 1);
 	}
+
+	/// <summary>
+	/// The Brain of Cthulhu's kit (the crimson stages' S1): a bow, 1998 wooden arrows, 10 lesser healing potions, a Bloody Spine.
+	/// <paramref name="tendon"/>: the Tendon Bow (from the Eye's crimtane, ProgressionPlanner's crimson stage (a)), else the Iron Bow
+	/// (the Eye's loot without crimtane).
+	/// </summary>
+	private static Action<Terraria.Player> BrainKit(bool tendon) => p => {
+		p.inventory[3] = new Terraria.Item(tendon ? Terraria.ID.ItemID.TendonBow : Terraria.ID.ItemID.IronBow);
+		p.inventory[20] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 999);
+		p.inventory[21] = new Terraria.Item(Terraria.ID.ItemID.WoodenArrow, 999);
+		p.inventory[22] = new Terraria.Item(Terraria.ID.ItemID.LesserHealingPotion, 10);
+		p.inventory[23] = new Terraria.Item(Terraria.ID.ItemID.BloodySpine);
+	};
+
+	/// <summary>
+	/// The Brain's synthetic ground: a flat floor <paramref name="width"/> wide of four rows of crimstone ('C', the Crimson zone's
+	/// weight 1 a tile, TileID.cs:653), with 30 rows of open air over it and the bot ('S') in the middle. The scene scan round the
+	/// player counts the 169 columns x 4 rows of it in view (BotContext.SceneScanHalfWidth): 676, over the zone's 300
+	/// (SceneMetrics.cs:18, 144), so the Bloody Spine works (Player.cs:43549) and the Brain stays (NPC.cs:33385), in either world's evil.
+	/// </summary>
+	private static string[] CrimsonFloor(int width) =>
+		Grid(Repeat(new string('.', width), 30), Set(new string('.', width), width / 2, 'S'), Repeat(new string('C', width), 4));
 
 	/// <summary>
 	/// The Underworld's synthetic ground (docs M12_SPEC.md section 10), as grid rows 0-60 for the world's rows UnderworldLayer + 15
@@ -378,6 +402,25 @@ public sealed class Scenario
 			// 5 in-game days, the spec's budget (about 3 expected: the hunt for 45 eaters of souls about 1, the rest about 1.5).
 			TimeoutTicks = 5 * 86400,
 			Check = r => !r.EvilBossDefeated ? "the Eater of Worlds was not defeated" : null,
+		},
+		new() {
+			// Milestone 10 in a Crimson world: the Brain of Cthulhu by a Bloody Spine (ProgressionPlanner's crimson stages), /bot auto
+			// evilboss on the user's Crimson world The Aggressive Site (6400 x 1800, Journey; the crimson west of the spawn at x 3198,
+			// a crimera at (2585,354), a crimson altar at (2579,873): measured runs J1 and J2). Started from J2's checkpoint after the
+			// Eye (selftest.ps1 -Scenarios world_boc -Player Nenne -World "The Aggressive Site" -WorldFile The_Aggressive_Site
+			// -FromCheckpoint ...\logs\checkpoints\J2_nenne\Eye_loot_collected). Run it by name.
+			Name = "world_boc",
+			RealWorld = true,
+			Rows = new[] { "S" },
+			Mode = "auto",
+			AutoPlan = Bot.Brain.ProgressionPlanner.Plans.EvilBoss,
+			Dig = true,
+			Build = true,
+			DayTime = 3000,
+			// 5 in-game days, the worm's budget: the hunt for some 45 crimeras about 1, the mushrooms, the powder and the spine about
+			// 1.5, the arena and a fight of a few minutes.
+			TimeoutTicks = 5 * 86400,
+			Check = r => !r.EvilBossDefeated ? "the Brain of Cthulhu was not defeated" : null,
 		},
 		new() {
 			// Milestone 11: Skeletron (docs M11_SPEC.md section 6), /bot auto skeletron: the prep, the walk to the Dungeon, an
@@ -884,6 +927,36 @@ public sealed class Scenario
 				Inventory = SkeletronKit,
 				TimeoutTicks = 60 * 60 * 9,
 				Check = r => !r.SkeletronDefeated ? "Skeletron was not defeated" : null,
+			},
+			new() {
+				// Milestone 10 in a Crimson world: the Brain of Cthulhu (BrainPattern) on a flat 170-tile crimstone floor by day, the
+				// Bloody Spine used where the bot stands (the floor holds the Crimson zone), the Tendon Bow and wooden arrows, iron armour,
+				// 200 life, lesser healing potions. Measures the fight's length, the hits taken and the dodges against the Creepers' dashes
+				// (8 px/tick) and the Brain's chase; tunes BrainPattern. Any world's evil (the zone is the floor's).
+				Name = "fight_boc",
+				Rows = CrimsonFloor(170),
+				Mode = "boc",
+				ResetEvilBoss = true,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Pickaxe = false,
+				Inventory = BrainKit(tendon: true),
+				TimeoutTicks = 60 * 60 * 16,
+				Check = r => !r.EvilBossDefeated ? "the Brain of Cthulhu was not defeated" : null,
+			},
+			new() {
+				// The same with the Iron Bow (8 damage for the Tendon Bow's 19): the Eye's loot with no crimtane in it. By name: a long fight.
+				Name = "fight_boc_ironbow",
+				Rows = CrimsonFloor(170),
+				Mode = "boc",
+				ByName = true,
+				ResetEvilBoss = true,
+				MaxLife = 200,
+				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
+				Pickaxe = false,
+				Inventory = BrainKit(tendon: false),
+				TimeoutTicks = 60 * 60 * 16,
+				Check = r => !r.EvilBossDefeated ? "the Brain of Cthulhu was not defeated" : null,
 			},
 			new() {
 				// Milestone 12 (docs M12_SPEC.md section 10, S0): one Guide Voodoo Doll thrown east off a stone ledge at row 1042 into the

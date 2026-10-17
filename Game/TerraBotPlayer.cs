@@ -383,7 +383,17 @@ public sealed class TerraBotPlayer : ModPlayer
 	private static bool IsBossPart(NPC n) => n.boss || n.type is NPCID.EaterofWorldsHead or NPCID.EaterofWorldsBody or NPCID.EaterofWorldsTail
 		// The Wall of Flesh's eyes, The Hungry and the leeches (NPC.cs:5502-5600): none has NPC.boss, and the fight keeps 30-77 tiles
 		// ahead of the Wall (docs M12_SPEC.md section 6), beyond the 50 tiles other NPCs are seen from; the eyes are what it shoots.
-		|| n.type is NPCID.WallofFleshEye or NPCID.TheHungry or NPCID.TheHungryII or NPCID.LeechHead or NPCID.LeechBody or NPCID.LeechTail;
+		|| n.type is NPCID.WallofFleshEye or NPCID.TheHungry or NPCID.TheHungryII or NPCID.LeechHead or NPCID.LeechBody or NPCID.LeechTail
+		// The Brain of Cthulhu's Creepers (NPC.cs:7609-7622): no NPC.boss either; they orbit the Brain, which jumps to 12-40 tiles off
+		// the player on each axis (NPC.cs:33316-33383), up to 57 tiles away, past the 50.
+		|| n.type == NPCID.Creeper;
+
+	/// <summary>
+	/// Seen as a hostile: what NPC.CanBeChasedBy takes (NPC.cs:107202-107209), and the Brain of Cthulhu while it hides behind its
+	/// Creepers, which that leaves out (dontTakeDamage until they are dead, NPC.cs:7592 and 33157): it still hurts on a touch
+	/// (damage 30), and where it is is where they orbit. EntityInfo.DontTakeDamage tells the fight not to shoot it.
+	/// </summary>
+	private static bool Perceived(NPC n) => n.CanBeChasedBy() || n.type == NPCID.BrainofCthulhu && n.CanBeChasedBy(null, ignoreDontTakeDamage: true);
 
 	/// <summary>
 	/// Hostile projectiles are seen within this many px: half a 1920-wide screen (60 tiles), the smallest screen the scene scan
@@ -425,10 +435,10 @@ public sealed class TerraBotPlayer : ModPlayer
 		var hostiles = new List<EntityInfo>();
 		for (int i = 0; i < Main.maxNPCs; i++) {
 			NPC n = Main.npc[i];
-			if (!n.active || !n.CanBeChasedBy() || Vector2.Distance(n.Center, c) > (IsBossPart(n) ? BossPerceptionRadiusPx : PerceptionRadiusPx))
+			if (!n.active || !Perceived(n) || Vector2.Distance(n.Center, c) > (IsBossPart(n) ? BossPerceptionRadiusPx : PerceptionRadiusPx))
 				continue;
 			hostiles.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
-				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle, n.ai[0], n.ai[1], n.ai[2], n.ai[3], n.noTileCollide));
+				n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle, n.ai[0], n.ai[1], n.ai[2], n.ai[3], n.noTileCollide, n.dontTakeDamage));
 		}
 		hostiles.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
 		Context.Hostiles = hostiles;

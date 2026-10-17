@@ -50,7 +50,9 @@ public sealed class BotCommand : ModCommand
 						ProgressionPlanner.Plans.Settle => "TerraBot auto (settle): the iron chain, then a house, an iron-tier broadsword and armour. Fights, hides at night.",
 						ProgressionPlanner.Plans.Crystals => "TerraBot auto (crystals): mine and use life crystals up to 200 max life.",
 						ProgressionPlanner.Plans.Arena => "TerraBot auto (arena): a flat 96-wide boss arena with torches and a campfire.",
-						ProgressionPlanner.Plans.EvilBoss => "TerraBot auto (evilboss): the boss plan, then rotten chunks, vile powder and Worm Food, and the Eater of Worlds in the corruption.",
+						ProgressionPlanner.Plans.EvilBoss => bot.Context.Ids.Crimson
+							? "TerraBot auto (evilboss): the boss plan, then the Tendon Bow, vertebrae, vicious powder and a Bloody Spine, and the Brain of Cthulhu in the crimson."
+							: "TerraBot auto (evilboss): the boss plan, then rotten chunks, vile powder and Worm Food, and the Eater of Worlds in the corruption.",
 						ProgressionPlanner.Plans.WallOfFlesh => "TerraBot auto (wof): the boss plan, then a hellevator to the Underworld, a hellbridge over the lava, a Guide Voodoo Doll, and the Wall of Flesh.",
 						ProgressionPlanner.Plans.Hellbridge => "TerraBot auto (hellbridge): a hellbridge from where you stand in the Underworld.",
 						ProgressionPlanner.Plans.Housing => "TerraBot auto (housing): a house, then rooms for the town NPCs beside it, until two have moved in.",

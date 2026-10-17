@@ -12,7 +12,7 @@ namespace TerraBot.Game.SelfTest;
 /// Only reachable when tModLoader was launched with -terrabotselftest (tools/selftest.ps1, isolated save dir).
 ///
 /// Legend (same as the unit tests): '.' air, '#' dirt (breakable), '@' Lihzahrd brick (needs pick power 210, so
-/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, 'H' life crystal (right column of a 2×2 pocket), 'A' demon altar (bottom-middle), '=' wood platform, '!' lava, '~' water, 'h' dirt half block, 'r' minecart track, 'w' open with an ebonstone wall behind, 'e' ebonstone,
+/// unbreakable for pre-hardmode tools), '%' sand, 's' stone, 'i' / 'c' this world's iron / copper-tier ore, ',' grass, 'T' tree base, 'H' life crystal (right column of a 2×2 pocket), 'A' demon altar (bottom-middle), '=' wood platform, '!' lava, '~' water, 'h' dirt half block, 'r' minecart track, 'w' open with an ebonstone wall behind, 'e' ebonstone, 'C' crimstone,
 /// 'S' start node (left body column, feet row), 'G' target tile.
 /// </summary>
 public sealed class Arena
@@ -70,6 +70,7 @@ public sealed class Arena
 					case ',': t.ResetToType(TileID.Grass); break;
 					case '@': t.ResetToType(TileID.LihzahrdBrick); break;
 					case 'e': t.ResetToType(TileID.Ebonstone); break; // pickaxe power 65 to mine; a blast breaks it
+					case 'C': t.ResetToType(TileID.Crimstone); break; // the Crimson zone's stone (TileID.Sets.CrimsonBiome 1): fight_boc's floor
 					case '%': t.ResetToType(TileID.Sand); break;
 					case 's': t.ResetToType(TileID.Stone); break;
 					case 'i': t.ResetToType((ushort)WorldGen.SavedOreTiers.Iron); break;
