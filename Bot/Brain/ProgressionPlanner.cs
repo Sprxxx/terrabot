@@ -1312,7 +1312,7 @@ public sealed class ProgressionPlanner
 			TilePos chosen = slot.Site.Value;
 			bool inEvil = SiteFinder.InEvilBiome(ctx, bp, chosen);
 			ctx.Log.Info($"Auto: {name} site {chosen} ({SiteFinder.Edits(ctx, bp, chosen)} edits"
-				+ (evil ? $", {ctx.CorruptionAround(Middle(bp, chosen))} corruption tiles round its middle, {SiteFinder.CorruptionOnceBuilt(ctx, bp, chosen, Middle(bp, chosen))} once built"
+				+ (evil ? $", floor row {chosen.Y + bp.Height - 1}, {ctx.CorruptionAround(Middle(bp, chosen))} corruption tiles round its middle, {SiteFinder.CorruptionOnceBuilt(ctx, bp, chosen, Middle(bp, chosen))} once built"
 					+ $" (the zone wants {BotContext.CorruptionZoneTiles}, {SiteFinder.ZoneMargin} over it for the kiting: {SiteFinder.ZoneShortfall(ctx, bp, chosen)} short)" : "")
 				+ (inEvil != evil ? $", {(evil ? "off" : "in")} the evil biome: each step costs {SiteFinder.EvilStepFactor}x" : "") + ")");
 		}

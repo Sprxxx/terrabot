@@ -30,29 +30,136 @@ public static class SiteFinder
 		TilePos? best = null;
 		long bestScore = long.MaxValue;
 		Func<int, int?> groundAt = Ground(ctx.Grid, bp, around);
+		RaisedFloors raised = RaisedFloors.For(ctx, bp, around);
 		// An arena's middle within the radius, either side alike: by its left edge, a 96-wide arena could never go left of the
 		// house within 80 tiles (seen in game, measured run S12: "over the house" for 92 of 161 sites, none on the left tried).
 		for (int x0 = around.X - bp.SearchRadius - Shift(bp); x0 <= around.X + bp.SearchRadius - Shift(bp); x0++) {
-			int mid = x0 + bp.Width / 2;
-			int? ground = groundAt(mid);
-			if (ground == null)
-				continue;
-			var origin = new TilePos(x0, ground.Value - (bp.Height - 1));
-			if (avoid != null && avoid.Contains(origin))
-				continue;
-			if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X
-				&& origin.Y <= r.Max.Y && origin.Y + bp.Height - 1 >= r.Min.Y))
-				continue;
-			int edits = Edits(ctx, bp, origin);
-			if (edits < 0 || edits > bp.MaxEdits)
-				continue;
-			long score = Score(ctx, bp, origin, edits, around);
-			if (score < bestScore) {
-				bestScore = score;
-				best = origin;
+			int? ground = groundAt(x0 + bp.Width / 2);
+			foreach (int floor in Floors(ground, raised?.Floor(x0, ground))) {
+				var origin = new TilePos(x0, floor - (bp.Height - 1));
+				if (avoid != null && avoid.Contains(origin))
+					continue;
+				if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X
+					&& origin.Y <= r.Max.Y && origin.Y + bp.Height - 1 >= r.Min.Y))
+					continue;
+				int edits = Edits(ctx, bp, origin);
+				if (edits < 0 || edits > bp.MaxEdits)
+					continue;
+				long score = Score(ctx, bp, origin, edits, around);
+				if (score < bestScore) {
+					bestScore = score;
+					best = origin;
+				}
 			}
 		}
 		return best;
+	}
+
+	/// <summary>The floor rows tried for one site: the ground under its middle, then a raised floor (<see cref="RaisedFloors"/>).</summary>
+	private static IEnumerable<int> Floors(int? ground, int? raised)
+	{
+		if (ground is int g)
+			yield return g;
+		if (raised is int r && r != ground)
+			yield return r;
+	}
+
+	/// <summary>
+	/// The worm's arena (<see cref="Blueprint.InEvilBiome"/>) raised off the ground, as a player bridges the corruption with a
+	/// long floor in the air: for each site, the floor row from the highest block of the ground under its span down to the row
+	/// over the ground under its middle whose build has the fewest edits (blocks to mine in its open air, two each, and floor
+	/// cells to fill, one each), with no unbreakable block or liquid in its open air and a block of the ground in its floor
+	/// row or under it to place the first floor block against (BuildSkill: each block next to a solid one). The floor on the
+	/// ground's highest block always has one, and its open air is all air: the evil biome's stone the pickaxe cannot break
+	/// (ebonstone, pick power 65; BotContext.EvilStoneTooHard) then stays under the floor rather than ruling the site out.
+	/// Seen in game (measured run M10o, world_eow, Silver Pickaxe, power 45): on the floor row under each middle, "unbreakable
+	/// tile 25" ruled out 132 of the 161 sites within 80 of (1870,305) and 208 of the 321 within 160, liquid 95 and too many
+	/// edits 15 of the rest, no arena was built, and the worm was fought in a three-row gully under a hill at (1870,305): two
+	/// deaths, the worm left at 6636 and 4264 of 10050. The Eye's arena keeps to the ground (its site finding is unchanged).
+	/// </summary>
+	private sealed class RaisedFloors
+	{
+		private readonly Blueprint bp;
+		private readonly int cx0, cy0, rows;
+		/// <summary>Per column, prefix counts down the rows: blocks, and cells that rule out open air (unbreakable, liquid).</summary>
+		private readonly int[][] blocks, bad;
+		private readonly bool[][] liquid;
+		private readonly int?[] top;
+
+		public static RaisedFloors For(BotContext ctx, Blueprint bp, TilePos around) =>
+			!bp.IsHouse && bp.InEvilBiome ? new RaisedFloors(ctx, bp, around) : null;
+
+		private RaisedFloors(BotContext ctx, Blueprint bp, TilePos around)
+		{
+			this.bp = bp;
+			int reach = bp.SearchRadius;
+			// The columns of every site's span and one either side; the rows as far up and down as the ground is followed
+			// (Ground), and the open air over the highest floor.
+			cx0 = around.X - reach - Shift(bp) - 1;
+			int cols = 2 * reach + bp.Width + 3;
+			cy0 = around.Y - reach - bp.Height;
+			rows = 2 * reach + bp.Height + 2;
+			blocks = new int[cols][];
+			bad = new int[cols][];
+			liquid = new bool[cols][];
+			top = new int?[cols];
+			ITileGrid g = ctx.Grid;
+			for (int i = 0; i < cols; i++) {
+				int x = cx0 + i;
+				blocks[i] = new int[rows + 1];
+				bad[i] = new int[rows + 1];
+				liquid[i] = new bool[rows];
+				for (int j = 0; j < rows; j++) {
+					int y = cy0 + j;
+					CellKind k = g.Get(x, y);
+					bool block = k.IsBlock() && !ctx.World.IsTreeTrunk(x, y);
+					liquid[i][j] = k.IsLiquid();
+					bool hard = block && !(bp.ChopTrees && ctx.World.IsTreeTrunk(x, y - 1)) // as Edits: felled first, then mined
+						&& float.IsInfinity(ctx.Blocks?.BreakTicks(x, y) ?? float.PositiveInfinity);
+					blocks[i][j + 1] = blocks[i][j] + (block ? 1 : 0);
+					bad[i][j + 1] = bad[i][j] + (hard || liquid[i][j] ? 1 : 0);
+					if (block && top[i] == null)
+						top[i] = y;
+				}
+			}
+		}
+
+		private static int Count(int[] prefix, int j0, int j1) => prefix[j1 + 1] - prefix[j0];
+
+		/// <summary>The raised floor row for the site whose left edge is <paramref name="x0"/>, or null if there is none.</summary>
+		public int? Floor(int x0, int? ground)
+		{
+			int i0 = x0 - cx0, open = bp.Height - 1;
+			int? highest = null;
+			for (int i = i0; i < i0 + bp.Width; i++)
+				if (top[i] is int t && (highest == null || t < highest))
+					highest = t;
+			if (highest is not int hi)
+				return null;
+			int lowest = ground is int gr ? gr - 1 : hi;
+			int? best = null;
+			int bestEdits = int.MaxValue;
+			for (int floor = lowest; floor >= hi; floor--) {
+				int jf = floor - cy0, ja = jf - open;
+				if (ja < 0 || jf + 1 >= rows)
+					continue;
+				int edits = 0;
+				bool ok = true, attached = blocks[i0 - 1][jf + 1] != blocks[i0 - 1][jf] || blocks[i0 + bp.Width][jf + 1] != blocks[i0 + bp.Width][jf];
+				for (int i = i0; i < i0 + bp.Width && ok; i++) {
+					if (Count(bad[i], ja, jf - 1) > 0 || liquid[i][jf]) {
+						ok = false;
+						break;
+					}
+					edits += 2 * Count(blocks[i], ja, jf - 1) + (Count(blocks[i], jf, jf) == 0 ? 1 : 0);
+					attached |= Count(blocks[i], jf, jf + 1) > 0;
+				}
+				if (ok && attached && edits < bestEdits) {
+					bestEdits = edits;
+					best = floor;
+				}
+			}
+			return best;
+		}
 	}
 
 	/// <summary>
@@ -241,33 +348,39 @@ public static class SiteFinder
 		int fewest = int.MaxValue;
 		TilePos fewestAt = default;
 		Func<int, int?> groundAt = Ground(ctx.Grid, bp, around);
+		RaisedFloors raised = RaisedFloors.For(ctx, bp, around);
 		for (int x0 = around.X - bp.SearchRadius - Shift(bp); x0 <= around.X + bp.SearchRadius - Shift(bp); x0++) {
 			int? ground = groundAt(x0 + bp.Width / 2);
-			if (ground == null) {
+			if (ground == null)
 				Count("no ground under the middle");
-				continue;
-			}
-			var origin = new TilePos(x0, ground.Value - (bp.Height - 1));
-			if (avoid != null && avoid.Contains(origin)) {
-				Count("given up before");
-				continue;
-			}
-			if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X
-				&& origin.Y <= r.Max.Y && origin.Y + bp.Height - 1 >= r.Min.Y)) {
-				Count("over the house");
-				continue;
-			}
-			int edits = Edits(ctx, bp, origin, out string reason, out TilePos? cell);
-			if (edits < 0) {
-				Count(reason, cell);
-				continue;
-			}
-			bool evil = !bp.IsHouse && InEvilBiome(ctx, bp, origin);
-			Count(edits > bp.MaxEdits ? "too many edits" : bp.IsHouse || evil == bp.InEvilBiome ? "fine"
-				: evil ? "fine, in the evil biome" : "fine, off the evil biome");
-			if (edits < fewest) {
-				fewest = edits;
-				fewestAt = origin;
+			int? up = raised?.Floor(x0, ground);
+			if (raised != null && up == null)
+				Count("no raised floor");
+			foreach (int floor in Floors(ground, up)) {
+				// The worm's arena: the raised floors' reasons counted apart from the ground's.
+				string kind = floor == ground ? "" : "raised: ";
+				var origin = new TilePos(x0, floor - (bp.Height - 1));
+				if (avoid != null && avoid.Contains(origin)) {
+					Count(kind + "given up before");
+					continue;
+				}
+				if (keepOut != null && keepOut.Any(r => origin.X <= r.Max.X && origin.X + bp.Width - 1 >= r.Min.X
+					&& origin.Y <= r.Max.Y && origin.Y + bp.Height - 1 >= r.Min.Y)) {
+					Count(kind + "over the house");
+					continue;
+				}
+				int edits = Edits(ctx, bp, origin, out string reason, out TilePos? cell);
+				if (edits < 0) {
+					Count(kind + reason, cell);
+					continue;
+				}
+				bool evil = !bp.IsHouse && InEvilBiome(ctx, bp, origin);
+				Count(kind + (edits > bp.MaxEdits ? "too many edits" : bp.IsHouse || evil == bp.InEvilBiome ? "fine"
+					: evil ? "fine, in the evil biome" : "fine, off the evil biome"));
+				if (edits < fewest) {
+					fewest = edits;
+					fewestAt = origin;
+				}
 			}
 		}
 		string Most(string r) => where.TryGetValue(r, out var cells) && cells.MaxBy(kv => kv.Value) is var (c, n) ? $" ({n} at {c})" : "";

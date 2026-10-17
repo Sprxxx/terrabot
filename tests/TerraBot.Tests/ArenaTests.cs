@@ -438,6 +438,148 @@ public class ArenaTests
 		Assert.True(SiteFinder.ZoneShortfall(ctx, eater, site) < SiteFinder.ZoneMargin);
 	}
 
+	/// <summary>
+	/// A corruption of ebonstone the pickaxe cannot break ('@'), its ground at row <see cref="HillsGround"/> (feet row 59) and
+	/// hills <see cref="HillSpacing"/> apart, 3 wide, each a row taller than the one east of it: every 96-wide span holds a hill
+	/// taller than the ground under its middle, so no floor on that ground has its open air clear. The start in the valley
+	/// at x 250.
+	/// </summary>
+	private static FakeGame EbonstoneHills()
+	{
+		const int width = 480, height = 85;
+		var rows = new char[height][];
+		for (int y = 0; y < height; y++)
+			rows[y] = new string(y < HillsGround ? '.' : '@', width).ToCharArray();
+		for (int hx = 10; hx < width; hx += HillSpacing)
+			for (int y = HillsGround - HillHeight(hx); y < HillsGround; y++)
+				for (int x = hx; x < hx + 3; x++)
+					rows[y][x] = '@';
+		rows[HillsGround - 1][250] = 'S';
+		var g = new FakeGame(rows.Select(r => new string(r)).ToArray());
+		for (int y = 0; y < height; y++)
+			for (int x = 0; x < width; x++)
+				if (g.Grid.Get(x, y).IsBlock())
+					g.TileTypes[new TilePos(x, y)] = FakeGame.TileEbonstone;
+		return g;
+	}
+
+	private const int HillsGround = 60, HillSpacing = 30;
+	private static int HillHeight(int hx) => 1 + (480 - hx) / HillSpacing;
+
+	[Fact]
+	public void SiteFinder_TheWormsArena_OverEbonstoneHills_RaisesItsFloorOverThem()
+	{
+		// Measured run M10o (world_eow, Silver Pickaxe, power 45; ebonstone wants 65): "no arena in the corruption site ...
+		// unbreakable tile 25" for 132 of the 161 sites within 80 and 208 of the 321 within 160; the worm was fought in a gully
+		// and lost. A player bridges the corruption with a floor in the air over its hills, nothing to break.
+		FakeGame g = EbonstoneHills();
+		BotContext ctx = g.CreateContext(output);
+		var anchor = new TilePos(250, HillsGround - 1);
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, inEvilBiome: true);
+		var clock = System.Diagnostics.Stopwatch.StartNew();
+		TilePos? site = SiteFinder.Find(ctx, eater, anchor);
+		output.WriteLine($"site {site} in {clock.ElapsedMilliseconds} ms; {SiteFinder.Explain(ctx, eater, anchor)}");
+		Assert.NotNull(site);
+		TilePos s = site.Value;
+		int floor = s.Y + eater.Height - 1;
+		int highest = Enumerable.Range(s.X, eater.Width).Where(x => (x - 10) % HillSpacing < 3 && x >= 10)
+			.Min(x => HillsGround - HillHeight(x - (x - 10) % HillSpacing));
+		Assert.Equal(highest, floor); // on the top of the span's highest hill, the rest of the floor bridged over the others
+		Assert.True(floor < HillsGround - 1, $"floor row {floor} raised over the ground at row {HillsGround}");
+		int edits = SiteFinder.Edits(ctx, eater, s, out string why);
+		Assert.True(edits >= 0, why);
+		Assert.True(edits <= eater.Width + 2 * Blueprint.ArenaEndPostHeight, $"{edits} edits: only the floor and posts to place, nothing to mine");
+		Assert.True(SiteFinder.InEvilBiome(ctx, eater, s), "the zone holds at both ends of the raised floor");
+		// The ground's sites as before, with the raised ones apart in the reasons: none of the ground's is buildable.
+		string explain = SiteFinder.Explain(ctx, eater, anchor);
+		Assert.Contains("unbreakable tile", explain);
+		Assert.Contains("raised: fine", explain);
+		Assert.DoesNotMatch("(^|, )fine", explain);
+	}
+
+	[Fact]
+	public void BuildSkill_TheWormsRaisedArena_OverEbonstoneHills_IsBuiltFromTheGround()
+	{
+		// The raised floor must be reachable and buildable: from the valley floor, up by the hills (placing blocks to climb
+		// where they are too tall to jump) and out along the floor, one block next to the last, over the lower hills.
+		FakeGame g = EbonstoneHills();
+		g.Items[FakeGame.DirtBlock] = 200;
+		g.Items[FakeGame.Torch] = 10;
+		g.Items[FakeGame.Campfire] = 1;
+		BotContext ctx = g.CreateContext(output);
+		// As the planner sends it there (ResolveArena: the errand into the evil biome, in full armour as the plan wants).
+		ctx.Combat.ArmourPieces = 3;
+		ctx.Combat.Defense = 9;
+		ctx.SurfaceY = HillsGround;
+		g.Refresh(ctx);
+		ctx.EvilErrand = true;
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, inEvilBiome: true);
+		TilePos site = SiteFinder.Find(ctx, eater, new TilePos(250, HillsGround - 1)).Value;
+		var build = new BuildSkill(eater, site);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, build, 60 * 60 * 6);
+		output.WriteLine($"{s} after {g.Sim.Ticks} ticks at {ctx.Node}; site {site}; placed {g.Sim.Placed}, broken {g.Sim.Broken}; {build.FailureReason}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.True(ProgressionPlanner.ArenaReady(ctx, eater, site));
+	}
+
+	/// <summary>
+	/// The corruption of the world_eow world as the M10o run began (its checkpoint M10m/eow_arena, read from the .wld file,
+	/// x 1650..2069, y 200..419; Dumps/world_eow_M10m_corruption.txt): 'E' ebonstone, unbreakable at pick power 45, 'g' and
+	/// 'n' the corruption's grass and ebonsand, 'v' its plants, '@' other stone power 45 cannot break, '~' liquid. All of it
+	/// counted as seen (the bot's own count is of the map's revealed tiles, so it may count fewer). The start is the M10o
+	/// anchor (1870,305), in a three-row gully under a hill; returns the region's origin in the world.
+	/// </summary>
+	private static FakeGame WorldEowCorruption(out TilePos worldOrigin, out TilePos anchor)
+	{
+		string[] lines = System.IO.File.ReadAllLines(System.IO.Path.Combine(System.AppContext.BaseDirectory, "Dumps", "world_eow_M10m_corruption.txt"));
+		worldOrigin = new TilePos(1650, 200);
+		anchor = new TilePos(1870 - worldOrigin.X, 305 - worldOrigin.Y);
+		string[] map = lines.Skip(1).Where(l => l.Length > 0).ToArray();
+		var rows = map.Select(r => new string(r.Select(c => c switch { 'E' => '@', 'g' => '#', 'n' => '%', 'v' => '.', _ => c }).ToArray()).ToCharArray()).ToArray();
+		rows[anchor.Y][anchor.X] = 'S';
+		var g = new FakeGame(rows.Select(r => new string(r)).ToArray());
+		for (int y = 0; y < map.Length; y++)
+			for (int x = 0; x < map[y].Length; x++)
+				if (map[y][x] is 'E' or 'g' or 'n' or 'v')
+					g.TileTypes[new TilePos(x, y)] = map[y][x] switch { 'E' => FakeGame.TileEbonstone, 'v' => FakeGame.TileCorruptPlants, _ => FakeGame.TileCorruptGrass };
+		return g;
+	}
+
+	[Fact]
+	public void SiteFinder_TheWormsArena_InTheM10oWorld_IsSitedOverTheEbonstone()
+	{
+		// Measured run M10o: "no arena in the corruption site ... within 80 tiles of (1870,305)" and "within 160 either", the
+		// worm fought in the gully and at the chasm's edge by (1706,262) (runs M10o, M10p), and lost each time.
+		FakeGame g = WorldEowCorruption(out TilePos o, out TilePos anchor);
+		BotContext ctx = g.CreateContext(output);
+		Blueprint eater = Blueprint.Arena(FakeGame.Ids, inEvilBiome: true);
+		TilePos site = Assert.NotNull(SiteFinder.Find(ctx, eater, anchor));
+		int floor = site.Y + eater.Height - 1, row = site.Y + eater.StandRow;
+		TilePos west = new(site.X + 1, row), east = new(site.X + eater.Width - 2, row), mid = SiteFinder.Middle(eater, site);
+		output.WriteLine($"site ({site.X + o.X},{site.Y + o.Y}), floor row {floor + o.Y}, x {site.X + o.X}..{site.X + o.X + eater.Width - 1}; "
+			+ $"{SiteFinder.Edits(ctx, eater, site)} edits; zone once built: west {SiteFinder.CorruptionOnceBuilt(ctx, eater, site, west)}, "
+			+ $"middle {SiteFinder.CorruptionOnceBuilt(ctx, eater, site, mid)}, east {SiteFinder.CorruptionOnceBuilt(ctx, eater, site, east)}; "
+			+ SiteFinder.Explain(ctx, eater, anchor));
+		Assert.True(SiteFinder.InEvilBiome(ctx, eater, site), "the zone holds at both ends");
+		Assert.True(SiteFinder.Edits(ctx, eater, site) <= eater.MaxEdits);
+		// Away from the chasm's edge at x 1702-1703 the fights of M10o and M10p died by.
+		Assert.True(site.X + o.X > 1730, $"site at x {site.X + o.X}");
+	}
+
+	[Fact]
+	public void SiteFinder_TheEyesArena_OverEbonstoneHills_IsNotRaised()
+	{
+		// The raised floor is the worm's arena's alone: the Eye's site finding is unchanged, and in the same hills finds none.
+		FakeGame g = EbonstoneHills();
+		BotContext ctx = g.CreateContext(output);
+		var anchor = new TilePos(250, HillsGround - 1);
+		Blueprint eye = Blueprint.Arena(FakeGame.Ids);
+		string why = SiteFinder.Explain(ctx, eye, anchor);
+		output.WriteLine(why);
+		Assert.Null(SiteFinder.Find(ctx, eye, anchor));
+		Assert.DoesNotContain("raised", why);
+	}
+
 	[Fact]
 	public void BuildSkill_Arena_UnderItsOwnFloor_TakesABlockOutToGetOnTop_AndPutsItBack()
 	{
