@@ -176,6 +176,25 @@ public class FightSkillTests
 		Assert.Equal(0, hits);
 	}
 
+	/// <summary>
+	/// world_wof E28 (2026-10-18): at the summon end, the deck's span held the columns opened for the doll; a dodge right stepped onto
+	/// them (its plan did not see the fall within its horizon), 35 rows down into lava. A dodge stays on the floor that is there.
+	/// </summary>
+	[Fact]
+	public void ADodgeOnTheDeck_NeverStepsOntoAGapInIt()
+	{
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		TilePos n = ctx.Node;
+		for (int x = n.X + 4; x <= n.X + 8; x++)
+			g.Grid.Set(x, n.Y + 1, CellKind.Empty); // the opened columns
+		var (l, r) = ShotDodge.FloorSpan(g.Grid, n.X, (n.X - 20, n.X + 12, n.Y));
+		output.WriteLine($"floor span {l}..{r} from x {n.X}");
+		Assert.Equal(n.X + 3, r); // stops at the gap, though the deck runs on past it
+		Assert.True(l <= n.X);
+	}
+
 	[Fact]
 	public void BadlyHurt_WithoutPotions_RetreatsInsteadOfFighting()
 	{

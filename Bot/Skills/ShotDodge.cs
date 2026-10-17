@@ -1,3 +1,4 @@
+using TerraBot.Core.Grid;
 using System;
 using System.Collections.Generic;
 using TerraBot.Core.Physics;
@@ -33,6 +34,21 @@ public sealed class ShotDodge
 	/// Reads the shots and the move in <see cref="BotContext.Output"/>; overrides its keys when a dodge is needed. True when it did.
 	/// <paramref name="deck"/>: the columns and feet row the body must stay on (an errand's bridge), else a safe fall bounds it.
 	/// </summary>
+	/// <summary>
+	/// The columns of floor (a block or a platform under the feet row) that run on unbroken from the body's two columns at
+	/// <paramref name="nodeX"/>, inside the deck and its slack: where a dodge may go.
+	/// </summary>
+	public static (int Left, int Right) FloorSpan(ITileGrid grid, int nodeX, (int MinX, int MaxX, int StandY) deck)
+	{
+		int floor = deck.StandY + 1, l = nodeX, r = nodeX + 1;
+		bool Floor(int x) => grid.Get(x, floor) is var k && (k.IsBlock() || k.IsPlatform());
+		while (l - 1 >= deck.MinX - FightSkill.DeckSlack && Floor(l - 1))
+			l--;
+		while (r + 1 <= deck.MaxX + FightSkill.DeckSlack && Floor(r + 1))
+			r++;
+		return (l, r);
+	}
+
 	public bool Apply(BotContext ctx, (int MinX, int MaxX, int StandY)? deck, string who)
 	{
 		PhysicsParams p = ctx.Physics;
@@ -53,8 +69,15 @@ public sealed class ShotDodge
 		}
 		float minX, maxX, maxBottom;
 		if (deck is (int x0, int x1, int standY)) {
-			minX = x0 * 16f;
-			maxX = (x1 + 1) * 16f - p.Width;
+			// Only over the floor that is there, from the body's columns out, inside the deck: the deck's span can hold a gap (the
+			// columns opened for the Guide Voodoo Doll to fall through at the summon column), and a dodge plan does not see the fall
+			// it ends in within its horizon. Seen in game (world_wof E28, 2026-10-18): a dodge right at the summon end stepped onto the
+			// opened columns, a 35-row fall into lava.
+			var (l, r) = FloorSpan(ctx.Grid, ctx.Node.X, (x0, x1, standY));
+			minX = Math.Max(x0 * 16f, l * 16f);
+			maxX = Math.Min((x1 + 1) * 16f - p.Width, (r + 1) * 16f - p.Width);
+			if (maxX < minX)
+				maxX = minX = ctx.Body.X;
 			maxBottom = (standY + 2) * 16f;
 		}
 		else {
