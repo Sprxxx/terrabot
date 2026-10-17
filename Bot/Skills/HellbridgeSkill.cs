@@ -131,7 +131,9 @@ public sealed class HellbridgeSkill : ISkill
 		}
 		if (!g.Get(FromX, Row).IsSolid())
 			return Fail(ctx, $"no ground at the bridge's start ({FromX},{Row})");
-		End = BridgeEnd(g, Row, FromX, ToX);
+		// From where it ended last tick while that column still stands (a scan of up to 1700 columns a tick otherwise).
+		int scanFrom = End != FromX && (End - FromX) * Dir > 0 && Built(g, Row, End) ? End : FromX;
+		End = BridgeEnd(g, Row, scanFrom, ToX);
 		LogProgress(ctx);
 		if (End == ToX) {
 			State = "done";
