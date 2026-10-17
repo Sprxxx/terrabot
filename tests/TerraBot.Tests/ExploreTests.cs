@@ -603,18 +603,146 @@ public class CrystalBandTests
 	}
 
 	[Fact]
-	public void TheSearchIsResumed_FromItsDeepestSpot_NotFromInsideADangerZone()
+	public void TheSearchIsResumed_FromItsLatestSpot_NotFromInsideADangerZone()
 	{
-		// The deepest spot is often where the bot was killed: the danger zone round it rules it out, an earlier spot is taken.
+		// Where it left off: the latest spot, not the deepest (a crystal is as likely at any row of the band). A danger zone
+		// round a death rules a spot out, and so does a death within a leg of it.
 		var (g, ctx) = DeepCave(output);
 		MoveTo(g, ctx, 5, 9);
 		Assert.Equal(20, ctx.CrystalBandTop);
-		ctx.CrystalSearch.AddRange(new[] { new TilePos(40, 100), new TilePos(45, 150), new TilePos(40, 130) });
-		Assert.Equal(new TilePos(45, 150), MineSkill.SearchToResume(ctx));
-		ctx.NoteDanger(new TilePos(42, 145), BotContext.DangerZoneTicks);
-		Assert.Equal(new TilePos(40, 100), MineSkill.SearchToResume(ctx));
-		MoveTo(g, ctx, 40, 120); // within a leg's reach of it: the exploration's own legs get there
+		ctx.CrystalSearch.AddRange(new[] { new TilePos(70, 90), new TilePos(45, 150), new TilePos(40, 130) });
+		Assert.Equal(new TilePos(40, 130), MineSkill.SearchToResume(ctx));
+		ctx.NoteDanger(new TilePos(42, 160), BotContext.DangerZoneTicks); // a death 30 rows below the latest spot
+		Assert.Equal(new TilePos(70, 90), MineSkill.SearchToResume(ctx));
+		MoveTo(g, ctx, 60, 60); // within a leg's reach of it: the exploration's own legs get there
 		Assert.Null(MineSkill.SearchToResume(ctx));
+	}
+
+	[Fact]
+	public void AfterADeath_TheSearchIsNotResumedWithinALegOfIt()
+	{
+		// Measured run U26: killed at (2152,720), (2138,748), (2163,772) and (2078,722), and after each the bot walked back
+		// 396-424 tiles to where the search left off, (2113,682), (2103,706), (2106,706), (2114,683): 39-42 tiles from the
+		// latest death, outside its 30-tile zone but within one leg (60 tiles) of it; the first legs from there were hurt by
+		// the same wall creepers again.
+		var (g, ctx) = DeepCave(output);
+		MoveTo(g, ctx, 5, 9);
+		ctx.CrystalSearch.AddRange(new[] { new TilePos(70, 90), new TilePos(25, 145) });
+		ctx.NoteDanger(new TilePos(20, 180), BotContext.DangerZoneTicks);
+		Assert.False(ctx.OffLimits(new TilePos(25, 145)), "35 tiles from the death: outside its zone");
+		Assert.Equal(new TilePos(70, 90), MineSkill.SearchToResume(ctx));
+		// Monsters merely seen there (a sighting's zone, not a death): resumed to as before.
+		ctx.DangerZones.Clear();
+		ctx.NoteDanger(new TilePos(20, 180), BotContext.DangerZoneTicks, BotContext.DangerZoneRadius, seen: true);
+		Assert.Equal(new TilePos(25, 145), MineSkill.SearchToResume(ctx));
+	}
+
+	[Fact]
+	public void TheSearchIsResumed_AboveTheGearsFloor_BeforeBelowIt()
+	{
+		// Measured run U26: the resume points (2113,682) and (2103,706) were 56-80 rows below the gear's floor (row 626), the
+		// four deaths at rows 720-772; every crystal mined in the phase was at row 567 or above.
+		var (g, ctx) = DeepCave(output);
+		MoveTo(g, ctx, 5, 9);
+		Assert.Equal(190, ctx.DeepestRow);
+		ctx.CrystalSearch.AddRange(new[] { new TilePos(70, 90), new TilePos(40, 195) });
+		Assert.Equal(new TilePos(70, 90), MineSkill.SearchToResume(ctx));
+		ctx.CrystalSearch.RemoveAt(0); // only one below the floor: a cost, not a ban, so that one
+		Assert.Equal(new TilePos(40, 195), MineSkill.SearchToResume(ctx));
+	}
+
+	/// <summary>
+	/// 120 wide, 300 deep, all rock and unseen but for pockets (revealed, 5 wide, 3 high, standing row Y): the bot's at
+	/// (40,<paramref name="botRow"/>) and the given ones. Surface row 10, caverns from 40 (band from row 20), full armour: the
+	/// gear's floor row 190, a crystal's 290.
+	/// </summary>
+	private (FakeGame, BotContext) Pockets(int botRow, params (int X, int Y)[] pockets)
+	{
+		var all = new System.Collections.Generic.List<(int X, int Y)>(pockets) { (38, botRow) };
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 300; y++) {
+			char[] r = (y < 10 ? new string('.', 120) : new string('#', 120)).ToCharArray();
+			foreach (var (px, py) in all)
+				if (y >= py - 2 && y <= py)
+					for (int x = px; x < px + 5; x++)
+						r[x] = '.';
+			if (y == botRow)
+				r[40] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()) { RevealRadius = 0 };
+		for (int x = 0; x < 120; x++)
+			for (int y = 12; y < 300; y++)
+				if (!all.Any(p => x >= p.X && x < p.X + 5 && y >= p.Y - 2 && y <= p.Y + 1))
+					g.Unrevealed.Add(new TilePos(x, y));
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 40;
+		ctx.Combat.Defense = 9;
+		ctx.Combat.ArmourPieces = 3;
+		Assert.Equal(190, ctx.DeepestRow);
+		return (g, ctx);
+	}
+
+	private TilePos FirstLeg(FakeGame g, BotContext ctx)
+	{
+		var mine = new MineSkill(FakeGame.LifeCrystal, FakeGame.TileHeart, 1);
+		mine.Start(ctx);
+		Ticks(g, ctx, mine, 3);
+		string leg = ((TestLog)ctx.Log).Lines.First(l => l.Contains("Explore: leg 1 to"));
+		output.WriteLine(leg);
+		var m = System.Text.RegularExpressions.Regex.Match(leg, @"leg 1 to \((\d+),(\d+)\)");
+		return new TilePos(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
+	}
+
+	[Fact]
+	public void ExploringForACrystal_InTheBand_DepthBuysNothing_TheNearerFrontierWins()
+	{
+		// Vanilla WorldGen "Life Crystals": each crystal's row is drawn evenly from the band, so going deeper in it finds no more.
+		// Measured run U26: from (2166,567) all 15 legs of one exploration went down, to row 724; in the crystal phase 20 of
+		// 45 legs were below the gear's floor (row 626), and 73 of its 81 hurts and all 4 deaths, but no crystal mined.
+		var (g, ctx) = Pockets(100, (58, 100), (78, 145));
+		TilePos leg = FirstLeg(g, ctx);
+		Assert.True(leg.Y <= 100, $"the level frontier 18 tiles off, not the one 45 rows deeper: {leg}");
+	}
+
+	[Fact]
+	public void ExploringForACrystal_BelowTheGearsFloor_EachRowCosts()
+	{
+		// Measured run U26 (gear's floor row 626, a crystal's 726): the four deaths at rows 720-772, 94-146 rows below the floor.
+		var (g, ctx) = Pockets(185, (83, 185), (50, 215));
+		TilePos leg = FirstLeg(g, ctx);
+		Assert.True(leg.Y <= 190, $"the frontier at the floor 43 tiles off, not the one 25 rows below it 30 tiles off: {leg}");
+	}
+
+	[Fact]
+	public void DiggingOn_IntoAnOpenCave_CountsWhereTheLegEnds_ItsFloor()
+	{
+		// Measured run U26: "leg 2 to (2101,726) (digging on)" from (2103,706): open cave there, so the walk's goal was its floor,
+		// StandAt(2101,760), 34 rows below a crystal's floor (726) and 134 below the gear's (626); wall creepers hurt the bot
+		// there 9 times and killed it at (2138,748). Likewise (2102,739) to row 760 and (2083,706) to row 729.
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 300; y++) {
+			char[] r = (y < 10 ? new string('.', 120) : new string('#', 120)).ToCharArray();
+			if (y >= 148 && y <= 150)
+				for (int x = 38; x <= 42; x++)
+					r[x] = '.';
+			if (y >= 165 && y <= 205)
+				for (int x = 25; x <= 55; x++)
+					r[x] = '.'; // a cave below, its floor row 206, 15 rows below the gear's floor
+			if (y == 150)
+				r[40] = 'S';
+			rows.Add(new string(r));
+		}
+		var g = new FakeGame(rows.ToArray()); // all of it seen: no frontier, digging on
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 10;
+		ctx.CavernY = 40;
+		ctx.Combat.Defense = 9;
+		ctx.Combat.ArmourPieces = 3;
+		Assert.Equal(190, ctx.DeepestRow);
+		TilePos leg = FirstLeg(g, ctx);
+		Assert.True(leg.Y < 165, $"not down into the cave, whose floor is below the gear's: {leg}");
 	}
 
 	[Fact]

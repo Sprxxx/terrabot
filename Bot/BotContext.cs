@@ -584,6 +584,18 @@ public sealed class BotContext
 	/// <summary>Is the tile inside a danger zone (where the bot was recently killed, or saw monsters), as far as it reaches with the gear worn?</summary>
 	public bool InDangerZone(TilePos t) => InZone(t, sightings: true);
 
+	/// <summary>
+	/// Was the bot killed within <paramref name="tiles"/> of the tile lately (a death's danger zone still standing, however
+	/// far that zone itself reaches)? Not where monsters were only seen.
+	/// </summary>
+	public bool KilledWithin(TilePos t, int tiles)
+	{
+		foreach (DangerZone z in DangerZones)
+			if (!z.Seen && ZoneUntil(z) > Tick && z.At.ChebyshevTo(t) <= tiles)
+				return true;
+		return false;
+	}
+
 	private bool InZone(TilePos t, bool sightings)
 	{
 		foreach (DangerZone z in DangerZones)
