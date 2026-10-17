@@ -74,7 +74,7 @@ public class WallOfFleshPlanTests
 		Assert.Contains(ProgressionPlanner.Plans.WallOfFlesh, ProgressionPlanner.Plans.All);
 		Assert.Equal(boss.Select(n => (n.GetType(), n.Label)), wof.Take(boss.Count).Select(n => (n.GetType(), n.Label)));
 		Assert.DoesNotContain(wof, n => n is BossDefeated { Npc: FakeGame.EowHead } or BossDefeated { Npc: FakeGame.SkeletronHeadNpc });
-		Assert.Equal(new[] { "bow", "evil bow", "evil pickaxe", "unholy arrows", "unholy arrows for the wall", "arrows", "max life", "healing potions",
+		Assert.Equal(new[] { "bow", "evil bow", "evil pickaxe", "unholy arrows", "unholy arrows for the wall", "arrows", "max life", "max life for the wall", "healing potions",
 			"bridge blocks", "the Guide", "the Underworld", "hellbridge", "Wall of Flesh", "the Wall of Flesh's loot" }, wof.Skip(boss.Count).Select(n => n.Label));
 		// The surface's work only before the descent: the evil bow and pickaxe from the bag, the unholy arrows hunted for.
 		foreach (int i in new[] { 1, 2, 4 })
@@ -437,5 +437,28 @@ public class WallOfFleshPlanTests
 		ctx.DepthErrand = false;
 		ctx.NoteDeathByEnemy(new TilePos(30, 20));
 		Assert.Single(ctx.DangerZones);
+	}
+
+	/// <summary>
+	/// world_wof M12c (Peppe): no life crystal found near home in three game days under the Wall's 400-life stage, and the Wall never
+	/// reached. Past the earlier bosses' 200, the life is a best effort: worked on for WofLifeTicks, then let go for a day.
+	/// </summary>
+	[Fact]
+	public void TheWallsExtraLife_IsLetGo_AfterADayWithoutIt()
+	{
+		FakeGame g = EarlyGameTests.Field(60);
+		BotContext ctx = g.CreateContext(output);
+		g.LifeMax = ProgressionPlanner.BossLife;
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		var need = new BestEffort(new LifeAtLeast(ProgressionPlanner.MaxCrystalLife, "max life for the wall"), 1000);
+		Assert.NotNull(p.ResolveForTest(need, ctx)); // works on it: crystals
+		ctx.Tick += 1001;
+		Assert.Null(p.ResolveForTest(need, ctx));
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("max life for the wall") && l.Contains("not met; the plan goes on without it"));
+		ctx.Tick += 100;
+		Assert.Null(p.ResolveForTest(need, ctx)); // let go for a day
+		ctx.Tick += ProgressionPlanner.BestEffortRetryTicks;
+		Assert.NotNull(p.ResolveForTest(need, ctx)); // and taken up again
 	}
 }

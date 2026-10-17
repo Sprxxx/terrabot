@@ -130,6 +130,12 @@ public sealed record FromBag(HaveItem Inner) : Need(Inner.Label);
 public sealed record BeforeTheUnderworld(Need Inner) : Need(Inner.Label);
 
 /// <summary>
+/// <see cref="Inner"/> worked on for <see cref="MaxTicks"/> at most, then let go for a game day (logged): a comfort the plan is
+/// better with but goes on without, as more max life before a boss when the world's crystals near home are gone.
+/// </summary>
+public sealed record BestEffort(Need Inner, int MaxTicks) : Need(Inner.Label);
+
+/// <summary>
 /// A step toward a later stage, taken in the plan's order (the summon's parts one by one: the chunks, the powder, then the
 /// Worm Food the boss stage summons with): moot once any of <see cref="Made"/> is carried (what the step's things go into),
 /// and claiming nothing, so the later stage that uses them still counts them as there.
@@ -508,6 +514,37 @@ public sealed partial class ProgressionPlanner
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, UnholyArrows, "unholy arrows")));
 		yield return new PrepFor(boss, new ArenaBuilt(CrimsonArenaLabel, InEvilBiome: true));
 		yield return new BossDefeated(boss, ids.BloodySpine, new[] { ids.Creeper }, "Brain of Cthulhu") { NightOnly = false, InEvilBiome = true };
+	}
+
+	/// <summary>How long a <see cref="BestEffort"/> need given up on is left alone (a game day).</summary>
+	public const int BestEffortRetryTicks = 24 * 3600;
+	/// <summary>Per best-effort need (its label): when work on it began, and when it was last given up on.</summary>
+	private readonly Dictionary<string, (long Began, long GaveUp)> bestEffort = new();
+
+	private ISkill ResolveBestEffort(BestEffort be, Dictionary<int, int> claims, int depth, BotContext ctx)
+	{
+		var (began, gaveUp) = bestEffort.GetValueOrDefault(be.Label, (long.MinValue, long.MinValue / 2));
+		if (ctx.Tick - gaveUp < BestEffortRetryTicks && ctx.Tick >= gaveUp)
+			return null;
+		ISkill s = Resolve(be.Inner, claims, depth, ctx);
+		if (s == null || stuck != null) {
+			bestEffort.Remove(be.Label); // met (or stuck: the plan's own trouble, left to it)
+			if (stuck != null) {
+				ctx.Log.Info($"Auto: {be.Label} is not to be had now ({stuck}); the plan goes on without it");
+				stuck = null;
+				bestEffort[be.Label] = (long.MinValue, ctx.Tick);
+			}
+			return null;
+		}
+		if (began == long.MinValue)
+			began = ctx.Tick;
+		if (ctx.Tick - began > be.MaxTicks) {
+			ctx.Log.Info($"Auto: {be.Label}: {be.MaxTicks / 3600} game hours on it, not met; the plan goes on without it for a day");
+			bestEffort[be.Label] = (long.MinValue, ctx.Tick);
+			return null;
+		}
+		bestEffort[be.Label] = (began, gaveUp);
+		return s;
 	}
 
 	/// <summary>Mining for this item found none around here (more travel, and a higher cost for it in recipes).</summary>
@@ -1300,6 +1337,7 @@ public sealed partial class ProgressionPlanner
 			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) || BossUp(ctx, pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
 			FromBag fb => ResolveFromBag(fb.Inner, depth, ctx),
 			BeforeTheUnderworld bu => DownThereOnce(ctx) ? null : Resolve(bu.Inner, claims, depth, ctx),
+			BestEffort be => ResolveBestEffort(be, claims, depth, ctx),
 			StepToward st => st.Made.Any(m => m.Item > 0 && ctx.Inventory.Count(m.Item) >= m.Count) ? null
 				: Resolve(st.Inner, new Dictionary<int, int>(claims), depth, ctx),
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null

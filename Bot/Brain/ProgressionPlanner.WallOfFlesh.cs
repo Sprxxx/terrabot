@@ -14,6 +14,8 @@ public sealed partial class ProgressionPlanner
 	public const int WofArrows = 1000;
 	/// <summary>Healing potions into the fight (spec S1: 10, from the bag).</summary>
 	public const int WofPotions = 10;
+	/// <summary>Longest the Wall's plan works on max life past 200 (BestEffort): a game day.</summary>
+	public const int WofLifeTicks = 24 * 3600;
 	/// <summary>
 	/// Unholy arrows got before the descent, hunted for if the bag's worm teeth (or vertebrae, in a Crimson world) do not make them: 5
 	/// from 5 wooden arrows and one (Recipe.cs:2276-2290). Measured in game (Classic, the Demon Bow, m12_synthetic_classic):
@@ -179,8 +181,11 @@ public sealed partial class ProgressionPlanner
 		// The most life crystals give (400), not the earlier bosses' 200: self-test fight_wof_150 on Classic (Peppe, the Wall at 8000),
 		// at 200 life the bot died to an eye laser with the Wall at 1961, its damage 40.1 a second (enough), 19 hits for 336.
 		// Surface prep (BeforeTheUnderworld): a run resumed down there, or a bridge built, is not sent back up for crystals; a death
-		// there respawns it at the spawn, and the crystals come then.
-		yield return new PrepFor(boss, new BeforeTheUnderworld(new LifeAtLeast(MaxCrystalLife, "max life")));
+		// there respawns it at the spawn, and the crystals come then. The earlier bosses' 200 is a must; the rest up to 400 for a
+		// game day at most (BestEffort): fight_wof_150 on Classic won 2 of 3 at 400, 0 of 1 at 200 and at 300 (the Wall at 331 and
+		// 332 when the bot died), but world_wof M12c found no crystal near home in three game days and the Wall was never reached.
+		yield return new PrepFor(boss, new BeforeTheUnderworld(new LifeAtLeast(BossLife, "max life")));
+		yield return new PrepFor(boss, new BeforeTheUnderworld(new BestEffort(new LifeAtLeast(MaxCrystalLife, "max life for the wall"), WofLifeTicks)));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(Tiers(ids.HealingPotion, ids.LesserHealingPotion), WofPotions, "healing potions")));
 		yield return new PrepFor(boss, new BridgeBlocks("bridge blocks"));
 		yield return new PrepFor(boss, new TownNpcAlive(ids.Guide, "the Guide"));
@@ -242,6 +247,9 @@ public sealed partial class ProgressionPlanner
 				break;
 			case BeforeTheUnderworld bu:
 				NoteNeeded(bu.Inner, into);
+				break;
+			case BestEffort be:
+				NoteNeeded(be.Inner, into);
 				break;
 			case BossDefeated b when b.SummonItem > 0:
 				into.Add(b.SummonItem);
