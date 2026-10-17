@@ -32,6 +32,15 @@ public interface IWorldInfo
 	/// the player's own hitbox (the skill keeps clear of it)?</summary>
 	bool CanPlaceItem(int itemType, int x, int y);
 
+	/// <summary>
+	/// Why the game would refuse a plain solid block in the cell right now, in words for the log, or null when nothing would.
+	/// Vanilla refuses a solid block over lava in the cell (Player.PlaceThing_Tiles_CheckLavaBlocking), one where a player or any
+	/// NPC is (WorldGen.PlaceTile: Collision.EmptyTile; a Bone Serpent's segments through the deck row count, a Hellbat too), and one
+	/// with no solid 4-neighbour and no wall (Player.PlaceThing_Tiles_BlockPlacementForAssortedThings). The bot's grid sees none of
+	/// the NPCs: a skill that reads "Empty" there and places for 90 ticks learns nothing.
+	/// </summary>
+	string PlaceBlocker(int x, int y) => null;
+
 	/// <summary>Tile type at the cell, or -1 when there is no tile.</summary>
 	int TileTypeAt(int x, int y);
 

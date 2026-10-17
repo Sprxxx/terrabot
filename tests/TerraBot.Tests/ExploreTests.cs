@@ -372,6 +372,31 @@ public class WaterTests
 	}
 
 	/// <summary>
+	/// world_wof E9 (2026-10-17): the plan's helmet need put the Iron Helmet back on over the looted Ancient Shadow Helmet, and the brain
+	/// swapped them back, every habit tick. A better piece worn in the slot meets the need.
+	/// </summary>
+	[Fact]
+	public void TheHelmetNeed_IsMet_ByABetterHelmetWorn_NotByAWorseOne()
+	{
+		FakeGame g = ProgressionTests.Mine();
+		const int shadowHelmet = 102, cactusHelmet = 103;
+		g.Armor[FakeGame.IronHelmet] = (ArmorSlot.Head, 2);
+		g.Armor[FakeGame.SilverHelmet] = (ArmorSlot.Head, 3);
+		g.Armor[shadowHelmet] = (ArmorSlot.Head, 6);
+		g.Armor[cactusHelmet] = (ArmorSlot.Head, 1);
+		g.Equipped.Add(shadowHelmet);
+		g.Items[FakeGame.IronHelmet] = 1;
+		BotContext ctx = g.CreateContext(output);
+		var p = new Bot.Brain.ProgressionPlanner();
+		var helmet = new Bot.Brain.Wearing(new[] { FakeGame.IronHelmet, FakeGame.SilverHelmet }, "helmet");
+		Assert.Null(p.ResolveForTest(helmet, ctx));
+
+		g.Equipped.Remove(shadowHelmet);
+		g.Equipped.Add(cactusHelmet);
+		Assert.Equal(FakeGame.IronHelmet, Assert.IsType<EquipSkill>(p.ResolveForTest(helmet, ctx)).ItemType);
+	}
+
+	/// <summary>
 	/// Measured runs T0a/T0b: every mining job looked for one ore only (164-199 "Mine" heartbeats a run, ore in 13 of 42 and 16
 	/// of 60 explorations) while ore of the other tier was in sight. A player takes whatever ore turns up.
 	/// </summary>

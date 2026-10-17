@@ -395,6 +395,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// <summary>Items the game refuses to place anywhere (a test's stand-in for a spot the game will not take).</summary>
 	public readonly HashSet<int> RefusedItems = new();
 
+	/// <summary>What the game would say refuses a block in the cell (IWorldInfo.PlaceBlocker): a test's stand-in for an NPC or lava there.</summary>
+	public readonly Dictionary<TilePos, string> PlaceBlockers = new();
+	public string PlaceBlocker(int x, int y) => PlaceBlockers.TryGetValue(new TilePos(x, y), out string why) ? why : null;
+
 	public bool CanPlaceItem(int itemType, int x, int y)
 	{
 		int tile = TilePlacedBy(itemType);

@@ -1529,11 +1529,29 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				: ctx.Infinite(ctx.Ids.LifeCrystal) ? Do($"duplicating life crystals for max life {la.Life} (max life {ctx.Combat.LifeMaxBase}, researched)",
 					new DuplicateSkill(ctx.Ids.LifeCrystal, CrystalsFor(la.Life, ctx)))
 				: Resolve(new HaveItem(ctx.Ids.LifeCrystal, 1, "life crystal"), claims, depth + 1, ctx),
-			Wearing wr => wr.Items.Any(ctx.Inventory.IsEquipped) ? null
+			Wearing wr => WornAsWell(wr, ctx) ? null
 				: wr.Items.FirstOrDefault(i => ctx.Inventory.Count(i) > 0) is int carried and > 0 ? Do($"putting on the {wr.Label}", new EquipSkill(carried))
 				: Resolve(new HaveItem(wr.Items, 1, wr.Label), claims, depth + 1, ctx),
 			_ => null,
 		};
+	}
+
+	/// <summary>
+	/// The Wearing need holds when one of its pieces is worn, or when the piece worn in that slot defends as well as any of them: a
+	/// looted Ancient Shadow Helmet (defence 6) over the plan's Iron Helmet (2). Otherwise the plan put the iron back on and the
+	/// brain's WearBestArmour took it off again, every habit tick (world_wof E9, 2026-10-17: "Auto: putting on the helmet -> Equip",
+	/// "Gear: wearing Ancient Shadow Helmet (defence 6) over Iron Helmet (2)", over and over).
+	/// </summary>
+	private static bool WornAsWell(Wearing wr, BotContext ctx)
+	{
+		IInventory inv = ctx.Inventory;
+		if (wr.Items.Any(inv.IsEquipped))
+			return true;
+		ArmorSlot slot = wr.Items.Select(inv.ArmorSlotOf).FirstOrDefault(s => s != ArmorSlot.None);
+		if (slot == ArmorSlot.None)
+			return false;
+		int worn = inv.Worn(slot);
+		return worn >= 0 && inv.ArmorDefense(worn) >= wr.Items.Max(inv.ArmorDefense);
 	}
 
 	private ISkill ResolveStation(StationPlaced s, Dictionary<int, int> claims, int depth, BotContext ctx)

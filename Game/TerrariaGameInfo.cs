@@ -241,6 +241,39 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return TileObject.CanPlace(x, y, item.createTile, item.placeStyle, player.direction, out _, onlyCheck: true);
 	}
 
+	public string PlaceBlocker(int x, int y)
+	{
+		if (!WorldGen.InWorld(x, y, 2))
+			return "the world's edge";
+		Tile t = Main.tile[x, y];
+		if (t.LiquidAmount > 0 && t.LiquidType == LiquidID.Lava)
+			return $"lava ({t.LiquidAmount}/255)";
+		if (t.HasTile && !Main.tileCut[t.TileType] && !TileID.Sets.BreakableWhenPlacing[t.TileType])
+			return $"a tile ({t.TileType})";
+		var cell = new Rectangle(x * 16, y * 16, 16, 16);
+		for (int i = 0; i < Main.maxNPCs; i++) {
+			NPC n = Main.npc[i];
+			if (n.active && cell.Intersects(n.Hitbox))
+				return $"{n.FullName} #{i}";
+		}
+		for (int i = 0; i < Main.maxPlayers; i++) {
+			Player p = Main.player[i];
+			if (p.active && !p.dead && !p.ghost && cell.Intersects(p.Hitbox))
+				return p == player ? "our own body" : $"the player {p.name}";
+		}
+		if (!Fixes(x - 1, y) && !Fixes(x + 1, y) && !Fixes(x, y - 1) && !Fixes(x, y + 1) && t.WallType == WallID.None)
+			return "nothing beside it to fix a block to";
+		return null;
+	}
+
+	/// <summary>A cell a plain block fixes to (Player.PlaceThing_Tiles_BlockPlacementForAssortedThings): a solid, beam, rope or track tile, or a wall.</summary>
+	private static bool Fixes(int x, int y)
+	{
+		Tile t = Main.tile[x, y];
+		return t.HasTile && (Main.tileSolid[t.TileType] || TileID.Sets.IsBeam[t.TileType] || Main.tileRope[t.TileType] || t.TileType == TileID.MinecartTrack)
+			|| t.WallType > WallID.None;
+	}
+
 	// ---------- IInventory ----------
 
 	public int Count(int itemType)

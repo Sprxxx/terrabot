@@ -433,6 +433,51 @@ public class HellTests
 		Assert.True(g.Grid.Get(58, BridgeRow).IsSolid());
 	}
 
+	/// <summary>
+	/// world_wof E9 (2026-10-17): "placing at (2397,1042) did nothing in 90 ticks: the cell reads Empty, tile -1", six tries from the end
+	/// and a column back with three Bone Serpents under the bridge, and the errand blocked on it. The game refuses a solid block where
+	/// an NPC is (Collision.EmptyTile) and the bot's grid never sees NPCs: the world now says what is in the cell, and the bridge waits.
+	/// </summary>
+	[Fact]
+	public void TheHellbridge_WaitsForAnNpcInTheDeckCell_ThenPlaces_AndFailsSayingSo_WhenItStays()
+	{
+		var (g, ctx) = OnTheTower();
+		var cell = new TilePos(62, BridgeRow);
+		g.Blocks.NoPlace.Add(cell);
+		g.PlaceBlockers[cell] = "Bone Serpent #22";
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		var log = (TestLog)ctx.Log;
+		bridge.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		int t = 0, waited = 0;
+		for (; t < 20000 && s == SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			s = bridge.Tick(ctx);
+			g.Step(ctx);
+			// The serpent moves on after 200 ticks of waiting (fewer than the 300 the bridge gives it).
+			if (log.Lines.Any(l => l.Contains("waiting for it to go")) && ++waited == 200) {
+				g.Blocks.NoPlace.Remove(cell);
+				g.PlaceBlockers.Remove(cell);
+			}
+		}
+		output.WriteLine($"{s} after {t} ticks: {bridge.Describe()}");
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Contains(log.Lines, l => l.Contains("Bone Serpent #22 in the bridge's cell (62,") && l.Contains("waiting for it to go"));
+		Assert.DoesNotContain(log.Lines, l => l.Contains("did nothing in"));
+		Assert.True(HellbridgeSkill.Built(g.Grid, BridgeRow, 62));
+
+		// It stays: the skill fails saying what sat in the cell, not "could not place a block".
+		var (g2, ctx2) = OnTheTower();
+		g2.Blocks.NoPlace.Add(cell);
+		g2.PlaceBlockers[cell] = "Bone Serpent #22";
+		var stuck = new HellbridgeSkill(BridgeRow, TowerTo, 70);
+		Assert.Equal(SkillStatus.Failed, EarlyGameTests.RunSkill(g2, ctx2, stuck, 20000));
+		output.WriteLine(stuck.FailureReason);
+		Assert.Contains("Bone Serpent #22 in the bridge's cell", stuck.FailureReason);
+		Assert.DoesNotContain("could not place", stuck.FailureReason);
+		Assert.Equal(61, stuck.End);
+	}
+
 	[Fact]
 	public void TheHellbridge_ReplacesAHotDeckCell_MinesAHotOneInTheWay_AndSaysWhyItStopsAtHellstone()
 	{

@@ -126,6 +126,8 @@ public sealed class HellbridgeSkill : ISkill
 	/// tower's roof, the planner starting the same step again 33 times in a few seconds.
 	/// </summary>
 	private bool standBack;
+	/// <summary>Ticks the game has refused the block for something in the cell (<see cref="IWorldInfo.PlaceBlocker"/>): an NPC, lava.</summary>
+	private int occupiedTicks;
 
 	public SkillStatus Tick(BotContext ctx)
 	{
@@ -285,6 +287,7 @@ public sealed class HellbridgeSkill : ISkill
 			actionCell = cell;
 			actionPlace = place;
 			actionTicks = 0;
+			occupiedTicks = 0;
 		}
 		if (place) {
 			if (!ctx.AllowPlace)
@@ -301,7 +304,24 @@ public sealed class HellbridgeSkill : ISkill
 		}
 		else if (!ctx.AllowBreak)
 			return Fail(ctx, "digging is off");
-		if (++actionTicks > ActionTicks) {
+		// Something the game refuses a block over while it is there: an NPC in the cell (a Bone Serpent's segments through the deck
+		// row, a Hellbat: WorldGen.PlaceTile's Collision.EmptyTile), a trickle of lava (Player.PlaceThing_Tiles_CheckLavaBlocking).
+		// No failure of the place: waited out as lava is (LavaWaitTicks), the block held ready so it goes in the tick the cell is
+		// clear. Seen in game (world_wof E9, 2026-10-17): "placing at (2397,1042) did nothing in 90 ticks: the cell reads Empty, tile
+		// -1", six tries from the end and a column back with three Bone Serpents under the bridge, and the errand blocked on it.
+		string occupant = place ? ctx.World?.PlaceBlocker(cell.X, cell.Y) : null;
+		if (occupant == null)
+			occupiedTicks = 0;
+		else {
+			if (++occupiedTicks > LavaWaitTicks)
+				return Fail(ctx, $"{occupant} in the bridge's cell {cell} for {LavaWaitTicks} ticks: no block goes in over it");
+			if (occupiedTicks == 1)
+				ctx.Log.Info($"Hellbridge: {occupant} in the bridge's cell {cell}: waiting for it to go");
+			actionTicks = 0;
+		}
+		if (occupant != null)
+			State = $"waiting for {occupant} to leave {cell}";
+		else if (++actionTicks > ActionTicks) {
 			int f = failures.TryGetValue(cell, out int was) ? was + 1 : 1;
 			failures[cell] = f;
 			actionTicks = 0;
@@ -322,7 +342,8 @@ public sealed class HellbridgeSkill : ISkill
 		ctx.Output.Aim(cell.X, cell.Y);
 		ctx.Output.UseItem = true;
 		ctx.Output.Horizontal = Arrive.Steer(ctx.Body.X, ctx.Body.VX, Body.CanonicalLeft(StandAt(End).X, ctx.Physics), ctx.Physics);
-		State = place ? $"placing {cell}" : $"mining {cell}";
+		if (occupant == null)
+			State = place ? $"placing {cell}" : $"mining {cell}";
 		return SkillStatus.Running;
 	}
 
