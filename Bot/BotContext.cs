@@ -150,6 +150,11 @@ public sealed class BotContext
 
 	/// <summary>Hostile NPCs near the player this tick (nearest first).</summary>
 	public System.Collections.Generic.IReadOnlyList<EntityInfo> Hostiles { get; set; } = Array.Empty<EntityInfo>();
+	/// <summary>
+	/// Town NPCs in sight this tick (nearest first): friendly, so not among <see cref="Hostiles"/>. A player sees them drawn
+	/// with their names; the Old Man at the Dungeon's entrance is how the Dungeon is found (docs M11_SPEC.md section 1c).
+	/// </summary>
+	public System.Collections.Generic.IReadOnlyList<EntityInfo> TownNpcs { get; set; } = Array.Empty<EntityInfo>();
 	/// <summary>Items lying near the player this tick (nearest first).</summary>
 	public System.Collections.Generic.IReadOnlyList<DropInfo> Drops { get; set; } = Array.Empty<DropInfo>();
 	public CombatInfo Combat { get; set; } = new();
@@ -532,6 +537,40 @@ public sealed class BotContext
 	}
 
 	public bool OffLimits(TilePos t) => InDangerZone(t) || BiomeOffLimits(t);
+
+	/// <summary>
+	/// Do Dungeon Guardians spawn in the Dungeon? Until Skeletron is beaten (NPC.downedBoss3): with it down, every spawn in the
+	/// Dungeon was a Guardian (NPC.cs:88648-88673, flag34 = !downedBoss3).
+	/// </summary>
+	public bool GuardiansSpawn => World != null && Ids.SkeletronHead > 0 && !World.BossDefeated(Ids.SkeletronHead);
+
+	/// <summary>
+	/// Rows of margin above the Guardian's ground. The body's centre is in the zone only below Main.worldSurface (Player.cs:15313:
+	/// Center.Y > worldSurface * 16): with the feet on row y the centre is at 16y - 5 px (42 px tall, its bottom at 16(y + 1)),
+	/// so the centre's row is y - 1 and the zone starts at the feet row <see cref="SurfaceY"/> + 1. Two rows over that for a knock
+	/// or a fall that lowers the body, as the spec's rule has it ("below row worldSurface - 2", docs M11_SPEC.md section 4).
+	/// </summary>
+	public const int GuardianMarginRows = 2;
+
+	/// <summary>
+	/// Is the cell, as the body's centre cell, in the Dungeon Guardian's ground: on or below the surface row less
+	/// <see cref="GuardianMarginRows"/>, with a dungeon wall
+	/// behind it (seen), while Guardians spawn (<see cref="GuardiansSpawn"/>)? There Player.ZoneDungeon holds (Player.cs:15312-
+	/// 15321: 250 dungeon bricks in the scene, the centre below the surface, a dungeon wall at the centre), every spawn is a
+	/// Guardian at spawn rate 10, almost at once (NPC.cs:86809-86812), and a Guardian kills: 1000 contact damage, 9999 defence,
+	/// flying through blocks at 8 px/tick (NPC.cs:4796-4810, 22462-22475). A game rule gated on a flag, not a place banned:
+	/// with Skeletron down the Dungeon is open.
+	/// </summary>
+	public bool InGuardianZone(int x, int y) =>
+		SurfaceY > 0 && y >= SurfaceY - GuardianMarginRows && GuardiansSpawn && World.IsDungeonWall(x, y);
+
+	/// <summary>
+	/// Would the body standing at this node (feet row) have its centre in the Guardian's ground (<see cref="InGuardianZone"/>)?
+	/// The centre is in the node's right column and the row above the feet (Body: left edge x*16+6, 20 px wide, 42 tall), the
+	/// left column checked too for a body off its canonical spot. Never a path's node (MoveContext.Deadly).
+	/// </summary>
+	public bool GuardianGround(TilePos node) =>
+		SurfaceY > 0 && node.Y >= SurfaceY + 1 - GuardianMarginRows && (InGuardianZone(node.X + 1, node.Y - 1) || InGuardianZone(node.X, node.Y - 1));
 
 	/// <summary>
 	/// <see cref="OffLimits"/> as a ban, with nothing to weigh: where the bot was killed, the biome gates, and in weaker gear
@@ -967,7 +1006,7 @@ public sealed class BotContext
 			if (moves == null || !ReferenceEquals(moves.Grid, Grid) || moves.Physics != Physics
 				|| !ReferenceEquals(moves.Blocks, PathBlocks) || moves.AllowBreak != AllowBreak || moves.AllowPlace != AllowPlace
 				|| moves.AvoidBelowRow != DeepestRow || moves.DigAnyway != DigAnyway)
-				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, EdgePenalty = StepPenalty, AvoidBelowRow = DeepestRow, Avoid = OffLimitsForPaths, DigAnyway = DigAnyway };
+				moves = new MoveContext(Grid, Physics) { Blocks = PathBlocks, AllowBreak = AllowBreak, AllowPlace = AllowPlace, BadEdges = BadEdges, EdgePenalty = StepPenalty, AvoidBelowRow = DeepestRow, Avoid = OffLimitsForPaths, DigAnyway = DigAnyway, Deadly = GuardianGround };
 			return moves;
 		}
 	}

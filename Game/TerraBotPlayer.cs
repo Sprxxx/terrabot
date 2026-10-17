@@ -367,6 +367,16 @@ public sealed class TerraBotPlayer : ModPlayer
 		}
 		hostiles.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
 		Context.Hostiles = hostiles;
+		// Town NPCs, drawn with their names: the Old Man at the Dungeon's entrance (docs M11_SPEC.md section 1c).
+		var town = new List<EntityInfo>();
+		for (int i = 0; i < Main.maxNPCs; i++) {
+			NPC n = Main.npc[i];
+			if (n.active && n.townNPC && Vector2.Distance(n.Center, c) <= PerceptionRadiusPx)
+				town.Add(new EntityInfo(i, n.type, n.FullName, n.position.X, n.position.Y, n.width, n.height,
+					n.velocity.X, n.velocity.Y, n.life, n.lifeMax, n.damage, n.aiStyle, n.ai[0], n.ai[1], n.ai[2], n.ai[3], n.noTileCollide));
+		}
+		town.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
+		Context.TownNpcs = town;
 
 		var drops = new List<DropInfo>();
 		for (int i = 0; i < Main.maxItems; i++) {

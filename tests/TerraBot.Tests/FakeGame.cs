@@ -47,6 +47,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int DemoniteOre = 56, DemoniteBar = 57, DemonBow = 44, Bottle = 31, Glass = 170, SandBlock = 169;
 	public const int TileBottles = 13, TileDemonite = 22, TileCorruptGrass = 23, TileCorruptPlants = 24, TileEbonstone = 25, TileCorruptThorns = 32;
 	public const int EowHead = 13, EowBody = 14, EowTail = 15, FlyingAi = 5, WormAi = 6, VileMushroomFrame = 144;
+	// Milestone 11 (docs M11_SPEC.md; NPCID, TileID and ItemID checked against the decompiled tML 2026.08).
+	public const int SkeletronHeadNpc = 35, SkeletronHandNpc = 36, OldManNpc = 37, GuardianNpc = 68;
+	public const int TileBlueBrick = 41, TileJungleGrass = 60, TileSnow = 147, HealingPotion = 188;
 
 	public static readonly GameIds Ids = new() {
 		Wood = Wood, WorkBenchItem = WorkBench, WorkBenchTile = TileBench, WoodenSword = WoodenSword, WoodenHammer = 196, Acorn = 27,
@@ -64,6 +67,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		EvilBoss = EowHead, EvilBossBody = EowBody, EvilBossTail = EowTail, WormFood = WormFood, VilePowder = VilePowder,
 		VileMushroom = VileMushroom, CorruptGrass = TileCorruptGrass, CorruptThorns = TileCorruptThorns, RottenChunk = RottenChunk, WormTooth = WormTooth, UnholyArrow = UnholyArrow,
 		DemoniteOre = DemoniteOre, DemoniteBar = DemoniteBar, DemonBow = DemonBow, Bottle = Bottle, BottleTile = TileBottles,
+		SkeletronHead = SkeletronHeadNpc, SkeletronHand = SkeletronHandNpc, OldMan = OldManNpc, DungeonGuardian = GuardianNpc,
+		DungeonBrickTiles = new[] { TileBlueBrick }, SnowTiles = new[] { TileSnow }, JungleTiles = new[] { TileJungleGrass },
+		HealingPotion = HealingPotion, LesserHealingPotion = LesserHealingPotion,
 		TileExplosives = new[] { new ExplosiveInfo(Bomb, "Bomb", 4, 64f, 100, 180, 5f, 25, 22, 0.97f, 0.4f),
 			new ExplosiveInfo(Dynamite, "Dynamite", 7, 125f, 250, 300, 4f, 40, 10, 0.97f * 0.99f, 0.4f * 0.8f) },
 	};
@@ -417,6 +423,38 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	public bool HasWall(int x, int y) => Walls.Contains(new TilePos(x, y));
 
+	/// <summary>Cells with a dungeon wall behind them (Main.wallDungeon); seen ones only count, as for the bot's other looks.</summary>
+	public readonly HashSet<TilePos> DungeonWalls = new();
+	public bool IsDungeonWall(int x, int y) => DungeonWalls.Contains(new TilePos(x, y)) && IsRevealed(x, y);
+
+	/// <summary>Town NPCs in the world (the Old Man), as perceived: not moved by the fake.</summary>
+	public readonly List<EntityInfo> TownNpcs = new();
+	/// <summary>Chat buttons pressed (the Old Man's Curse that summoned Skeletron).</summary>
+	public int ChatPresses;
+
+	/// <summary>
+	/// The Old Man's first button as the game has it (Main.cs:51819-51825, 52113-52124, NPC.SpawnSkeletron): only at night, and
+	/// the head spawns at his centre (NPC 35, 80 × 102, AI style 11, hovering); he is gone after it. Others: not supported.
+	/// </summary>
+	public string PressFirstChatButton(int npcId)
+	{
+		int i = TownNpcs.FindIndex(n => n.Id == npcId);
+		if (i < 0)
+			return $"no NPC #{npcId}";
+		EntityInfo om = TownNpcs[i];
+		if (om.Type != OldManNpc)
+			return "only the Old Man's button";
+		if (!IsNight)
+			return "no Curse button by day";
+		if (ExtraHostiles.Any(h => h.Type == SkeletronHeadNpc))
+			return "Skeletron is up already";
+		TownNpcs.RemoveAt(i);
+		ChatPresses++;
+		ExtraHostiles.Add(new EntityInfo(900, SkeletronHeadNpc, "Skeletron", om.CenterX - 40, om.CenterY - 51, 80, 102, 0, 0, 4400, 4400, 32,
+			Bot.Skills.SkeletronPattern.HeadAiStyle));
+		return null;
+	}
+
 	public bool CanPlaceWall(int wallItem, int x, int y)
 	{
 		if (wallItem != WoodWall || Walls.Contains(new TilePos(x, y)) || !Grid.InBounds(x, y))
@@ -748,6 +786,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			Origin = TreeSight < int.MaxValue ? n : null,
 		};
 		ctx.Drops = Drops.ToList();
+		ctx.TownNpcs = TownNpcs.ToList();
 		ctx.Hostiles = Slimes.Select(s => new EntityInfo(s.id, 1, "Slime", s.x, s.y, 24, 24, 0, 0, s.life, 40, 7, SlimeAi)).Concat(ExtraHostiles).ToList();
 	}
 
