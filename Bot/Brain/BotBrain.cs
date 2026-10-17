@@ -508,6 +508,11 @@ public sealed class BotBrain
 			return;
 		for (int guard = 0; guard < MinFreeSlots && ctx.Inventory.FreeSlots < MinFreeSlots; guard++) {
 			IReadOnlyList<(int Type, int Stack)> stacks = ctx.Inventory.Stacks();
+			// Journey: a stack of a researched item first, whatever keeps it: the menu gives it back the moment it is needed.
+			if (ResearchedSpare(ctx, stacks) is int spare && ctx.Crafter.TryTrash(spare)) {
+				ctx.Log.Info($"Inventory: {ctx.Inventory.FreeSlots} free slot(s) after trashing a stack of {ctx.Knowledge.ItemName(spare)} (researched: duplicated again when needed)");
+				continue;
+			}
 			var (trash, junk, cheapest) = PickTrash(ctx, stacks, KeptItems(ctx, stacks));
 			// For a craft with nothing trashable by the habit's rules: what is kept only for being gear may go too (the craft's
 			// own makings stay). Not "every stack kept" as the test for it: a lone stack of a building block is neither kept nor
@@ -529,6 +534,38 @@ public sealed class BotBrain
 			ctx.Log.Info($"Inventory: {ctx.Inventory.FreeSlots} free slot(s) after trashing a stack of {ctx.Knowledge.ItemName(trash)}"
 				+ (junk ? " (worth nothing)" : $" (worth {cheapest} copper, the least of anything not needed)"));
 		}
+	}
+
+	/// <summary>
+	/// Journey (duplication on): the stack of a researched item KeepRoom trashes first, or null: not gear (a tool, a weapon, armour,
+	/// ammo, potions: in use, and their prefixes), and not the last stack of the torches or the building blocks the light and the
+	/// paths draw on without the menu; a second stack of anything first, then the one most carried. Seen in game (world_boc B4, The
+	/// Aggressive Site, Nenne): the bag's 50 slots full, a dozen of them stacks of 9999 duplicated back after research (Work Bench,
+	/// Campfire, Heart Lantern, door, chair, table, Life Crystal, Acorn, a second Torch and Wood stack), every one kept by the plan;
+	/// nothing trashed, and the 12 Vertebrae the crimeras dropped round the bot never picked up: "Hunt for Vertebra 0/15" for 30
+	/// game hours.
+	/// </summary>
+	private static int? ResearchedSpare(BotContext ctx, IReadOnlyList<(int Type, int Stack)> stacks)
+	{
+		IJourney j = ctx.Journey;
+		if (j == null || !j.Enabled || !j.DuplicationAllowed)
+			return null;
+		int? best = null;
+		(int Stacks, long Carried) bestKey = (0, -1);
+		foreach (var g in stacks.GroupBy(s => s.Type)) {
+			int type = g.Key, n = g.Count();
+			if (!ctx.Infinite(type) || ctx.Inventory.IsGear(type) || System.Array.IndexOf(ctx.Ids.Coins, type) >= 0)
+				continue;
+			bool lastInUse = n < 2 && (type == ctx.Ids.Torch || ctx.Ids.BuildingBlocks.Contains(type));
+			if (lastInUse)
+				continue;
+			(int, long) key = (n, g.Sum(s => (long)s.Stack));
+			if (best == null || key.CompareTo(bestKey) > 0) {
+				best = type;
+				bestKey = key;
+			}
+		}
+		return best;
 	}
 
 	/// <summary>The stack KeepRoom would trash with this kept set (-1 for none), whether it is worth nothing, and its worth.</summary>

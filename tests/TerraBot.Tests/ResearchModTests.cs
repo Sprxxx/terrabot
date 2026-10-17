@@ -236,4 +236,30 @@ public class ResearchModTests
 		Assert.Equal(0, ResearchHabit.TrashResearched(ctx, null));
 		Assert.Equal(1, g.Count(Mirror));
 	}
+
+	/// <summary>
+	/// world_boc B4 (Nenne): the bag full, a dozen slots stacks of 9999 of researched things the plan keeps (a work bench, life
+	/// crystals...), nothing trashed, and the Vertebrae dropped round the bot never picked up. In Journey a researched stack goes
+	/// first: the menu gives it back when it is needed.
+	/// </summary>
+	[Fact]
+	public void BagFull_AResearchedStackTheBotKeeps_IsTrashedForRoom()
+	{
+		var (g, ctx) = Journey();
+		g.SlotLimit = 4;
+		g.Journey.MarkResearched(FakeGame.WorkBench, FakeGame.LifeCrystal);
+		g.StackSize[FakeGame.WorkBench] = 9999;
+		g.StackSize[FakeGame.LifeCrystal] = 9999;
+		g.Items[FakeGame.WorkBench] = 9999;
+		g.Items[FakeGame.LifeCrystal] = 9999;
+		g.Items[FakeGame.Torch] = 50;
+		g.Items[FakeGame.WoodenSword] = 1;
+		Assert.Equal(0, g.FreeSlots);
+		BotBrain.KeepRoom(ctx);
+		output.WriteLine($"free {g.FreeSlots}; trashed {string.Join(",", g.Trashed)}");
+		Assert.True(g.FreeSlots >= BotBrain.MinFreeSlots);
+		Assert.All(g.Trashed, t => Assert.True(t == FakeGame.WorkBench || t == FakeGame.LifeCrystal, $"trashed item{t}"));
+		Assert.Equal(50, g.Count(FakeGame.Torch)); // the last torch stack stays
+		Assert.Equal(1, g.Count(FakeGame.WoodenSword)); // gear stays
+	}
 }
