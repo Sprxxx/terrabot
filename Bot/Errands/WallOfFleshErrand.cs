@@ -88,6 +88,7 @@ public sealed class WallOfFleshErrand : Errand
 	private bool landed, done;
 	private TilePos? blastAt;
 	public int Blasts { get; private set; }
+	private float bridgeBest;
 	private TilePos lastDeathAt;
 	private IErrandSupport planner;
 	private readonly GameIds ids;
@@ -146,9 +147,14 @@ public sealed class WallOfFleshErrand : Errand
 				TilePos n = ctx.Node;
 				return -(Math.Abs(n.X - ShaftX) + Math.Abs(Frontier - n.Y)) - 1f;
 			case BridgePhase:
-				// Down there: the bridge's built share. On the way back down after a death: the depth (it grows as the shaft is dropped
-				// down; E4 2026-10-17 had it the other way round and the watchdog blocked the trip back at row 440).
-				return DownThere(ctx) ? 100000f + (planner is ProgressionPlanner p ? (float)p.HellbridgeProgress(ctx) * 10000f : 0f) : 50000f + ctx.Node.Y;
+				// Down there: the bridge's built share, the most it has ever read (the share is the last solid cell from the start, and a
+				// gap behind the frontier reads it back: E8 2026-10-17, the bridge at x 2992 and advancing, "no progress in 2 game hours").
+				// On the way back down after a death: the depth (it grows as the shaft is dropped down; E4 had it the other way round).
+				if (!DownThere(ctx))
+					return 50000f + ctx.Node.Y;
+				if (planner is ProgressionPlanner p)
+					bridgeBest = Math.Max(bridgeBest, (float)p.HellbridgeProgress(ctx));
+				return 100000f + bridgeBest * 10000f;
 			case FightPhase:
 			case LootPhase:
 				return 1e9f + ctx.Tick;

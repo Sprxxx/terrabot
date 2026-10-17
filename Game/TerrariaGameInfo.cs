@@ -888,6 +888,23 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		}
 	}
 
+	public ArmorSlot ArmorSlotOf(int itemType)
+	{
+		if (itemType <= 0 || !ContentSamples.ItemsByType.TryGetValue(itemType, out Item it) || it.vanity)
+			return ArmorSlot.None;
+		return it.headSlot >= 0 ? ArmorSlot.Head : it.bodySlot >= 0 ? ArmorSlot.Body : it.legSlot >= 0 ? ArmorSlot.Legs : ArmorSlot.None;
+	}
+
+	public int ArmorDefense(int itemType) =>
+		itemType > 0 && ContentSamples.ItemsByType.TryGetValue(itemType, out Item it) && !it.vanity ? it.defense : 0;
+
+	/// <summary>armor[0..2] are head, body, legs.</summary>
+	public int Worn(ArmorSlot slot)
+	{
+		int i = slot switch { ArmorSlot.Head => 0, ArmorSlot.Body => 1, ArmorSlot.Legs => 2, _ => -1 };
+		return i < 0 || player.armor[i].IsAir ? -1 : player.armor[i].type;
+	}
+
 	public int ToolPower(int itemType, ToolKind kind)
 	{
 		if (itemType <= 0 || itemType >= Terraria.ModLoader.ItemLoader.ItemCount)

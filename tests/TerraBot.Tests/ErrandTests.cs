@@ -448,6 +448,30 @@ public class ErrandTests
 		Assert.DoesNotContain("Eater", p.Status);
 	}
 
+	/// <summary>E8 (2026-10-17): two "no progress" blocks at different places read as the same block; and the plan went to NPC rooms when the expedition was stuck.</summary>
+	[Fact]
+	public void TwoBlocks_WithDifferentEvidence_AreNotTheSameBlock_AndAStuckExpedition_IsNotTheSurfacesWork()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		var first = Assert.IsType<WallOfFleshErrand>(brain.Errand);
+		Run(g, ctx, brain, 40000, () => first.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill);
+		ProgressionPlanner p = brain.Planner;
+		p.OnErrandEnded(first, Outcome.Blocked("no progress in 2 game hours", "progress 50852 at (2131,852), phase bridge"), ctx);
+		g.Refresh(ctx);
+		Assert.Null(p.Next(ctx));
+		var second = Assert.IsType<WallOfFleshErrand>(p.TakeProposed());
+		p.OnErrandEnded(second, Outcome.Blocked("no progress in 2 game hours", "progress 101332 at (2992,1041), phase bridge"), ctx);
+		Assert.Null(p.Next(ctx));
+		Assert.NotNull(p.TakeProposed()); // a different place: another try
+		var third = new WallOfFleshErrand(Preferred, StandRow, ctx.Ids, WallOfFleshErrand.BridgePhase);
+		p.OnErrandEnded(third, Outcome.Blocked("no progress in 2 game hours", "progress 101332 at (2992,1041), phase bridge"), ctx);
+		Assert.Null(p.Next(ctx));
+		Assert.Null(p.Proposed);
+		Assert.True(p.Stuck, p.Status);
+		Assert.Contains("stuck on the Wall of Flesh", p.Status); // not NPC rooms, not wood
+	}
+
 	[Fact]
 	public void NoProgress_ForTheWatchdogsWindow_BlocksTheErrand()
 	{

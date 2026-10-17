@@ -131,6 +131,8 @@ public interface IWorldInfo
 /// <summary>What a tool or weapon is for (<see cref="IInventory.ToolPower"/>).</summary>
 public enum ToolKind { Pickaxe, Axe, Hammer, Weapon }
 
+public enum ArmorSlot { None, Head, Body, Legs }
+
 /// <summary>Read-only view of the player's items.</summary>
 public interface IInventory
 {
@@ -170,6 +172,13 @@ public interface IInventory
 	/// none: the best of each kind carried is the one the bot works and fights with.
 	/// </summary>
 	int ToolPower(int itemType, ToolKind kind) => 0;
+
+	/// <summary>The armour slot the item goes in (vanilla Item.headSlot/bodySlot/legSlot), or <see cref="ArmorSlot.None"/>.</summary>
+	ArmorSlot ArmorSlotOf(int itemType) => ArmorSlot.None;
+	/// <summary>The item's defence as armour (vanilla Item.defense); 0 for anything else or vanity.</summary>
+	int ArmorDefense(int itemType) => 0;
+	/// <summary>The item worn in the slot, or -1.</summary>
+	int Worn(ArmorSlot slot) => -1;
 }
 
 public enum CraftResult

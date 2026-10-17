@@ -423,19 +423,24 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		return null;
 	}
 
-	/// <summary>The same blocked outcome recorded twice in a row for the id: no sense in a third try without a change.</summary>
+	/// <summary>
+	/// The same blocked outcome, reason and evidence, recorded twice in a row for the id: no sense in a third try without a change. The
+	/// evidence counts (E8, 2026-10-17): two "no progress" blocks, one on the trip down at row 852 and one at the bridge's x 2992 after
+	/// 850 tiles built, read as the same block, and the plan gave the expedition up.
+	/// </summary>
 	private bool BlockedTwice(string id)
 	{
 		int n = 0;
-		string reason = null;
+		string what = null;
 		for (int i = ErrandOutcomes.Count - 1; i >= 0 && n < 2; i--) {
 			if (ErrandOutcomes[i].Id != id)
 				continue;
 			if (ErrandOutcomes[i].Outcome.Kind != Errands.OutcomeKind.Blocked)
 				return false;
-			if (reason != null && ErrandOutcomes[i].Outcome.Reason != reason)
+			string this_ = ErrandOutcomes[i].Outcome.Reason + "|" + ErrandOutcomes[i].Outcome.Evidence;
+			if (what != null && this_ != what)
 				return false;
-			reason = ErrandOutcomes[i].Outcome.Reason;
+			what = this_;
 			n++;
 		}
 		return n == 2;
@@ -1212,11 +1217,23 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		// The expedition under way (the shaft dug, the bridge known) takes itself up again before the surface's stages: a bot back at the
 		// spawn after a death goes back down, not to an NPC room first (seen in game, E4 2026-10-17: the errand ended and the plan built
 		// NPC rooms for a game day before it was proposed again).
-		if (Scheduler == Schedulers.Errands && WallOfFleshPlan(ctx.Ids) && Plan == Plans.WallOfFlesh && UnderworldReachedOnce && !WofLootCollected
-			&& ProposeWallOfFlesh(ctx, Errands.WallOfFleshErrand.BridgePhase) == null && Proposed != null) {
-			Status = $"the Wall of Flesh: the errand {Proposed.Id} taken up again";
-			Complete = false;
-			return null;
+		if (Scheduler == Schedulers.Errands && WallOfFleshPlan(ctx.Ids) && Plan == Plans.WallOfFlesh && UnderworldReachedOnce && !WofLootCollected) {
+			costs.Clear();
+			costEvaluations = 0;
+			stuck = null;
+			ProposeWallOfFlesh(ctx, Errands.WallOfFleshErrand.BridgePhase);
+			if (Proposed != null) {
+				Status = $"the Wall of Flesh: the errand {Proposed.Id} taken up again";
+				Complete = false;
+				return null;
+			}
+			if (stuck != null) {
+				// The expedition is what the plan is stuck on: not the surface's stages instead (E8, 2026-10-17: NPC rooms and wood with the
+				// bridge 850 tiles long down there).
+				Status = $"stuck on the Wall of Flesh: {stuck}";
+				Complete = false;
+				return null;
+			}
 		}
 		// The descent owns the bot (Schedulers.Operation): its own demand and stages, no optional loot, no stages from the top.
 		if (WallOfFleshPlan(ctx.Ids) && DescentOwns(ctx)) {

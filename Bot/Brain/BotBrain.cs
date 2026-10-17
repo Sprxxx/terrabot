@@ -562,11 +562,16 @@ public sealed class BotBrain
 	public const int WormAi = 6;
 	public const float WormNearPx = ShelterSkill.BurrowerNearPx;
 
+	/// <summary>
+	/// A worm, or anything else that comes through blocks (vanilla NPC.noTileCollide: a Burning Sphere, Vile Spit), within
+	/// <see cref="WormNearPx"/>: a hole is no hiding place from it. Seen in game (world_wof E8, 2026-10-17): dug in under the
+	/// hellbridge at 39/280 life, "Shelter [Waiting]", and a Fire Imp's spheres came through the blocks and killed the bot.
+	/// </summary>
 	private static bool WormNear(BotContext ctx)
 	{
 		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
 		foreach (EntityInfo e in ctx.Hostiles)
-			if (e.AiStyle == WormAi && e.DistanceTo(cx, cy) <= WormNearPx)
+			if ((e.AiStyle == WormAi || e.NoTileCollide) && e.DistanceTo(cx, cy) <= WormNearPx)
 				return true;
 		return false;
 	}
@@ -637,6 +642,35 @@ public sealed class BotBrain
 			// Seen, not a death: in full armour the zone is smaller and shorter (BotContext.ZoneRadius), and a cost to exploring.
 			ctx.NoteDanger(e.FeetTile, BotContext.BiomeZoneTicks, BotContext.BiomeZoneRadius, seen: true);
 			ctx.Log.Info($"Danger: a {e.Name} at {e.FeetTile}: {biome} is near; keeping away from there for now ({ctx.ZoneRadius(ctx.DangerZones[^1])} tiles round)");
+		}
+	}
+
+	/// <summary>
+	/// Wear the best armour carried, slot by slot, by defence (vanilla Item.defense): a looted Ancient Shadow Helmet (7) over the
+	/// plan's Iron Helmet (4), as a player does the moment it is picked up. The plan equips its own tier once and never looked again
+	/// (the user, 2026-10-17, world_wof E8: "It has an ancient shadow helmet in the inventory and still a shitty iron helm equipped").
+	/// Set bonuses are not weighed: a piece worth more defence than the bonus it costs (iron's 2) wins; a mixed set loses nothing else.
+	/// Journey: a piece not yet researched is researched first (ResearchFirst), as the accessories are.
+	/// </summary>
+	private static void WearBestArmour(BotContext ctx)
+	{
+		if (ctx.Inventory == null || ctx.Crafter == null)
+			return;
+		foreach (ArmorSlot slot in new[] { ArmorSlot.Head, ArmorSlot.Body, ArmorSlot.Legs }) {
+			int worn = ctx.Inventory.Worn(slot);
+			int wornDefense = worn >= 0 ? ctx.Inventory.ArmorDefense(worn) : 0;
+			int best = -1, bestDefense = wornDefense;
+			foreach (var stack in ctx.Inventory.Stacks()) {
+				if (stack.Type == worn || ctx.Inventory.ArmorSlotOf(stack.Type) != slot)
+					continue;
+				int d = ctx.Inventory.ArmorDefense(stack.Type);
+				if (d > bestDefense && !ResearchFirst(ctx, stack.Type)) {
+					best = stack.Type;
+					bestDefense = d;
+				}
+			}
+			if (best >= 0 && ctx.Crafter.TryEquip(best))
+				ctx.Log.Info($"Gear: wearing {ctx.Knowledge?.ItemName(best) ?? best.ToString()} (defence {bestDefense}) over {(worn >= 0 ? ctx.Knowledge?.ItemName(worn) ?? worn.ToString() : "nothing")} ({wornDefense})");
 		}
 	}
 
@@ -991,6 +1025,7 @@ public sealed class BotBrain
 			ResearchHabit.TrashResearched(ctx, Current);
 			KeepRoom(ctx);
 			WearAccessories(ctx);
+			WearBestArmour(ctx);
 			NoteEvilEnemies(ctx);
 			if (ctx.Node.Y > ctx.SurfaceY)
 				NoteCrowd(ctx); // underground: on the surface a night's zombies are the house's business

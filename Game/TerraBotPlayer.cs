@@ -428,7 +428,16 @@ public sealed class TerraBotPlayer : ModPlayer
 	/// Creepers, which that leaves out (dontTakeDamage until they are dead, NPC.cs:7592 and 33157): it still hurts on a touch
 	/// (damage 30), and where it is is where they orbit. EntityInfo.DontTakeDamage tells the fight not to shoot it.
 	/// </summary>
-	private static bool Perceived(NPC n) => n.CanBeChasedBy() || n.type == NPCID.BrainofCthulhu && n.CanBeChasedBy(null, ignoreDontTakeDamage: true);
+	/// <summary>
+	/// What the bot sees as a hostile: what vanilla lets be chased (NPC.CanBeChasedBy), the Brain while it hides, and the spell NPCs
+	/// (NPCAIStyleID.Spell: a Fire Imp's Burning Spheres, the Eater's Vile Spit, Chaos Balls), which vanilla keeps minions off
+	/// (not chaseable) but which fly at the player through blocks for 30 damage, 1 life each. Unseen, they killed the bot in a dug-in
+	/// shelter under the hellbridge (world_wof E8, 2026-10-17: "Hurt 25 (NPC Burning Sphere)" nine times, "Shelter [Waiting]", dead)
+	/// and in two crystal searches ("deboned by Poison Spit", E1 and E2). They are shots too (<see cref="ShotInfo"/>, for the dodge).
+	/// </summary>
+	private static bool Perceived(NPC n) => n.CanBeChasedBy() || n.type == NPCID.BrainofCthulhu && n.CanBeChasedBy(null, ignoreDontTakeDamage: true) || SpellNpc(n);
+
+	private static bool SpellNpc(NPC n) => n.aiStyle == NPCAIStyleID.Spell && !n.friendly && n.damage > 0;
 
 	/// <summary>
 	/// Hostile projectiles are seen within this many px: half a 1920-wide screen (60 tiles), the smallest screen the scene scan
@@ -497,6 +506,12 @@ public sealed class TerraBotPlayer : ModPlayer
 				continue;
 			int moves = 1 + pr.extraUpdates;
 			shots.Add(new ShotInfo(i, pr.type, pr.position.X, pr.position.Y, pr.width, pr.height, pr.velocity.X * moves, pr.velocity.Y * moves, pr.damage, pr.tileCollide));
+		}
+		// Spell NPCs (Burning Spheres, Vile Spit) fly as shots do: in the shots too, for the dodge (ids past the projectiles').
+		for (int i = 0; i < Main.maxNPCs; i++) {
+			NPC n = Main.npc[i];
+			if (n.active && SpellNpc(n) && Vector2.Distance(n.Center, c) <= ShotPerceptionRadiusPx)
+				shots.Add(new ShotInfo(Main.maxProjectiles + i, -n.type, n.position.X, n.position.Y, n.width, n.height, n.velocity.X, n.velocity.Y, n.damage, !n.noTileCollide));
 		}
 		shots.Sort((a, b) => a.DistanceTo(c.X, c.Y).CompareTo(b.DistanceTo(c.X, c.Y)));
 		Context.Shots = shots;

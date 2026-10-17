@@ -106,6 +106,43 @@ public class ReflexTests
 		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("made room for the Life Crystal"));
 	}
 
+	/// <summary>world_wof E8 (2026-10-17): dug in under the bridge at 39 life, a Fire Imp's Burning Spheres came through the blocks and killed the bot.</summary>
+	[Fact]
+	public void ARetreat_DoesNotDigIn_WithAThroughBlocksAttackerNear()
+	{
+		var (g, ctx, brain) = Field();
+		TilePos n = g.Sim.Node;
+		// A spell NPC (a Burning Sphere: through blocks, 1 life, 30 damage) 8 tiles off; the bot hurt badly with no potion.
+		g.ExtraHostiles.Add(new EntityInfo(9, 25, "Burning Sphere", (n.X + 8) * 16f, (n.Y - 2) * 16f, 16, 16, -3f, 0f, 1, 1, 30, 10, NoTileCollide: true));
+		ctx.Combat.Life = 30;
+		ctx.Combat.LifeMax = 200;
+		ctx.Combat.CanQuickHeal = false;
+		Tick(g, ctx, brain, 2);
+		Assert.DoesNotContain(((TestLog)ctx.Log).Lines, l => l.Contains("retreating"));
+		Assert.False(brain.Override is ShelterSkill, $"dug in: {brain.Override?.Describe()}");
+	}
+
+	/// <summary>The user (2026-10-17, E8): "It has an ancient shadow helmet in the inventory and still a shitty iron helm equipped."</summary>
+	[Fact]
+	public void TheBestArmourCarried_IsWorn_SlotBySlot()
+	{
+		var (g, ctx, brain) = Field();
+		const int shadowHelmet = 102, ironChainmail = FakeGame.IronChainmail, vanityHat = 999;
+		g.Armor[FakeGame.IronHelmet] = (ArmorSlot.Head, 4);
+		g.Armor[shadowHelmet] = (ArmorSlot.Head, 7);
+		g.Armor[ironChainmail] = (ArmorSlot.Body, 5);
+		g.Equipped.Add(FakeGame.IronHelmet);
+		g.Items[shadowHelmet] = 1;
+		g.Items[vanityHat] = 1; // no defence: never worn over armour
+		g.Items[ironChainmail] = 1;
+		Tick(g, ctx, brain, BotBrain.HabitEvery + 1);
+		Assert.True(g.Equipped.Contains(shadowHelmet), "the shadow helmet worn");
+		Assert.False(g.Equipped.Contains(FakeGame.IronHelmet), "the iron helmet taken off");
+		Assert.Equal(1, g.Count(FakeGame.IronHelmet)); // back in the bag, not lost
+		Assert.True(g.Equipped.Contains(ironChainmail), "an empty slot filled");
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("wearing item102 (defence 7) over item90 (4)"));
+	}
+
 	[Fact]
 	public void ARetreat_DoesNotCancelTheGuardiansRecall()
 	{

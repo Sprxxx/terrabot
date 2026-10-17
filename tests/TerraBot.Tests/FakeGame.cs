@@ -667,12 +667,23 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public int ToolPower(int itemType, ToolKind kind) => ToolPowers.GetValueOrDefault((itemType, kind));
 	public IReadOnlyList<int> UnwornAccessories() => Accessories.Where(a => Count(a) > 0 && !Equipped.Contains(a)).ToList();
 
+	/// <summary>Armour by item type: its slot and defence (tests register what they need).</summary>
+	public readonly Dictionary<int, (ArmorSlot Slot, int Defense)> Armor = new();
+	public ArmorSlot ArmorSlotOf(int itemType) => Armor.TryGetValue(itemType, out var a) ? a.Slot : ArmorSlot.None;
+	public int ArmorDefense(int itemType) => Armor.TryGetValue(itemType, out var a) ? a.Defense : 0;
+	public int Worn(ArmorSlot slot) => Equipped.FirstOrDefault(e => ArmorSlotOf(e) == slot, -1);
+
 	public bool TryEquip(int itemType)
 	{
 		if (Count(itemType) <= 0)
 			return false;
 		if (Accessories.Contains(itemType) && (Equipped.Contains(itemType) || Equipped.Count(Accessories.Contains) >= 5))
 			return false;
+		// Armour: the worn piece of the slot comes off into the bag (vanilla ItemSlot.SwapEquip).
+		if (ArmorSlotOf(itemType) is ArmorSlot slot && slot != ArmorSlot.None && Worn(slot) is int worn && worn >= 0) {
+			Equipped.Remove(worn);
+			Items[worn] = Count(worn) + 1;
+		}
 		Items[itemType]--;
 		Equipped.Add(itemType);
 		return true;
