@@ -123,6 +123,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		Obsidian = ItemID.Obsidian,
 		AshBlock = ItemID.AshBlock,
 		ShadowScale = ItemID.ShadowScale,
+		Heart = ItemID.Heart,
 	};
 
 	/// <summary>

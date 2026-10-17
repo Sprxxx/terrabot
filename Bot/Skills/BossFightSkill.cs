@@ -99,6 +99,11 @@ public sealed class BossFightSkill : ISkill
 	/// </summary>
 	public const int WormMaxFightTicks = 60 * 60 * 15;
 	/// <summary>
+	/// The Wall of Flesh's: its 8000 life at the measured 21 a second (fight_wof, m12_synthetic_classic: Demon Bow and wooden
+	/// arrows) is 381 s, past the 8 minutes the other fights get with the summon's wait; 12 minutes.
+	/// </summary>
+	public const int WallMaxFightTicks = 60 * 60 * 12;
+	/// <summary>
 	/// Run from a worm's head this near (px, across): as far as one at top speed goes in the dodge planner's horizon,
 	/// so a head that could reach us before the planner sees it coming is already being run from.
 	/// </summary>
@@ -183,6 +188,15 @@ public sealed class BossFightSkill : ISkill
 	public bool IsSkeletron { get; }
 	/// <summary>The Wall of Flesh (<see cref="WallOfFleshPattern"/>): fought with its own rules (see the class).</summary>
 	public bool IsWallOfFlesh { get; }
+	/// <summary>
+	/// Wall of Flesh: quick-heal below this share of life, as soon as the potion sickness allows. Its damage comes in bursts: below
+	/// a quarter of its life an eye fires 7 lasers of 26 a burst (NPC.cs:26616-26697), with The Hungry and the leeches on top, and
+	/// a 60-second sickness (Item.cs:5995-6009) waited out at 45 % is a minute at 90 life. Seen in game (fight_wof_unholy,
+	/// m12_synthetic_classic): healed at 89/200, then worn down to 18 and killed by a 23-damage laser before the sickness ended.
+	/// </summary>
+	public const float WallHealBelow = 0.7f;
+	/// <summary>Wall of Flesh: a Heart lying this near ahead (tiles, the way the bot runs from the Wall) is walked to: 20 life each (Player.cs:34213).</summary>
+	public const int HeartAheadTiles = 10;
 	/// <summary>Wall of Flesh: servants (a Hungry, a leech) this near (tiles) are shot before the eyes (spec section 6: 12).</summary>
 	public const float WallServantTiles = 12f;
 	/// <summary>Wall of Flesh: where its mouth was last seen (centre, px), for its loot (the brick box it dies in, NPC.cs:85023-85057).</summary>
@@ -364,7 +378,7 @@ public sealed class BossFightSkill : ISkill
 					+ $"waiting for it {(Arena != null ? "on the arena" : $"round {centre}")}, us at {ctx.Node}");
 			}
 		}
-		int maxTicks = IsWorm ? WormMaxFightTicks : MaxFightTicks;
+		int maxTicks = IsWorm ? WormMaxFightTicks : IsWallOfFlesh ? WallMaxFightTicks : MaxFightTicks;
 		if (++fightTicks > maxTicks)
 			return Fail(ctx, $"still fighting after {maxTicks} ticks");
 		if (!ctx.Combat.HasRanged)
@@ -652,9 +666,12 @@ public sealed class BossFightSkill : ISkill
 		float floorY;
 		(floorY, minX, maxX) = Surroundings(ctx, IsWorm);
 		if (Arena is (int ax0, int ax1, _)) {
-			// Past the arena's ends the ground is unknown: the dodge planner treats them as walls.
-			minX = Math.Max(minX, ax0 * 16f);
-			maxX = Math.Min(maxX, (ax1 + 1) * 16f - p.Width);
+			// Past the arena's ends the ground is unknown: the dodge planner treats them as walls. The hellbridge's ends are over
+			// lava: kept a hit's knockback short of them (ArenaHardMargin). Seen in game (fight_wof, m12_synthetic_classic): at the
+			// bridge's far end the bot was hit off it into the lava.
+			int margin = IsWallOfFlesh ? ArenaHardMargin : 0;
+			minX = Math.Max(minX, (ax0 + margin) * 16f);
+			maxX = Math.Min(maxX, (ax1 + 1 - margin) * 16f - p.Width);
 		}
 		else if (IsWorm) {
 			// No arena: a leash round where the fight started, its ends walls to the planner like an arena's. The worm
@@ -1032,11 +1049,27 @@ public sealed class BossFightSkill : ISkill
 		bool room = wallDir > 0 ? maxX - ctx.Body.X >= 16f : ctx.Body.X - minX >= 16f;
 		if (wallRunning && room)
 			ctx.Output.Horizontal = wallDir;
+		// A Heart ahead (the Hungry II and every leech drop one in Classic, NPC.cs:85179-85187): standing, walk on over it; never
+		// back toward the Wall for one.
+		else if (room && ctx.Combat.Life < ctx.Combat.LifeMax && HeartAhead(ctx, cx))
+			ctx.Output.Horizontal = wallDir;
 		if ((wallRunning != was || wallRunning && !room) && ctx.Tick - lastBandLog >= 60) {
 			lastBandLog = ctx.Tick;
 			ctx.Log.Info($"Boss fight: the Wall {WallOfFleshPattern.FromSide(wallDir)} {ahead / 16f:0} tiles off (band from {near / 16f:0}, life {w.Life}/{w.LifeMax}): "
 				+ (!wallRunning ? "standing, letting it come" : room ? $"running {(wallDir > 0 ? "east" : "west")}" : "no bridge left ahead: standing and shooting") + $" at {ctx.Node}");
 		}
+	}
+
+	/// <summary>A Heart lying ahead of the body (the way the Wall travels) within <see cref="HeartAheadTiles"/>, near the bridge's row.</summary>
+	private bool HeartAhead(BotContext ctx, float cx)
+	{
+		if (ctx.Ids.Heart <= 0)
+			return false;
+		float cy = ctx.Body.CenterY(ctx.Physics);
+		foreach (DropInfo d in ctx.Drops)
+			if (d.Type == ctx.Ids.Heart && (d.CenterX - cx) * wallDir > 8f && Math.Abs(d.CenterX - cx) <= HeartAheadTiles * 16f && Math.Abs(d.CenterY - cy) <= 3 * 16f)
+				return true;
+		return false;
 	}
 
 	/// <summary>The share of an arrow's flight in <see cref="WallFlightTicks"/> that is taken as its reach across (it rises and falls on the way).</summary>
@@ -1202,7 +1235,8 @@ public sealed class BossFightSkill : ISkill
 
 	private void Heal(BotContext ctx)
 	{
-		bool want = ctx.Combat.LifeFraction < System.Math.Max(HealBelow, FightSkill.HealAt(ctx)) && ctx.Combat.CanQuickHeal && !healPressedLastTick;
+		float below = IsWallOfFlesh ? WallHealBelow : HealBelow;
+		bool want = ctx.Combat.LifeFraction < System.Math.Max(below, FightSkill.HealAt(ctx)) && ctx.Combat.CanQuickHeal && !healPressedLastTick;
 		if (want)
 			Heals++;
 		ctx.Output.QuickHeal = want;

@@ -118,9 +118,14 @@ public static class WallOfFleshPattern
 
 	/// <summary>
 	/// A laser (or any hostile shot) as a <see cref="Threat"/>: a straight line at its move per tick (ShotInfo: velocity times
-	/// 1 + extraUpdates). It is aimed at the player's centre when fired, with no lead (NPC.cs:26688-26697).
+	/// 1 + extraUpdates). It is aimed at the player's centre when fired, with no lead (NPC.cs:26688-26697). The box is the stretch
+	/// it sweeps in one tick, not where it is at the tick's end: the game moves it 3 times a tick and hits whatever any of those
+	/// moves touches (Projectile.Update with extraUpdates 2), and a 4 px box 27 px a tick skips over a 20 px body between two of
+	/// the dodge planner's looks. Seen in game (fight_wof_unholy, m12_synthetic_classic): 43 laser hits, the planner's kiting
+	/// "passes 4 px from it" or "clears by 0 px" before them.
 	/// </summary>
-	public static Threat ShotThreat(in ShotInfo s) => new(s.X, s.Y, s.Width, s.Height, s.VX, s.VY);
+	public static Threat ShotThreat(in ShotInfo s) =>
+		new(s.X - Math.Max(s.VX, 0f), s.Y - Math.Max(s.VY, 0f), s.Width + (int)MathF.Ceiling(Math.Abs(s.VX)), s.Height + (int)MathF.Ceiling(Math.Abs(s.VY)), s.VX, s.VY);
 
 	/// <summary>
 	/// Will this shot come our way within <paramref name="ticks"/>: heading toward the body's centre (px), close enough to get

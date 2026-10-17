@@ -332,6 +332,8 @@ public sealed class GameIds
 	public int AshBlock { get; init; }
 	/// <summary>Shadow Scales (the Eater of Worlds' drop, item 86): kept for the Shadow armour of the spec's S1u (KeepRoom, G10).</summary>
 	public int ShadowScale { get; init; }
+	/// <summary>The Heart (item 58), 20 life when picked up (Player.cs:34213-34216): the Wall of Flesh's servants drop them.</summary>
+	public int Heart { get; init; }
 
 	/// <summary>The Wall of Flesh's servants and other parts (114-119), the minions BossFightSkill fights with the mouth (113).</summary>
 	public int[] WallOfFleshMinions => new[] { WallOfFleshEye, TheHungry, TheHungryII, LeechHead, LeechBody, LeechTail };

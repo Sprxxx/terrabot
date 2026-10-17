@@ -158,6 +158,39 @@ public class WallOfFleshFightTests
 	}
 
 	[Fact]
+	public void ALaserIsTheStretchItSweepsInATick_NotADotThatSkipsOverTheBody()
+	{
+		// 27 px a tick across a 20 px body: at no tick's end inside it, but the game's three moves a tick hit it (extraUpdates 2).
+		var body = new BodyState { X = 100f, Y = 100f };
+		float floor = 100f + P.Height;
+		var laser = new ShotInfo(1, WallOfFleshPattern.Laser, 14f, 120f, 4, 4, 27f, 0f, 22);
+		var dot = new Threat(laser.X, laser.Y, 4, 4, 27f, 0f);
+		Assert.False(Dodge.Evaluate(body, P, floor, float.NegativeInfinity, float.PositiveInfinity, new[] { dot }, 0, 0).Hits);
+		Assert.True(Dodge.Evaluate(body, P, floor, float.NegativeInfinity, float.PositiveInfinity, new[] { WallOfFleshPattern.ShotThreat(laser) }, 0, 0).Hits);
+	}
+
+	[Fact]
+	public void TheWallFight_HealsBelow70Percent_AndWalksOnOverAHeartAhead()
+	{
+		var (g, ctx, fight) = Setup(Wall(50f));
+		ctx.Combat.Life = 130;
+		ctx.Combat.LifeMax = 200;
+		ctx.Combat.CanQuickHeal = true;
+		fight.Tick(ctx);
+		Assert.True(ctx.Output.QuickHeal);
+		// Standing in the band's far part: a Heart 5 tiles ahead (west, the way it runs) is walked to; one behind is not.
+		ctx.Tick = 1;
+		ctx.Combat.CanQuickHeal = false;
+		ctx.Drops = new[] { new DropInfo(7, 58, "Heart", 1, PlayerCX - 5 * 16f, PlayerCY, 12, 12) };
+		fight.Tick(ctx);
+		Assert.Equal(-1, ctx.Output.Horizontal);
+		ctx.Tick = 2;
+		ctx.Drops = new[] { new DropInfo(7, 58, "Heart", 1, PlayerCX + 5 * 16f, PlayerCY, 12, 12) };
+		fight.Tick(ctx);
+		Assert.Equal(0, ctx.Output.Horizontal);
+	}
+
+	[Fact]
 	public void NearTheUnderworldsTopRow_NoJump_TheTongueWouldTakeUs()
 	{
 		var hungry = new EntityInfo(9, WallOfFleshPattern.Hungry, "The Hungry", PlayerCX + 40f, PlayerCY + 10f, 30, 30, -4f, 0f, 240, 240, 30, WallOfFleshPattern.HungryAiStyle);

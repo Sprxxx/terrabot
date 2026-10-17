@@ -243,6 +243,21 @@ public sealed class Scenario
 	private const int UnderworldRows = 61, UnderworldFloorRow = 27, UnderworldLavaRow = 51;
 	/// <summary>The world row of <see cref="Underworld"/>'s last grid row: Main.UnderworldLayer + 75 (the arena's floor row).</summary>
 	private static int UnderworldFloor => Terraria.Main.UnderworldLayer + 75;
+	/// <summary>
+	/// fight_wof's bridge: the real plan's (ProgressionPlanner.DefaultBridgeLength, 3829), as the plan lays it: its east end, where
+	/// the bot starts and throws the doll, BridgeEdgeRoom short of the world's edge, the rest west past the middle. Seen in game
+	/// (fight_wof, m12_synthetic_classic): on 1750 tiles the bot ran off the far end into the lava with the Wall at 2046 of 8000.
+	/// </summary>
+	private static int LongBridge => Bot.Brain.ProgressionPlanner.DefaultBridgeLength;
+	/// <summary>The arena's middle column that puts <see cref="LongBridge"/>'s east end BridgeEdgeRoom short of the world's edge.</summary>
+	private static int LongBridgeCentreX
+	{
+		get {
+			int left = Terraria.Main.maxTilesX - Bot.Brain.ProgressionPlanner.BridgeEdgeRoom - LongBridge - Arena.GridOffsetX;
+			return left + Math.Max(Arena.MinWidth, LongBridge + 11 + 2 * Arena.GridOffsetX) / 2;
+		}
+	}
+
 	/// <summary>The world's middle column (NPC.SpawnWOF's maxTilesX / 2: the doll's side of it is the Wall's).</summary>
 	private static int WorldMiddle => Terraria.Main.maxTilesX / 2;
 
@@ -825,13 +840,13 @@ public sealed class Scenario
 				Check = r => DollChecks(r, "from the east", 1),
 			},
 			new() {
-				// The Wall of Flesh fought on a 1750-tile flat stone bridge at row 1042 over lava, a ceiling at row 1015, the bot at its
-				// east end (x 3817, in the east half) with the S1 kit, iron armour and 200 life: the doll thrown east, the Wall from the
+				// The Wall of Flesh fought on the plan's flat stone bridge (LongBridge, 3829 tiles) at row 1042 over lava, a ceiling at
+				// row 1015, the bot at its east end (120 short of the world's edge) with the S1 kit, iron armour and 200 life: the doll thrown east, the Wall from the
 				// east, the fight west along the bridge. Measures the DPS (the fight's ticks), the distance, the laser hits and dodges,
 				// the potions (spec S0: its numbers set the bridge's length L = 1.25 x 62,175 / DPS). Hardmode after it: by name only.
 				Name = "fight_wof",
-				Rows = Underworld(1760, 1749),
-				ArenaCentreX = WorldMiddle + 850,
+				Rows = Underworld(LongBridge + 11, LongBridge),
+				ArenaCentreX = LongBridgeCentreX,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
 				NoFarReach = true,
@@ -840,14 +855,14 @@ public sealed class Scenario
 				MaxLife = 200,
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				Inventory = WofKit(0),
-				TimeoutTicks = 60 * 60 * 10,
+				TimeoutTicks = 60 * 60 * 15,
 				Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
 			},
 			new() {
 				// The same with 75 unholy arrows (the 15 worm teeth's, spec 5a), shot first in a boss fight (AmmoOrder).
 				Name = "fight_wof_unholy",
-				Rows = Underworld(1760, 1749),
-				ArenaCentreX = WorldMiddle + 850,
+				Rows = Underworld(LongBridge + 11, LongBridge),
+				ArenaCentreX = LongBridgeCentreX,
 				ArenaFloorRow = UnderworldFloor,
 				ByName = true,
 				NoFarReach = true,
@@ -856,7 +871,7 @@ public sealed class Scenario
 				MaxLife = 200,
 				Wear = new int[] { Terraria.ID.ItemID.IronHelmet, Terraria.ID.ItemID.IronChainmail, Terraria.ID.ItemID.IronGreaves },
 				Inventory = WofKit(75),
-				TimeoutTicks = 60 * 60 * 10,
+				TimeoutTicks = 60 * 60 * 15,
 				Check = r => !r.HardMode ? "the Wall of Flesh was not defeated" : null,
 			},
 			new() {

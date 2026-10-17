@@ -78,7 +78,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		HealingPotion = HealingPotion, LesserHealingPotion = LesserHealingPotion,
 		Guide = GuideNpc, GuideVoodooDoll = GuideVoodooDoll, WallOfFlesh = WofNpc, WallOfFleshEye = WofEyeNpc, TheHungry = HungryNpc, TheHungryII = HungryIINpc,
 		LeechHead = LeechHeadNpc, LeechBody = LeechBodyNpc, LeechTail = LeechTailNpc, VoodooDemon = VoodooDemonNpc,
-		HellforgeTile = TileHellforge, HellstoneTile = TileHellstone, AshTile = TileAsh, Hellstone = Hellstone, Obsidian = Obsidian, AshBlock = AshBlock, ShadowScale = ShadowScale,
+		HellforgeTile = TileHellforge, HellstoneTile = TileHellstone, AshTile = TileAsh, Hellstone = Hellstone, Obsidian = Obsidian, AshBlock = AshBlock, ShadowScale = ShadowScale, Heart = 58,
 		TileExplosives = new[] { new ExplosiveInfo(Bomb, "Bomb", 4, 64f, 100, 180, 5f, 25, 22, 0.97f, 0.4f),
 			new ExplosiveInfo(Dynamite, "Dynamite", 7, 125f, 250, 300, 4f, 40, 10, 0.97f * 0.99f, 0.4f * 0.8f) },
 	};
