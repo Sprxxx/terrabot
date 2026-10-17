@@ -340,8 +340,12 @@ public sealed class BotBrain
 	{
 		if (Current is SurfaceSkill || ctx.Combat.BreathMax <= 0 || ctx.Combat.Breath >= ctx.Combat.BreathMax || !SurfaceSkill.HeadUnder(ctx))
 			return null;
-		if (!(ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && Current is not HellevatorSkill { DiggingStraight: true }
-			|| ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks))
+		// A straight dig down through a water pocket keeps going while half the breath is left: the way-up estimate read long at the
+		// first splash and the surfacing took the keys at 194 of 200 breath, handed them back, and the dig went under again, every few
+		// seconds for two game hours (world_wof E24, 2026-10-17, the re-descent at row 615).
+		bool straightDig = Current is HellevatorSkill { DiggingStraight: true };
+		if (!(ctx.Combat.Breath < ctx.Combat.BreathMax * 3 / 4 && !straightDig
+			|| (!straightDig || ctx.Combat.Breath < ctx.Combat.BreathMax / 2) && ctx.Tick % 10 == 0 && ctx.Combat.Breath * (long)SurfaceSkill.TicksPerBreath < 2L * SurfaceSkill.EscapeUp(ctx).Ticks))
 			return null;
 		ctx.Log.Info($"Danger: breath {ctx.Combat.Breath}/{ctx.Combat.BreathMax} under water; surfacing{(Current != null ? $" (pausing {Current.Name})" : "")}");
 		// No more marking the water's surroundings unreachable (13x13 tiles each time): surfacing works (no drownings in

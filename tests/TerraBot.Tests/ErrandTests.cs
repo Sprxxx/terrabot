@@ -179,6 +179,37 @@ public class ErrandTests
 			Assert.Contains(log.Lines, l => l.Contains("left for good"));
 	}
 
+	/// <summary>E24 (2026-10-17): the re-descent dug into a water pocket; surfacing took the keys at 194 of 200 breath, every few seconds, for two game hours.</summary>
+	[Fact]
+	public void AStraightDig_ThroughWater_KeepsGoing_WhileHalfTheBreathIsLeft()
+	{
+		var (g, ctx, brain) = AfterTheEye();
+		Run(g, ctx, brain, 10, () => brain.Errand != null);
+		Run(g, ctx, brain, 8000, () => brain.Work is HellevatorSkill { DiggingStraight: true } && brain.Override == null && g.Sim.Node.Y >= HellTests.SurfaceFeet + 8);
+		Assert.True(brain.Work is HellevatorSkill { DiggingStraight: true }, brain.Describe());
+		TilePos n = g.Sim.Node;
+		for (int y = n.Y - 3; y <= n.Y + 2; y++)
+			for (int x = n.X - 1; x <= n.X + 2; x++)
+				if (!g.Grid.Get(x, y).IsSolid())
+					g.Grid.Set(x, y, CellKind.Water);
+		ctx.Combat.BreathMax = 200;
+		for (int t = 0; t < 12; t++) {
+			ctx.Combat.Breath = 190;
+			g.Refresh(ctx);
+			ctx.Combat.Breath = 190;
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		Assert.False(brain.Override is SurfaceSkill, $"surfaced at 190 of 200 on a straight dig: {brain.Describe()}");
+		for (int t = 0; t < 12 && brain.Override is not SurfaceSkill; t++) {
+			g.Refresh(ctx);
+			ctx.Combat.Breath = 10;
+			brain.Tick(ctx);
+			g.Step(ctx);
+		}
+		Assert.True(brain.Override is SurfaceSkill, $"no surfacing at 10 of 200: {brain.Describe()}");
+	}
+
 	[Fact]
 	public void TheDetour_CountsTheRockInTheWay()
 	{
