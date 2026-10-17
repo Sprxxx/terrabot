@@ -305,6 +305,11 @@ public sealed class SelfTestSystem : ModSystem
 					else
 						Mod.Logger.Warn("SELFTEST no building site found");
 				}
+				else if (s.Mode == "blast") {
+					TilePos g = Arena.Find(s.Rows, 'G');
+					var goalAt = new Core.Pathfinding.GoalStandAt(arena.ToWorld(g.X, g.Y, s.Rows.Length), bot.Context.Physics);
+					bot.Brain.StartSkill(new Bot.Skills.BlastOutSkill(goalAt), bot.Context);
+				}
 				else if (s.Mode == "auto") {
 					bot.Brain.SetAuto(true, bot.Context, s.AutoPlan);
 				}

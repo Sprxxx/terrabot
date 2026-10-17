@@ -607,6 +607,21 @@ public sealed class Scenario
 					: !r.BenchPlaced ? "no work bench placed" : null,
 			},
 			new() {
+				// Measured runs M10j, M10k: walled in by ebonstone ('e') the Iron Pickaxe (40) cannot mine (65 needed), bombs in the
+				// bag. BlastOutSkill throws one at the wall towards G, keeps out of the blast's 128 px box and waits for the blast.
+				Name = "blast_out_ebonstone",
+				Rows = Grid(Repeat(new string('e', 34), 3),
+					Repeat("ee..............eee.............ee", 4),
+					"ee.S............eee...........G.ee",
+					Repeat(new string('e', 34), 4)),
+				Mode = "blast",
+				Dig = true,
+				Inventory = p => p.inventory[10] = new Terraria.Item(Terraria.ID.ItemID.Bomb, 3),
+				TimeoutTicks = 60 * 30,
+				Check = r => r.LifeLost > 0 ? $"hurt by its own blast ({r.LifeLost} life)" : r.Broken == 0 ? "the wall still stands"
+					: !r.LogHas("is open") ? "no blast seen" : null,
+			},
+			new() {
 				Name = "walk_flat",
 				Rows = Grid(Repeat("..............................", 4), "..S......................G....", "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"),
 			},

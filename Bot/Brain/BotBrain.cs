@@ -292,6 +292,26 @@ public sealed class BotBrain
 		return true;
 	}
 
+	/// <summary>Where a blast out was last looked for: not again from the same node (each look plans several walks).</summary>
+	private TilePos? blastLookedAt;
+
+	/// <summary>
+	/// Walks failing "no path" in a row, with an explosive that breaks tiles in the bag: blow a way through the wall the pickaxe
+	/// cannot break (BlastOutSkill), before resting. Seen in game (measured runs M10j, M10k): 12 game hours of "no path" from
+	/// one spot under ebonstone, the rests and the climb-out all failing, with 7 bombs and 2 dynamite carried.
+	/// </summary>
+	private bool TryBlastOut(BotContext ctx, ISkill failed)
+	{
+		if (failed is not WalkToSkill walk || walk.LastPlan?.Status != Core.Pathfinding.PathStatus.NoPath || walk.Goal == null
+			|| blastLookedAt == ctx.Node || BlastOutSkill.Carried(ctx).Count == 0)
+			return false;
+		blastLookedAt = ctx.Node;
+		failures = 0;
+		ctx.Log.Warn($"Auto: {MaxConsecutiveFailures} walks in a row found no path from {ctx.Node} ({LastResult}); looking for a wall to blast through");
+		Begin(new BlastOutSkill(walk.Goal), ctx);
+		return true;
+	}
+
 	private static void LogBreathMystery(BotContext ctx)
 	{
 		TilePos hn = ctx.Node;
@@ -766,7 +786,11 @@ public sealed class BotBrain
 			if (status == SkillStatus.Succeeded) {
 				backoffs = 0;
 				ctx.DigAnyway = false;
+				if (skill is not BlastOutSkill)
+					blastLookedAt = null; // something worked since: a spot looked at before may be worth a look again
 			}
+			if (failures >= MaxConsecutiveFailures && TryBlastOut(ctx, skill))
+				return;
 			if (failures >= MaxConsecutiveFailures) {
 				if (++backoffs > MaxBackoffs && !TryDigAnyway(ctx)) {
 					// Not the end of the game: seen in game (measured run S0), auto mode stopped at day 6 of 10 with the bot afloat in

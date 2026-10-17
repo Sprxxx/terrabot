@@ -64,7 +64,20 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		EvilBoss = EowHead, EvilBossBody = EowBody, EvilBossTail = EowTail, WormFood = WormFood, VilePowder = VilePowder,
 		VileMushroom = VileMushroom, CorruptGrass = TileCorruptGrass, CorruptThorns = TileCorruptThorns, RottenChunk = RottenChunk, WormTooth = WormTooth, UnholyArrow = UnholyArrow,
 		DemoniteOre = DemoniteOre, DemoniteBar = DemoniteBar, DemonBow = DemonBow, Bottle = Bottle, BottleTile = TileBottles,
+		TileExplosives = new[] { new ExplosiveInfo(Bomb, "Bomb", 4, 64f, 100, 180, 5f, 25, 22, 0.97f, 0.4f),
+			new ExplosiveInfo(Dynamite, "Dynamite", 7, 125f, 250, 300, 4f, 40, 10, 0.97f * 0.99f, 0.4f * 0.8f) },
 	};
+
+	// The Bomb and Dynamite (ItemID 166, 167) with the Game layer's numbers (TerrariaGameInfo.TileExplosiveInfos).
+	public const int Bomb = 166, Dynamite = 167;
+	public static ExplosiveInfo BombInfo => Ids.TileExplosives[0];
+	public static ExplosiveInfo DynamiteInfo => Ids.TileExplosives[1];
+	/// <summary>Solid cells a blast does not break (a dungeon brick, an altar); every other solid cell it does.</summary>
+	public readonly HashSet<TilePos> NoExplode = new();
+	/// <summary>Explosives thrown and not yet gone off: where they came to rest (pixels) and the fuse left.</summary>
+	public readonly List<(ExplosiveInfo Info, float X, float Y, int Fuse)> Lit = new();
+	/// <summary>Blasts so far, and the ones whose box touched the player.</summary>
+	public int Blasts, BlastHits;
 
 	/// <summary>A desert tile type for biome tests: set on cells through <see cref="TileTypes"/>.</summary>
 	public const int TileSand = 53;
@@ -364,6 +377,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// <summary>Light everywhere; tests set it lower for the torch habit.</summary>
 	public float Light = 1f;
 	public float LightAt(int x, int y) => Light;
+	public bool CanExplode(int x, int y) => Grid.InBounds(x, y) && Grid.Get(x, y).IsSolid() && !NoExplode.Contains(new TilePos(x, y));
 	/// <summary>Cells not seen yet; everything else is revealed.</summary>
 	public readonly HashSet<TilePos> Unrevealed = new();
 	public bool IsRevealed(int x, int y) => !Unrevealed.Contains(new TilePos(x, y)) && !NeverRevealed.Contains(new TilePos(x, y)); // off the grid counts as seen, like the game
@@ -626,6 +640,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				Drops.Add(new DropInfo(nextDropId++, Gel, "Gel", 2, dead.x + 8, dead.y + 8, 8, 8));
 			}
 		}
+		ThrowAndBlast(o, cx, cy);
 		if (swingTimer > 0)
 			swingTimer--;
 		Sim.Step(o);
@@ -647,6 +662,45 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 				Items[d.Type] = Count(d.Type) + d.Stack;
 				Drops.Remove(d);
 			}
+	}
+
+	/// <summary>
+	/// A Bomb or Dynamite thrown at the virtual mouse (one per swing) from the body's centre: where it comes to rest is the
+	/// vanilla explosive AI as the bot models it (ExplosiveFlight; the grid does not change under it here); when the fuse runs
+	/// out, every solid cell a blast breaks goes (ExplodeTiles: tile index to the spot, within the radius), and the player is
+	/// hurt if the blast box touches the hitbox (PrepareBombToBlow's resize).
+	/// </summary>
+	private void ThrowAndBlast(in MoveInput o, float cx, float cy)
+	{
+		ExplosiveInfo e = o.ToolItem == Bomb ? BombInfo : o.ToolItem == Dynamite ? DynamiteInfo : null;
+		if (e != null && o.Tool == ToolRequest.Item && o.UseItem && o.HasMouseAim && swingTimer == 0 && Count(e.ItemType) > 0) {
+			Items[e.ItemType]--;
+			swingTimer = e.UseTicks;
+			var (rx, ry) = Bot.Skills.ExplosiveFlight.Rest(Grid, cx, cy, o.MouseX, o.MouseY, e, e.FuseTicks);
+			Lit.Add((e, rx, ry, e.FuseTicks));
+		}
+		for (int i = Lit.Count - 1; i >= 0; i--) {
+			var b = Lit[i];
+			if (--b.Fuse > 0) {
+				Lit[i] = b;
+				continue;
+			}
+			Lit.RemoveAt(i);
+			Blasts++;
+			int bx = (int)MathF.Floor(b.X / 16f), by = (int)MathF.Floor(b.Y / 16f), r = b.Info.TileRadius + 1;
+			for (int x = bx - r; x <= bx + r; x++)
+				for (int y = by - r; y <= by + r; y++)
+					if (Bot.Skills.ExplosiveFlight.InBlast(b.X, b.Y, b.Info, x, y) && CanExplode(x, y)) {
+						Grid.Set(x, y, CellKind.Empty);
+						TileTypes.Remove(new TilePos(x, y));
+					}
+			PhysicsParams p = PhysicsParams.Default;
+			float left = Sim.State.X, top = Sim.State.Y, h = b.Info.BlastHalfPx;
+			if (left + p.Width > b.X - h && left < b.X + h && top + p.Height > b.Y - h && top < b.Y + h) {
+				BlastHits++;
+				Life = Math.Max(0, (Life < 0 ? LifeMax : Life) - b.Info.Damage);
+			}
+		}
 	}
 
 	/// <summary>Stations and tables are solid-top (Platform), doors solid, chairs and torches not in the way.</summary>
