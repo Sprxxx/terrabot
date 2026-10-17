@@ -121,11 +121,8 @@ public static class ResearchHabit
 			return 0;
 		int trashed = 0;
 		var stacks = ctx.Inventory.Stacks();
-		System.Collections.Generic.HashSet<int> kept = BotBrain.KeptItems(ctx, stacks);
-		bool blocks = System.Array.Exists(ctx.Ids.BuildingBlocks, b => ctx.Inventory.Count(b) > 0);
 		foreach (int type in System.Linq.Enumerable.Distinct(System.Linq.Enumerable.Select(stacks, s => s.Type))) {
-			if (type <= 0 || kept.Contains(type) || System.Array.IndexOf(ctx.Ids.BuildingBlocks, type) >= 0 || System.Array.IndexOf(ctx.Ids.Coins, type) >= 0
-				|| !j.IsResearched(type) || ctx.Knowledge.TilePlacedBy(type) >= 0 && !blocks)
+			if (!Trashable(ctx, type))
 				continue;
 			int n = ctx.Inventory.Count(type);
 			// Stack after stack (the quick trash takes the smallest), at most the bag's slots.
@@ -135,5 +132,30 @@ public static class ResearchHabit
 				ctx.Log.Info($"Journey: trashed {n - ctx.Inventory.Count(type)} {ctx.Knowledge.ItemName(type)} (researched, nothing needs it)");
 		}
 		return trashed;
+	}
+
+	private static BotContext keptFor;
+	private static long keptAt = long.MinValue;
+	private static System.Collections.Generic.HashSet<int> keptNow;
+
+	/// <summary>
+	/// An item researched to its cap that the bot has no use for, by <see cref="TrashResearched"/>'s rule: not kept by the bag
+	/// (<see cref="BotBrain.KeptItems"/>, worked out once a tick), not coins, not stone or dirt, another placeable only while
+	/// stone or dirt is carried. For the bag's stacks and for a pickup (the game adapter deletes those as they are picked up).
+	/// </summary>
+	public static bool Trashable(BotContext ctx, int itemType)
+	{
+		IJourney j = ctx?.Journey;
+		if (itemType <= 0 || j == null || !j.Enabled || !j.DuplicationAllowed || ctx.Inventory == null || ctx.Knowledge == null || !j.IsResearched(itemType)
+			|| System.Array.IndexOf(ctx.Ids.BuildingBlocks, itemType) >= 0 || System.Array.IndexOf(ctx.Ids.Coins, itemType) >= 0)
+			return false;
+		if (!ReferenceEquals(keptFor, ctx) || keptAt != ctx.Tick || keptNow == null) {
+			keptNow = BotBrain.KeptItems(ctx, ctx.Inventory.Stacks());
+			keptFor = ctx;
+			keptAt = ctx.Tick;
+		}
+		if (keptNow.Contains(itemType))
+			return false;
+		return ctx.Knowledge.TilePlacedBy(itemType) < 0 || System.Array.Exists(ctx.Ids.BuildingBlocks, b => ctx.Inventory.Count(b) > 0);
 	}
 }

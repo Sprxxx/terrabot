@@ -172,7 +172,7 @@ public sealed class PlaceItemSkill : ISkill
 			if (at == null)
 				return Fail(ctx, $"the item left the bag but its tile is not at {spot?.ToString() ?? "the spot"}");
 			PlacedAt = at;
-			ctx.Log.Info($"Placed item {ItemType} at {at}" + (kept ? " (the stack kept: researched, infinite by a mod)" : ""));
+			ctx.Log.Info($"Placed item {ItemType} at {at}" + (kept ? " (the stack kept: researched, infinite)" : ""));
 			return SkillStatus.Succeeded;
 		}
 		if (startCount == 0)

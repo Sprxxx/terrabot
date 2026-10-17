@@ -75,6 +75,25 @@ public sealed class TerraBotPlayer : ModPlayer
 		};
 	}
 
+	/// <summary>
+	/// Journey, the research menu open: a shift-click on an item already researched trashes it, as Upgraded Research did for the
+	/// user (TerraBotConfig.ShiftClickTrashResearched); in the research slot it could only sit. Vanilla shows the shift-click
+	/// cursor (9) on every bag item while the research menu shows (ItemSlot.OverrideHover, context 0). The duplication menu's
+	/// shift-click (context 29, the bot's TerrariaJourney.Duplicate) is left alone.
+	/// </summary>
+	public override bool ShiftClickSlot(Item[] inventory, int context, int slot)
+	{
+		if (context != Terraria.UI.ItemSlot.Context.InventoryItem || !ResearchFeatures.Config.ShiftClickTrashResearched || !ResearchFeatures.JourneyLocal(Player)
+			|| !Main.CreativeMenu.IsShowingResearchMenu() || Main.cursorOverride != 9 || inventory[slot].IsAir || inventory[slot].favorited
+			|| !ResearchFeatures.Researched(inventory[slot].type))
+			return false;
+		Player.trashItem = inventory[slot].Clone();
+		inventory[slot].TurnToAir();
+		Terraria.Audio.SoundEngine.PlaySound(SoundID.Grab);
+		Recipe.FindRecipes();
+		return true;
+	}
+
 	public override void OnEnterWorld()
 	{
 		Enabled = false;

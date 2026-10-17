@@ -128,8 +128,11 @@ public sealed class TerrariaJourney : IJourney
 
 	// Upgraded Research, when loaded (UpgradedResearchCompat): its settings as they are now; the vanilla answers without it.
 	public bool DuplicationAllowed => UpgradedResearchCompat.DuplicationAllowed;
-	public bool PickupVanishes(int itemType) => Enabled && UpgradedResearchCompat.PickupVanishes(player, itemType, IsResearched(itemType));
-	public bool StationAtHand(int tileType) => Enabled && UpgradedResearchCompat.StationAtHand(player, tileType);
+	// And TerraBot's own (ResearchFeatures, the user's TerraBot settings): a picked-up drop deleted, researched stations in range.
+	public bool PickupVanishes(int itemType) => Enabled && (UpgradedResearchCompat.PickupVanishes(player, itemType, IsResearched(itemType))
+		|| ResearchFeatures.PickupTrashed(player, itemType, 0));
+	public bool StationAtHand(int tileType) => Enabled && (UpgradedResearchCompat.StationAtHand(player, tileType)
+		|| ResearchFeatures.Config.CraftFromResearchedStations && System.Array.IndexOf(ResearchFeatures.ResearchedStations(), tileType) >= 0);
 
 	public int Duplicate(int itemType)
 	{

@@ -95,7 +95,7 @@ public sealed class UseItemSkill : ISkill
 			// game (world_eye run 67), the next walk started from where the bot drank it, and a second potion was drunk.
 			if (ctx.Combat.ItemAnimation > 0 && ++afterTicks <= MaxTicks)
 				return SkillStatus.Running;
-			ctx.Log.Info($"Used item {ItemType} ({have} left" + (have >= startCount ? ", the stack kept: researched, infinite by a mod)" : ")"));
+			ctx.Log.Info($"Used item {ItemType} ({have} left" + (have >= startCount ? ", the stack kept: researched, infinite)" : ")"));
 			return SkillStatus.Succeeded;
 		}
 		if (have <= 0)

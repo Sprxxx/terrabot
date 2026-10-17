@@ -1,17 +1,46 @@
 Configs: {
 	TerraBotConfig: {
 		DisplayName: TerraBot
+
 		TrashResearchedItems: {
-			Label: "Journey: trash researched items the bot has no use for"
+			Label: Journey: trash researched items
 			Tooltip:
 				'''
-				In Journey Mode, the bot trashes picked-up items that are fully researched and that nothing it does needs
-				(not gear, not what its plan uses or makes things from, not coins, not its stone or dirt for building).
-				Whatever it needs later it duplicates from the research menu. Off: researched items stay in the bag.
+				Items already researched are deleted as they are picked up, and the bot trashes researched stacks from the bag.
+				With the bot running, only what it has no use for (it keeps its gear, what its plan uses or makes things from,
+				and stone and dirt for building); playing yourself, a pickup that fits a stack you carry is kept.
+				Coins and items with a prefix are never trashed. Whatever is needed later comes from the duplication menu.
 				'''
+		}
+
+		InfiniteResearchedConsumables: {
+			Label: Journey: researched consumables are infinite
+			Tooltip: Blocks, potions, life crystals, bombs, boss summons and other consumables you have researched are not used up. Crafting still uses its ingredients.
+		}
+
+		InfiniteResearchedAmmo: {
+			Label: Journey: researched ammo is infinite
+			Tooltip: Arrows, bullets and other ammo you have researched are not used up.
+		}
+
+		CraftFromResearchedStations: {
+			Label: Journey: craft from researched stations
+			Tooltip: A crafting station you have researched counts as nearby wherever you are (a Hellforge also counts as a Furnace, and so on).
+		}
+
+		ShiftClickTrashResearched: {
+			Label: Journey: shift-click trashes researched items
+			Tooltip: With the research menu open, shift-clicking an item that is already researched puts it in the trash slot instead of the research slot.
+		}
+
+		ShowResearchLeft: {
+			Label: Journey: show research left in tooltips
+			Tooltip: An item not fully researched shows how many more research takes.
 		}
 	}
 }
+
+ResearchLeft: "{0} to full research"
 
 Keybinds: {
 	ToggleBot.DisplayName: Toggle Bot
