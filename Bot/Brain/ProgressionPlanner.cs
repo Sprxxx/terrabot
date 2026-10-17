@@ -123,6 +123,13 @@ public sealed record PrepFor(int BossNpc, Need Inner) : Need(Inner.Label);
 public sealed record FromBag(HaveItem Inner) : Need(Inner.Label);
 
 /// <summary>
+/// <see cref="Inner"/> on the surface only, before the Wall of Flesh's descent: moot once the bot has stood on the hellbridge's row
+/// or is in the Underworld (a run resumed down there). The work is the surface's (a hunt in the evil biome, a craft at the house's
+/// anvil) and there is no way back up but a death (docs M12_SPEC.md section 1b: no rope, no mirror, the recall potions drunk).
+/// </summary>
+public sealed record BeforeTheUnderworld(Need Inner) : Need(Inner.Label);
+
+/// <summary>
 /// A step toward a later stage, taken in the plan's order (the summon's parts one by one: the chunks, the powder, then the
 /// Worm Food the boss stage summons with): moot once any of <see cref="Made"/> is carried (what the step's things go into),
 /// and claiming nothing, so the later stage that uses them still counts them as there.
@@ -1292,6 +1299,7 @@ public sealed partial class ProgressionPlanner
 			// The prep for a boss is moot once it is down, and while it is up: the fight is on.
 			PrepFor pf => ctx.World.BossDefeated(pf.BossNpc) || BossUp(ctx, pf.BossNpc) ? null : Resolve(pf.Inner, claims, depth, ctx),
 			FromBag fb => ResolveFromBag(fb.Inner, depth, ctx),
+			BeforeTheUnderworld bu => DownThereOnce(ctx) ? null : Resolve(bu.Inner, claims, depth, ctx),
 			StepToward st => st.Made.Any(m => m.Item > 0 && ctx.Inventory.Count(m.Item) >= m.Count) ? null
 				: Resolve(st.Inner, new Dictionary<int, int>(claims), depth, ctx),
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
@@ -2894,6 +2902,13 @@ public sealed partial class ProgressionPlanner
 			};
 			if (src.Kind != SourceKind.None)
 				continue;
+			// What nothing gathers nor makes (a boss's drop: shadow scales, tissue samples) is had as far as the bag holds it: free,
+			// not out of reach. Else a craft from the bag (FromBag: the evil pickaxe's 6 scales carried) is "no way to get" though
+			// MakeableFromBag found it makeable; a count the bag falls short of is said so where the ingredient is resolved.
+			if (ctx.Inventory.Count(i) > 0 && k.RecipesFor(i).Count == 0) {
+				current[i] = 0f;
+				continue;
+			}
 			items.Add(i);
 			foreach (RecipeInfo r in k.RecipesFor(i)) {
 				foreach (Ingredient ing in r.Ingredients)

@@ -15,6 +15,24 @@ public sealed partial class ProgressionPlanner
 	/// <summary>Healing potions into the fight (spec S1: 10, from the bag).</summary>
 	public const int WofPotions = 10;
 	/// <summary>
+	/// Unholy arrows got before the descent, hunted for if the bag's worm teeth (or vertebrae, in a Crimson world) do not make them: 5
+	/// from 5 wooden arrows and one (Recipe.cs:2276-2290). Measured in game (Classic, the Demon Bow, m12_synthetic_classic):
+	/// <list type="bullet">
+	/// <item>fight_wof_unholy: the 59 arrows that took the Wall from 8000 to 5545, the 75 unholy ones shot first (AmmoOrder), did 41.6 of
+	/// its life each, at 2.06 arrows a second (86 a second while they lasted). An unholy arrow pierces 5 (Projectile.cs:954) and goes
+	/// on through the eyes and the mouth, which share one life (NPC.cs:92324-92331).</item>
+	/// <item>fight_wof: a wooden arrow (pierce 1) did 10.1 (5954 life for 591 arrows), 21 a second; the fight lost when the bridge ran
+	/// out. fight_wof_unholy, 32.5 a second over 161 s with its 75, died to the lasers with 2775 of 8000 left.</item>
+	/// </list>
+	/// With A unholy and the rest wooden the Wall's 8000 take A/2.06 + (8000 - 41.6 A)/(10.1 x 2.06) seconds: 32.5 a second from A = 92;
+	/// 150 make it about 160 s at 50 a second, the whole fight over in the time fight_wof_unholy lived. The cheapest of what the bot can
+	/// have by then: Hellfire arrows and Molten Fury need hellstone bars (3 hellstone, pick 65, and 1 obsidian at a Hellforge,
+	/// Recipe.cs:10811-10817, and obsidian is nearly absent from the worlds), the Archery Potion herbs and bottled water the planner has
+	/// no source for, Jester's Arrows fallen stars and fly about 54 tiles (projectile 5: timeLeft 120 at 2 updates a tick,
+	/// Projectile.cs:966-978), short of the fight's 62-77 below half life.
+	/// </summary>
+	public const int WofUnholyArrows = 150;
+	/// <summary>
 	/// The hellbridge's length (tiles), the spec's rule (section 5a, S0): L = 1.25 x 62,175 / DPS, the Wall travelling 62,175 / DPS
 	/// tiles while its 8000 life (Classic, NPC.cs:5483-5501) goes at DPS a second. Measured in game (fight_wof, m12_synthetic_3,
 	/// 2026-10-17; the Demon Bow and wooden arrows, the band kiting): 20.3 a second, and the Wall went 1486 tiles for its 4000 life
@@ -124,8 +142,10 @@ public sealed partial class ProgressionPlanner
 	/// <summary>
 	/// After the Eye: the Wall of Flesh (docs M12_SPEC.md section 9), in the spec's order.
 	/// <list type="number">
-	/// <item>S1: a bow, unholy arrows from the bag, 1000 arrows in all (refilled below 800), max life 200, 10 healing potions from the
-	/// bag, and blocks for the bridge (<see cref="BridgeBlocks"/>);</item>
+	/// <item>S1: a bow, the evil bow and the evil pickaxe from the bag, unholy arrows from the bag and then hunted for to
+	/// <see cref="WofUnholyArrows"/>, 1000 arrows in all (refilled below 800), max life 200, 10 healing potions from the bag, and
+	/// blocks for the bridge (<see cref="BridgeBlocks"/>); what is made on the surface only before the descent
+	/// (<see cref="BeforeTheUnderworld"/>);</item>
 	/// <item>S2: the Guide alive (<see cref="TownNpcAlive"/>);</item>
 	/// <item>S3: a hellevator down to the bridge's row (<see cref="UnderworldReached"/>);</item>
 	/// <item>S4: the hellbridge (<see cref="HellbridgeBuilt"/>);</item>
@@ -140,7 +160,21 @@ public sealed partial class ProgressionPlanner
 	{
 		int boss = ids.WallOfFlesh;
 		yield return new PrepFor(boss, new HaveItem(Tiers(ids.IronTierBow, ids.EvilBow), 1, "bow"));
+		// The evil bow from the Eye's ore (the Demon Bow 14 a shot at useTime 25, the Tendon Bow 19 at 30, against the Iron Bow's 8
+		// at 28; Item.cs:4133-4150, 13511-13527, 4801-4810), as the evil boss's plan has it: the Wall's plan needs neither that boss
+		// nor Skeletron, and the bow stage above takes the Iron Bow.
+		yield return new PrepFor(boss, new BeforeTheUnderworld(new FromBag(new HaveItem(ids.EvilBow, 1, "evil bow"))));
+		// The evil pickaxe (pick 65 or 70) from the evil boss's drops when they are carried (KeepRoom keeps the scales and samples):
+		// past what the Silver Pickaxe cannot mine in the bridge's way. Hellstone (58) itself is generated only from 140 rows over
+		// the world's bottom (WorldGen.cs:10251-10255, runners of strength 2-6), 18 under the bridge's row; on the saves of both test
+		// worlds the highest is 13 and 15 rows under it, and the hot tiles in the bridge's rows are the ruined houses' hellstone
+		// bricks (76), which any pickaxe mines (HellbridgeSkill puts a block in their place). What 45 cannot mine there is a
+		// Hellforge standing in the bridge's cell (77, pick 65 below the Underworld's first row; no bomb breaks it there before
+		// Hardmode, nor hellstone: Projectile.CanExplodeTile, Projectile.cs:92125-92136) or obsidian where lava met water (56, pick
+		// 55; Player.cs:55024-55045).
+		yield return new PrepFor(boss, new BeforeTheUnderworld(new FromBag(new HaveItem(ids.EvilPickaxe, 1, "evil pickaxe"))));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(ids.UnholyArrow, WofArrows, "unholy arrows")));
+		yield return new PrepFor(boss, new BeforeTheUnderworld(new HaveItem(ids.UnholyArrow, WofUnholyArrows, "unholy arrows for the wall")));
 		yield return new PrepFor(boss, new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), WofArrows, "arrows") { RefillBelow = WofArrows * 4 / 5 });
 		yield return new PrepFor(boss, new LifeAtLeast(BossLife, "max life"));
 		yield return new PrepFor(boss, new FromBag(new HaveItem(Tiers(ids.HealingPotion, ids.LesserHealingPotion), WofPotions, "healing potions")));
@@ -202,6 +236,9 @@ public sealed partial class ProgressionPlanner
 			case StepToward st:
 				NoteNeeded(st.Inner, into);
 				break;
+			case BeforeTheUnderworld bu:
+				NoteNeeded(bu.Inner, into);
+				break;
 			case BossDefeated b when b.SummonItem > 0:
 				into.Add(b.SummonItem);
 				break;
@@ -221,6 +258,12 @@ public sealed partial class ProgressionPlanner
 		int front = bridgeDir > 0 ? n.X + 1 : n.X;
 		return n.Y == bridgeRow - 1 && Math.Abs(bridgeTo - front) <= tiles && (bridgeTo - front) * bridgeDir >= 0;
 	}
+
+	/// <summary>
+	/// The bot has been down (stood on the hellbridge's row) or is in the Underworld now: the surface's prep (<see cref="BeforeTheUnderworld"/>)
+	/// is moot. A run resumed from the "underworld reached" checkpoint starts down there with the bridge not yet known.
+	/// </summary>
+	private bool DownThereOnce(BotContext ctx) => bridgeKnown || ctx.UnderworldRow > 0 && ctx.Node.Y >= ctx.UnderworldRow;
 
 	/// <summary>The hellbridge's row in this world (<see cref="BridgeRowsUnderTop"/> under the Underworld's first row).</summary>
 	private static int BridgeRowFor(BotContext ctx) => ctx.UnderworldRow + BridgeRowsUnderTop;

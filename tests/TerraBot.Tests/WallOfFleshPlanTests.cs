@@ -22,9 +22,11 @@ public class WallOfFleshPlanTests
 	private const int SpawnX = 30, TowerFrom = 84, TowerTo = 96, Bridge = 60;
 	private const int Row = HellTests.BridgeRow;
 
-	private (FakeGame, BotContext, ProgressionPlanner) AfterTheEye(bool guide = true)
+	private (FakeGame, BotContext, ProgressionPlanner) AfterTheEye(bool guide = true, bool crimson = false)
 	{
 		FakeGame g = HellTests.Hell(320, SpawnX, TowerFrom, TowerTo);
+		if (crimson)
+			g.UseCrimson();
 		BotContext ctx = g.CreateContext(output);
 		ctx.Combat.ArmourPieces = 3;
 		ctx.Combat.Defense = 7; // under CavernDefense: the gear's depth limit is a few rows down (BotContext.DeepestRow)
@@ -50,6 +52,7 @@ public class WallOfFleshPlanTests
 		p.BridgeLength = Bridge;
 		BuildingTests.HouseAlreadyThere(g, p, ctx);
 		g.Items[FakeGame.WoodenArrow] = ProgressionPlanner.WofArrows;
+		g.Items[FakeGame.UnholyArrow] = ProgressionPlanner.WofUnholyArrows;
 		g.Items[FakeGame.HealingPotion] = ProgressionPlanner.WofPotions;
 		g.Items[FakeGame.StoneBlock] = Bridge + ProgressionPlanner.BridgeBlockMargin + 40;
 		g.Refresh(ctx);
@@ -71,9 +74,14 @@ public class WallOfFleshPlanTests
 		Assert.Contains(ProgressionPlanner.Plans.WallOfFlesh, ProgressionPlanner.Plans.All);
 		Assert.Equal(boss.Select(n => (n.GetType(), n.Label)), wof.Take(boss.Count).Select(n => (n.GetType(), n.Label)));
 		Assert.DoesNotContain(wof, n => n is BossDefeated { Npc: FakeGame.EowHead } or BossDefeated { Npc: FakeGame.SkeletronHeadNpc });
-		Assert.Equal(new[] { "bow", "unholy arrows", "arrows", "max life", "healing potions", "bridge blocks", "the Guide", "the Underworld", "hellbridge",
-			"Wall of Flesh", "the Wall of Flesh's loot" }, wof.Skip(boss.Count).Select(n => n.Label));
-		var arrows = Assert.IsType<HaveItem>(Assert.IsType<PrepFor>(wof[boss.Count + 2]).Inner);
+		Assert.Equal(new[] { "bow", "evil bow", "evil pickaxe", "unholy arrows", "unholy arrows for the wall", "arrows", "max life", "healing potions",
+			"bridge blocks", "the Guide", "the Underworld", "hellbridge", "Wall of Flesh", "the Wall of Flesh's loot" }, wof.Skip(boss.Count).Select(n => n.Label));
+		// The surface's work only before the descent: the evil bow and pickaxe from the bag, the unholy arrows hunted for.
+		foreach (int i in new[] { 1, 2, 4 })
+			Assert.IsType<BeforeTheUnderworld>(Assert.IsType<PrepFor>(wof[boss.Count + i]).Inner);
+		var unholy = Assert.IsType<HaveItem>(Assert.IsType<BeforeTheUnderworld>(Assert.IsType<PrepFor>(wof[boss.Count + 4]).Inner).Inner);
+		Assert.Equal((FakeGame.UnholyArrow, ProgressionPlanner.WofUnholyArrows), (unholy.Accepts.Single(), unholy.Count));
+		var arrows = Assert.IsType<HaveItem>(Assert.IsType<PrepFor>(wof[boss.Count + 5]).Inner);
 		Assert.Equal((1000, 800), (arrows.Count, arrows.RefillBelow));
 		var wall = Assert.IsType<BossDefeated>(wof[^2]);
 		Assert.Equal((FakeGame.WofNpc, FakeGame.GuideVoodooDoll), (wall.Npc, wall.SummonItem));
@@ -158,6 +166,83 @@ public class WallOfFleshPlanTests
 		var (_, ctx, p) = AfterTheEye(guide: false);
 		var wait = Assert.IsType<WaitSkill>(Next(p, ctx));
 		Assert.Equal("the Guide", wait.What);
+	}
+
+	[Fact]
+	public void ShortOfUnholyArrows_ThePlanHuntsWormTeeth_BeforeTheShaft()
+	{
+		// Measured in game (m12_synthetic_classic, Classic): an unholy arrow took 41.6 of the Wall's life, a wooden one 10.1; the fight
+		// on wooden arrows (21 a second) and the one with 75 unholy (32.5) were both lost. So WofUnholyArrows before the descent.
+		var (g, ctx, p) = AfterTheEye();
+		g.Items[FakeGame.UnholyArrow] = 75;
+		g.Refresh(ctx);
+		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
+		Assert.Contains($"item{FakeGame.WormTooth}", p.Status);
+		// Teeth in the bag: the arrows are made from them at the anvil, then down.
+		g.Items[FakeGame.WormTooth] = 15;
+		g.Refresh(ctx);
+		ISkill s = Next(p, ctx);
+		Assert.True(s is CraftSkill { ItemType: FakeGame.UnholyArrow } || s is WalkToSkill && p.Status.Contains($"item{FakeGame.UnholyArrow}"), p.Status);
+		g.Items[FakeGame.WormTooth] = 0;
+		g.Items[FakeGame.UnholyArrow] = ProgressionPlanner.WofUnholyArrows;
+		g.Refresh(ctx);
+		Assert.IsType<HellevatorSkill>(Next(p, ctx));
+	}
+
+	[Fact]
+	public void ShortOfUnholyArrows_InACrimsonWorld_ThePlanHuntsVertebrae()
+	{
+		var (g, ctx, p) = AfterTheEye(crimson: true);
+		g.Items[FakeGame.UnholyArrow] = 0;
+		g.Refresh(ctx);
+		Assert.IsNotType<HellevatorSkill>(Next(p, ctx));
+		Assert.Contains($"item{FakeGame.Vertebrae}", p.Status);
+		Assert.DoesNotContain($"item{FakeGame.WormTooth}", p.Status);
+	}
+
+	[Theory]
+	[InlineData(false, true)]
+	[InlineData(false, false)]
+	[InlineData(true, true)]
+	public void TheEvilBowAndPickaxe_AreMadeFromTheBag_BeforeTheShaft(bool crimson, bool scales)
+	{
+		var (g, ctx, p) = AfterTheEye(crimson: crimson);
+		int ore = crimson ? FakeGame.CrimtaneOre : FakeGame.DemoniteOre, bow = crimson ? FakeGame.TendonBow : FakeGame.DemonBow;
+		int pick = crimson ? FakeGame.DeathbringerPickaxe : FakeGame.NightmarePickaxe;
+		g.Items[ore] = 60; // 20 bars: the bow's 8 and the pickaxe's 12
+		if (scales)
+			g.Items[crimson ? FakeGame.TissueSample : FakeGame.ShadowScale] = 6;
+		g.Refresh(ctx);
+		ISkill s = null;
+		for (int i = 0; i < 40 && (s = Next(p, ctx)) is not (HellevatorSkill or null); i++) {
+			Assert.IsNotType<MineSkill>(s); // nothing gathered for them
+			SkillStatus st = EarlyGameTests.RunSkill(g, ctx, s, 6000);
+			p.OnSkillFinished(s, st, ctx);
+			g.Refresh(ctx);
+		}
+		Assert.IsType<HellevatorSkill>(s);
+		Assert.Equal(1, g.Count(bow));
+		Assert.Equal(scales ? 1 : 0, g.Count(pick));
+		Assert.Equal(scales ? (crimson ? 70 : 65) : 40, ctx.PickPower);
+	}
+
+	[Fact]
+	public void DownThere_TheSurfacesPrepIsMoot_NothingIsGoneUpFor()
+	{
+		var (g, ctx, p) = AfterTheEye();
+		var shaft = Assert.IsType<HellevatorSkill>(Next(p, ctx));
+		Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, shaft, 30000));
+		// As a run resumed from the "underworld reached" checkpoint: down there, the bridge not known yet. Short of unholy arrows,
+		// with demonite and scales in the bag: no hunt and no craft up at the house, the bridge.
+		g.Items[FakeGame.UnholyArrow] = 0;
+		g.Items[FakeGame.DemoniteOre] = 60;
+		g.Items[FakeGame.ShadowScale] = 6;
+		g.Refresh(ctx);
+		Assert.IsType<HellbridgeSkill>(Next(p, ctx));
+		Assert.True(p.UnderworldReachedOnce);
+		// And once the bridge is known, likewise.
+		g.Refresh(ctx);
+		Assert.IsType<HellbridgeSkill>(Next(p, ctx));
 	}
 
 	[Fact]
