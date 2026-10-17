@@ -2644,7 +2644,8 @@ public sealed partial class ProgressionPlanner
 			var around = new TilePos(originX, ctx.SpawnTile?.Y ?? ctx.Node.Y);
 			TilePos? nearest = null;
 			foreach (int t in ctx.Ids.EvilTiles)
-				foreach (TilePos e in ctx.World.FindTiles(t, around, MaxTravelTiles)) {
+				// Twice a trip's reach: world_boc B2, the Crimson's stone by the altar 616 tiles off, just past one.
+				foreach (TilePos e in ctx.World.FindTiles(t, around, 2 * MaxTravelTiles)) {
 					if (nearest is not TilePos n || Math.Abs(e.X - originX) < Math.Abs(n.X - originX))
 						nearest = e;
 					break; // the nearest of its kind
