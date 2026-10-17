@@ -94,6 +94,7 @@ public sealed class TerraBotPlayer : ModPlayer
 	}
 
 	private bool haveDryPhysics;
+	private bool haveOffSandPhysics;
 
 	public override void PostUpdateRunSpeeds()
 	{
@@ -104,8 +105,16 @@ public sealed class TerraBotPlayer : ModPlayer
 		// bot stood still for a game hour. Keep the dry values while wet.
 		if (Player.wet && haveDryPhysics)
 			return;
+		// Likewise sand with Dunerider Boots: every run value x1.75 while runningOnSand (Player.cs:25453), a speed the
+		// planner's moves do not model per tile. Seen in game (measured run U28): at the desert's sand edges the values flipped
+		// every tick, 7,353 "Physics params changed" and as many re-plans, 85,695 walk starts, and the bot stood in place for
+		// stretches of 1.5 game hours ("Collect [fetching Copper Coin x84] got 0"). Keep the values off sand while on it.
+		bool sandBoost = Player.desertBoots && Player.runningOnSand;
+		if (sandBoost && haveOffSandPhysics)
+			return;
 		PhysicsParams p = PhysicsReader.Read(Player);
 		haveDryPhysics = !Player.wet;
+		haveOffSandPhysics = !sandBoost;
 		if (p != LivePhysics) {
 			Mod.Logger.Info($"Physics params changed: {p}");
 			LivePhysics = p;
