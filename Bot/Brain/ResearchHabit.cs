@@ -50,8 +50,8 @@ public static class ResearchHabit
 	}
 
 	/// <summary>
-	/// Is the item ready for research: the bag holds all research still takes of it, and for gear one more (the copy in use stays).
-	/// Always false on Classic.
+	/// Is the item ready for research: the bag holds all research still takes of it, and for gear one more (the copy in use stays);
+	/// one more of anything when the duplication menu gives nothing (<see cref="IJourney.DuplicationAllowed"/>). Always false on Classic.
 	/// </summary>
 	public static bool Ready(BotContext ctx, int itemType, int carried)
 	{
@@ -61,7 +61,8 @@ public static class ResearchHabit
 		// The Guide Voodoo Doll is an accessory by its stats (Item.cs:6839-6845), so "gear", but never worn (BotBrain.WearAccessories)
 		// nor in use: research takes the one carried (1, Sacrifices.tsv "D") and it is duplicated back the same tick.
 		bool inUse = ctx.Inventory.IsGear(itemType) && itemType != ctx.Ids.GuideVoodooDoll;
-		return inUse ? carried > left : carried >= left;
+		// No duplication (a research mod's checklist mode): nothing research takes comes back, so one is always left in the bag.
+		return inUse || !ctx.Journey.DuplicationAllowed ? carried > left : carried >= left;
 	}
 
 	/// <summary>

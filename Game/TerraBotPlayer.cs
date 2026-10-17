@@ -85,7 +85,8 @@ public sealed class TerraBotPlayer : ModPlayer
 		Mod.Logger.Info($"Entered world '{Main.worldName}' ({Main.maxTilesX}x{Main.maxTilesY}) as '{Player.name}'. Physics: {LivePhysics}");
 		Journey.Bind(Player);
 		if (Player.whoAmI == Main.myPlayer && Player.difficulty == PlayerDifficultyID.Creative)
-			Mod.Logger.Info($"Journey: a Journey character in a {(Main.GameModeInfo.IsJourneyMode ? "Journey" : "non-Journey")} world: research and duplication {(Journey.Enabled ? "on" : "off")}");
+			Mod.Logger.Info($"Journey: a Journey character in a {(Main.GameModeInfo.IsJourneyMode ? "Journey" : "non-Journey")} world: research and duplication {(Journey.Enabled ? "on" : "off")}"
+				+ $"; Upgraded Research {UpgradedResearchCompat.Describe()}");
 	}
 
 	public override void ProcessTriggers(TriggersSet triggersSet)
@@ -448,6 +449,7 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.LifeMaxBase = Player.statLifeMax;
 		k.Facing = Player.direction;
 		k.ItemAnimation = Player.itemAnimation;
+		k.HeldItemType = Player.HeldItem?.type ?? 0;
 		k.CanQuickHeal = Player.potionDelay == 0 && Player.QuickHeal_GetItemToUse() != null;
 		k.PotionSickTicks = Player.potionDelay;
 		k.Breath = Player.breath;

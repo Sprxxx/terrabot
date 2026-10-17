@@ -39,7 +39,10 @@ param(
 	# Real-world runs: a game-time budget in days instead of the scenario's own.
 	[double]$BudgetDays = 0,
 	# Real-world runs on a Journey character: no research or duplication (the bot plays it as on Classic).
-	[switch]$NoJourney
+	[switch]$NoJourney,
+	# Other mods to load beside TerraBot, by internal name (e.g. UpgradedResearch): the .tmod from your Mods folder, else the
+	# newest one in the Steam workshop folder, with your saved settings for it (ModConfigs\<name>_*.json). Default: none.
+	[string[]]$Mods = @()
 )
 $ErrorActionPreference = "Stop"
 
@@ -62,7 +65,28 @@ Write-Host "Preparing $testDir"
 foreach ($d in "Players", "Worlds") { Remove-Item -Recurse -Force (Join-Path $testDir $d) -ErrorAction SilentlyContinue }
 foreach ($d in "Mods", "Players", "Worlds") { New-Item -ItemType Directory -Force (Join-Path $testDir $d) | Out-Null }
 Copy-Item (Join-Path $saves "Mods\TerraBot.tmod") (Join-Path $testDir "Mods\TerraBot.tmod") -Force
-Set-Content -Encoding ascii (Join-Path $testDir "Mods\enabled.json") '["TerraBot"]'
+$enabled = @("TerraBot")
+$workshop = Join-Path (Split-Path (Split-Path $TmlDir -Parent) -Parent) "workshop\content\1281930"
+New-Item -ItemType Directory -Force (Join-Path $testDir "ModConfigs") | Out-Null
+foreach ($m in $Mods) {
+	$tmod = Join-Path $saves "Mods\$m.tmod"
+	if (-not (Test-Path $tmod)) {
+		$tmod = Get-ChildItem $workshop -Recurse -Filter "$m.tmod" -ErrorAction SilentlyContinue |
+			Sort-Object { try { [version]$_.Directory.Name } catch { [version]"0.0" } } | Select-Object -Last 1 -ExpandProperty FullName
+	}
+	if (-not $tmod) { throw "Mod $m not found in $saves\Mods or $workshop" }
+	Copy-Item $tmod (Join-Path $testDir "Mods\$m.tmod") -Force
+	foreach ($sub in "", "Server") {
+		$from = Join-Path $saves "ModConfigs\$sub"
+		if (Test-Path $from) {
+			New-Item -ItemType Directory -Force (Join-Path $testDir "ModConfigs\$sub") | Out-Null
+			Get-ChildItem $from -Filter "${m}_*.json" -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $testDir "ModConfigs\$sub") -Force }
+		}
+	}
+	Write-Host "Also loading $m from $tmod"
+	$enabled += $m
+}
+Set-Content -Encoding ascii (Join-Path $testDir "Mods\enabled.json") ("[" + (($enabled | ForEach-Object { '"' + $_ + '"' }) -join ",") + "]")
 foreach ($f in "config.json", "input profiles.json") {
 	$src = Join-Path $saves $f
 	if (Test-Path $src) { Copy-Item $src (Join-Path $testDir $f) -Force }

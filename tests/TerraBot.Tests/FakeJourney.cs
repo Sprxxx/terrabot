@@ -62,9 +62,17 @@ public sealed class FakeJourney : IJourney
 		return used;
 	}
 
+	/// <summary>Upgraded Research's settings, as its adapter (UpgradedResearchCompat) answers them; off: the vanilla answers.</summary>
+	public bool ChecklistMode;
+	public bool AutoTrash;
+	public readonly HashSet<int> StationsByResearch = new();
+	public bool DuplicationAllowed => !ChecklistMode;
+	public bool PickupVanishes(int itemType) => On && AutoTrash && !ChecklistMode && IsResearched(itemType) && game.Count(itemType) <= 0;
+	public bool StationAtHand(int tileType) => On && StationsByResearch.Contains(tileType);
+
 	public int Duplicate(int itemType)
 	{
-		if (!IsResearched(itemType) || !game.HasRoomFor(itemType))
+		if (!DuplicationAllowed || !IsResearched(itemType) || !game.HasRoomFor(itemType))
 			return 0;
 		int got = game.StackOf(itemType);
 		game.Items[itemType] = game.Count(itemType) + got;

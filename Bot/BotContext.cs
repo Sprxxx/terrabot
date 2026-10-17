@@ -300,7 +300,7 @@ public sealed class BotContext
 	/// Can the item be had at will: Journey on and the item researched, so a click in the duplication menu gives a stack of it.
 	/// Always false on Classic, where every path below it is the Classic one.
 	/// </summary>
-	public bool Infinite(int itemType) => itemType > 0 && Journey != null && Journey.Enabled && Journey.IsResearched(itemType);
+	public bool Infinite(int itemType) => itemType > 0 && Journey != null && Journey.Enabled && Journey.DuplicationAllowed && Journey.IsResearched(itemType);
 
 	/// <summary>Items the research slot refused lately, and when (Brain.ResearchHabit: not offered again for a while).</summary>
 	public System.Collections.Generic.Dictionary<int, long> ResearchRefused { get; } = new();

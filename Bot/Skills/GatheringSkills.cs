@@ -235,7 +235,11 @@ public sealed class CollectDropsSkill : ISkill
 	/// carried). Seen in game (measured run U28, world_eye): with one in the bag from t465000, 101 Collect heartbeats standing
 	/// on coins, dirt and arrows ("WalkTo reached StandAt(1805,286) at (1805,286)" 62 times in a row after one fight).
 	/// </summary>
-	private static bool Fits(BotContext ctx, DropInfo d) => ctx.Inventory == null || ctx.Inventory.CanPickUp(d.Type);
+	/// <summary>
+	/// The bag would take it, and keep it: not a researched item a research mod deletes on pickup (Upgraded Research's auto-trash,
+	/// <see cref="IJourney.PickupVanishes"/>), whose walk gains nothing.
+	/// </summary>
+	private static bool Fits(BotContext ctx, DropInfo d) => (ctx.Inventory == null || ctx.Inventory.CanPickUp(d.Type)) && !(ctx.Journey?.PickupVanishes(d.Type) ?? false);
 
 	/// <summary>
 	/// A drop more rows under the feet than a fall the body takes unhurt (<see cref="PhysicsParams.SafeFallTiles"/>): at a

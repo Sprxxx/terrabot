@@ -157,17 +157,22 @@ public sealed class PlaceItemSkill : ISkill
 		ctx.Output = MoveInput.None;
 		if (startCount < 0)
 			startCount = ctx.Inventory.Count(ItemType);
-		if (ctx.Inventory.Count(ItemType) < startCount) {
+		int have = ctx.Inventory.Count(ItemType);
+		int tile = ctx.Knowledge?.TilePlacedBy(ItemType) ?? -1;
+		// Its tile come at the spot it was used on (picked free: CanPlaceItem), the stack as it was: Upgraded Research's
+		// "researched consumables are infinite" keeps a researched station in the bag (GlobalItem.ConsumeItem false, which
+		// PlaceThing respects). Gone by the stack alone, the bot would use it on for a minute and place one at each spot.
+		bool kept = have >= startCount && useTicks > 0 && spot is TilePos used && tile >= 0 && ctx.World.TileTypeAt(used.X, used.Y) == tile;
+		if (have < startCount || kept) {
 			// Gone from the bag: placed, if its tile is at the spot (or near, the cursor a cell off); otherwise it went
 			// somewhere else. Seen in game (measured run R1): "placed" in the tick the walk to the spot began, the station
 			// never there, and the craft at it failed 20 times.
-			int tile = ctx.Knowledge?.TilePlacedBy(ItemType) ?? -1;
 			TilePos? at = spot is TilePos sp && tile >= 0 && ctx.World.TileTypeAt(sp.X, sp.Y) == tile ? sp
 				: tile >= 0 ? ctx.World.FindTiles(tile, spot ?? ctx.Node, 3).Cast<TilePos?>().FirstOrDefault() : spot;
 			if (at == null)
 				return Fail(ctx, $"the item left the bag but its tile is not at {spot?.ToString() ?? "the spot"}");
 			PlacedAt = at;
-			ctx.Log.Info($"Placed item {ItemType} at {at}");
+			ctx.Log.Info($"Placed item {ItemType} at {at}" + (kept ? " (the stack kept: researched, infinite by a mod)" : ""));
 			return SkillStatus.Succeeded;
 		}
 		if (startCount == 0)

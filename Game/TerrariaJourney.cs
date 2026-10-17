@@ -126,9 +126,14 @@ public sealed class TerrariaJourney : IJourney
 		return used;
 	}
 
+	// Upgraded Research, when loaded (UpgradedResearchCompat): its settings as they are now; the vanilla answers without it.
+	public bool DuplicationAllowed => UpgradedResearchCompat.DuplicationAllowed;
+	public bool PickupVanishes(int itemType) => Enabled && UpgradedResearchCompat.PickupVanishes(player, itemType, IsResearched(itemType));
+	public bool StationAtHand(int tileType) => Enabled && UpgradedResearchCompat.StationAtHand(player, tileType);
+
 	public int Duplicate(int itemType)
 	{
-		if (!Enabled || player.dead || Main.CreativeMenu.Blocked || !IsResearched(itemType) || itemType >= ItemLoader.ItemCount)
+		if (!Enabled || !DuplicationAllowed || player.dead || Main.CreativeMenu.Blocked || !IsResearched(itemType) || itemType >= ItemLoader.ItemCount)
 			return 0;
 		Item sample = ContentSamples.ItemsByType[itemType];
 		// OverrideHover's condition for the shift-click's cursorOverride 7 in context 29: the bag can take it.

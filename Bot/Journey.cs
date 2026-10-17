@@ -40,6 +40,24 @@ public interface IJourney
 	/// gives it). Returns how many came into the bag (0: not researched, or no room).
 	/// </summary>
 	int Duplicate(int itemType);
+
+	/// <summary>
+	/// The duplication menu works. False with a research mod that turns it into a checklist (Upgraded Research's "Use Creative
+	/// Panel as Item Checklist"): research still counts, nothing comes out of the menu, so the bot gathers as on Classic.
+	/// </summary>
+	bool DuplicationAllowed => true;
+
+	/// <summary>
+	/// A pickup of the item would be deleted, not put in the bag (Upgraded Research's "Auto-Trash picked up Researched items"):
+	/// a drop not worth walking to.
+	/// </summary>
+	bool PickupVanishes(int itemType) => false;
+
+	/// <summary>
+	/// The station counts as in range wherever the bot is (Upgraded Research's "Craft from Researched stations", for a researched
+	/// station): a craft at it needs no walk and no station placed.
+	/// </summary>
+	bool StationAtHand(int tileType) => false;
 }
 
 /// <summary>Classic (or Expert, Master): no research, no duplication.</summary>

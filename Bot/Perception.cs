@@ -55,6 +55,12 @@ public sealed class CombatInfo
 	public int Facing { get; set; } = 1;
 	/// <summary>Player.itemAnimation: 0 = free to turn and start a new swing.</summary>
 	public int ItemAnimation { get; set; }
+	/// <summary>
+	/// The item in hand (Player.HeldItem.type, 0 for none): with <see cref="ItemAnimation"/> above 0 it is the one being used. A use
+	/// shows by this even when the stack does not shrink: a mod's "researched consumables are infinite" (Upgraded Research's
+	/// GlobalItem.ConsumeItem returning false, which Player.ItemCheck and PlaceThing respect) keeps the item, the effect still comes.
+	/// </summary>
+	public int HeldItemType { get; set; }
 	/// <summary>Is there a healing potion that quick-heal (H) would use, with no potion sickness?</summary>
 	public bool CanQuickHeal { get; set; }
 	/// <summary>Ticks of potion sickness left (vanilla Player.potionDelay): above 0 just after a heal.</summary>

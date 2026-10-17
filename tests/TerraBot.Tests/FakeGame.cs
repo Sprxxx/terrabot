@@ -123,6 +123,13 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	private readonly Dictionary<TilePos, int> chopTicks = new();
 	private int nextDropId = 1000;
 	private int swingTimer;
+	/// <summary>The item in hand: what the controls ask for, switched between swings only (Player.HeldItem).</summary>
+	private int heldItem;
+	/// <summary>
+	/// Upgraded Research's "researched consumables are infinite": a used life crystal, a placed station, a thrown bomb stay in the
+	/// bag (its GlobalItem.ConsumeItem returns false); the effect still comes.
+	/// </summary>
+	public bool KeepsConsumables;
 	private int facing = 1;
 	private int placedSeen;
 	private int useTicks;
@@ -638,6 +645,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public void Step(BotContext ctx)
 	{
 		MoveInput o = ctx.Output;
+		if (swingTimer == 0)
+			heldItem = o.Tool == ToolRequest.Item ? o.ToolItem : 0;
 		if (o.Tool == ToolRequest.Axe && o.UseItem && o.HasAim) {
 			var aim = new TilePos(o.AimX, o.AimY);
 			if (Trees.TryGetValue(aim, out int height) && Math.Abs(Sim.Node.X + 1 - aim.X) <= 4) {
@@ -678,8 +687,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		// Using a life crystal: +20 max life up to 400.
 		if (o.Tool == ToolRequest.Item && o.ToolItem == LifeCrystal && o.UseItem && Count(LifeCrystal) > 0 && LifeMax < 400 && ++useTicks >= 30) {
 			useTicks = 0;
-			Items[LifeCrystal]--;
+			if (!KeepsConsumables)
+				Items[LifeCrystal]--;
 			LifeMax += 20;
+			swingTimer = 20;
 		}
 		if (o.Tool == ToolRequest.Item && o.UseItem && o.HasAim && Count(o.ToolItem) > 0 && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
 			if (o.ToolItem == WoodWall) {
@@ -744,7 +755,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	{
 		ExplosiveInfo e = o.ToolItem == Bomb ? BombInfo : o.ToolItem == Dynamite ? DynamiteInfo : null;
 		if (e != null && o.Tool == ToolRequest.Item && o.UseItem && o.HasMouseAim && swingTimer == 0 && Count(e.ItemType) > 0) {
-			Items[e.ItemType]--;
+			if (!KeepsConsumables)
+				Items[e.ItemType]--;
 			swingTimer = e.UseTicks;
 			var (rx, ry) = Bot.Skills.ExplosiveFlight.Rest(Grid, cx, cy, o.MouseX, o.MouseY, e, e.FuseTicks);
 			Lit.Add((e, rx, ry, e.FuseTicks));
@@ -882,7 +894,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			}
 		if (tile is TileBench or TileFurnace or TileAnvil)
 			Stations[tile] = new TilePos(x, y);
-		Items[itemType]--;
+		if (!KeepsConsumables)
+			Items[itemType]--;
 	}
 
 	/// <summary>Like the game adapter, stations are only rescanned every 20 ticks.</summary>
@@ -896,6 +909,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		ctx.IsNight = IsNight;
 		ctx.PickPower = Count(IronPickaxe) > 0 ? 40 : 35;
 		ctx.Combat.ItemAnimation = swingTimer;
+		ctx.Combat.HeldItemType = heldItem;
 		ctx.Combat.Facing = facing;
 		ctx.Combat.LifeMax = LifeMax;
 		ctx.Combat.LifeMaxBase = LifeMax;

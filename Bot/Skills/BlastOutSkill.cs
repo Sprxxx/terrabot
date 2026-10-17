@@ -496,7 +496,9 @@ public sealed class BlastOutSkill : ISkill
 	private SkillStatus ThrowTick(BotContext ctx)
 	{
 		int have = ctx.Inventory.Count(Plan.Explosive.ItemType);
-		if (have < countBefore) {
+		// Thrown: the stack shrank, or the throw is under way in hand after a press (Upgraded Research's "researched consumables
+		// are infinite" keeps researched bombs; by the stack alone the bot would throw one a swing for ThrowWaitTicks).
+		if (have < countBefore || throwTicks > 0 && ctx.Combat.ItemAnimation > 0 && ctx.Combat.HeldItemType == Plan.Explosive.ItemType) {
 			thrownAt = ctx.Tick;
 			retreat = new PathExecutor(ctx.Moves.WalkingOnly(), Plan.Retreat.Steps);
 			ctx.Log.Info($"BlastOut: threw a {Plan.Explosive.Name} at {Plan.Impact} from {ctx.Node} ({have} left); out of its reach to {(Plan.Retreat.Steps.Count > 0 ? Plan.Retreat.Steps[^1].To : ctx.Node)} ({Plan.Retreat.Steps.Count} steps, {Plan.Retreat.Cost:0}t)");

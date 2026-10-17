@@ -550,25 +550,21 @@ public sealed partial class ProgressionPlanner
 		Math.Max(1, (Math.Min(life, MaxCrystalLife) - ctx.Combat.LifeMaxBase + LifePerCrystal - 1) / LifePerCrystal);
 
 	/// <summary>
-	/// Journey: the life crystals carried are as many as research still takes (10, Sacrifices.tsv's "H"): they are researched,
-	/// not used, since researched they are duplicated without end and every crystal to max life 400 comes from the menu (with
-	/// 10 at 100 life: 400 instead of 300). Fewer carried are used as on Classic: holding them back for research would leave the
-	/// bot at 100 life while it looks for the rest. Always false with Journey off.
-	/// </summary>
-	/// <summary>
 	/// Journey, life crystals not yet researched: the ones found are kept until the bag holds what research takes, and then
 	/// researched in one go and duplicated to the most max life crystals give, as the user plays Journey ("I wait until I have
 	/// the number I need for researching"). Used one by one, they never reach that number: seen in game (Journey test run
 	/// J1, The Aggressive Site, character Nenne), every crystal found was used at once and max life went 100, 120, 160, 200
-	/// with none ever researched; held, 10 crystals give 400 max life (15 uses), used, 15 crystals give the same.
+	/// with none ever researched; held, 10 crystals give 400 max life (15 uses), used, 15 crystals give the same. Not when the
+	/// duplication menu gives nothing (a research mod's checklist mode): research would only use them up.
 	/// </summary>
-	public static bool HoldCrystalsForResearch(BotContext ctx) => ctx.Journey.Enabled && ctx.Journey.ResearchLeft(ctx.Ids.LifeCrystal) > 0;
+	public static bool HoldCrystalsForResearch(BotContext ctx) => ctx.Journey.Enabled && ctx.Journey.DuplicationAllowed && ctx.Journey.ResearchLeft(ctx.Ids.LifeCrystal) > 0;
 
 	public static bool CrystalsForResearch(BotContext ctx)
 	{
 		int crystal = ctx.Ids.LifeCrystal;
 		int left = ctx.Journey.ResearchLeft(crystal);
-		return left > 0 && ctx.Inventory.Count(crystal) >= left;
+		// No duplication (a research mod's checklist mode): research gives none back, so one more than it takes, kept for use.
+		return left > 0 && (ctx.Journey.DuplicationAllowed ? ctx.Inventory.Count(crystal) >= left : ctx.Inventory.Count(crystal) > left);
 	}
 
 	/// <summary>
@@ -1211,7 +1207,7 @@ public sealed partial class ProgressionPlanner
 
 	private ISkill ResolveStation(StationPlaced s, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
-		if (KnownStations.ContainsKey(s.TileType))
+		if (KnownStations.ContainsKey(s.TileType) || StationByResearch(ctx, s.TileType))
 			return null;
 		IGameKnowledge k = ctx.Knowledge;
 		IReadOnlyList<int> items = k.ItemsPlacing(s.TileType);
@@ -2944,8 +2940,17 @@ public sealed partial class ProgressionPlanner
 	/// Seen in game: standing in a hole below the furnace, "near" by distance but not for the game, the bot crafted,
 	/// failed and crafted again for a minute until auto mode gave up.
 	/// </summary>
+	/// <summary>
+	/// The station in range wherever the bot is, by research (Upgraded Research's "Craft from Researched stations"): no station to
+	/// place or walk to. Not after a craft the game refused for want of a station (the mod adds it only where some tile is in
+	/// range, RecipeGlobalTile.AdjTiles): the station is then placed and walked to as without the mod.
+	/// </summary>
+	private bool StationByResearch(BotContext ctx, int tileType) => !stationMissed && ctx.Journey != null && ctx.Journey.Enabled && ctx.Journey.StationAtHand(tileType);
+
 	private bool NearStation(BotContext ctx, int tileType)
 	{
+		if (StationByResearch(ctx, tileType))
+			return true;
 		if (stationMissed || !KnownStations.TryGetValue(tileType, out TilePos at))
 			return false;
 		TilePos n = ctx.Node;

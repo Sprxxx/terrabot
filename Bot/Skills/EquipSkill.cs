@@ -52,8 +52,12 @@ public sealed class EquipSkill : ISkill
 }
 
 /// <summary>
-/// Use one of a consumable item (a life crystal, a boss summon): hold it and press use until the stack shrinks.
-/// Fails after <see cref="MaxTicks"/> (the game refused: max life reached, not night for a summon...).
+/// Use one of a consumable item (a life crystal, a boss summon): hold it and press use until the stack shrinks, or until a use
+/// of it shows (<see cref="CombatInfo.HeldItemType"/> in hand mid-swing after a press) where the stack does not: Upgraded
+/// Research's "researched consumables are infinite" keeps a researched item (its GlobalItem.ConsumeItem returns false) and the
+/// effect still comes. Pressed for ever on a kept stack, it would use it again and again (a second recall, max life climbing).
+/// Fails after <see cref="MaxTicks"/> (the game refused: max life reached, not night for a summon... the game starts no swing then,
+/// Player.ItemCheck's CanUseItem).
 /// </summary>
 public sealed class UseItemSkill : ISkill
 {
@@ -61,6 +65,7 @@ public sealed class UseItemSkill : ISkill
 
 	private int startCount = -1;
 	private int ticks, afterTicks;
+	private bool pressed, swung;
 
 	public int ItemType { get; }
 	public string FailureReason { get; private set; } = "";
@@ -84,12 +89,13 @@ public sealed class UseItemSkill : ISkill
 		if (ctx.BodyIssue != null)
 			return SkillStatus.Running;
 		int have = ctx.Inventory.Count(ItemType);
-		if (have < startCount) {
+		swung |= pressed && ctx.Combat.ItemAnimation > 0 && ctx.Combat.HeldItemType == ItemType;
+		if (have < startCount || swung) {
 			// Used up at the start of the swing, but its effect comes during it (a recall potion teleports partway): seen in
 			// game (world_eye run 67), the next walk started from where the bot drank it, and a second potion was drunk.
 			if (ctx.Combat.ItemAnimation > 0 && ++afterTicks <= MaxTicks)
 				return SkillStatus.Running;
-			ctx.Log.Info($"Used item {ItemType} ({have} left)");
+			ctx.Log.Info($"Used item {ItemType} ({have} left" + (have >= startCount ? ", the stack kept: researched, infinite by a mod)" : ")"));
 			return SkillStatus.Succeeded;
 		}
 		if (have <= 0)
@@ -99,6 +105,7 @@ public sealed class UseItemSkill : ISkill
 		ctx.Output.Tool = ToolRequest.Item;
 		ctx.Output.ToolItem = ItemType;
 		ctx.Output.UseItem = true;
+		pressed = true;
 		return SkillStatus.Running;
 	}
 

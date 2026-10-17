@@ -126,6 +126,27 @@ public class TrappedTests
 		return s;
 	}
 
+	/// <summary>
+	/// Upgraded Research's "Researched Consumables are infinite" (the user's game, 2026-10-17): a researched bomb stays in the
+	/// bag when thrown. The throw is seen by the swing in hand, so one bomb opens the wall as with bombs used up, not one a swing
+	/// until the wait for the stack to shrink runs out.
+	/// </summary>
+	[Fact]
+	public void SealedPocket_BombsKeptByAResearchMod_OneThrowSeen_AndWalksOut()
+	{
+		var game = new FakeGame(SealedPocket);
+		game.KeepsConsumables = true;
+		game.Items[FakeGame.Bomb] = 3;
+		BotContext ctx = game.CreateContext(output);
+		var goal = new GoalStandAt(game.Grid.Markers['G'], ctx.Physics);
+		var blast = new BlastOutSkill(goal);
+		Assert.Equal(SkillStatus.Succeeded, Run(game, ctx, blast, 2000));
+		Assert.Equal(1, game.Blasts);
+		Assert.Equal(3, game.Count(FakeGame.Bomb));
+		Assert.Equal(0, game.BlastHits);
+		Assert.Equal(SkillStatus.Succeeded, Run(game, ctx, new WalkToSkill(goal), 3000));
+	}
+
 	[Fact]
 	public void SealedPocket_WithBombs_ThrowsOneAtTheWallTowardsTheGoal_KeepsClearOfTheBlast_AndWalksOut()
 	{
