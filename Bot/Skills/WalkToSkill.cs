@@ -460,6 +460,7 @@ public sealed class WalkToSkill : ISkill
 
 		MoveInput input = Executor.Tick(ctx.Body);
 		ctx.PlannedCatch = Executor.Status == ExecStatus.Running ? Executor.CatchCell : null;
+		ctx.PlannedLanding = Executor.Status == ExecStatus.Running ? Executor.PlannedLanding : null;
 		if (Executor.PopNotice() is string notice)
 			ctx.Log.Info(notice);
 		if (ctx.Trace)
