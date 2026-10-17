@@ -75,6 +75,7 @@ public sealed class Arena
 					case 'i': t.ResetToType((ushort)WorldGen.SavedOreTiers.Iron); break;
 					case 'c': t.ResetToType((ushort)WorldGen.SavedOreTiers.Copper); break;
 					case '=': t.ResetToType(TileID.Platforms); break;
+					case '|': t.ResetToType(TileID.Rope); break;
 					case '!': t.LiquidType = LiquidID.Lava; t.LiquidAmount = 255; break;
 					case '~': t.LiquidType = LiquidID.Water; t.LiquidAmount = 255; break;
 					case 'h': t.ResetToType(TileID.Dirt); t.IsHalfBlock = true; break;

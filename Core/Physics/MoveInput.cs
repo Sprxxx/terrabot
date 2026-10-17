@@ -30,6 +30,11 @@ public struct MoveInput
 	public bool Jump;
 	public bool Up;
 	public bool Down;
+	/// <summary>
+	/// A climb step holds a rope (<see cref="Pathfinding.MoveKind.Climb"/>): the game adapter leaves the body on it, which it
+	/// otherwise takes off a rope it walked into.
+	/// </summary>
+	public bool Climb;
 
 	/// <summary>Item to hold. With <see cref="ToolRequest.None"/> the bot does not touch item use at all.</summary>
 	public ToolRequest Tool;

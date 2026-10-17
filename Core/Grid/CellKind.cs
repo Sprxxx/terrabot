@@ -39,6 +39,10 @@ public enum CellKind : ushort
 	/// U4 and U6 died at the foot of the same shaft, (2049,554).
 	/// </summary>
 	Web = 512,
+	/// <summary>
+	/// A rope, chain, vine, silk or web rope (Main.tileRope): not solid, passable, and climbed (<see cref="Pathfinding.Moves.ClimbMove"/>).
+	/// </summary>
+	Rope = 1024,
 }
 
 public static class CellKindExtensions
@@ -49,6 +53,7 @@ public static class CellKindExtensions
 	public static bool IsShaped(this CellKind k) => (k & CellKind.Shaped) != 0;
 	public static bool IsHalfBlock(this CellKind k) => (k & CellKind.HalfBlock) != 0;
 	public static bool IsWeb(this CellKind k) => (k & CellKind.Web) != 0;
+	public static bool IsRope(this CellKind k) => (k & CellKind.Rope) != 0;
 	/// <summary>
 	/// A block of the world, whole or shaped (a slope, a half block: read as a platform so feet can ride it): what building
 	/// counts as a block to keep in a floor or to mine out of a room.
@@ -86,6 +91,7 @@ public static class CellKindExtensions
 		if (k.IsHalfBlock()) return '-';
 		if (k.IsShaped()) return '/';
 		if (k.IsPlatform()) return '=';
+		if (k.IsRope()) return '|';
 		if ((k & CellKind.Lava) != 0) return '!';
 		if ((k & CellKind.Honey) != 0) return 'h';
 		if ((k & CellKind.Water) != 0) return '~';
@@ -109,6 +115,7 @@ public static class CellKindExtensions
 		'!' => CellKind.Lava,
 		'h' => CellKind.Honey,
 		'^' => CellKind.Hazard,
+		'|' => CellKind.Rope,
 		_ => CellKind.Empty,
 	};
 }

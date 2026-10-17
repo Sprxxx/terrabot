@@ -164,6 +164,7 @@ public sealed class MoveContext
 		new ArrestedDropMove(),
 		new DropThroughMove(),
 		new JumpMove(),
+		new ClimbMove(),
 		new DigMove(),
 		new BuildMove(),
 	};

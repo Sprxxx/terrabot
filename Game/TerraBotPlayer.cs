@@ -333,8 +333,10 @@ public sealed class TerraBotPlayer : ModPlayer
 			Mod.Logger.Info($"Dismounting (mount type {Player.mount.Type}, holding {Player.HeldItem?.Name ?? "nothing"}) at {FeetTile()}");
 			Player.mount.Dismount(Player);
 		}
-		// Likewise hanging on a rope (walked into one) or held by a grappling hook: let go, as a player does.
-		if (Enabled && Player.pulley) {
+		// Likewise hanging on a rope (walked into one) or held by a grappling hook: let go, as a player does. Not on a climb
+		// step's rope (last tick's controls held it: MoveInput.Climb).
+		bool climbing = Context.Output.Climb;
+		if (Enabled && Player.pulley && !climbing) {
 			Mod.Logger.Info($"Letting go of a rope at {FeetTile()}");
 			Player.pulley = false;
 		}
@@ -352,13 +354,14 @@ public sealed class TerraBotPlayer : ModPlayer
 			VY = Player.velocity.Y,
 			Jump = Player.jump,
 			ReleaseJump = Player.releaseJump,
+			OnRope = Player.pulley,
 		};
 		Context.BodyIssue =
 			Player.dead ? "dead"
 			: Player.mount.Active ? "mounted"
 			: Player.gravDir != 1f ? "gravity reversed"
 			: Player.grappling[0] >= 0 ? "grappling"
-			: Player.pulley ? "on a rope"
+			: Player.pulley && !climbing ? "on a rope"
 			: Player.CCed ? "crowd-controlled"
 			: null;
 		RefreshPerception();

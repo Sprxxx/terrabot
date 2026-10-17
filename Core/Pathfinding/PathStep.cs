@@ -24,6 +24,8 @@ public enum MoveKind
 	/// mid-air), landing on it within a safe fall: the fall arrest of <c>Bot.Brain.FallArrest</c>, planned.
 	/// </summary>
 	ArrestedDrop,
+	/// <summary>Take hold of a rope over the body, climb it to the top (<see cref="PathStep.Via"/>, the hang) and jump off to To.</summary>
+	Climb,
 }
 
 /// <summary>One edge of a planned path. Cost is in game ticks.</summary>
@@ -36,7 +38,8 @@ public readonly record struct PathStep(
 	float Cost,
 	JumpTemplate Template = null,
 	IReadOnlyList<BlockAction> Actions = null,
-	IMoveType Source = null)
+	IMoveType Source = null,
+	TilePos? Via = null)
 {
 	public int Dir => To.X > From.X ? 1 : To.X < From.X ? -1 : 0;
 

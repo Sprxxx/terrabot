@@ -127,6 +127,8 @@ public sealed class Scenario
 	public int ArenaHeight { get; init; }
 	/// <summary>Run only when asked for by name (not in "all"): long, or changing the world for the rest (Hardmode).</summary>
 	public bool ByName { get; init; }
+	/// <summary>A real-world walk's goal: feet at this offset from the world's spawn tile (Main.spawnTileX, spawnTileY).</summary>
+	public (int X, int Y)? GoalFromSpawn { get; init; }
 	/// <summary>
 	/// A Journey character's "infinite placement range" power off for the run (it is on by default, CreativePowers.cs:744-753):
 	/// with it the player pulls items in from 240 px farther (Player.GetItemGrabRange, Player.cs:34313; PullItem_Pickup at 7 px/tick,
@@ -333,6 +335,20 @@ public sealed class Scenario
 		new() {
 			// Milestone 9: the copied world and character as they are, /bot auto boss from the spawn in the morning.
 			// Not part of "all" runs (see SelfTestSystem): it plays for up to an hour. Run it by name.
+			// The user's world Journey Test (2026-10-17): a house the mod StartWithBase builds over the spawn of a new world, its way in a
+			// rope from the spawn 21 tiles up a shaft to the platforms of its floor (spawn-area dump: rope x 3201, rows 414-434, the
+			// floor's platforms x 3199-3203 on row 413, spawn tile (3201,435)). Walked to its bottom floor: up the rope (ClimbMove),
+			// nothing mined or placed. selftest.ps1 -Scenarios rope_house -Player Nenne -World "Journey Test" -WorldFile Journey_Test
+			// -Mods StartWithBase.
+			Name = "rope_house",
+			RealWorld = true,
+			ByName = true,
+			Rows = new[] { "S" },
+			GoalFromSpawn = (-1, -23),
+			TimeoutTicks = 60 * 60,
+			Check = r => r.Placed > 0 || r.Broken > 0 ? $"{r.Placed} blocks placed and {r.Broken} broken on the way (not up the rope)" : null,
+		},
+		new() {
 			Name = "world_eye",
 			RealWorld = true,
 			Rows = new[] { "S" },

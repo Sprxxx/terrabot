@@ -204,6 +204,48 @@ public sealed class SelfTestSystem : ModSystem
 		}
 	}
 
+	/// <summary>Columns either side of the spawn and rows above and below it in <see cref="LogSpawnArea"/>.</summary>
+	private const int SpawnDumpHalfWidth = 30, SpawnDumpAbove = 40, SpawnDumpBelow = 8;
+
+	/// <summary>
+	/// The ground round the spawn as the game has it, a row a line: what is there before the bot changes anything (a house a
+	/// mod built for a new world, user 2026-10-17: "you access it by rope and its right at spawn"). '@' a solid block, '='
+	/// a platform or a block's solid top, 'R' a rope or chain (Main.tileRope), 'D' a door, 'f' other furniture, '|' a
+	/// background wall and nothing else, '~' liquid, 'S' the spawn tile, '.' air.
+	/// </summary>
+	private void LogSpawnArea()
+	{
+		int sx = Main.spawnTileX, sy = Main.spawnTileY;
+		Mod.Logger.Info($"SELFTEST spawn area: x {sx - SpawnDumpHalfWidth}..{sx + SpawnDumpHalfWidth}, rows {sy - SpawnDumpAbove}..{sy + SpawnDumpBelow}, spawn ({sx},{sy})");
+		for (int y = sy - SpawnDumpAbove; y <= sy + SpawnDumpBelow; y++) {
+			var row = new System.Text.StringBuilder();
+			for (int x = sx - SpawnDumpHalfWidth; x <= sx + SpawnDumpHalfWidth; x++) {
+				if (!WorldGen.InWorld(x, y, 1)) {
+					row.Append(' ');
+					continue;
+				}
+				Tile t = Main.tile[x, y];
+				char c = '.';
+				if (t.HasTile) {
+					ushort type = t.TileType;
+					c = Main.tileRope[type] ? 'R'
+						: type == TileID.ClosedDoor || type == TileID.OpenDoor || TileID.Sets.OpenDoorID[type] > -1 || TileID.Sets.CloseDoorID[type] > -1 ? 'D'
+						: Main.tileSolid[type] && !Main.tileSolidTop[type] ? '@'
+						: Main.tileSolidTop[type] ? '='
+						: Main.tileFrameImportant[type] ? 'f' : ',';
+				}
+				else if (t.LiquidAmount > 0)
+					c = '~';
+				else if (t.WallType > 0)
+					c = '|';
+				if (x == sx && y == sy)
+					c = 'S';
+				row.Append(c);
+			}
+			Mod.Logger.Info($"SELFTEST spawn area {y,5}: {row}");
+		}
+	}
+
 	private void Step(Player p, TerraBotPlayer bot)
 	{
 		switch (phase) {
@@ -217,6 +259,7 @@ public sealed class SelfTestSystem : ModSystem
 				Mod.Logger.Info($"SELFTEST world: surface row {Main.worldSurface:0}, caverns from row {Main.rockLayer:0}, {Main.maxTilesX}x{Main.maxTilesY}");
 				Mod.Logger.Info($"SELFTEST arena x {arena.Left}..{arena.Left + arena.Width} y {arena.Top}..{arena.FloorY}, " +
 					$"full gravity below row {fullGravityRow:0} (arena top {arena.Top}), {bot.Blocks.Describe()}");
+				LogSpawnArea();
 				Next(Phase.Setup);
 				return;
 
@@ -390,6 +433,11 @@ public sealed class SelfTestSystem : ModSystem
 				}
 				else if (s.Mode == "surface") {
 					// Started once breath is down, in the Running phase (SurfaceAfterTicks), as the brain's reflex would.
+				}
+				else if (s.GoalFromSpawn is (int gx, int gy)) {
+					var goal = new TilePos(Main.spawnTileX + gx, Main.spawnTileY + gy);
+					Mod.Logger.Info($"SELFTEST {s.Name}: walking to {goal} ({gx},{gy} from the spawn tile)");
+					bot.SetTarget(goal, "selftest");
 				}
 				else {
 					TilePos goal = Arena.Find(s.Rows, 'G');

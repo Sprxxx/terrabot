@@ -190,9 +190,10 @@ public sealed class PathExecutor
 			CatchCell = null;
 			// A jump or a drop lands on its To; an ArrestedDrop's catch only while it can still be made (CatchCell), after that the
 			// fall is no longer the step's.
-			PlannedLanding = step.Kind is MoveKind.Jump or MoveKind.Drop or MoveKind.DropThrough ? step.To : null;
+			PlannedLanding = step.Kind is MoveKind.Jump or MoveKind.Drop or MoveKind.DropThrough || step.Kind == MoveKind.Climb && jumpPhase == JumpPhase.Air ? step.To : null;
 			bool ok = step.Kind switch {
 				MoveKind.Jump => TickJump(s, step, out input, out advanced),
+				MoveKind.Climb => TickClimb(s, step, out input, out advanced),
 				MoveKind.Pillar => TickPillar(s, step, out input, out advanced),
 				MoveKind.ArrestedDrop => TickArrestedDrop(s, step, out input, out advanced),
 				_ => TickGroundMove(s, step, out input, out advanced),
@@ -307,6 +308,9 @@ public sealed class PathExecutor
 		jumpPhase = JumpPhase.Align;
 		jumpTick = 0;
 		jumpRetries = 0;
+		climbPhase = ClimbPhase.Align;
+		climbTicks = 0;
+		climbStillTicks = 0;
 	}
 
 	private MoveInput Finish(ExecStatus status, string reason)
@@ -320,6 +324,7 @@ public sealed class PathExecutor
 
 	private int Budget(in PathStep step) => step.Kind switch {
 		MoveKind.Jump => 150 + (step.Template?.Ticks ?? 60) * 2,
+		MoveKind.Climb => 150 + (int)(step.Cost * 3),
 		MoveKind.Drop or MoveKind.DropThrough or MoveKind.ArrestedDrop => 120 + (int)(step.Cost * 3),
 		MoveKind.Pillar => 180 + (int)(step.Cost * 3),
 		_ => 60 + (int)(step.Cost * 4),
@@ -461,12 +466,25 @@ public sealed class PathExecutor
 			jumpTick = 0;
 			jumpController = new JumpController(t, Body.CanonicalLeft(step.From.X, p), Body.CanonicalLeft(step.To.X, p));
 		}
+		return TickJumpAir(s, step, step.From, out input, out advanced);
+	}
 
+	/// <summary>
+	/// A jump under way (<see cref="jumpController"/>) from <paramref name="origin"/>: a jump step's start, or a climb's hang at
+	/// the rope's top. Lands on the step's To (or a node a resync explains).
+	/// </summary>
+	private bool TickJumpAir(in BodyState s, in PathStep step, TilePos origin, out MoveInput input, out bool advanced)
+	{
+		PhysicsParams p = ctx.Physics;
+		JumpTemplate t = step.Template;
+		input = MoveInput.None;
+		advanced = false;
+		TilePos node = Body.NodeOf(s, p);
 		if (!jumpController.TookOff) {
 			// Running jump, still on the run-up: must stay on the start row between start and take-off node.
 			int dir = Math.Sign(t.Dx);
-			int along = dir * (node.X - step.From.X);
-			if (settled && (node.Y != step.From.Y || along < -1 || along > t.RunupTiles + 1)) {
+			int along = dir * (node.X - origin.X);
+			if (settled && (node.Y != origin.Y || along < -1 || along > t.RunupTiles + 1)) {
 				Finish(ExecStatus.OffPath, $"step {StepIndex} running jump {step.From}->{step.To} [{t.Variant}]: left the run-up at {node}");
 				return false;
 			}
@@ -494,6 +512,90 @@ public sealed class PathExecutor
 		Phase = jumpController.TookOff ? $"Jump t{jumpTick}/{t.Ticks}" : $"Jump run-up t{jumpTick}";
 		jumpTick++;
 		return true;
+	}
+
+	private enum ClimbPhase { Align, Up, Top }
+	private ClimbPhase climbPhase;
+	private int climbTicks, climbStillTicks;
+	/// <summary>Ticks of Up held under the rope before the grab is given up (the game takes hold the tick Up is held).</summary>
+	public const int MaxGrabTicks = 20;
+	/// <summary>How far (px) off the rope's middle the hitbox may be when Up is pressed: the game sets it on the rope from there.</summary>
+	public const float RopeAlignTolerance = 4f;
+
+	/// <summary>
+	/// A climb (<see cref="MoveKind.Climb"/>): under the rope, its column the body's middle (the game takes hold of the rope in the
+	/// hitbox's middle column, Player.FindPulley); Up held until the climb stops at the rope's top (the hang, the step's Via);
+	/// then the step's jump from there (<see cref="TickJumpAir"/>), as off the ground. Every tick holds the rope
+	/// (<see cref="MoveInput.Climb"/>), so the game adapter leaves the body on it.
+	/// </summary>
+	private bool TickClimb(in BodyState s, in PathStep step, out MoveInput input, out bool advanced)
+	{
+		PhysicsParams p = ctx.Physics;
+		input = MoveInput.None;
+		advanced = false;
+		TilePos hang = step.Via ?? step.From;
+		if (jumpPhase == JumpPhase.Air)
+			return TickJumpAir(s, step, hang, out input, out advanced);
+		input.Climb = true;
+		TilePos node = Body.NodeOf(s, p);
+		climbTicks++;
+		if (climbPhase == ClimbPhase.Align) {
+			if (s.OnRope) {
+				climbPhase = ClimbPhase.Up;
+			}
+			else {
+				if (settled && node.ChebyshevTo(step.From) > 1) {
+					if (TryResync(node)) {
+						advanced = true;
+						return true;
+					}
+					Finish(ExecStatus.OffPath, $"step {StepIndex} climb: expected to start under the rope at {step.From}, standing at {node}");
+					return false;
+				}
+				// Centred on the rope: the hitbox's middle over the rope's column.
+				float onRope = hang.X * Body.TileSize + Body.TileSize / 2f - p.Width / 2f;
+				if (Math.Abs(s.X - onRope) > RopeAlignTolerance || Math.Abs(s.VX) > 0.5f) {
+					input.Horizontal = Arrive.Steer(s.X, s.VX, onRope, p, 1f);
+					climbTicks = 0;
+					Phase = "Climb align";
+					return true;
+				}
+				if (climbTicks > MaxGrabTicks) {
+					Finish(ExecStatus.Stuck, $"step {StepIndex} climb: Up held {climbTicks} ticks under the rope at column {hang.X} from {node}, no hold taken");
+					return false;
+				}
+				input.Up = true;
+				Phase = "Climb grab";
+				return true;
+			}
+		}
+		if (climbPhase == ClimbPhase.Up) {
+			if (!s.OnRope) {
+				Finish(ExecStatus.OffPath, $"step {StepIndex} climb: off the rope at {node} on the way up to {hang}");
+				return false;
+			}
+			// The climb stops at the rope's top (the game sets vy 0 there): two still ticks at the hang or above it.
+			climbStillTicks = Math.Abs(s.VY) < 0.01f && node.Y <= hang.Y + 1 ? climbStillTicks + 1 : 0;
+			if (climbStillTicks < 2) {
+				input.Up = true;
+				Phase = $"Climb up (row {node.Y}, to {hang.Y})";
+				return true;
+			}
+			climbPhase = ClimbPhase.Top;
+		}
+		// At the top: the jump off, once Jump was let go of (a jump starts on a fresh press, Player.releaseJump).
+		if (lastJumpPressed || !s.ReleaseJump) {
+			Phase = "Climb top: letting go of Jump";
+			return true;
+		}
+		jumpPhase = JumpPhase.Air;
+		jumpTick = 0;
+		jumpController = new JumpController(step.Template, Body.CanonicalLeft(hang.X, p), Body.CanonicalLeft(step.To.X, p));
+		MoveInput air;
+		bool ok = TickJumpAir(s, step, hang, out air, out advanced);
+		input = air;
+		input.Climb = !advanced;
+		return ok;
 	}
 
 	/// <summary>

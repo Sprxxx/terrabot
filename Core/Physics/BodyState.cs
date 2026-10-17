@@ -11,6 +11,8 @@ public struct BodyState
 	public int Jump;
 	/// <summary>Player.releaseJump: jump was not held last tick, so a new jump may start.</summary>
 	public bool ReleaseJump;
+	/// <summary>Player.pulley: hanging on a rope (a climb step's, <see cref="MoveInput.Climb"/>).</summary>
+	public bool OnRope;
 
 	/// <summary>The game's own grounded test: velocity.Y == 0 (vanilla uses this exact compare).</summary>
 	public readonly bool Grounded => VY == 0f;

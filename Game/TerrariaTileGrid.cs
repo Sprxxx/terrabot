@@ -56,6 +56,10 @@ public sealed class TerrariaTileGrid : ITileGrid
 			// measured run U22, a drop planned onto webs over a shaft broke through them and fell 70 rows (455 damage).
 			if (type == TileID.Cobweb)
 				k = CellKind.Solid | CellKind.Web;
+			// A rope, chain or vine rope (Main.tileRope): open space the body can climb (ClimbMove). Seen in game (the user's world
+			// Journey Test): a house over the spawn whose way in is a rope up a shaft, read as open air.
+			if (Main.tileRope[type])
+				k |= CellKind.Rope;
 		}
 
 		if (t.LiquidAmount > 0) {
