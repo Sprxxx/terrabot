@@ -614,6 +614,79 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	public bool TownNpcAlive(int npcType) => NPC.AnyNPCs(npcType);
 
 	/// <summary>
+	/// Does this town NPC want a room? Not the three the game never houses (Main.UpdateTime_SpawnTownNPCs runs QuickFindHome
+	/// for every town NPC but 368, 37 and 453, Main.cs:83317), not one a mod keeps homeless (ModNPC.TownNPCStayingHomeless, as
+	/// WorldGen.UpdateWorld_Inner leaves it out, WorldGen.cs:66317), nor a town pet (it shares a room).
+	/// </summary>
+	private static bool WantsARoom(NPC n) => n.townNPC && n.type != NPCID.OldMan && n.type != NPCID.TravellingMerchant && n.type != NPCID.SkeletonMerchant
+		&& !NPCID.Sets.IsTownPet[n.type] && n.ModNPC?.TownNPCStayingHomeless != true;
+
+	public IReadOnlyList<TownNpcHome> TownNpcHomes()
+	{
+		var homes = new List<TownNpcHome>();
+		for (int i = 0; i < Main.maxNPCs; i++) {
+			NPC n = Main.npc[i];
+			if (n.active && WantsARoom(n))
+				homes.Add(new TownNpcHome(n.type, n.TypeName, n.homeless, new TilePos(n.homeTileX, n.homeTileY)));
+		}
+		return homes;
+	}
+
+	/// <summary>
+	/// Mirror of the rules Main.UpdateTime_SpawnTownNPCs sets Main.townNPCCanSpawn by (Main.cs:83500-83665), through the game's
+	/// own tests where it has them (NPC.SpawnAllowed_Merchant: 50 silver carried, NPC.cs:2118; SpawnAllowed_Nurse: a life crystal
+	/// used, 2101; SpawnAllowed_ArmsDealer: a gun or bullets carried, 2035; SpawnAllowed_Demolitionist: an explosive, 2010;
+	/// SpawnAllowed_DyeTrader: a dye, 2060), and the mods' (NPCLoader.CanTownNPCSpawn, Main.cs:83814: ModNPC.CanTownNPCSpawn
+	/// with the town's head count). Not the game's array itself: it is filled only by day, every 7200 ticks, and an arrival
+	/// clears its entry. Left out: the Truffle (a mushroom-biome room, WorldGen.CheckSpecialTownNPCSpawningConditions), Santa
+	/// Claus (Christmas), the Princess (every other NPC first) and the town pets (they share a room).
+	/// </summary>
+	public IReadOnlyList<(int Type, string Name)> TownNpcsThatCanCome()
+	{
+		int town = 0;
+		for (int i = 0; i < Main.maxNPCs; i++)
+			if (Main.npc[i].active && Main.npc[i].townNPC)
+				town++; // the game's num40: every town NPC counts, the Old Man and the pets too
+		bool merchant = NPC.AnyNPCs(NPCID.Merchant);
+		var can = new List<(int, string)>();
+		void If(bool rule, int type)
+		{
+			if (rule && !NPC.AnyNPCs(type))
+				can.Add((type, Lang.GetNPCNameValue(type)));
+		}
+		If(true, NPCID.Guide);
+		If(NPC.SpawnAllowed_Merchant(), NPCID.Merchant);
+		If(NPC.SpawnAllowed_Nurse() && merchant, NPCID.Nurse);
+		If(NPC.SpawnAllowed_ArmsDealer(), NPCID.ArmsDealer);
+		If(NPC.downedBoss1 || NPC.downedBoss2 || NPC.downedBoss3, NPCID.Dryad);
+		If(NPC.SpawnAllowed_Demolitionist() && merchant, NPCID.Demolitionist);
+		If(NPC.savedStylist, NPCID.Stylist);
+		If(NPC.savedAngler, NPCID.Angler);
+		If(NPC.downedBoss3, NPCID.Clothier);
+		If(NPC.savedGoblin, NPCID.GoblinTinkerer);
+		If(NPC.savedTaxCollector, NPCID.TaxCollector);
+		If(NPC.savedWizard, NPCID.Wizard);
+		If(NPC.savedMech, NPCID.Mechanic);
+		If(Main.tenthAnniversaryWorld && !Main.remixWorld || NPC.downedMechBossAny, NPCID.Steampunker);
+		If(NPC.SpawnAllowed_DyeTrader() && town >= 4, NPCID.DyeTrader);
+		If(NPC.downedQueenBee, NPCID.WitchDoctor);
+		If(NPC.downedPirates, NPCID.Pirate);
+		If(Main.hardMode && NPC.downedPlantBoss, NPCID.Cyborg);
+		If(town >= 8, NPCID.Painter);
+		If(NPC.unlockedPartyGirlSpawn, NPCID.PartyGirl);
+		If(NPC.savedBartender, NPCID.DD2Bartender);
+		If(NPC.savedGolfer, NPCID.Golfer);
+		If(Main.GetBestiaryProgressReport().CompletionPercent >= 0.1f, NPCID.BestiaryGirl);
+		for (int type = NPCID.Count; type < Terraria.ModLoader.NPCLoader.NPCCount; type++) {
+			Terraria.ModLoader.ModNPC m = Terraria.ModLoader.NPCLoader.GetNPC(type);
+			if (m != null && ContentSamples.NpcsByNetId.TryGetValue(type, out NPC sample) && WantsARoom(sample)
+				&& NPC.TypeToDefaultHeadIndex(type) >= 0 && m.CanTownNPCSpawn(town))
+				If(true, type);
+		}
+		return can;
+	}
+
+	/// <summary>
 	/// The boss bar's life: for the Eater of Worlds the sum over every active head, body and tail, as its bar counts them
 	/// (EaterOfWorldsProgressBar.cs:34-41, at any distance); for another boss the life of its active NPCs.
 	/// </summary>

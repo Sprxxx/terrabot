@@ -418,7 +418,13 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	}
 	/// <summary>Town NPC types alive somewhere in the world besides those in <see cref="TownNpcs"/> (the Guide at home, off screen).</summary>
 	public readonly HashSet<int> AliveTownNpcs = new();
-	public bool TownNpcAlive(int npcType) => AliveTownNpcs.Contains(npcType) || TownNpcs.Any(n => n.Type == npcType);
+	public bool TownNpcAlive(int npcType) => AliveTownNpcs.Contains(npcType) || TownNpcs.Any(n => n.Type == npcType) || Homes.Any(h => h.Type == npcType);
+	/// <summary>Town NPCs that want a house, and where they live (the game's housing menu): none unless a test adds them.</summary>
+	public readonly List<TownNpcHome> Homes = new();
+	public IReadOnlyList<TownNpcHome> TownNpcHomes() => Homes.ToList();
+	/// <summary>Town NPCs the game would let come now (Main.UpdateTime_SpawnTownNPCs' rules): none unless a test adds them; not those alive.</summary>
+	public readonly List<(int Type, string Name)> Comers = new();
+	public IReadOnlyList<(int Type, string Name)> TownNpcsThatCanCome() => Comers.Where(c => !TownNpcAlive(c.Type)).ToList();
 	public readonly System.Collections.Generic.HashSet<int> BossesDefeated = new();
 	public bool BossDefeated(int npcType) => BossesDefeated.Contains(npcType);
 	/// <summary>The life each boss's health bar shows (none: 0).</summary>

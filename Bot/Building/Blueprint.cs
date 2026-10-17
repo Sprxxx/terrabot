@@ -146,6 +146,68 @@ public sealed class Blueprint
 		outsideStand: new TilePos(-3, 4),
 		wallItem: ids.WoodWall);
 
+	/// <summary>Width of an NPC room's plan (<see cref="NpcRoom"/>): the house's 12, frame included.</summary>
+	public const int NpcRoomWidth = 12;
+	/// <summary>Columns from one NPC room's origin to the next one's along a row: the side wall between them is shared.</summary>
+	public const int NpcRoomStep = NpcRoomWidth - 1;
+
+	/// <summary>
+	/// A room for a town NPC, built onto a wall that stands already (<paramref name="shared"/> -1: the plan's left column is a
+	/// neighbour's right wall, +1: its right column a neighbour's left wall; 0: a room on its own) as players build a row of
+	/// rooms: the side wall between two rooms is one column, a door in it serves both. The game's housing rules, from the
+	/// decompiled WorldGen: StartRoomCheck floods the room from a cell over every non-solid tile, counting the frame tiles it
+	/// touches, and wants 60 to 750 (CheckRoom's maxRoomTiles); a closed door is solid there (Main.tileSolid[10]), so the shared
+	/// door bounds both rooms. Each flooded cell needs a house wall (Main.wallHouse: a placed Wood Wall) or a solid tile within 2
+	/// cells on its row and on its column. RoomNeeds wants a chair, a table, a door (a platform also counts:
+	/// TileID.Sets.RoomNeeds.CountsAsDoor) and a light source among the tiles flooded. ScoreRoom wants a home spot: a solid,
+	/// not solid-top floor block (no platform) with solid blocks either side and three open cells over it. The house's 12×6
+	/// passes all of it (72 tiles); so does this, the same frame and furniture with the door on the far side from the shared
+	/// wall (the right for a room on its own), and table, chair and torch kept out of the columns by the doors (an open door
+	/// swings into the column beside it).
+	/// <code>
+	///   S###########   y0 roof            S: the shared column (left or right), not part of the plan
+	///   Swwwwwwwwww#   y1
+	///   Swwwwwwwtww.   y2  torch at (8,2); the door at x11 (x0 when the right column is shared)
+	///   Swwwwwwwwww.   y3  table 3×2 at x3-5, chair at x6 (y3-4)
+	///   Swwwwwwwwww.   y4
+	///   S###########   y5 floor
+	/// </code>
+	/// </summary>
+	public static Blueprint NpcRoom(GameIds ids, int shared)
+	{
+		int door = shared > 0 ? 0 : NpcRoomWidth - 1;
+		var rows = new string[6];
+		for (int y = 0; y < rows.Length; y++) {
+			char[] row = (y == 0 || y == rows.Length - 1 ? new string('#', NpcRoomWidth) : "#" + new string('w', NpcRoomWidth - 2) + "#").ToCharArray();
+			if (y >= 2 && y <= 4)
+				row[door] = '.';
+			if (shared < 0)
+				row[0] = ' ';
+			else if (shared > 0)
+				row[NpcRoomWidth - 1] = ' ';
+			rows[y] = new string(row);
+		}
+		return new Blueprint(shared == 0 ? "NPC room" : shared < 0 ? "NPC room (left wall shared)" : "NPC room (right wall shared)", rows,
+			new[] {
+				new PlanItem(ids.Table, 3, 3, 3, 2),
+				new PlanItem(ids.Chair, 6, 3, 1, 2),
+				new PlanItem(ids.Torch, 8, 2, 1, 1),
+				new PlanItem(ids.Door, door, 2, 1, 3, PlaceLast: true),
+			},
+			inside: new TilePos(5, 2),
+			outsideStand: new TilePos(shared > 0 ? -3 : NpcRoomWidth + 2, 4),
+			wallItem: ids.WoodWall) {
+			IsNpcRoom = true, SharedSide = shared,
+			// A tree beside the house is felled for a room there, as a player would (the bot's own house keeps away from trees).
+			ChopTrees = true,
+		};
+	}
+
+	/// <summary>A room for a town NPC (<see cref="NpcRoom"/>): the planner keeps its own list of these.</summary>
+	public bool IsNpcRoom { get; init; }
+	/// <summary>An NPC room's shared side wall: -1 left, +1 right, 0 none (<see cref="NpcRoom"/>).</summary>
+	public int SharedSide { get; init; }
+
 	/// <summary>
 	/// About a screen wide, as the guides say. 64 was too narrow in game: between "turn when safe" (20 from the
 	/// middle) and the end there were only 9 tiles, less than one gap between the Eye's dashes, so the bot was

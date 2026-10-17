@@ -28,6 +28,11 @@ public sealed class RunResult
 	public int PickPower;
 	/// <summary>The game's housing check on the built house: null = valid, else the reason ("no house" if none was built).</summary>
 	public string Housing = "no house";
+	/// <summary>The planner's NPC rooms at the end, and the game's housing check on them: null when every one passes, else the first that does not.</summary>
+	public int NpcRooms;
+	public string NpcRoomHousing;
+	/// <summary>Town NPCs the game gave a home in the bot's rooms (the house and the NPC rooms), by name.</summary>
+	public List<string> NpcsHoused = new();
 	/// <summary>Iron-tier armour pieces worn at the end (0-3).</summary>
 	public int ArmourWorn;
 	/// <summary>A wooden sword is in hotbar slots 1-10 at the end (usable).</summary>
@@ -620,6 +625,48 @@ public sealed class Scenario
 				},
 				TimeoutTicks = 60 * 60 * 3,
 				Check = r => r.Housing != null ? $"housing check: {r.Housing}" : r.FallDamageHits > 0 ? "fall damage" : null,
+			},
+			new() {
+				// NPC housing (plan "housing"): the house from a kit, then rooms for the town NPCs built onto it from wood and gel
+				// at the bench, until two have moved in. The fixture clears every NPC, so the Guide can come (always, Main.cs:83508),
+				// and the Merchant: a gold coin carried (NPC.SpawnAllowed_Merchant wants 50 silver, NPC.cs:2118); max life 120 (one
+				// life crystal used) lets the Nurse come after him (SpawnAllowed_Nurse, NPC.cs:2101). The game moves them in itself:
+				// Main.UpdateTime_SpawnTownNPCs picks one every 7200 ticks of day, then WorldGen.SpawnTownNPC takes an empty valid
+				// room when a random tile update lands on its walls; so the run starts at dawn, with the whole day for it.
+				Name = "npc_housing",
+				Rows = Grid(Repeat(new string('.', 70), 16),
+					"..S" + new string('.', 67),
+					new string(',', 70),
+					Repeat(new string('#', 70), 4),
+					new string('@', 70)),
+				Mode = "auto",
+				AutoPlan = Bot.Brain.ProgressionPlanner.Plans.Housing,
+				DayTime = 0,
+				Dig = true,
+				Build = true,
+				Blocks = 60,
+				MaxLife = 120,
+				Weapon = Terraria.ID.ItemID.CopperShortsword,
+				Axe = Terraria.ID.ItemID.CopperAxe,
+				Inventory = p => {
+					int slot = 10;
+					void Give(int type, int stack = 1) => p.inventory[slot++] = new Terraria.Item(type, stack);
+					Give(Terraria.ID.ItemID.WorkBench);
+					Give(Terraria.ID.ItemID.WoodWall, 40); // the house's kit; the NPC rooms' from the wood
+					Give(Terraria.ID.ItemID.WoodenDoor);
+					Give(Terraria.ID.ItemID.WoodenChair);
+					Give(Terraria.ID.ItemID.WoodenTable);
+					Give(Terraria.ID.ItemID.Torch, 3);
+					Give(Terraria.ID.ItemID.Wood, 100); // about 30 a room: 10 for 40 walls, a table 8, a door 6, a chair 4, torches
+					Give(Terraria.ID.ItemID.Gel, 4);
+					Give(Terraria.ID.ItemID.GoldCoin);
+				},
+				TimeoutTicks = 60 * 60 * 15,
+				Check = r => r.Housing != null ? $"housing check (the house): {r.Housing}"
+					: r.NpcRooms < 1 ? "no NPC room built"
+					: r.NpcRoomHousing != null ? $"housing check (an NPC room): {r.NpcRoomHousing}"
+					: r.NpcsHoused.Count < 2 ? $"{r.NpcsHoused.Count} town NPCs moved in ({string.Join(", ", r.NpcsHoused)})"
+					: !r.LogHas("NPC housing: ") ? "no NPC housing log line" : null,
 			},
 			new() {
 				// Milestone 6 from copper tools: the iron chain, then a house, an iron-tier broadsword and the full
