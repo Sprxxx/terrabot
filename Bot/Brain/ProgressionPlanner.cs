@@ -555,6 +555,15 @@ public sealed partial class ProgressionPlanner
 	/// 10 at 100 life: 400 instead of 300). Fewer carried are used as on Classic: holding them back for research would leave the
 	/// bot at 100 life while it looks for the rest. Always false with Journey off.
 	/// </summary>
+	/// <summary>
+	/// Journey, life crystals not yet researched: the ones found are kept until the bag holds what research takes, and then
+	/// researched in one go and duplicated to the most max life crystals give, as the user plays Journey ("I wait until I have
+	/// the number I need for researching"). Used one by one, they never reach that number: seen in game (Journey test run
+	/// J1, The Aggressive Site, character Nenne), every crystal found was used at once and max life went 100, 120, 160, 200
+	/// with none ever researched; held, 10 crystals give 400 max life (15 uses), used, 15 crystals give the same.
+	/// </summary>
+	public static bool HoldCrystalsForResearch(BotContext ctx) => ctx.Journey.Enabled && ctx.Journey.ResearchLeft(ctx.Ids.LifeCrystal) > 0;
+
 	public static bool CrystalsForResearch(BotContext ctx)
 	{
 		int crystal = ctx.Ids.LifeCrystal;
@@ -970,7 +979,7 @@ public sealed partial class ProgressionPlanner
 				return Do($"researching {ctx.Inventory.Count(ctx.Ids.LifeCrystal)} life crystals (max life {ctx.Combat.LifeMaxBase})", new ResearchSkill(ctx.Ids.LifeCrystal));
 			// Life first; a crystal is kept for the heart lantern only once max life is in (see LanternFromASpareCrystal).
 			int keep = LanternStillNeeded(ctx) && ctx.Combat.LifeMaxBase >= BossLife ? 1 : 0;
-			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > keep)
+			if (ctx.Inventory.Count(ctx.Ids.LifeCrystal) > keep && !HoldCrystalsForResearch(ctx))
 				return Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase})", new UseItemSkill(ctx.Ids.LifeCrystal));
 			// Journey, researched: a click in the duplication menu, and every use up to the most crystals give (a stack is 9999).
 			if (ctx.Infinite(ctx.Ids.LifeCrystal))
@@ -1187,6 +1196,8 @@ public sealed partial class ProgressionPlanner
 			LifeAtLeast la => ctx.Combat.LifeMaxBase >= la.Life ? null
 				// Journey: crystals carried in the number research takes are researched first (then duplicated to the life wanted).
 				: CrystalsForResearch(ctx) ? Do($"researching {ctx.Inventory.Count(ctx.Ids.LifeCrystal)} life crystals (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new ResearchSkill(ctx.Ids.LifeCrystal))
+				// Journey, not researched yet: more crystals until research takes them (HoldCrystalsForResearch).
+				: HoldCrystalsForResearch(ctx) ? Resolve(new HaveItem(ctx.Ids.LifeCrystal, ctx.Journey.ResearchLeft(ctx.Ids.LifeCrystal), "life crystals to research"), claims, depth + 1, ctx)
 				: ctx.Inventory.Count(ctx.Ids.LifeCrystal) > 0 ? Do($"using a life crystal (max life {ctx.Combat.LifeMaxBase}/{la.Life})", new UseItemSkill(ctx.Ids.LifeCrystal))
 				: ctx.Infinite(ctx.Ids.LifeCrystal) ? Do($"duplicating life crystals for max life {la.Life} (max life {ctx.Combat.LifeMaxBase}, researched)",
 					new DuplicateSkill(ctx.Ids.LifeCrystal, CrystalsFor(la.Life, ctx)))

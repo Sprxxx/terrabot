@@ -242,13 +242,18 @@ public class JourneyTests
 	}
 
 	[Fact]
-	public void FewerCrystalsThanResearchTakes_AreUsedAsOnClassic()
+	public void FewerCrystalsThanResearchTakes_AreKept_ForResearch()
 	{
-		// Nothing held back: 4 of the 10 research takes are used for life now.
+		// The user's way (Journey test run J1: every crystal was used at once, max life 100 to 200 and none researched): 4 of
+		// the 10 research takes are kept, and the plan goes for more rather than using them; Classic uses them as before.
 		var (g, ctx) = Journey();
 		g.Items[FakeGame.LifeCrystal] = 4;
 		var p = new ProgressionPlanner();
-		Assert.IsType<UseItemSkill>(Resolve(p, ctx, new LifeAtLeast(200, "max life")));
+		Assert.IsNotType<UseItemSkill>(Resolve(p, ctx, new LifeAtLeast(200, "max life")));
+		Assert.True(ProgressionPlanner.HoldCrystalsForResearch(ctx));
+		var (gc, cc) = Journey(on: false);
+		gc.Items[FakeGame.LifeCrystal] = 4;
+		Assert.IsType<UseItemSkill>(Resolve(new ProgressionPlanner(), cc, new LifeAtLeast(200, "max life")));
 	}
 
 	[Fact]
