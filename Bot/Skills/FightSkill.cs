@@ -46,6 +46,62 @@ public sealed class FightSkill : ISkill
 	/// </summary>
 	public int ChaseAiStyle { get; init; } = -1;
 	public const float DefendLeashTiles = 24f;
+	/// <summary>
+	/// The deck the fight keeps to (the hellbridge: its columns and the feet row on it), or null. Knocked off it (a Demon's sickle,
+	/// a Burning Sphere), the fight walks back onto it before anything else, as the boss fight does with its arena (BossFightSkill.
+	/// BackToArena): the floor under the bridge is the Underworld's, with lava. Seen in game (world_wof E4, 2026-10-17): "Fight Demon
+	/// (9.7 tiles) [shooting]" 25 rows under the bridge, and "a forced amputation by Demon Sickle" there. The errand that owns the bot
+	/// gives it (Errand.FightDeck).
+	/// </summary>
+	public (int MinX, int MaxX, int StandY)? Deck { get; init; }
+	/// <summary>Columns past the deck's ends that still count as on it (braking slides the body a little past an end).</summary>
+	public const int DeckSlack = 2;
+	/// <summary>No way back onto the deck found: the fight goes on from where it is this long before the walk back is tried again.</summary>
+	public const int DeckRetryTicks = 300;
+	private WalkToSkill backToDeck;
+	private long deckFailedAt = long.MinValue / 2;
+
+	/// <summary>Off the deck: walking back onto it (true while that is what the tick does).</summary>
+	private bool BackToDeck(BotContext ctx)
+	{
+		if (Deck is not (int x0, int x1, int standY))
+			return false;
+		TilePos n = ctx.Node;
+		bool off = n.X < x0 - DeckSlack || n.X > x1 + DeckSlack || n.Y > standY + 1;
+		if (!off && ctx.Body.Grounded) {
+			if (backToDeck != null) {
+				backToDeck.Stop(ctx);
+				backToDeck = null;
+				ctx.Log.Info($"Fight: back on the deck at {n}");
+			}
+			return false;
+		}
+		if (!off)
+			return backToDeck != null && WalkBackToDeck(ctx);
+		if (backToDeck == null && ctx.Tick - deckFailedAt < DeckRetryTicks)
+			return false;
+		if (backToDeck == null) {
+			ctx.Log.Info($"Fight: off the deck at {n}, walking back onto row {standY} first");
+			backToDeck = new WalkToSkill(new Core.Pathfinding.GoalStandOnRow(standY, x0, x1, ctx.Physics)) { Quiet = true };
+			backToDeck.Start(ctx);
+		}
+		return WalkBackToDeck(ctx);
+	}
+
+	private bool WalkBackToDeck(BotContext ctx)
+	{
+		SkillStatus s = backToDeck.Tick(ctx);
+		State = "back to the deck";
+		if (s == SkillStatus.Running)
+			return true;
+		if (s == SkillStatus.Failed) {
+			ctx.Log.Info($"Fight: no way back onto the deck from {ctx.Node} ({backToDeck.FailureReason}); fighting on from here for a while");
+			deckFailedAt = ctx.Tick;
+		}
+		backToDeck.Stop(ctx);
+		backToDeck = null;
+		return false;
+	}
 	public const int CalmTicks = 90;
 	public const float HealBelow = 0.4f;
 	/// <summary>Hits of the hardest recent kind that life should still take after a heal is due (see <see cref="HealAt"/>).</summary>
@@ -159,6 +215,8 @@ public sealed class FightSkill : ISkill
 	{
 		approach?.Stop(ctx);
 		approach = null;
+		backToDeck?.Stop(ctx);
+		backToDeck = null;
 		ctx.Output = MoveInput.None;
 	}
 
@@ -174,6 +232,8 @@ public sealed class FightSkill : ISkill
 			ctx.Log.Warn("Fight failed: " + FailureReason);
 			return SkillStatus.Failed;
 		}
+		if (BackToDeck(ctx))
+			return SkillStatus.Running;
 		// The whole fight going nowhere: no enemy has lost any life for a long while. Seen in game (world_eye run 57): two
 		// slimes 2.7 tiles off behind a ledge, taking turns as the target and hopping in and out of reach, so no
 		// per-enemy rule ever fired, for 24 game hours. Leave them all alone for a while, even close by.

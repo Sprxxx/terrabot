@@ -92,6 +92,8 @@ public abstract class Errand
 	protected abstract Outcome CheckOwn(BotContext ctx);
 	/// <summary>Rules that hold every tick while the errand owns the bot (the depth limit lifted on the way down).</summary>
 	public virtual void Rules(BotContext ctx) { }
+	/// <summary>The deck a fight keeps to while the errand owns the bot (the hellbridge), or null (FightSkill.Deck).</summary>
+	public virtual (int MinX, int MaxX, int StandY)? FightDeck(BotContext ctx) => null;
 	/// <summary>
 	/// Optional work offered with its detour cost (ticks): accept, and the brain runs it as a sub-skill and comes back; decline, and
 	/// it waits for the errand to end. The prepare phase accepts everything, as the plan did.

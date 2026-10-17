@@ -323,6 +323,37 @@ public class HellTests
 		Assert.Equal(70, bridge.End);
 	}
 
+	/// <summary>world_wof E4 (2026-10-17): knocked off the bridge, the fight went on 25 rows down on the Underworld's floor and died there.</summary>
+	[Fact]
+	public void AFight_KnockedOffTheDeck_WalksBackOntoIt_First()
+	{
+		var (g, ctx) = OnTheTower();
+		// The tower's roof is the deck; the body on the band's floor under it, 10 rows down, 6 columns off.
+		int floorY = BridgeRow + 10;
+		for (int x = TowerFrom - 10; x <= TowerTo + 10; x++)
+			g.Grid.Set(x, floorY + 1, CellKind.Solid);
+		for (int y = BridgeRow + 1; y <= floorY; y++)
+			for (int x = TowerFrom - 10; x <= TowerTo + 10; x++)
+				g.Grid.Set(x, y, CellKind.Empty);
+		var pp = Core.Physics.PhysicsParams.Default;
+		g.Sim.State = new Core.Physics.BodyState { X = Core.Pathfinding.Body.CanonicalLeft(TowerTo + 6, pp), Y = Core.Pathfinding.Body.StandingTop(floorY, pp), ReleaseJump = true };
+		ctx.Combat.WeaponReach = 30f;
+		g.Items[FakeGame.StoneBlock] = 100;
+		var fight = new FightSkill { Deck = (TowerFrom, TowerTo, BridgeRow - 1) };
+		fight.Start(ctx);
+		SkillStatus s = SkillStatus.Running;
+		int t = 0;
+		for (; t < 6000 && s == SkillStatus.Running && !(g.Sim.Node.Y == BridgeRow - 1 && g.Sim.Node.X >= TowerFrom && g.Sim.Node.X <= TowerTo); t++) {
+			g.Refresh(ctx);
+			s = fight.Tick(ctx);
+			g.Step(ctx);
+		}
+		output.WriteLine($"{s} after {t} ticks at {g.Sim.Node}: {fight.Describe()}");
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("off the deck") && l.Contains("walking back"));
+		Assert.Equal(BridgeRow - 1, g.Sim.Node.Y);
+		Assert.InRange(g.Sim.Node.X, TowerFrom, TowerTo);
+	}
+
 	[Fact]
 	public void TheHellbridge_NeverOpensACellWithLavaBeside_AndSaysWhy()
 	{

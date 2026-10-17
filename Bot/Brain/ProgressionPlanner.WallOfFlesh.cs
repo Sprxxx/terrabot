@@ -543,6 +543,9 @@ public sealed partial class ProgressionPlanner
 		return Resolve(new HaveItem(BridgeBlockItems(ctx.Ids), count, need.Label), claims, depth + 1, ctx);
 	}
 
+	/// <summary>The hellbridge as a fight's deck (FightSkill.Deck): its columns and the feet row on it, once known.</summary>
+	public (int MinX, int MaxX, int StandY)? HellbridgeArena => HellbridgeBounds();
+
 	/// <summary>The fight's arena: the bridge's columns and the feet row on it.</summary>
 	private (int MinX, int MaxX, int StandY)? HellbridgeBounds() =>
 		bridgeKnown ? (Math.Min(bridgeBack, bridgeTo), Math.Max(bridgeBack, bridgeTo), bridgeRow - 1) : null;

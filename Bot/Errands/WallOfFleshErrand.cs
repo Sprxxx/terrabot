@@ -162,6 +162,10 @@ public sealed class WallOfFleshErrand : Errand
 		}
 	}
 
+	/// <summary>Down there with the bridge known: a fight keeps to the bridge (knocked off it, it walks back first).</summary>
+	public override (int MinX, int MaxX, int StandY)? FightDeck(BotContext ctx) =>
+		Phase != PreparePhase && Phase != DescendPhase && DownThere(ctx) && planner is ProgressionPlanner p ? p.HellbridgeArena : null;
+
 	public override IEnumerable<Need> RemainingDemand(BotContext ctx)
 	{
 		if (Phase == LootPhase)

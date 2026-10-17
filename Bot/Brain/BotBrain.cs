@@ -424,7 +424,7 @@ public sealed class BotBrain
 		}
 		else if (Current != null)
 			ctx.Log.Info($"Danger: pausing {Current.Name} to fight");
-		return new FightSkill();
+		return new FightSkill { Deck = Errand?.FightDeck(ctx) };
 	}
 
 	/// <summary>Ask the planner again at the next chance (nightfall, a chest in sight...): the same job goes on, another replaces it.</summary>
