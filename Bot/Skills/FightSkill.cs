@@ -363,6 +363,17 @@ public sealed class FightSkill : ISkill
 	public static bool NotTooDeep(BotContext ctx, EntityInfo e, float d) =>
 		e.FeetTile.Y - DeepChaseMargin <= ctx.DeepestRow || e.Id == ctx.RecentAttacker && d <= DeepAttackerWithin;
 
+	/// <summary>
+	/// A flier is a target in sight (shot at or met), or within <see cref="ThreatTiles"/> (the danger check's own distance),
+	/// or while it is what just bit the bot; one out of sight farther off is not, so a fight is not kept up waiting for it: it
+	/// comes at the bot on its own, and is fought when it comes near or into sight. Seen in game (measured run M10d,
+	/// world_eow): the fights started by eaters of souls in sight within 12 tiles went on with the next ones, out of sight 13-40
+	/// tiles off (a bow's reach), each waited for up to <see cref="MaxFarWaitTicks"/>: 33 of 240 heartbeats "waiting for it in
+	/// the open" (26 of them 12-40 tiles off), 86 times "waiting for fliers out of sight", with 441 eaters killed in the run.
+	/// </summary>
+	private static bool FlierThreat(BotContext ctx, EntityInfo e, float d, float cx, float cy) =>
+		d <= ThreatTiles * 16f || e.Id == ctx.RecentAttacker || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY);
+
 	private EntityInfo? PickTarget(BotContext ctx, float cx, float cy)
 	{
 		// With a bow, anything within shooting range is a target (a demon eye circling at 30 tiles, a boss).
@@ -376,7 +387,8 @@ public sealed class FightSkill : ISkill
 			// Enemies we found no path to (behind a wall) are left alone; out of sight is fine otherwise (we walk up).
 			bool candidate = (d <= engage || (engaged.Contains(e.Id) && e.DistanceTo(anchorX, anchorY) <= Leash)) && !unreachable.Contains(e.Id) && ctx.Fightable(e.Id, d)
 				&& NotTooDeep(ctx, e, d)
-				&& (!ctx.WaitedOut(e.Id) || d <= ThreatTiles * 16f || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) // not waited for again
+				&& (FlyingAiStyles.Contains(e.AiStyle) ? FlierThreat(ctx, e, d, cx, cy) // a flier: only one that is a threat
+					: !ctx.WaitedOut(e.Id) || d <= ThreatTiles * 16f || ClearShot(ctx, cx, cy, e.CenterX, e.CenterY)) // not waited for again
 				&& (!InWater(ctx, e) || e.Id == ctx.RecentAttacker); // nor into water after jellyfish and piranhas
 			if (e.Id == targetId && candidate)
 				current = e;
