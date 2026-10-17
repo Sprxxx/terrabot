@@ -662,7 +662,7 @@ Each mechanic is to be verified against the decompile and terraria.wiki.gg when 
   measured). Prep from the boss plan's gear (a bow, 1000 arrows, 200 life, 10 potions from the bag, blocks for the
   bridge); the Guide alive (his head on the map); a hellevator 60 tiles east of the spawn, dug in 20-row legs round
   lava cells with a ledge block after each (later trips drop ledge to ledge), onto ground on row UnderworldLayer + 42
-  (the ruined tower's roof); a 1700-tile hellbridge laid block by block over the lava by a walking builder; Voodoo
+  (the ruined tower's roof); a hellbridge laid block by block over the lava by a walking builder (L = 1.25 x 62,175 / DPS: 3829 tiles from fight_wof's 20.3 a second, both ways from the shaft, its summon end 120 tiles from the edge); Voodoo
   Demons spared (not fought, shot or shot through) until the hunt on the bridge's last 100 tiles; the doll thrown off
   the far end with the Throw key (one, a stack split first) into the lava below; the fight keeps a band ahead of the
   Wall beyond the Hungry's reach, one way, shoots the upper eye, dodges the lasers, never jumps into The Tongue; the

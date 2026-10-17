@@ -15,11 +15,15 @@ public sealed partial class ProgressionPlanner
 	/// <summary>Healing potions into the fight (spec S1: 10, from the bag).</summary>
 	public const int WofPotions = 10;
 	/// <summary>
-	/// The hellbridge's length (tiles): the spec's plan for an effective 40 a second on the eyes (section 5a: the Wall travels
-	/// 62,175 / DPS tiles while it dies, 1,555 at 40) with room to spare, "a bridge of about 1600, built to 1700". The synthetic
-	/// fight (S0, fight_wof) re-derives it: L = 1.25 x 62,175 / DPS, 1000-1750.
+	/// The hellbridge's length (tiles), the spec's rule (section 5a, S0): L = 1.25 x 62,175 / DPS, the Wall travelling 62,175 / DPS
+	/// tiles while its 8000 life (Classic, NPC.cs:5483-5501) goes at DPS a second. Measured in game (fight_wof, m12_synthetic_3,
+	/// 2026-10-17; the Demon Bow and wooden arrows, the band kiting): 20.3 a second, and the Wall went 1486 tiles for its 4000 life
+	/// there (a Journey world's life multiplier, NPC.ScaleStats_ApplyGameMode), the formula's 1531 for half the life: so 3063 tiles
+	/// for the Classic Wall, and L = 3829. Longer than one side of a small world (4200 wide): the bridge goes both ways from the
+	/// shaft, its summon end toward the nearer edge (<see cref="BridgeEdgeRoom"/> from it) and the rest back past the shaft and the
+	/// world's middle (the Wall never turns, NPC.cs:26384-26410). The spec's 1000-1750 assumed 37-50 a second.
 	/// </summary>
-	public const int DefaultBridgeLength = 1700;
+	public const int DefaultBridgeLength = 3829;
 	/// <summary>The hellbridge's length for this plan (<see cref="DefaultBridgeLength"/> unless a scenario sets it).</summary>
 	public int BridgeLength { get; set; } = DefaultBridgeLength;
 	/// <summary>Blocks carried over what is left of the bridge (spec S1: L + 100): ledges, pillars, a wall against a lava fall.</summary>
@@ -66,8 +70,15 @@ public sealed partial class ProgressionPlanner
 
 	private int? shaftX;
 	private int bridgeDir;
-	/// <summary>The hellbridge: its row, first column and last (once the bot stood on its row).</summary>
-	private int bridgeRow, bridgeFrom, bridgeTo;
+	/// <summary>
+	/// The hellbridge: its row, the column it is begun from (where the bot came down), its summon end (<see cref="bridgeTo"/>, the
+	/// far end the doll is thrown off, the Wall's side) and its flight end (<see cref="bridgeBack"/>, the far side of the shaft).
+	/// </summary>
+	private int bridgeRow, bridgeFrom, bridgeTo, bridgeBack;
+	/// <summary>A hellbridge step that failed (not for want of blocks): where the bridge ended then, and how many times in a row.</summary>
+	private int bridgeFailEnd = int.MinValue, bridgeFails;
+	/// <summary>A failed hellbridge step at the same end this many times: the plan is stuck there (the brain rests, then stops).</summary>
+	public const int MaxBridgeFails = 2;
 	private bool bridgeKnown, hellbridgeDone, thrownByPlan, unplannedLogged, lootDone, huntOn;
 	private (float X, float Y)? wofDiedAt;
 
@@ -78,21 +89,26 @@ public sealed partial class ProgressionPlanner
 	public bool HellbridgeDone => hellbridgeDone;
 	/// <summary>The Wall of Flesh's loot picked up where it died (spec S8).</summary>
 	public bool WofLootCollected => lootDone;
-	/// <summary>The hellbridge as planned: row, first and last column (null before the bot stood on its row).</summary>
-	public (int Row, int From, int To)? Hellbridge => bridgeKnown ? (bridgeRow, bridgeFrom, bridgeTo) : null;
+	/// <summary>The hellbridge as planned: row, flight end and summon end (null before the bot stood on its row).</summary>
+	public (int Row, int From, int To)? Hellbridge => bridgeKnown ? (bridgeRow, bridgeBack, bridgeTo) : null;
 	/// <summary>The hellevator's column (null before one was chosen).</summary>
 	public int? ShaftX => shaftX;
 
 	/// <summary>How far the hellbridge is built (0-1), as the tiles show it now.</summary>
 	public double HellbridgeProgress(BotContext ctx)
 	{
-		if (!bridgeKnown || bridgeTo == bridgeFrom)
+		int total = Math.Abs(bridgeTo - bridgeFrom) + Math.Abs(bridgeBack - bridgeFrom);
+		if (!bridgeKnown || total == 0)
 			return 0;
-		int end = HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo);
-		return Math.Clamp((end - bridgeFrom) / (double)(bridgeTo - bridgeFrom), 0.0, 1.0);
+		var (toEnd, backEnd) = BridgeEnds(ctx);
+		return Math.Clamp((Math.Abs(toEnd - bridgeFrom) + Math.Abs(backEnd - bridgeFrom)) / (double)total, 0.0, 1.0);
 	}
 
-	private string HellbridgeText => bridgeKnown ? $"row {bridgeRow}, x {bridgeFrom}-{bridgeTo}" : "none";
+	/// <summary>Where the two halves of the bridge end now (toward the summon end, toward the flight end).</summary>
+	private (int To, int Back) BridgeEnds(BotContext ctx) => (HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo),
+		bridgeBack == bridgeFrom ? bridgeFrom : HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeBack));
+
+	private string HellbridgeText => bridgeKnown ? $"row {bridgeRow}, x {Math.Min(bridgeBack, bridgeTo)}-{Math.Max(bridgeBack, bridgeTo)}" : "none";
 
 	private void ResetWallOfFlesh()
 	{
@@ -100,6 +116,8 @@ public sealed partial class ProgressionPlanner
 		shaftX = null;
 		bridgeDir = 0;
 		bridgeKnown = hellbridgeDone = thrownByPlan = unplannedLogged = lootDone = huntOn = false;
+		bridgeFailEnd = int.MinValue;
+		bridgeFails = 0;
 		wofDiedAt = null;
 	}
 
@@ -208,14 +226,14 @@ public sealed partial class ProgressionPlanner
 	private static int BridgeRowFor(BotContext ctx) => ctx.UnderworldRow + BridgeRowsUnderTop;
 
 	/// <summary>
-	/// The way the bridge goes: east if the world has room for it there (its end <see cref="BridgeEdgeRoom"/> from the edge), else
-	/// west. Either way its far end is a bridge's length from the shaft, and the shaft near the spawn, the world's middle.
+	/// The summon end's side: east (the spec's, section 5b: it starts at the shaft), unless the world has no room there for the end
+	/// to lie <see cref="SummonCentreGap"/> past its middle, <see cref="BridgeEdgeRoom"/> short of its edge; then west.
 	/// </summary>
 	private int BridgeDirection(BotContext ctx, int fromX)
 	{
 		if (bridgeDir != 0)
 			return bridgeDir;
-		bridgeDir = ctx.WorldWidth <= 0 || fromX + BridgeLength <= ctx.WorldWidth - BridgeEdgeRoom ? 1 : -1;
+		bridgeDir = ctx.WorldWidth <= 0 || ctx.WorldWidth - BridgeEdgeRoom > Math.Max(fromX, ctx.WorldWidth / 2 + SummonCentreGap) ? 1 : -1;
 		return bridgeDir;
 	}
 
@@ -259,23 +277,38 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>
-	/// The bridge from where the bot stands on its row: its first column is the start of the solid run under it going the other way
-	/// (a bridge built before, from a saved world, is found whole), its last a bridge's length the bridge's way, kept off the edge.
+	/// The bridge from where the bot stands on its row: begun from the column under the body's front, its summon end a bridge's
+	/// length the summon side's way or as far as the world allows (<see cref="BridgeEdgeRoom"/> from the edge), and the rest of its
+	/// length the other way past the shaft (the flight end). With the summon end against the edge, a run resumed anywhere on the
+	/// bridge (a saved world) plans the same bridge.
 	/// </summary>
 	private void KnowBridge(BotContext ctx, TilePos n, int row)
 	{
 		int dir = BridgeDirection(ctx, n.X);
 		int from = dir > 0 ? n.X + 1 : n.X;
-		for (int k = 0; k < BridgeLength && HellbridgeSkill.Built(ctx.Grid, row, from - dir); k++)
-			from -= dir;
-		int to = from + dir * BridgeLength;
-		if (ctx.WorldWidth > 0)
-			to = Math.Clamp(to, BridgeEdgeRoom, ctx.WorldWidth - BridgeEdgeRoom);
+		var (to, back) = BridgeSpan(from, dir, BridgeLength, ctx.WorldWidth);
 		bridgeKnown = true;
 		bridgeRow = row;
 		bridgeFrom = from;
 		bridgeTo = to;
-		ctx.Log.Info($"Auto: underworld reached at {n}: the hellbridge goes on row {row} from x {from} to {to} ({Math.Abs(to - from)} tiles {(dir > 0 ? "east" : "west")})");
+		bridgeBack = back;
+		ctx.Log.Info($"Auto: underworld reached at {n}: the hellbridge goes on row {row} from x {from}, {Math.Abs(to - from)} tiles {(dir > 0 ? "east" : "west")} to the summon end at x {to}"
+			+ (back != from ? $" and {Math.Abs(back - from)} tiles {(dir > 0 ? "west" : "east")} to x {back}" : "") + $" ({Math.Abs(to - back)} tiles in all)");
+	}
+
+	/// <summary>
+	/// The bridge's two ends from where it is begun (<paramref name="from"/>), the summon side <paramref name="dir"/>: the summon end a
+	/// <paramref name="length"/> that way or as far as the world allows (<see cref="BridgeEdgeRoom"/> from its edge; no edge with
+	/// <paramref name="worldWidth"/> 0), the flight end the rest of the length the other way, as far as the world allows that way.
+	/// </summary>
+	public static (int To, int Back) BridgeSpan(int from, int dir, int length, int worldWidth)
+	{
+		int east = worldWidth > 0 ? Math.Max(from, worldWidth - BridgeEdgeRoom) : int.MaxValue / 4;
+		int west = worldWidth > 0 ? Math.Min(from, BridgeEdgeRoom) : int.MinValue / 4;
+		int to = dir > 0 ? Math.Min(from + length, east) : Math.Max(from - length, west);
+		int rest = length - Math.Abs(to - from);
+		int back = dir > 0 ? Math.Max(from - rest, west) : Math.Min(from + rest, east);
+		return (to, back);
 	}
 
 	/// <summary>S4: the hellbridge built to its far end (latched: the fight's loot box may take a cell out later).</summary>
@@ -286,14 +319,22 @@ public sealed partial class ProgressionPlanner
 		if (!bridgeKnown)
 			return ResolveUnderworld(ctx);
 		ctx.DepthErrand = true;
-		int end = HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo);
-		if (end == bridgeTo) {
+		var (toEnd, backEnd) = BridgeEnds(ctx);
+		if (toEnd == bridgeTo && backEnd == bridgeBack) {
 			hellbridgeDone = true;
-			ctx.Log.Info($"Auto: the hellbridge is built: row {bridgeRow}, x {bridgeFrom}-{bridgeTo}");
+			ctx.Log.Info($"Auto: the hellbridge is built: row {bridgeRow}, x {HellbridgeText}");
 			return null;
 		}
-		return Do($"building the hellbridge on row {bridgeRow} from x {bridgeFrom} to {bridgeTo} (built to {end}, {HellbridgeProgress(ctx):P0})",
-			new HellbridgeSkill(bridgeRow, bridgeFrom, bridgeTo));
+		// The summon side first (spec S4), then the flight side past the shaft.
+		bool toward = toEnd != bridgeTo;
+		int end = toward ? toEnd : backEnd, target = toward ? bridgeTo : bridgeBack;
+		// A step that failed there before (not for want of blocks: BridgeBlocks sees to that) is not started again and again.
+		if (end == bridgeFailEnd && bridgeFails >= MaxBridgeFails) {
+			stuck = $"the hellbridge failed {bridgeFails} times in a row at x {end} on row {bridgeRow}";
+			return null;
+		}
+		return Do($"building the hellbridge on row {bridgeRow} from x {bridgeFrom} to {target} (built to {end}, {HellbridgeProgress(ctx):P0} of it all)",
+			new HellbridgeSkill(bridgeRow, bridgeFrom, target));
 	}
 
 	/// <summary>The blocks the bridge takes: stone, dirt or the ash its digging gives (BuildingBlocks and the Ash Block).</summary>
@@ -304,13 +345,19 @@ public sealed partial class ProgressionPlanner
 	{
 		if (hellbridgeDone)
 			return null;
-		int left = bridgeKnown ? Math.Abs(bridgeTo - HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo)) : BridgeLength;
+		int left = BridgeLength;
+		if (bridgeKnown) {
+			var (toEnd, backEnd) = BridgeEnds(ctx);
+			left = Math.Abs(bridgeTo - toEnd) + Math.Abs(bridgeBack - backEnd);
+			// Down there already (more blocks to get on the way): the gear's depth limit does not hold on the errand.
+			ctx.DepthErrand = true;
+		}
 		return Resolve(new HaveItem(BridgeBlockItems(ctx.Ids), left + BridgeBlockMargin, need.Label), claims, depth + 1, ctx);
 	}
 
 	/// <summary>The fight's arena: the bridge's columns and the feet row on it.</summary>
 	private (int MinX, int MaxX, int StandY)? HellbridgeBounds() =>
-		bridgeKnown ? (Math.Min(bridgeFrom, bridgeTo), Math.Max(bridgeFrom, bridgeTo), bridgeRow - 1) : null;
+		bridgeKnown ? (Math.Min(bridgeBack, bridgeTo), Math.Max(bridgeBack, bridgeTo), bridgeRow - 1) : null;
 
 	private BossFightSkill WallOfFleshFight(BossDefeated b, BotContext ctx)
 	{
@@ -440,8 +487,14 @@ public sealed partial class ProgressionPlanner
 				ctx.Log.Info($"Auto: no ground on row {shaft.StandRow + 1} under the shaft at x {x}; the hellevator moves to x {shaftX}");
 			}
 		}
-		if (skill is HellbridgeSkill && status == SkillStatus.Succeeded)
-			hellbridgeDone = true;
+		if (skill is HellbridgeSkill hb) {
+			if (status == SkillStatus.Succeeded)
+				bridgeFails = 0;
+			else if (status == SkillStatus.Failed && !hb.FailureReason.StartsWith("out of blocks") && !hb.FailureReason.StartsWith("died")) {
+				bridgeFails = hb.End == bridgeFailEnd ? bridgeFails + 1 : 1;
+				bridgeFailEnd = hb.End;
+			}
+		}
 		if (skill is BossFightSkill { IsWallOfFlesh: true } fight) {
 			if (status == SkillStatus.Succeeded)
 				wofDiedAt = fight.WallLastSeen;
@@ -451,19 +504,21 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>What the protected cells depend on: the bridge's row, first column and built end.</summary>
-	private (int, int, int) HellbridgeKey(BotContext ctx) =>
-		bridgeKnown ? (bridgeRow, bridgeFrom, HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo)) : (0, 0, 0);
+	private (int, int, int) HellbridgeKey(BotContext ctx)
+	{
+		if (!bridgeKnown)
+			return (0, 0, 0);
+		var (toEnd, backEnd) = BridgeEnds(ctx);
+		return (bridgeRow, toEnd, backEnd);
+	}
 
 	/// <summary>The hellbridge's built blocks: no walk, mine or shelter breaks them (the fight's only way, spec section 5).</summary>
 	private void ProtectHellbridge(BotContext ctx, HashSet<TilePos> cells)
 	{
 		if (!bridgeKnown)
 			return;
-		int end = HellbridgeSkill.BridgeEnd(ctx.Grid, bridgeRow, bridgeFrom, bridgeTo), dir = bridgeTo >= bridgeFrom ? 1 : -1;
-		for (int x = bridgeFrom; ; x += dir) {
+		var (toEnd, backEnd) = BridgeEnds(ctx);
+		for (int x = Math.Min(toEnd, backEnd); x <= Math.Max(toEnd, backEnd); x++)
 			cells.Add(new TilePos(x, bridgeRow));
-			if (x == end)
-				break;
-		}
 	}
 }

@@ -1,5 +1,6 @@
 using System.Linq;
 using TerraBot.Bot;
+using TerraBot.Bot.Brain;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
 using Xunit;
@@ -129,6 +130,43 @@ public class HellTests
 		Assert.Equal(SkillStatus.Failed, s);
 		Assert.Contains("lava beside or above", bridge.FailureReason);
 		Assert.True(g.Grid.Get(61, 78).IsSolid());
+	}
+
+	[Fact]
+	public void TheBridgesSpan_ForTheM12World_RunsFromTheEdgeBackPastTheShaft()
+	{
+		// fight_wof's 20.3 a second: L = 1.25 x 62,175 / 20.3 = 3829 (ProgressionPlanner.DefaultBridgeLength). From the tower by the
+		// shaft (x 2156) east: the summon end 120 short of the edge, the rest west past the world's middle.
+		var (to, back) = ProgressionPlanner.BridgeSpan(2156, 1, ProgressionPlanner.DefaultBridgeLength, 4200);
+		Assert.Equal(4200 - ProgressionPlanner.BridgeEdgeRoom, to);
+		Assert.Equal(to - ProgressionPlanner.DefaultBridgeLength, back);
+		Assert.True(back >= ProgressionPlanner.BridgeEdgeRoom);
+		// A short one goes one way only.
+		Assert.Equal((2216, 2156), ProgressionPlanner.BridgeSpan(2156, 1, 60, 4200));
+		Assert.Equal((2096, 2156), ProgressionPlanner.BridgeSpan(2156, -1, 60, 4200));
+	}
+
+	[Fact]
+	public void TheHellbridge_TakesAPlatformForDeck_MinesATileInTheWay_AndEscalatesAFailedPlace_ThenFails()
+	{
+		var (g, ctx) = OnTheTower();
+		// A platform in the bridge's row at x 55 (a ruined house's): stood on, so bridge already. A pot-like tile at x 58: mined.
+		g.Grid.Set(55, BridgeRow, CellKind.Platform);
+		g.Furniture[new TilePos(58, BridgeRow)] = 99;
+		g.PickaxeRemoves.Add(99);
+		// No block goes in at x 62 (the game refuses it): from the end, a column back, then the skill fails, saying so.
+		g.Blocks.NoPlace.Add(new TilePos(62, BridgeRow));
+		var bridge = new HellbridgeSkill(BridgeRow, TowerTo, 110);
+		var log = (TestLog)ctx.Log;
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, bridge, 20000);
+		output.WriteLine($"{s}: {bridge.FailureReason}");
+		Assert.Equal(SkillStatus.Failed, s);
+		Assert.Contains("from the end and a column back", bridge.FailureReason);
+		Assert.Contains(log.Lines, l => l.Contains("trying from a column back"));
+		Assert.Equal(61, bridge.End);
+		Assert.True(g.Grid.Get(55, BridgeRow).IsPlatform(), "the platform was left as the deck");
+		Assert.False(g.Furniture.ContainsKey(new TilePos(58, BridgeRow)));
+		Assert.True(g.Grid.Get(58, BridgeRow).IsSolid());
 	}
 
 	[Fact]

@@ -185,8 +185,17 @@ public sealed class BotContext
 	/// </summary>
 	public bool Spared(in EntityInfo e) => SparedTypes.Count > 0 && SparedTypes.Contains(e.Type) && OverLava(e);
 
-	/// <summary>Columns either side of the NPC's centre a drop may land in (loot spawns with a small sideways speed).</summary>
-	public const int SpareDropSlackTiles = 1;
+	/// <summary>
+	/// Columns either side of the NPC's centre its drop may land in: loot spawns at up to 3 px/tick sideways (Item.cs:51718), slowed
+	/// 5 % a tick in the air, 60 px at most.
+	/// </summary>
+	public const int SpareDropSlackTiles = 4;
+	/// <summary>
+	/// Ticks an arrow takes to reach a flier the fight shoots (the danger distance, 12 tiles, at 6.6-10 px/tick: 20-30): the NPC
+	/// moves on meanwhile at its speed, and dies there. Seen in game (voodoo_rule, m12_synthetic_3): a Voodoo Demon judged over the
+	/// bridge's end by one column either side was killed over the lava past it, and the Wall came.
+	/// </summary>
+	public const int SpareArrowTicks = 30;
 	/// <summary>Rows under the NPC looked down for what its drop would land on: the band's lava is at most ~40 rows under a flier.</summary>
 	public const int SpareDropRows = 80;
 
@@ -199,7 +208,8 @@ public sealed class BotContext
 		if (Grid == null)
 			return true;
 		int cx = (int)MathF.Floor(e.CenterX / 16f), top = (int)MathF.Floor(e.Bottom / 16f);
-		for (int x = cx - SpareDropSlackTiles; x <= cx + SpareDropSlackTiles; x++) {
+		int slack = SpareDropSlackTiles + (int)MathF.Ceiling(MathF.Max(MathF.Abs(e.VX), MathF.Abs(e.VY)) * SpareArrowTicks / 16f);
+		for (int x = cx - slack; x <= cx + slack; x++) {
 			bool ground = false;
 			for (int y = top; y <= top + SpareDropRows; y++) {
 				CellKind k = Grid.Get(x, y);
