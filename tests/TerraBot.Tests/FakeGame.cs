@@ -123,6 +123,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	private readonly Dictionary<TilePos, int> chopTicks = new();
 	private int nextDropId = 1000;
 	private int swingTimer;
+	/// <summary>A copper or iron pickaxe's swing (Item.useAnimation 20 and 20 ticks).</summary>
+	public const int PickaxeSwingTicks = 20;
 	/// <summary>The item in hand: what the controls ask for, switched between swings only (Player.HeldItem).</summary>
 	private int heldItem;
 	/// <summary>
@@ -130,6 +132,11 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	/// bag (its GlobalItem.ConsumeItem returns false); the effect still comes.
 	/// </summary>
 	public bool KeepsConsumables;
+	/// <summary>
+	/// The pickaxe swings as in the game (Player.itemAnimation, autoReuse: one swing after another while use is held), and the
+	/// item in hand changes and an item is used only between swings. Off: mining has no swing, and an item is used at once.
+	/// </summary>
+	public bool PickaxeSwings;
 	private int facing = 1;
 	private int placedSeen;
 	private int useTicks;
@@ -651,6 +658,9 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		MoveInput o = ctx.Output;
 		if (swingTimer == 0)
 			heldItem = o.Tool == ToolRequest.Item ? o.ToolItem : 0;
+		bool swinging = PickaxeSwings && swingTimer > 0;
+		if (PickaxeSwings && o.Tool == ToolRequest.Pickaxe && o.UseItem && swingTimer == 0)
+			swingTimer = PickaxeSwingTicks;
 		if (o.Tool == ToolRequest.Axe && o.UseItem && o.HasAim) {
 			var aim = new TilePos(o.AimX, o.AimY);
 			if (Trees.TryGetValue(aim, out int height) && Math.Abs(Sim.Node.X + 1 - aim.X) <= 4) {
@@ -696,7 +706,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			LifeMax += 20;
 			swingTimer = 20;
 		}
-		if (o.Tool == ToolRequest.Item && o.UseItem && o.HasAim && Count(o.ToolItem) > 0 && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
+		if (o.Tool == ToolRequest.Item && o.UseItem && o.HasAim && !swinging && Count(o.ToolItem) > 0 && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
 			if (o.ToolItem == WoodWall) {
 				if (CanPlaceWall(WoodWall, o.AimX, o.AimY)) {
 					Walls.Add(new TilePos(o.AimX, o.AimY));

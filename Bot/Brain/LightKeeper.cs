@@ -20,6 +20,11 @@ public sealed class LightKeeper
 	public const int CheckEvery = 20;
 	/// <summary>Ticks to keep trying one placement before giving up on that spot.</summary>
 	public const int MaxPlaceTicks = 12;
+	/// <summary>
+	/// Ticks a placement waits for the swing in hand to end (a pickaxe's is 20 or so, Item.useAnimation): three swings, then
+	/// the spot is given up.
+	/// </summary>
+	public const int MaxSwingWaitTicks = 60;
 	/// <summary>Craft torches while fewer than this are carried and gel and wood allow.</summary>
 	public const int Reserve = 20;
 	/// <summary>
@@ -35,7 +40,7 @@ public sealed class LightKeeper
 
 	private int ticks;
 	private TilePos? placing;
-	private int placeTicks;
+	private int placeTicks, swingWaitTicks;
 	private TilePos? lastFailed;
 
 	public int Placed { get; private set; }
@@ -57,7 +62,10 @@ public sealed class LightKeeper
 				placing = null;
 				return;
 			}
-			if (++placeTicks > MaxPlaceTicks || ctx.Inventory.Count(torch) <= 0) {
+			// Still swinging something else (the dig's pickaxe): the torch comes into the hand when the swing ends, as a player's
+			// hotbar switch waits for it; the placement's ticks count from then.
+			bool waiting = ctx.Combat.ItemAnimation > 0 && ctx.Combat.HeldItemType != torch;
+			if ((waiting ? ++swingWaitTicks > MaxSwingWaitTicks : ++placeTicks > MaxPlaceTicks) || ctx.Inventory.Count(torch) <= 0) {
 				lastFailed = cell;
 				placing = null;
 				return;
@@ -65,7 +73,11 @@ public sealed class LightKeeper
 			Use(ctx, torch, cell);
 			return;
 		}
-		if (ticks % CheckEvery != 0 || ctx.Inventory.Count(torch) <= KeepForCrafting || ctx.Combat.ItemAnimation > 0)
+		// Between swings, or during a dig's: the pickaxe swings one swing after another while a dig goes on (autoReuse), with a
+		// tick between them at most, so a check every CheckEvery ticks that wanted the hand free met it once in hundreds of ticks.
+		// Seen in game (user report, Journey run J2): digging straight down "elevator-style", no torches. Not a weapon's swing:
+		// a fight's next swing is not held up for light.
+		if (ticks % CheckEvery != 0 || ctx.Inventory.Count(torch) <= KeepForCrafting || ctx.Combat.ItemAnimation > 0 && ctx.Output.Tool != ToolRequest.Pickaxe)
 			return;
 		TilePos n = ctx.Node;
 		if (ctx.World.LightAt(n.X, n.Y - 1) >= DarkBelow || TorchNear(ctx, n))
@@ -74,7 +86,7 @@ public sealed class LightKeeper
 		if (spot == null)
 			return;
 		placing = spot;
-		placeTicks = 0;
+		placeTicks = swingWaitTicks = 0;
 		Use(ctx, torch, spot.Value);
 	}
 

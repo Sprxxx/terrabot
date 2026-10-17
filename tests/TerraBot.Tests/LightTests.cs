@@ -60,6 +60,46 @@ public class LightTests
 		Assert.True(g.Count(FakeGame.Torch) > 0);
 	}
 
+	/// <summary>
+	/// User report (2026-10-17, Journey run J2): digging straight down, "elevator-style", the bot placed no torches. The
+	/// pickaxe swings one swing after another while the dig goes on (autoReuse), and the keeper looked for the dark only
+	/// between swings, which a dig never has. The torch goes in at the end of a swing, and the dig goes on.
+	/// </summary>
+	[Fact]
+	public void DiggingStraightDown_InTheDark_TorchesTheShaft()
+	{
+		var rows = new System.Collections.Generic.List<string>();
+		for (int y = 0; y < 25; y++)
+			rows.Add(new string('.', 30));
+		for (int y = 25; y < 80; y++)
+			rows.Add(new string(y >= 76 ? '@' : 's', 30));
+		char[] feet = rows[24].ToCharArray();
+		feet[5] = 'S';
+		rows[24] = new string(feet);
+		var g = new FakeGame(rows.ToArray()) { PickaxeSwings = true, Light = 0.05f };
+		g.Items[FakeGame.Torch] = 30;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 24;
+		var light = new LightKeeper();
+		var walk = new Bot.Skills.WalkToSkill(new Core.Pathfinding.GoalRow(70, 5, ctx.Physics) { Below = true }) { Underground = true };
+		walk.Start(ctx);
+		var s = Bot.Skills.SkillStatus.Running;
+		for (int t = 0; t < 20000 && s == Bot.Skills.SkillStatus.Running; t++) {
+			g.Refresh(ctx);
+			ctx.Output = Core.Physics.MoveInput.None;
+			s = walk.Tick(ctx);
+			light.Tick(ctx);
+			g.Step(ctx);
+		}
+		var torches = g.Furniture.Where(kv => kv.Value == FakeGame.TileTorch).Select(kv => kv.Key).OrderBy(c => c.Y).ToList();
+		output.WriteLine($"{s} at {ctx.Node}: {torches.Count} torches at {string.Join(" ", torches)}");
+		Assert.Equal(Bot.Skills.SkillStatus.Succeeded, s);
+		Assert.True(ctx.Node.Y >= 70);
+		// One every Spacing rows or so down the 45 rows dug (before: 3, 19 rows apart, when a check met the tick between swings).
+		Assert.True(torches.Count >= 4, $"{torches.Count} torches");
+		Assert.True(torches.Zip(torches.Skip(1), (a, b) => b.Y - a.Y).All(d => d <= LightKeeper.Spacing + 3), "spaced as in the open");
+	}
+
 	[Fact]
 	public void Lit_PlacesNone()
 	{
