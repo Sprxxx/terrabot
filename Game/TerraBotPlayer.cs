@@ -569,6 +569,13 @@ public sealed class TerraBotPlayer : ModPlayer
 		k.ItemAnimation = Player.itemAnimation;
 		k.HeldItemType = Player.HeldItem?.type ?? 0;
 		k.CanQuickHeal = Player.potionDelay == 0 && Player.QuickHeal_GetItemToUse() != null;
+		int bestHeal = 0;
+		for (int i = 0; i < 58; i++) {
+			Item it = Player.inventory[i];
+			if (it.stack > 0 && it.type > ItemID.None && it.potion && it.healLife > 0)
+				bestHeal = Math.Max(bestHeal, Player.GetHealLife(it, quickHeal: true));
+		}
+		k.BestHealLife = bestHeal;
 		k.PotionSickTicks = Player.potionDelay;
 		k.Breath = Player.breath;
 		k.BreathMax = Player.breathMax;

@@ -205,6 +205,23 @@ public class WallOfFleshFightTests
 		Assert.Equal(0, ctx.Output.Horizontal);
 	}
 
+	/// <summary>world_wof E26 (2026-10-17): healed at 200 of 240 (a Lesser potion's 40, then a minute's sickness), 22 Healing Potions unused.</summary>
+	[Fact]
+	public void TheWallFight_HealsWhenTheBestPotionsLifeIsMissing_NotAtEightyFivePercent()
+	{
+		var (g, ctx, fight) = Setup(Wall(50f));
+		ctx.Combat.LifeMax = 240;
+		ctx.Combat.BestHealLife = 100;
+		ctx.Combat.CanQuickHeal = true;
+		ctx.Combat.Life = 200; // 40 missing: a potion of 100 would waste most of it
+		fight.Tick(ctx);
+		Assert.False(ctx.Output.QuickHeal);
+		ctx.Tick = 2;
+		ctx.Combat.Life = 140; // 100 missing
+		fight.Tick(ctx);
+		Assert.True(ctx.Output.QuickHeal);
+	}
+
 	[Fact]
 	public void NearTheUnderworldsTopRow_NoJump_TheTongueWouldTakeUs()
 	{

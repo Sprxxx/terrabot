@@ -1418,7 +1418,15 @@ public sealed class BossFightSkill : ISkill
 	private void Heal(BotContext ctx)
 	{
 		float below = IsWallOfFlesh ? WallHealBelow : HealBelow;
-		bool want = ctx.Combat.LifeFraction < System.Math.Max(below, FightSkill.HealAt(ctx)) && ctx.Combat.CanQuickHeal && !healPressedLastTick;
+		// The Wall: with the bag's best potion known, a heal once that much life is missing (none of it wasted), or sooner when the
+		// hits in hand say so. Seen in game (world_wof E26, 2026-10-17): healed at 196-201 of 240 by WallHealBelow, a Lesser Healing
+		// Potion's 40 then a minute's sickness each time, three heals in the fight with 22 Healing Potions in the bag; the life ran
+		// down to nothing under Leeches inside a sickness, the Wall at 1384/8000.
+		bool due = IsWallOfFlesh && ctx.Combat.BestHealLife > 0 && ctx.Combat.LifeMax > 0
+			? ctx.Combat.LifeMax - ctx.Combat.Life >= System.Math.Min(ctx.Combat.BestHealLife, ctx.Combat.LifeMax * (1f - HealBelow))
+				|| ctx.Combat.LifeFraction < FightSkill.HealAt(ctx)
+			: ctx.Combat.LifeFraction < System.Math.Max(below, FightSkill.HealAt(ctx));
+		bool want = due && ctx.Combat.CanQuickHeal && !healPressedLastTick;
 		if (want)
 			Heals++;
 		ctx.Output.QuickHeal = want;

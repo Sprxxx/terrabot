@@ -282,8 +282,27 @@ public class WallOfFleshPlanTests
 		if (s is WalkToSkill toStand) {
 			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, toStand, 3000));
 			g.Refresh(ctx);
+		}
+		// E26 (2026-10-17): at the summon column, the arrows the bag's makings allow are made there first (a bench made beside it, the
+		// one known being far), nothing fetched.
+		g.Items[FakeGame.Wood] = 30;
+		g.Items[FakeGame.StoneBlock] = 4;
+		g.Stations[FakeGame.TileBench] = new TilePos(sx - 4, Row - 1); // made beside the stand (E26 made one there)
+		for (int i = 0; i < 20; i++)
+			g.Refresh(ctx); // the fake's station scan is taken every 20 refreshes
+		p.SeeStationsForTest(ctx);
+		g.Items[FakeGame.WoodenArrow] = 1000; // with the 150 Unholy Arrows: over the packing list's refill line (1120), under the fight's 1200
+		int arrowsBefore = 1000;
+		g.Refresh(ctx);
+		s = Next(p, ctx);
+		for (int i = 0; i < 6 && s is CraftSkill or PlaceItemSkill; i++) {
+			output.WriteLine($"{p.Status} -> {s.Describe()}");
+			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, s, 3000));
+			p.OnSkillFinished(s, SkillStatus.Succeeded, ctx);
+			g.Refresh(ctx);
 			s = Next(p, ctx);
 		}
+		Assert.Equal(arrowsBefore + 2 * 25, g.Items.GetValueOrDefault(FakeGame.WoodenArrow)); // to 1200 in all: two crafts of the four the bag allows
 		Assert.IsType<BossFightSkill>(s);
 		Assert.Contains($"summoning the Wall of Flesh: a Guide Voodoo Doll into the lava off the hellbridge at x {sx}", p.Status);
 	}

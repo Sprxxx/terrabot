@@ -66,6 +66,8 @@ public sealed class CombatInfo
 	public int HeldItemType { get; set; }
 	/// <summary>Is there a healing potion that quick-heal (H) would use, with no potion sickness?</summary>
 	public bool CanQuickHeal { get; set; }
+	/// <summary>The most life one healing potion in the bag gives (vanilla Player.GetHealLife with quickHeal), 0 for none or not known.</summary>
+	public int BestHealLife { get; set; }
 	/// <summary>Ticks of potion sickness left (vanilla Player.potionDelay): above 0 just after a heal.</summary>
 	public int PotionSickTicks { get; set; }
 	/// <summary>Breath (Player.breath, 0..breathMax = 200): runs down under water, drowning at 0.</summary>

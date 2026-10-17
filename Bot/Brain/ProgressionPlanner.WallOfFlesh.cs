@@ -697,6 +697,35 @@ public sealed partial class ProgressionPlanner
 	/// end away from the world's middle, lava under where the doll lands, at the end, full life with no potion sickness), and the
 	/// fight, whose summon throws it (<see cref="WallOfFleshPattern.Summon"/>).
 	/// </summary>
+	/// <summary>
+	/// At the summon column: every Wooden Arrow the bag's makings allow, up to <see cref="WofFightArrows"/>, crafted there (a bench made
+	/// beside it if the one known is far), and nothing fetched: the fight goes on with what is carried. Seen in game (world_wof E26,
+	/// 2026-10-17): summoned with 500 arrows (the fight phase's top-up line is 400, for the walk), 120 wood and 12 stone in the bag;
+	/// out at 30 arrows with the Wall at 1384/8000.
+	/// </summary>
+	private ISkill ArrowsBeforeTheSummon(BotContext ctx)
+	{
+		int arrow = ctx.Ids.WoodenArrow;
+		RecipeInfo r = arrow > 0 ? BestRecipe(arrow, ctx) : null;
+		if (r == null || r.Ingredients.Count == 0)
+			return null;
+		int[] all = Tiers(arrow, ctx.Ids.UnholyArrow);
+		int have = ctx.Inventory.CountAny(all);
+		int crafts = r.Ingredients.Min(i => ctx.Inventory.CountAny(i.Accepts) / Math.Max(1, i.Stack));
+		int target = Math.Min(WofFightArrows, have + crafts * r.ResultStack);
+		if (crafts <= 0 || target <= have)
+			return null;
+		string before = stuck;
+		// Wooden Arrows alone (the tiered need would cost Unholy Arrows' worm teeth, a hunt).
+		ISkill s = Resolve(new HaveItem(arrow, ctx.Inventory.Count(arrow) + target - have, "arrows for the fight (made at the summon column)"),
+			new Dictionary<int, int>(), 1, ctx);
+		if (s is CraftSkill or PlaceItemSkill || s != null && ReferenceEquals(s, stationWalk)
+			&& KnownStations.TryGetValue(stationWalkType, out TilePos bench) && bench.ChebyshevTo(ctx.Node) <= FarStationTiles)
+			return s;
+		stuck = before; // nothing more to be had here without fetching: summoned with what is carried
+		return null;
+	}
+
 	private ISkill ResolveWallOfFlesh(BossDefeated b, bool bossHere, BotContext ctx)
 	{
 		if (Scheduler == Schedulers.Errands && Plan == Plans.WallOfFlesh && !ErrandAsking && !bossHere)
@@ -750,6 +779,9 @@ public sealed partial class ProgressionPlanner
 		if (landing.Count > 0) // from the deck's last column that stays: every landing cell within the pickaxe's reach
 			return Do($"opening the hellbridge's deck over the lava at x {landing[0].X}-{landing[^1].X} for the doll to fall through",
 				new MineCellsSkill(landing, new TilePos(sx + dir * (LandingFrom - 1), stand)));
+		// Near the summon column: the arrows first (a bench within FarStationTiles walked to, else made here).
+		if (ctx.Node.ChebyshevTo(endStand) <= FarStationTiles + HomeArrivedTiles && ArrowsBeforeTheSummon(ctx) is ISkill arrows)
+			return arrows;
 		// At the summon column, or a column short of it (the doll lands 3-6 columns past it from either, LandingFrom).
 		if (ctx.Node.Y != stand || Math.Abs(ctx.Node.X - endStand.X) > 1)
 			return Do($"to the hellbridge's summon column at {endStand} to summon the {b.Label}", new WalkToSkill(new GoalStandAt(endStand, ctx.Physics)) { Quiet = true });
