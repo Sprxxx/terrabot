@@ -376,7 +376,10 @@ public sealed class WallOfFleshErrand : Errand
 			return;
 		phaseSkill = null;
 		// The bridge stopped at a wall it cannot mine, with explosives carried: the next skill is the blast, not a failure counted.
-		if (skill is HellbridgeSkill { Blocker: TilePos wall } && status == SkillStatus.Failed && Blasts < MaxBlasts && BlastOutSkill.Carried(ctx).Count > 0) {
+		// Only without the pickaxe for it: with power 65 a brick is mined, and a bomb on the bridge is the bot's own death (E7, 2026-10-17:
+		// "no way out of the blast's 64 px box", then "put on display by Peppe's Bomb"; the user: "you can mine the hellstone with the pickaxe").
+		if (skill is HellbridgeSkill { Blocker: TilePos wall } && status == SkillStatus.Failed && ctx.PickPower < StageTable.HellstonePickPower
+			&& Blasts < MaxBlasts && BlastOutSkill.Carried(ctx).Count > 0) {
 			blastAt = wall;
 			if (planner is ProgressionPlanner p)
 				p.BridgeBlasted();

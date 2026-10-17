@@ -747,6 +747,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		siteFailures = 0;
 		evilGround = null;
 		evilGroundAt = long.MinValue / 2;
+		evilArenaLooked = false;
 	}
 
 	/// <summary>Max life from life crystals stops at 400 (vanilla: 15 crystals).</summary>
@@ -1663,6 +1664,14 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		// the plan knows how to make. The user (2026-10-17, E6): "You could just use a pickaxe that can mine hellstone? Why not be as
 		// prepared as possible for the next step of the game": the Nightmare Pickaxe's 6 scales were trashed after the first kill.
 		if (BossDropOf(item, ctx.Ids) is BossDefeated again) {
+			// Prepared as for the first kill: the arena in the evil biome first (found again if it stands, else built). Seen in game
+			// (E7, 2026-10-17): the Eater fought again on open corruption ground, "off the ground round (1916,310), walking back" over and
+			// over, 4 of the 6 scales looted, and the bot dead at 53/220.
+			if (again.InEvilBiome) {
+				ISkill arena = Resolve(new ArenaBuilt(EvilArenaLabel, InEvilBiome: true), claims, depth + 1, ctx);
+				if (arena != null || stuck != null)
+					return arena;
+			}
 			Status = $"need {more} more {name}: the {again.Label} fought again for them";
 			return Resolve(again, claims, depth + 1, ctx);
 		}
@@ -1934,6 +1943,15 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				ctx.Log.Info($"Auto: the arena at {eye} lies in the {ctx.Ids.EvilName} ({ctx.CorruptionAround(Middle(bp, eye))} {ctx.Ids.EvilName} tiles round its middle): "
 					+ "the Eater of Worlds is fought there");
 			}
+			// An arena built in an earlier run stands in the world though the planner's memory is gone (a checkpoint resumed, E7
+			// 2026-10-17): looked for once round the evil ground before a new one is built.
+			if (slot.Site == null && !slot.OnOpenGround && !evilArenaLooked) {
+				evilArenaLooked = true;
+				if (FindBuiltArena(ctx, bp, EvilGround(ctx) ?? ctx.Node) is TilePos standing) {
+					slot.Site = standing;
+					ctx.Log.Info($"Auto: the {name} built before stands at {standing}: fought there");
+				}
+			}
 		}
 		if (slot.Site is TilePos done && ArenaReady(ctx, bp, done))
 			return null;
@@ -2102,6 +2120,30 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 					return false;
 			}
 		return bp.Items.All(it => it.Optional || BuildSkill.IsPlaced(ctx, bp, site, it)); // a campfire left out: still an arena
+	}
+
+	private bool evilArenaLooked;
+	/// <summary>Columns either side of the evil ground a standing arena is looked for in (<see cref="FindBuiltArena"/>).</summary>
+	public const int BuiltArenaSearchTiles = 250;
+
+	/// <summary>
+	/// A ready arena of this blueprint standing near <paramref name="around"/>: its site, or null. Every column within
+	/// <see cref="BuiltArenaSearchTiles"/>, the rows about the surface there; <see cref="ArenaReady"/> leaves at the first cell that
+	/// does not fit, so the scan is cheap.
+	/// </summary>
+	public static TilePos? FindBuiltArena(BotContext ctx, Blueprint bp, TilePos around)
+	{
+		for (int x = around.X - BuiltArenaSearchTiles; x <= around.X + BuiltArenaSearchTiles; x++) {
+			if (SurfaceAt(ctx.Grid, x) is not TilePos surface)
+				continue;
+			for (int y = surface.Y - bp.Height - 4; y <= surface.Y + 4; y++) {
+				var site = new TilePos(x, y);
+				// Ready, and with at least one of its torches or the campfire standing: a bare flat stretch of ground is "ready" too.
+				if (ArenaReady(ctx, bp, site) && bp.Items.Any(it => BuildSkill.IsPlaced(ctx, bp, site, it)))
+					return site;
+			}
+		}
+		return null;
 	}
 
 	/// <summary>The arena's columns and the feet row of a player standing on its floor, if there is one.</summary>

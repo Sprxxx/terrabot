@@ -398,6 +398,7 @@ public class ErrandTests
 		Run(g, ctx, brain, 10, () => brain.Errand != null);
 		var access = Assert.IsType<WallOfFleshErrand>(brain.Errand);
 		Run(g, ctx, brain, 40000, () => access.Phase == WallOfFleshErrand.BridgePhase && brain.Work is HellbridgeSkill);
+		g.Items.Remove(FakeGame.NightmarePickaxe); // the pickaxe for hellstone lost down there: the bombs are the way (with one, the brick is mined)
 		// A hot wall across the bridge's way, three rows high, a few columns ahead.
 		int wallX = g.Sim.Node.X + 6;
 		for (int y = Row - 3; y <= Row - 1; y++) {

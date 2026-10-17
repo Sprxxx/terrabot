@@ -255,7 +255,10 @@ public sealed class HellbridgeSkill : ISkill
 	private SkillStatus Unmineable(BotContext ctx, TilePos cell)
 	{
 		CellKind k = ctx.Grid.Get(cell.X, cell.Y);
-		if ((k & CellKind.Hazard) != 0) {
+		// A hot cell (hellstone, hellstone brick) the pickaxe is too weak for stops the bridge, saying what gets past it. With the power
+		// for it (65), what keeps the game from mining it is what stands on it, below. Seen in game (E7, 2026-10-17): "cannot be mined at
+		// pick power 65 (tile 76)", a ruined house's hellstone brick with furniture on it, and the bombs tried instead killed the bot.
+		if ((k & CellKind.Hazard) != 0 && ctx.PickPower < Progression.StageTable.HellstonePickPower) {
 			Blocker = cell;
 			return Fail(ctx, Unbreakable(ctx, cell));
 		}

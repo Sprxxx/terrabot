@@ -211,8 +211,9 @@ public class EvilBossTests
 		g.Items[FakeGame.RottenChunk] = 0;
 		g.Items[FakeGame.WormFood] = 1;
 
-		// (h) The arena in the corruption, built.
-		BuildTheEvilArena(g, ctx, p);
+		// (h) The arena in the corruption, built. A planner with no memory of it (a checkpoint resumed) finds it standing (E7, 2026-10-17).
+		BuildSkill arenaBuild = BuildTheEvilArena(g, ctx, p);
+		Assert.Equal(arenaBuild.Origin, ProgressionPlanner.FindBuiltArena(ctx, Blueprint.Arena(ctx.Ids, inEvilBiome: true), InTheCorruption));
 
 		// (i) The fight, on it, by day.
 		var fight = FightNext(g, ctx, p);
@@ -222,6 +223,24 @@ public class EvilBossTests
 		g.BossesDefeated.Add(FakeGame.EowHead);
 		Assert.Null(Next(p, ctx));
 		Assert.True(p.Complete, p.Status);
+
+		// (j) Later, the planner's memory gone (a checkpoint resumed) and the Wall of Flesh's errand short of the Nightmare Pickaxe's
+		// scales (E7, 2026-10-17): the Eater is fought again, on the arena that stands, found again, not on open ground.
+		var (ctx2, p2) = AfterTheEye(g);
+		p2.Reset(ProgressionPlanner.Plans.WallOfFlesh);
+		g.Items[FakeGame.ShadowScale] = 0;
+		g.Items[FakeGame.DemoniteBar] = 12;
+		g.Items[FakeGame.WormFood] = 1;
+		g.Items.Remove(FakeGame.NightmarePickaxe);
+		MoveTo(g, ctx2, InTheCorruption.X, Feet);
+		ctx2.UnderworldRow = 400;
+		var errand = new Bot.Errands.WallOfFleshErrand(InTheCorruption.X, 450, ctx2.Ids);
+		errand.Begin(ctx2);
+		ISkill again = errand.NextSkill(ctx2, p2);
+		output.WriteLine($"{errand.Status} | {p2.Status} -> {again?.Describe()}");
+		// An arena (the Eye's lies in the zone in this world, or the one found standing), never open ground.
+		Assert.NotNull(p2.EvilArenaSite);
+		Assert.NotNull(again);
 	}
 
 	/// <summary>The plan's next job is the arena in the corruption: built in the fake, and the plan told it is done.</summary>
