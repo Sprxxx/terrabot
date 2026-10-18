@@ -322,6 +322,8 @@ public sealed class GameIds
 	public int WoodWall { get; init; }
 	/// <summary>Stone Wall: 4 from a Stone Block at a work bench, a house wall as Wood Wall is (Main.wallHouse[5]).</summary>
 	public int StoneWall { get; init; }
+	/// <summary>Stone Block, what Stone Wall is made of.</summary>
+	public int StoneBlock { get; init; }
 	public int Door { get; init; }
 	public int Chair { get; init; }
 	public int Table { get; init; }

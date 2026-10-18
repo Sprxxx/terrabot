@@ -52,6 +52,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		SilverTierGreaves = WorldGen.SavedOreTiers.Silver == TileID.Tungsten ? ItemID.TungstenGreaves : ItemID.SilverGreaves,
 		WoodWall = ItemID.WoodWall,
 		StoneWall = ItemID.StoneWall,
+		StoneBlock = ItemID.StoneBlock,
 		Door = ItemID.WoodenDoor,
 		Chair = ItemID.WoodenChair,
 		Table = ItemID.WoodenTable,

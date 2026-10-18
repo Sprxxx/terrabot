@@ -75,7 +75,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Gel = Gel, Torch = Torch, FurnaceTile = TileFurnace, AnvilTile = TileAnvil, IronTierPickaxe = IronPickaxe,
 		IronTierBroadsword = IronBroadsword, IronTierHelmet = IronHelmet, IronTierChainmail = IronChainmail, IronTierGreaves = IronGreaves,
 		SilverTierHelmet = SilverHelmet, SilverTierChainmail = SilverChainmail, SilverTierGreaves = SilverGreaves,
-		WoodWall = WoodWall, StoneWall = StoneWall, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
+		WoodWall = WoodWall, StoneWall = StoneWall, StoneBlock = StoneBlock, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,

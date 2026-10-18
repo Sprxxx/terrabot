@@ -261,8 +261,14 @@ public sealed partial class ProgressionPlanner
 		var needs = new List<Need>();
 		if (blocks > 0)
 			needs.Add(new HaveItem(ctx.Ids.BuildingBlocks, blocks + BlockMargin, "building blocks"));
+		// With stone to spare, the walls are Stone Wall only: carried Wood Walls stay free to be crafted back into the furniture's Wood.
+		// Seen in game (world_wof E52, 2026-10-18): 42 Wood Walls counted for the walls, the door 2 Wood short, for six game days.
+		IReadOnlyList<int> wallItems = bp.WallItems;
+		if (walls > 0 && ctx.Ids.StoneWall > 0 && wallItems.Contains(ctx.Ids.StoneWall)
+			&& ctx.Inventory.Count(ctx.Ids.StoneBlock) >= walls / 4 + 1 + blocks + BlockMargin)
+			wallItems = new[] { ctx.Ids.StoneWall };
 		if (walls > 0)
-			needs.Add(new HaveItem(bp.WallItems, walls, ctx.Knowledge.ItemName(bp.WallItems[0])));
+			needs.Add(new HaveItem(wallItems, walls, ctx.Knowledge.ItemName(wallItems[0])));
 		foreach (PlanItem it in bp.Items)
 			if (!BuildSkill.IsPlaced(ctx, bp, site, it))
 				needs.Add(new HaveItem(it.ItemType, 1, ctx.Knowledge.ItemName(it.ItemType)));

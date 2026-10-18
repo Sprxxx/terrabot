@@ -261,6 +261,28 @@ public class NpcHousingTests
 		Assert.True(g.Walls.Count > 0 && g.Count(FakeGame.StoneBlock) < 100, $"stone left {g.Count(FakeGame.StoneBlock)}");
 	}
 
+	/// <summary>
+	/// world_wof E52 (2026-10-18): the room's walls (Stone or Wood Wall) claimed as Stone Wall only, so the Wood Walls they counted
+	/// looked free: crafted into Wood for the door, then the walls crafted back, for six game days. Claims are by the item counted.
+	/// </summary>
+	[Fact]
+	public void WallsCountedForTheRoom_AreNotCraftedIntoWood()
+	{
+		var (g, ctx, brain, _) = Settled();
+		g.Add(new RecipeInfo { Result = FakeGame.Wood, Ingredients = new[] { new Ingredient(4, FakeGame.WoodWall) }, Stations = new[] { FakeGame.TileBench } });
+		g.Items[FakeGame.Wood] = 4;
+		g.Items[FakeGame.WoodWall] = 42;
+		g.Refresh(ctx);
+		brain.Planner.SeeStationsForTest(ctx);
+		ISkill next = brain.Planner.ResolveNeeds(new Need[] {
+			new HaveItem(new[] { FakeGame.StoneWall, FakeGame.WoodWall }, 38, "walls"),
+			new HaveItem(FakeGame.Wood, 6, "Wood"),
+		}, ctx, out _);
+		output.WriteLine($"{brain.Planner.Status} -> {next?.Describe()}");
+		Assert.False(next is CraftSkill c && c.Describe().Contains($"item {FakeGame.Wood} "), brain.Planner.Status);
+		Assert.IsNotType<CraftSkill>(next);
+	}
+
 	[Fact]
 	public void TwoCanCome_AndTheHouseIsEmpty_OneRoomMore()
 	{

@@ -1651,12 +1651,14 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	private ISkill ResolveItem(HaveItem h, Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
 		IGameKnowledge k = ctx.Knowledge;
-		int claimed = claims.GetValueOrDefault(h.Accepts[0]);
-		int available = ctx.Inventory.CountAny(h.Accepts) - claimed;
+		// Claims by item, each accepted item its own: a need taking Stone Wall or Wood Wall claims the walls it counts, not Stone
+		// Wall alone. Seen in game (world_wof E52, 2026-10-18): the room's walls claimed as Stone Wall, the 42 Wood Walls carried looked
+		// free, 8 were crafted into 2 Wood for the door, the walls then 6 short were crafted back from the Wood, for six game days.
+		int available = Unclaimed(h.Accepts, claims, ctx);
 		if (h.RefillBelow > 0 && available >= h.Count)
 			stocked.Add(StockKey(h));
 		if (available >= h.Count || h.RefillBelow > 0 && available >= h.RefillBelow && stocked.Contains(StockKey(h))) {
-			claims[h.Accepts[0]] = claimed + Math.Min(h.Count, available);
+			Claim(h.Accepts, Math.Min(h.Count, available), claims, ctx);
 			return null;
 		}
 		stocked.Remove(StockKey(h));
@@ -1789,13 +1791,30 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	public const int PlantNearHomeTiles = 200;
 	private long noTreesAt = long.MinValue / 2, plantedAt = long.MinValue / 2;
 
+	/// <summary>What the bag holds of the accepted items that no need has claimed yet, item by item.</summary>
+	private static int Unclaimed(IReadOnlyList<int> accepts, Dictionary<int, int> claims, BotContext ctx) =>
+		accepts.Distinct().Sum(a => Math.Max(0, ctx.Inventory.Count(a) - claims.GetValueOrDefault(a)));
+
+	/// <summary>Claims <paramref name="n"/> of the accepted items, the first ones first, each from what of it is still unclaimed.</summary>
+	private static void Claim(IReadOnlyList<int> accepts, int n, Dictionary<int, int> claims, BotContext ctx)
+	{
+		foreach (int a in accepts.Distinct()) {
+			if (n <= 0)
+				break;
+			int take = Math.Min(n, Math.Max(0, ctx.Inventory.Count(a) - claims.GetValueOrDefault(a)));
+			if (take > 0)
+				claims[a] = claims.GetValueOrDefault(a) + take;
+			n -= take;
+		}
+	}
+
 	/// <summary>A recipe for <paramref name="more"/> of the item whose every ingredient the bag holds, unclaimed, as it is (no crafting below).</summary>
 	private static RecipeInfo RecipeFromTheBag(int item, int more, Dictionary<int, int> claims, BotContext ctx)
 	{
 		foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item)) {
 			int crafts = (more + Math.Max(1, r.ResultStack) - 1) / Math.Max(1, r.ResultStack);
 			if (r.Ingredients.Count > 0 && r.Ingredients.All(ing => !ing.Accepts.Contains(item)
-				&& ctx.Inventory.CountAny(ing.Accepts) - claims.GetValueOrDefault(ing.Accepts[0]) >= ing.Stack * crafts))
+				&& Unclaimed(ing.Accepts, claims, ctx) >= ing.Stack * crafts))
 				return r;
 		}
 		return null;
