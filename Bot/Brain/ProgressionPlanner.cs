@@ -1677,6 +1677,11 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		ItemSource src = k.SourceOf(item);
 		if (src.EvilBiome && src.Kind is SourceKind.Hunt or SourceKind.Mine)
 			return ResolveEvilSource(item, src, more, target, claims, depth, ctx);
+		// Wood the bag already holds in another form (Wood Walls, 4 to 1 at a work bench): crafted back before a walk for trees, from
+		// what no other need has claimed. Seen in game (world_wof E48, 2026-10-18): 42 Wood Walls carried, 5 Wood, "need 3 more Wood",
+		// "no reachable trees found after 6 explorations" twice, the Guide's room left for a day.
+		RecipeInfo fromBag = src.Kind == SourceKind.Tree ? RecipeFromTheBag(item, more, claims, ctx) : null;
+		if (fromBag == null)
 		switch (src.Kind) {
 			case SourceKind.Tree: {
 				// Every other wood the need takes counts too (an any-wood recipe: Ebonwood from the Corruption's trees). Seen in
@@ -1712,7 +1717,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		// What only a boss drops (shadow scales, tissue samples): the boss fought again for them, as a player farms it, with the summon
 		// the plan knows how to make. The user (2026-10-17, E6): "You could just use a pickaxe that can mine hellstone? Why not be as
 		// prepared as possible for the next step of the game": the Nightmare Pickaxe's 6 scales were trashed after the first kill.
-		if (BossDropOf(item, ctx.Ids) is BossDefeated again) {
+		if (fromBag == null && BossDropOf(item, ctx.Ids) is BossDefeated again) {
 			// Prepared as for the first kill: the arena in the evil biome first (found again if it stands, else built). Seen in game
 			// (E7, 2026-10-17): the Eater fought again on open corruption ground, "off the ground round (1916,310), walking back" over and
 			// over, 4 of the 6 scales looted, and the bot dead at 53/220.
@@ -1724,7 +1729,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			Status = $"need {more} more {name}: the {again.Label} fought again for them";
 			return Resolve(again, claims, depth + 1, ctx);
 		}
-		RecipeInfo recipe = BestRecipe(item, ctx);
+		RecipeInfo recipe = fromBag ?? BestRecipe(item, ctx);
 		if (recipe == null) {
 			stuck = $"no recipe or source for {name}";
 			return null;
@@ -1764,6 +1769,18 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			}
 		string have = string.Join(", ", recipe.Ingredients.Select(i => $"{k.ItemName(i.Item)} {ctx.Inventory.CountAny(i.Accepts)}/{i.Stack * crafts}"));
 		return Do($"crafting {more} {name} ({have})", new CraftSkill(item, target));
+	}
+
+	/// <summary>A recipe for <paramref name="more"/> of the item whose every ingredient the bag holds, unclaimed, as it is (no crafting below).</summary>
+	private static RecipeInfo RecipeFromTheBag(int item, int more, Dictionary<int, int> claims, BotContext ctx)
+	{
+		foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item)) {
+			int crafts = (more + Math.Max(1, r.ResultStack) - 1) / Math.Max(1, r.ResultStack);
+			if (r.Ingredients.Count > 0 && r.Ingredients.All(ing => !ing.Accepts.Contains(item)
+				&& ctx.Inventory.CountAny(ing.Accepts) - claims.GetValueOrDefault(ing.Accepts[0]) >= ing.Stack * crafts))
+				return r;
+		}
+		return null;
 	}
 
 	/// <summary>A work bench or furnace farther than this (tiles) is made anew where the bot is, if the bag holds what it takes.</summary>

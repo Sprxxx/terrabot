@@ -222,6 +222,27 @@ public class NpcHousingTests
 		Assert.Contains(log, l => l.Contains("1 rooms (1 valid), 1 occupied (Guide), 0 empty") && l.Contains("building room 2"));
 	}
 
+	/// <summary>world_wof E48 (2026-10-18): 42 Wood Walls and 5 Wood carried, no tree in reach: the wood is crafted back from the walls.</summary>
+	[Fact]
+	public void WoodShort_NoTrees_TheCarriedWallsAreCraftedBackIntoWood()
+	{
+		var (g, ctx, brain, _) = Settled();
+		g.Add(new RecipeInfo { Result = FakeGame.Wood, Ingredients = new[] { new Ingredient(4, FakeGame.WoodWall) }, Stations = new[] { FakeGame.TileBench } });
+		g.Items[FakeGame.Wood] = 5;
+		g.Items[FakeGame.WoodWall] = 42;
+		g.Refresh(ctx);
+		brain.Planner.SeeStationsForTest(ctx);
+		ISkill next = brain.Planner.ResolveForTest(new HaveItem(FakeGame.Wood, 8, "Wood"), ctx);
+		output.WriteLine($"{brain.Planner.Status} -> {next?.Describe()}");
+		Assert.IsType<CraftSkill>(next);
+		Assert.StartsWith("crafting 3 ", brain.Planner.Status);
+		// Walls another need has claimed are not crafted away: with none to spare, the trees.
+		g.Items[FakeGame.WoodWall] = 3;
+		g.Refresh(ctx);
+		next = brain.Planner.ResolveForTest(new HaveItem(FakeGame.Wood, 8, "Wood"), ctx);
+		Assert.IsType<GatherWoodSkill>(next);
+	}
+
 	[Fact]
 	public void TwoCanCome_AndTheHouseIsEmpty_OneRoomMore()
 	{
