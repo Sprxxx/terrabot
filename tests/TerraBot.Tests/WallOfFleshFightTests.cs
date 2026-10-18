@@ -193,6 +193,24 @@ public class WallOfFleshFightTests
 		Assert.Equal(9, fight.TargetId);
 	}
 
+	/// <summary>
+	/// world_wof E65 (2026-10-18): a dodge from something following the body ran 342 tiles west in 34 s, the Wall lost from view
+	/// ("the boss left"), twice. A dodge keeps within the band's far edge: from farther, it may not go farther still.
+	/// </summary>
+	[Fact]
+	public void ADodge_NeverTakesTheBodyPastTheBandsFarEdge()
+	{
+		var (_, ctx, fight) = Setup(Wall(50f));
+		float bodyX = ctx.Body.X;
+		// The Wall 50 tiles east (band near edge 30, far edge 70): some way west is free.
+		var (min50, _) = fight.WallSideBound(ctx, Wall(50f)[0], bodyX - 2000f, bodyX + 2000f);
+		Assert.True(min50 < bodyX - 10 * 16f, $"min {min50 / 16f:0.0}, body {bodyX / 16f:0.0}");
+		Assert.True(min50 >= bodyX - 21 * 16f, $"min {min50 / 16f:0.0} past the far edge");
+		// The Wall 100 tiles east: past the far edge already, no farther west.
+		var (min100, _) = fight.WallSideBound(ctx, Wall(100f)[0], bodyX - 2000f, bodyX + 2000f);
+		Assert.True(min100 >= bodyX - 0.01f, $"min {min100 / 16f:0.0}, body {bodyX / 16f:0.0}");
+	}
+
 	[Fact]
 	public void ALaserComingAtUs_IsDodged_NeverTowardTheWall()
 	{

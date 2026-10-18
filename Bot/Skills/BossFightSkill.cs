@@ -1284,7 +1284,7 @@ public sealed class BossFightSkill : ISkill
 	/// nearer the Wall than that already (then only away from it): a dodge never turns back toward the Wall past the band, nor
 	/// behind it (spec section 6).
 	/// </summary>
-	private (float MinX, float MaxX) WallSideBound(BotContext ctx, EntityInfo? wall, float minX, float maxX)
+	public (float MinX, float MaxX) WallSideBound(BotContext ctx, EntityInfo? wall, float minX, float maxX)
 	{
 		if (wall is not EntityInfo w)
 			return (minX, maxX);
@@ -1292,12 +1292,23 @@ public sealed class BossFightSkill : ISkill
 		int dir = WallOfFleshPattern.Direction(w, ctx.Body.CenterX(p));
 		float near = WallOfFleshPattern.BandMinTiles(WallOfFleshPattern.LifeFraction(w), ctx.Expert) * 16f;
 		float limit = w.CenterX + dir * near - p.Width * 0.5f;
-		if (dir < 0)
+		// Nor farther from it than the band's far edge (the near edge and DodgeBandTiles more): a dodge from something that follows
+		// the body (a Hellbat, a Hungry II) runs on as far as it is chased. Seen in game (world_wof E65, 2026-10-18): "dodge left
+		// (kiting standing passes 11 px from it)" over and over, 342 tiles in 34 s, the Wall out of view and "the boss left"; twice.
+		float far = w.CenterX + dir * (near + DodgeBandTiles * 16f) - p.Width * 0.5f;
+		if (dir < 0) {
 			maxX = Math.Min(maxX, Math.Max(ctx.Body.X, limit));
-		else
+			minX = Math.Max(minX, Math.Min(ctx.Body.X, far));
+		}
+		else {
 			minX = Math.Max(minX, Math.Min(ctx.Body.X, limit));
+			maxX = Math.Min(maxX, Math.Max(ctx.Body.X, far));
+		}
 		return (minX, maxX);
 	}
+
+	/// <summary>Tiles past the band's near edge a dodge may take the body away from the Wall (<see cref="WallSideBound"/>).</summary>
+	public const float DodgeBandTiles = 40f;
 
 	/// <summary>
 	/// Columns a walk back onto the bridge may end in: ahead of the Wall by its band's near edge, or
