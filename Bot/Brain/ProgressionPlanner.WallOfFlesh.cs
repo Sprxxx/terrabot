@@ -886,7 +886,7 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>The column the doll is thrown from: the summon end with lava under where it lands, else the last column back toward the start with it; null with none.</summary>
-	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeBack, dir, row, ThrowSlack);
+	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeBack, dir, row, ThrowSlack, standOnDeck: true);
 
 	/// <summary>Columns of lava past the landing window the summon column also wants: the throw may come from a column or two off.</summary>
 	public const int ThrowSlack = 2;
@@ -895,12 +895,24 @@ public sealed partial class ProgressionPlanner
 	public const int ArrowsBackTiles = 10; // back to the far end: on a bridge taken as it stands, "from" is only where the bot stood
 
 	/// <summary>The last column from <paramref name="end"/> back toward <paramref name="start"/> with lava under where the doll lands past it (<see cref="LavaBeyond"/>), or null.</summary>
-	public static int? LastLavaColumn(BotContext ctx, int end, int start, int dir, int row, int slack = 0)
+	public static int? LastLavaColumn(BotContext ctx, int end, int start, int dir, int row, int slack = 0, bool standOnDeck = false)
 	{
 		for (int x = end; (x - start) * dir >= 0; x -= dir)
-			if (LavaBeyond(ctx, x, dir, row, slack))
+			if (LavaBeyond(ctx, x, dir, row, slack) && (!standOnDeck || StandHasFloor(ctx, x, dir, row)))
 				return x;
 		return null;
+	}
+
+	/// <summary>
+	/// The deck under where the body stands to throw from summon column <paramref name="sx"/> (two columns, the stand's and the next
+	/// toward the end): a column chosen over the columns already opened for the doll has nowhere to stand. Seen in game (world_wof E62,
+	/// 2026-10-18): the summon column moved back to x 4070 (ThrowSlack), its stand 4069 inside the opened 4068-4071; the walk there from
+	/// 4072 went off the deck's end into the lava.
+	/// </summary>
+	public static bool StandHasFloor(BotContext ctx, int sx, int dir, int row)
+	{
+		int standX = dir > 0 ? sx - 1 : sx;
+		return ctx.Grid.Get(standX, row).CanStandOn() && ctx.Grid.Get(standX + 1, row).CanStandOn();
 	}
 
 	/// <summary>The deck cells over the landing columns past the summon column, where built: the doll would lie on them.</summary>

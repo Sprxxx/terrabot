@@ -126,4 +126,27 @@ public class BridgeFightTests
 		Assert.True(ProgressionPlanner.LavaBeyond(ctx, 8, 1, row));
 		Assert.False(ProgressionPlanner.LavaBeyond(ctx, 12, 1, row)); // from two columns on: lands 15-18, onto the ground
 	}
+
+	/// <summary>E62: the summon column moved back over the columns already opened for the doll; its stand had no floor.</summary>
+	[Fact]
+	public void TheSummonColumn_HasDeckUnderItsStand()
+	{
+		var (g, ctx) = Field();
+		int row = 20;
+		for (int x = 0; x < 60; x++) {
+			for (int y = row + 1; y <= row + 6; y++)
+				g.Grid.Set(x, y, CellKind.Empty);
+			g.Grid.Set(x, row, x <= 30 ? CellKind.Solid : CellKind.Empty); // the deck to x 30
+		}
+		for (int x = 24; x <= 33; x++)
+			g.Grid.Set(x, row + 6, CellKind.Lava); // lava under x 24-33: with the margin, a column over the hole would be picked
+		for (int x = 24; x <= 27; x++)
+			g.Grid.Set(x, row, CellKind.Empty); // opened for the doll
+		Assert.Equal(25, ProgressionPlanner.LastLavaColumn(ctx, 30, 0, 1, row, ProgressionPlanner.ThrowSlack)); // the stand 24-25: the hole
+		int sx = ProgressionPlanner.LastLavaColumn(ctx, 30, 0, 1, row, ProgressionPlanner.ThrowSlack, standOnDeck: true).Value;
+		output.WriteLine($"summon column {sx}");
+		Assert.True(ProgressionPlanner.StandHasFloor(ctx, sx, 1, row));
+		Assert.True(g.Grid.Get(sx - 1, row).IsSolid() && g.Grid.Get(sx, row).IsSolid(), $"stand {sx - 1}-{sx} has no deck");
+		Assert.Equal(23, sx);
+	}
 }
