@@ -304,7 +304,12 @@ public sealed class GatherWoodSkill : ISkill
 	public const int ExploreStepTiles = 40;
 	/// <summary>Deeper than this below the surface's height, no tree can be in sight: the search starts on the surface.</summary>
 	public const int UndergroundRows = 12;
-	public const int MaxExplores = 6;
+	/// <summary>
+	/// Explorations (alternating sides, <see cref="ExploreStepTiles"/> farther each pair) before the skill gives up: 14 reach 280 tiles
+	/// each way, plus <see cref="TreeSearchTiles"/>. Seen in game (world_wof E48/E49, 2026-10-18): 6 (120 each way) found nothing
+	/// round a base whose forest was cut, "no reachable trees found after 6 explorations" every day, the Guide's room never built.
+	/// </summary>
+	public const int MaxExplores = 14;
 	public const int CollectRadius = 20;
 	/// <summary>Failed walks up to the surface before the skill gives up: the second one, from where the first left it, is the retry.</summary>
 	public const int MaxFailedWalksUp = 2;
