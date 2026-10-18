@@ -254,12 +254,34 @@ public class WallOfFleshPlanTests
 	}
 
 	/// <summary>
-	/// world_wof E12 (2026-10-17): the bridge's end against the world's edge, where the lava sea does not reach: "no lava under where the
-	/// doll would land ... and no room to go on", the errand blocked with the whole bridge built and the doll in hand. The doll is thrown
-	/// from the last column back with lava under where it lands, the deck over those columns opened first.
+	/// world_wof E61 (2026-10-18): no bench near, "placing a Ash Wood Work Bench here" at the summon end's stub (the doll's opened
+	/// columns behind, the deck's end ahead, lava under both); the walk to the spot stepped off the end. A bench is placed 10 columns back.
 	/// </summary>
 	[Fact]
-	public void NoLavaUnderWhereTheDollWouldLand_TheDeckIsOpenedOverTheLavaBehindTheEnd_AndTheDollThrownThere()
+	public void NoBenchNear_TheArrowsBenchIsPlacedBackFromTheSummonEnd()
+	{
+		var (g, ctx, p, sx) = AtTheSummonColumn();
+		g.Items[FakeGame.Wood] = 30;
+		g.Items[FakeGame.StoneBlock] = 4;
+		g.Items[FakeGame.WoodenArrow] = 1000;
+		g.Refresh(ctx);
+		ISkill s = Next(p, ctx);
+		bool placed = false;
+		for (int i = 0; i < 10 && s is CraftSkill or PlaceItemSkill or WalkToSkill; i++) {
+			output.WriteLine($"at {ctx.Node}: {p.Status} -> {s.Describe()}");
+			if (s is PlaceItemSkill) {
+				placed = true;
+				Assert.True(System.Math.Abs(ctx.Node.X - sx) >= ProgressionPlanner.ArrowsBackTiles - 1, $"a bench placed at x {ctx.Node.X}, the summon column {sx}");
+			}
+			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, s, 3000));
+			p.OnSkillFinished(s, SkillStatus.Succeeded, ctx);
+			g.Refresh(ctx);
+			s = Next(p, ctx);
+		}
+		Assert.True(placed, "no bench placed");
+	}
+
+	private (FakeGame g, BotContext ctx, ProgressionPlanner p, int sx) AtTheSummonColumn()
 	{
 		var (g, ctx, p) = AfterTheEye();
 		var shaft = Assert.IsType<HellevatorSkill>(Next(p, ctx));
@@ -289,6 +311,19 @@ public class WallOfFleshPlanTests
 			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, toStand, 3000));
 			g.Refresh(ctx);
 		}
+		return (g, ctx, p, sx);
+	}
+
+	/// <summary>
+	/// world_wof E12 (2026-10-17): the bridge's end against the world's edge, where the lava sea does not reach: "no lava under where the
+	/// doll would land ... and no room to go on", the errand blocked with the whole bridge built and the doll in hand. The doll is thrown
+	/// from the last column back with lava under where it lands, the deck over those columns opened first.
+	/// </summary>
+	[Fact]
+	public void NoLavaUnderWhereTheDollWouldLand_TheDeckIsOpenedOverTheLavaBehindTheEnd_AndTheDollThrownThere()
+	{
+		var (g, ctx, p, sx) = AtTheSummonColumn();
+		ISkill s;
 		// E26 (2026-10-17): at the summon column, the arrows the bag's makings allow are made there first (a bench made beside it, the
 		// one known being far), nothing fetched.
 		g.Items[FakeGame.Wood] = 30;
@@ -301,8 +336,11 @@ public class WallOfFleshPlanTests
 		int arrowsBefore = 1000;
 		g.Refresh(ctx);
 		s = Next(p, ctx);
-		for (int i = 0; i < 6 && s is CraftSkill or PlaceItemSkill; i++) {
-			output.WriteLine($"{p.Status} -> {s.Describe()}");
+		// E61 (2026-10-18): a bench is never placed at the summon end (its stub: a step off into lava); this one, standing, is used.
+		for (int i = 0; i < 10 && s is CraftSkill or PlaceItemSkill or WalkToSkill; i++) {
+			output.WriteLine($"at {ctx.Node}: {p.Status} -> {s.Describe()}");
+			if (s is PlaceItemSkill)
+				Assert.True(System.Math.Abs(ctx.Node.X - sx) >= ProgressionPlanner.ArrowsBackTiles - 1, $"a bench placed at x {ctx.Node.X}, the summon column {sx}");
 			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, s, 3000));
 			p.OnSkillFinished(s, SkillStatus.Succeeded, ctx);
 			g.Refresh(ctx);

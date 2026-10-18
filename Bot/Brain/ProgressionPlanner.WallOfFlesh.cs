@@ -860,8 +860,17 @@ public sealed partial class ProgressionPlanner
 			return Do($"opening the hellbridge's deck over the lava at x {landing[0].X}-{landing[^1].X} for the doll to fall through",
 				new MineCellsSkill(landing, new TilePos(sx + dir * (LandingFrom - 1), stand)));
 		// Near the summon column: the arrows first (a bench within FarStationTiles walked to, else made here).
-		if (ctx.Node.ChebyshevTo(endStand) <= FarStationTiles + HomeArrivedTiles && ArrowsBeforeTheSummon(ctx) is ISkill arrows)
+		if (ctx.Node.ChebyshevTo(endStand) <= FarStationTiles + HomeArrivedTiles && ArrowsBeforeTheSummon(ctx) is ISkill arrows) {
+			// Not at the summon end itself: a bench is placed and arrows made where the body stands, and the end is a stub of deck between
+			// the doll's opened columns and the deck's last column, lava under both. Seen in game (world_wof E61, 2026-10-18): "placing a
+			// Ash Wood Work Bench here" at (4073,1041), the walk to the spot stepped off the end, 35 rows into lava.
+			// (A bench already standing near the end is walked to and used where it is: only a new one placed "here" is placed back.)
+			if (arrows is PlaceItemSkill && (ctx.Node.X - (endStand.X - dir * ArrowsBackTiles)) * dir > 0)
+				return Do($"back {ArrowsBackTiles} columns from the summon end to make the arrows there",
+					new WalkToSkill(new GoalStandOnRow(stand, Math.Min(endStand.X - dir * (ArrowsBackTiles + 4), endStand.X - dir * ArrowsBackTiles),
+						Math.Max(endStand.X - dir * (ArrowsBackTiles + 4), endStand.X - dir * ArrowsBackTiles), ctx.Physics)) { Quiet = true });
 			return arrows;
+		}
 		// At the summon column, or a column short of it (the doll lands 3-6 columns past it from either, LandingFrom), and only where
 		// the columns it lands in from where the body stands are lava. Seen in game (world_wof E60, 2026-10-18): thrown east from x 4073,
 		// two columns past the stand, the doll lay on the ground at x 4079 beyond the lava; the walk to pick it up left the deck and a
@@ -880,7 +889,10 @@ public sealed partial class ProgressionPlanner
 	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeBack, dir, row, ThrowSlack);
 
 	/// <summary>Columns of lava past the landing window the summon column also wants: the throw may come from a column or two off.</summary>
-	public const int ThrowSlack = 2; // back to the far end: on a bridge taken as it stands, "from" is only where the bot stood
+	public const int ThrowSlack = 2;
+
+	/// <summary>The arrows before the summon (and the bench they may need) are made at least this many columns back from the summon column.</summary>
+	public const int ArrowsBackTiles = 10; // back to the far end: on a bridge taken as it stands, "from" is only where the bot stood
 
 	/// <summary>The last column from <paramref name="end"/> back toward <paramref name="start"/> with lava under where the doll lands past it (<see cref="LavaBeyond"/>), or null.</summary>
 	public static int? LastLavaColumn(BotContext ctx, int end, int start, int dir, int row, int slack = 0)
