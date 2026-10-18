@@ -1047,6 +1047,8 @@ public sealed class BotBrain
 
 	public void Tick(BotContext ctx)
 	{
+		if (Auto && Nav.Sample(ctx.Tick, ctx.Node, Goal, Current?.Describe() ?? "none") is string waste)
+			ctx.Log.Warn(waste);
 		// While the bot has the keys (auto mode, or a skill running): never a fall that hurts, whatever the skill did with them.
 		bool driving = Auto || Current != null;
 		ctx.NoteZone();
@@ -1363,7 +1365,12 @@ public sealed class BotBrain
 	{
 		Work = skill;
 		skill.Start(ctx);
+		if (Auto && Nav.Decision(ctx.Tick, Errand != null ? Errand.Status : Planner.Status, Goal) is string loop)
+			ctx.Log.Warn(loop);
 	}
+
+	/// <summary>Wasted movement and plan loops, logged as "Nav waste" (<see cref="NavWatch"/>).</summary>
+	public NavWatch Nav { get; } = new();
 
 	/// <summary>
 	/// The long-term goal for the overlay (the user, 2026-10-18): the errand that owns the bot and its phase ("Wall of Flesh: fight"),

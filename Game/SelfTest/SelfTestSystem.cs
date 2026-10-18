@@ -1000,7 +1000,9 @@ public sealed class SelfTestSystem : ModSystem
 		string line = $"SELFTEST {(ok ? "PASS" : "FAIL")} {s.Name}{(ok ? "" : " -- " + reason)} | {result.Outcome} | ticks {result.Ticks}, " +
 			$"plans {plans}, replans {replans}, broken {result.Broken}, placed {result.Placed}, lowest feet row {result.MaxFeetRow}, " +
 			$"fall hits {result.FallDamageHits}, falling blocks {result.FallingBlocksSeen}, life lost {result.LifeLost}, hits {result.Hits} ({result.DamageTaken} damage), deaths {result.Deaths}, enemies left {result.EnemiesLeft}, " +
-			$"wood {result.Wood}, swords {result.Swords}, bench {result.BenchPlaced}" + (s.RealWorld ? $", milestones [{result.Milestones}]" : "");
+			$"wood {result.Wood}, swords {result.Swords}, bench {result.BenchPlaced}" + (s.RealWorld ? $", milestones [{result.Milestones}]" : "")
+			+ $", nav waste: {result.Log.Count(l => l.StartsWith("Nav waste: up"))} up-and-back, {result.Log.Count(l => l.StartsWith("Nav waste: down"))} down-and-back, "
+			+ $"{result.Log.Count(l => l.StartsWith("Nav waste: back in the area"))} revisits, {result.Log.Count(l => l.StartsWith("Nav waste: the same decision"))} plan loops";
 		summary.Add(line);
 		Mod.Logger.Info(line);
 	}
