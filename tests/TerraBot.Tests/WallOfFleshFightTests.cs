@@ -211,6 +211,32 @@ public class WallOfFleshFightTests
 		Assert.True(min100 >= bodyX - 0.01f, $"min {min100 / 16f:0.0}, body {bodyX / 16f:0.0}");
 	}
 
+	/// <summary>
+	/// world_wof E66 (2026-10-18): the Wall at 35/8000, the bot kept 62 tiles ahead with terrain between it and the eyes, "no clear
+	/// arc" until a Hungry killed it. Nearly down and out of line for a second, the body stands to let the Wall come into line.
+	/// </summary>
+	[Fact]
+	public void TheWallNearlyDown_NoArc_TheBodyStands_InsteadOfRunning()
+	{
+		int Run(int life)
+		{
+			var (g, ctx, fight) = Setup(Wall(40f, life: life));
+			int wallCol = (int)(BodyX / 16f) + 15;
+			for (int y = 0; y < 24; y++)
+				g.Grid.Set(wallCol, y, Core.Grid.CellKind.Solid); // terrain between us and the eyes and mouth
+			int dir = 0;
+			for (int t = 0; t < BossFightSkill.FinishNoArcTicks + 5; t++) {
+				ctx.Hostiles = Wall(40f, life: life);
+				fight.Tick(ctx);
+				dir = ctx.Output.Horizontal;
+			}
+			output.WriteLine($"life {life}: {fight.State}, horizontal {dir}");
+			return dir;
+		}
+		Assert.Equal(-1, Run(4000)); // half its life: the band holds, it runs west
+		Assert.Equal(0, Run(500)); // nearly down: it stands
+	}
+
 	[Fact]
 	public void ALaserComingAtUs_IsDodged_NeverTowardTheWall()
 	{

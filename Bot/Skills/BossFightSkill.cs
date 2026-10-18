@@ -476,8 +476,10 @@ public sealed class BossFightSkill : ISkill
 		}
 		else if (canShoot && IsWorm) // no servant, or none in a clear line: the worm
 			(aim, clear) = WormShot(ctx, cx, cy);
-		else if (canShoot && IsWallOfFlesh)
+		else if (canShoot && IsWallOfFlesh) {
 			(aim, clear) = WallOfFleshShot(ctx, cx, cy);
+			wallNoArcTicks = clear ? 0 : wallNoArcTicks + 1;
+		}
 		else if (canShoot && IsBrain)
 			(aim, clear) = BrainShot(ctx, cx, cy);
 		if (aim is AimSolution a) {
@@ -1243,6 +1245,14 @@ public sealed class BossFightSkill : ISkill
 			wallRunning = true;
 		else if (ahead > far)
 			wallRunning = false;
+		// Nearly down with no arc to it for a second: stand and let it come into line (from FinishStandMinTiles on, run as ever).
+		// Seen in game (world_wof E66, 2026-10-18): the Wall at 35/8000, the bot kept 62 tiles ahead with the terrain by the bridge's
+		// west end between it and the eyes, "no clear arc" until a Hungry killed it; 7965 of 8000 dealt.
+		if (FinishStand(w, ahead)) {
+			if (wallRunning && ctx.Tick - lastBandLog >= 60)
+				ctx.Log.Info($"Boss fight: the Wall at {w.Life}/{w.LifeMax} {ahead / 16f:0} tiles off and no clear arc for {wallNoArcTicks} ticks: standing to let it come into line");
+			wallRunning = false;
+		}
 		bool room = wallDir > 0 ? maxX - ctx.Body.X >= 16f : ctx.Body.X - minX >= 16f;
 		if (wallRunning && room)
 			ctx.Output.Horizontal = wallDir;
@@ -1256,6 +1266,17 @@ public sealed class BossFightSkill : ISkill
 				+ (!wallRunning ? "standing, letting it come" : room ? $"running {(wallDir > 0 ? "east" : "west")}" : "no bridge left ahead: standing and shooting") + $" at {ctx.Node}");
 		}
 	}
+
+	/// <summary>Ticks in a row the Wall's shot found no clear arc (<see cref="FinishStand"/>).</summary>
+	private int wallNoArcTicks;
+	/// <summary>No clear arc this long, with the Wall nearly down: the body stands (<see cref="FinishStand"/>).</summary>
+	public const int FinishNoArcTicks = 60;
+	/// <summary>Standing to let a nearly-down Wall come into line stops this near it: from here the body runs as ever.</summary>
+	public const float FinishStandMinTiles = 24f;
+
+	/// <summary>The Wall nearly down (its last <see cref="WallFinishShare"/>), no arc to it for <see cref="FinishNoArcTicks"/>, and not yet within <see cref="FinishStandMinTiles"/>.</summary>
+	public bool FinishStand(EntityInfo w, float aheadPx) =>
+		w.LifeMax > 0 && w.Life <= w.LifeMax * WallFinishShare && wallNoArcTicks >= FinishNoArcTicks && aheadPx >= FinishStandMinTiles * 16f;
 
 	/// <summary>A Heart lying ahead of the body (the way the Wall travels) within <see cref="HeartAheadTiles"/>, near the bridge's row.</summary>
 	private bool HeartAhead(BotContext ctx, float cx)
