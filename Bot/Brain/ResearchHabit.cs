@@ -142,6 +142,44 @@ public static class ResearchHabit
 			if (ctx.Inventory.Count(type) < n)
 				ctx.Log.Info($"Journey: trashed {n - ctx.Inventory.Count(type)} {ctx.Knowledge.ItemName(type)} (researched, nothing needs it)");
 		}
+		return trashed + TrashSpares(ctx);
+	}
+
+	/// <summary>
+	/// The user (2026-10-18): "we should really only need one stack of building blocks in the hotbar". Of what is researched (duplicated
+	/// again in one click when needed; a researched block is not used up when placed, TerraBotConfig.InfiniteResearchedConsumables),
+	/// the bag keeps one stack of one building block (the biggest), one stack of each other item, and one of each thing that does not
+	/// stack; the rest is trashed, to leave the slots for what is not researched yet. Coins, and what is not researched, are never
+	/// touched. Returns how many stacks it trashed.
+	/// </summary>
+	public static int TrashSpares(BotContext ctx)
+	{
+		IJourney j = ctx.Journey;
+		if (j == null || !j.Enabled || !j.DuplicationAllowed || ctx.Inventory == null || ctx.Crafter == null || ctx.Knowledge == null)
+			return 0;
+		var stacks = ctx.Inventory.Stacks();
+		bool Researched(int t) => t > 0 && j.IsResearched(t) && System.Array.IndexOf(ctx.Ids.Coins, t) < 0;
+		bool Block(int t) => System.Array.IndexOf(ctx.Ids.BuildingBlocks, t) >= 0;
+		int keepBlock = -1;
+		long keepCount = -1;
+		foreach (var g in System.Linq.Enumerable.GroupBy(stacks, s => s.Type))
+			if (Researched(g.Key) && Block(g.Key) && System.Linq.Enumerable.Sum(g, s => (long)s.Stack) > keepCount) {
+				keepBlock = g.Key;
+				keepCount = System.Linq.Enumerable.Sum(g, s => (long)s.Stack);
+			}
+		int trashed = 0;
+		foreach (var g in System.Linq.Enumerable.GroupBy(stacks, s => s.Type)) {
+			int type = g.Key;
+			if (!Researched(type))
+				continue;
+			bool otherBlock = Block(type) && type != keepBlock;
+			int keep = otherBlock ? 0 : 1, have = System.Linq.Enumerable.Count(g), before = ctx.Inventory.Count(type);
+			for (int k = have; k > keep && ctx.Crafter.TryTrash(type); k--)
+				trashed++;
+			if (ctx.Inventory.Count(type) < before)
+				ctx.Log.Info($"Journey: trashed {before - ctx.Inventory.Count(type)} {ctx.Knowledge.ItemName(type)} (researched: "
+					+ (otherBlock ? $"one building block is kept, {ctx.Knowledge.ItemName(keepBlock)}" : "one stack is kept") + ")");
+		}
 		return trashed;
 	}
 

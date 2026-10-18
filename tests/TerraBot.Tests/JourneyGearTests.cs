@@ -99,4 +99,36 @@ public class JourneyGearTests
 		Assert.Empty(g.Journey.Duplicated);
 		Assert.False(JourneyGear.Tick(ctx));
 	}
+
+	/// <summary>
+	/// The user (2026-10-18): "Researched blocks that are not needed get trashed to make room for items that are NOT researched. We
+	/// should really only need one stack of building blocks." One stack of one researched block, one stack of each other researched
+	/// item, one of each researched thing that does not stack; nothing unresearched is touched.
+	/// </summary>
+	[Fact]
+	public void ResearchedSpares_AreTrashed_OneStackOfOneBlockKept()
+	{
+		var (g, ctx, _) = Journey();
+		const int Pick = 1;
+		g.StackSize[Pick] = 1;
+		g.Journey.MarkResearched(FakeGame.StoneBlock, FakeGame.DirtBlock, FakeGame.Wood, Pick);
+		g.Items[FakeGame.StoneBlock] = 2500; // three stacks
+		g.Items[FakeGame.DirtBlock] = 500;
+		g.Items[FakeGame.Wood] = 1200;       // two stacks
+		g.Items[Pick] = 2;                   // two pickaxes
+		g.Items[FakeGame.IronOre] = 1500;    // not researched: both stacks stay
+		g.Refresh(ctx);
+		int trashed = ResearchHabit.TrashSpares(ctx);
+		output.WriteLine($"trashed {trashed}: stone {g.Count(FakeGame.StoneBlock)}, dirt {g.Count(FakeGame.DirtBlock)}, wood {g.Count(FakeGame.Wood)}, picks {g.Count(Pick)}, ore {g.Count(FakeGame.IronOre)}");
+		Assert.Equal(999, g.Count(FakeGame.StoneBlock)); // the biggest block, one stack
+		Assert.Equal(0, g.Count(FakeGame.DirtBlock));     // another block: none
+		Assert.Equal(999, g.Count(FakeGame.Wood));
+		Assert.Equal(1, g.Count(Pick));
+		Assert.Equal(1500, g.Count(FakeGame.IronOre));
+		// Classic: nothing is touched.
+		g.Journey.On = false;
+		g.Items[FakeGame.Wood] = 1200;
+		Assert.Equal(0, ResearchHabit.TrashSpares(ctx));
+		Assert.Equal(1200, g.Count(FakeGame.Wood));
+	}
 }
