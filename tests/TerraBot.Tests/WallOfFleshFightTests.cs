@@ -162,6 +162,37 @@ public class WallOfFleshFightTests
 		Assert.DoesNotContain("Hungry", fight.State);
 	}
 
+	/// <summary>
+	/// world_wof E64 (2026-10-18): 663 arrows at the summon, none left with the Wall at 1149/8000; about 3060 of the arrows' damage went
+	/// to 51 Leeches shot within 12 tiles. With fewer arrows left than the Wall's life takes at the fight's own rate, a servant 8 tiles off
+	/// is let be and the eye shot; one on us (4 tiles) is still shot.
+	/// </summary>
+	[Fact]
+	public void ArrowsShort_ALeechEightTilesOff_IsLetBe_TheEyeShot()
+	{
+		EntityInfo Leech(float tiles) => new(9, WallOfFleshPattern.LeechHead, "Leech", PlayerCX + tiles * 16f, PlayerCY - 20f, 14, 14, -2f, 0f, 60, 60, 26, 6);
+		var (_, ctx, fight) = Setup(Wall(50f).Append(Leech(8f)).ToArray());
+		ctx.Combat.AmmoCount = 500;
+		fight.Tick(ctx); // the fight's start: 500 arrows, the Wall at 8000
+		// 100 arrows spent for 2000 of the Wall's life (20 an arrow): 400 left, the Wall's 6000 takes 300 (x1.2 = 360): enough.
+		ctx.Combat.AmmoCount = 400;
+		ctx.Hostiles = Wall(50f, life: 6000).Append(Leech(8f)).ToArray();
+		fight.Tick(ctx);
+		output.WriteLine($"400 arrows: {fight.State}, target {fight.TargetId}");
+		Assert.Equal(9, fight.TargetId);
+		// 300 spent for 2000: 200 left, the Wall's 6000 takes 900: short.
+		ctx.Combat.AmmoCount = 200;
+		ctx.Hostiles = Wall(50f, life: 6000).Append(Leech(8f)).ToArray();
+		fight.Tick(ctx);
+		output.WriteLine($"200 arrows: {fight.State}, target {fight.TargetId}");
+		Assert.NotEqual(9, fight.TargetId);
+		Assert.True(fight.ArrowsShort(ctx));
+		// A Leech on us: shot all the same.
+		ctx.Hostiles = Wall(50f, life: 6000).Append(Leech(3f)).ToArray();
+		fight.Tick(ctx);
+		Assert.Equal(9, fight.TargetId);
+	}
+
 	[Fact]
 	public void ALaserComingAtUs_IsDodged_NeverTowardTheWall()
 	{

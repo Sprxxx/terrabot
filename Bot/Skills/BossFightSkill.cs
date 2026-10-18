@@ -1372,9 +1372,11 @@ public sealed class BossFightSkill : ISkill
 		// owner check). Seen in game (fight_wof_150 on Classic, twice): "shooting the Leech by us" from the Wall's 465 life on, its
 		// life stuck at 263 then 242, and the bot killed by the last bursts of lasers and leeches.
 		bool finishing = ctx.Hostiles.FirstOrDefault(h => h.Type == BossType) is EntityInfo wall && wall.LifeMax > 0 && wall.Life <= wall.LifeMax * WallFinishShare;
+		// Arrows short of what the Wall still takes: the servants only when they are on us, every other arrow to the eyes.
+		float servantTiles = ArrowsShort(ctx) ? WallServantCloseTiles : WallServantTiles;
 		if (!finishing)
 			foreach (EntityInfo e in ctx.Hostiles.Where(h => (h.Type is WallOfFleshPattern.Hungry or WallOfFleshPattern.HungryII || WallOfFleshPattern.IsLeech(h.Type))
-					&& h.DistanceTo(cx, cy) <= WallServantTiles * 16f).OrderBy(h => h.DistanceTo(cx, cy)))
+					&& h.DistanceTo(cx, cy) <= servantTiles * 16f).OrderBy(h => h.DistanceTo(cx, cy)))
 				if (Try(e, $"the {e.Name} by us", out AimSolution s))
 					return (s, true);
 		foreach (EntityInfo eye in ctx.Hostiles.Where(h => h.Type == WallOfFleshPattern.Eye).OrderByDescending(h => WallOfFleshPattern.UpperEye(h)))
@@ -1388,6 +1390,34 @@ public sealed class BossFightSkill : ISkill
 			wallTargetWhat = firstWhat;
 		}
 		return (first, false);
+	}
+
+	/// <summary>Servants within this many tiles are shot even when the arrows are short (<see cref="ArrowsShort"/>): they are on us.</summary>
+	public const float WallServantCloseTiles = 4f;
+	/// <summary>Arrows spent before the fight's own damage per arrow is trusted for <see cref="ArrowsShort"/>.</summary>
+	public const int ArrowsBeforeEstimate = 40;
+	/// <summary>The arrows are short when fewer are left than this many times what the Wall's life takes at the fight's damage per arrow.</summary>
+	public const float ArrowsShortMargin = 1.2f;
+	private int wallArrowsAtStart = -1, wallLifeAtStart = -1;
+
+	/// <summary>
+	/// Too few arrows left to finish the Wall at this fight's own rate (its life taken over the arrows spent since the fight first saw
+	/// it, all targets counted). Seen in game (world_wof E64, 2026-10-18): 663 arrows at the summon, "Demon Bow with 0 arrows" with the
+	/// Wall at 1149/8000, about 3060 of the arrows' damage spent on 51 Leeches (60 life each) shot within 12 tiles.
+	/// </summary>
+	public bool ArrowsShort(BotContext ctx)
+	{
+		if (ctx.Hostiles.Where(h => h.Type == BossType).Cast<EntityInfo?>().FirstOrDefault() is not EntityInfo wall || wall.LifeMax <= 0)
+			return false;
+		if (wallArrowsAtStart < 0) {
+			wallArrowsAtStart = ctx.Combat.AmmoCount;
+			wallLifeAtStart = wall.Life;
+		}
+		int spent = wallArrowsAtStart - ctx.Combat.AmmoCount, taken = wallLifeAtStart - wall.Life;
+		if (spent < ArrowsBeforeEstimate || taken <= 0)
+			return false;
+		float perArrow = taken / (float)spent;
+		return ctx.Combat.AmmoCount < wall.Life / perArrow * ArrowsShortMargin;
 	}
 
 	/// <summary>Skeletron: the head if an arrow reaches it, else the nearest hand one reaches, else the head (aimed at, not shot).</summary>
