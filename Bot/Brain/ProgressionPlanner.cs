@@ -2966,12 +2966,41 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// <summary>The heading the last exploration for the evil biome went (alternated: the biome may be on either side).</summary>
 	private int evilHeading = 1;
 
-	/// <summary>No evil biome known: explore along the surface, a new heading each time, until standing in it.</summary>
+	/// <summary>The farthest column each way the surface walk for the evil biome has reached (-1: west, 1: east).</summary>
+	private readonly Dictionary<int, int> evilReached = new();
+	private int evilEdges;
+
+	/// <summary>
+	/// No evil biome known: along the surface, as the Dungeon is looked for (<see cref="ResolveDungeon"/>), one way until the world's
+	/// edge, <see cref="DungeonHopTiles"/> a walk from the farthest column reached that way, each walk ending as soon as the biome is
+	/// seen on the map (<see cref="EvilGround"/>) or stood in; then the other way. Seen in game (Journey run J6, 2026-10-18): 16-leg
+	/// explorations underground from round the base, left and right in turn, for whole days, "no the corruption after 16 legs",
+	/// 55 revisits; a player walks the surface until the purple shows.
+	/// </summary>
 	private ISkill ExploreForEvilBiome(BotContext ctx, string why)
 	{
-		evilHeading = -evilHeading;
-		return Do($"exploring for the {ctx.Ids.EvilName} (none seen yet) {why}",
-			new ExploreSkill($"the {ctx.Ids.EvilName}", c => c.InEvilBiome(c.Node), ExploreBias.Sideways, evilHeading) { JobKey = "Explore evil biome" });
+		TilePos node = ctx.Node;
+		int side = evilHeading;
+		int from = side < 0 ? Math.Min(node.X, evilReached.GetValueOrDefault(side, node.X)) : Math.Max(node.X, evilReached.GetValueOrDefault(side, node.X));
+		if (SurfaceAt(ctx.Grid, from + side * DungeonHopTiles) is not TilePos dest || ctx.WorldWidth > 0 && (dest.X < 300 || dest.X > ctx.WorldWidth - 300)) {
+			// The world's edge that way (its last 300 columns are ocean): the other way, once.
+			// Both ways walked (or no surface to walk): the exploration underground, a new heading each time, as before.
+			if (++evilEdges > 1) {
+				evilHeading = -evilHeading;
+				return Do($"exploring for the {ctx.Ids.EvilName} (none seen yet) {why}",
+					new ExploreSkill($"the {ctx.Ids.EvilName}", c => c.InEvilBiome(c.Node), ExploreBias.Sideways, evilHeading) { JobKey = "Explore evil biome" });
+			}
+			evilHeading = -side;
+			ctx.Log.Info($"Auto: the world's edge {Way(side)} and no {ctx.Ids.EvilName}: looking {Way(-side)} instead");
+			return ExploreForEvilBiome(ctx, why);
+		}
+		evilReached[side] = node.X;
+		return Do($"exploring for the {ctx.Ids.EvilName} (none seen yet) {why}: along the surface {Way(side)} to {dest}",
+			new TravelUntilSkill($"the {ctx.Ids.EvilName}", new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, TravelArrivedTiles, ctx.Physics)) { Quiet = true, Travel = true },
+				c => {
+					evilReached[side] = side < 0 ? Math.Min(evilReached[side], c.Node.X) : Math.Max(evilReached[side], c.Node.X);
+					return c.InEvilBiome(c.Node) || EvilGround(c) != null;
+				}));
 	}
 
 	/// <summary>
