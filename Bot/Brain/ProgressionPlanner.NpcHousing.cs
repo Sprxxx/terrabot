@@ -271,7 +271,7 @@ public sealed partial class ProgressionPlanner
 			needs.Add(new HaveItem(wallItems, walls, ctx.Knowledge.ItemName(wallItems[0])));
 		foreach (PlanItem it in bp.Items)
 			if (!BuildSkill.IsPlaced(ctx, bp, site, it))
-				needs.Add(new HaveItem(it.ItemType, 1, ctx.Knowledge.ItemName(it.ItemType)));
+				needs.Add(new HaveItem(FurnitureChoices(it.ItemType, ctx), 1, ctx.Knowledge.ItemName(it.ItemType)));
 		foreach (Need n in needs) {
 			ISkill sub = Resolve(n, claims, depth + 1, ctx);
 			if (sub != null || stuck != null)
@@ -279,6 +279,38 @@ public sealed partial class ProgressionPlanner
 		}
 		return Do(why, new BuildSkill(bp, site));
 	}
+
+	/// <summary>
+	/// The items that do for a plan's piece of furniture: the one it names first, then every other item placing the same tile with the
+	/// same footprint whose recipe takes only wood from trees or what the bag holds (an Ebonwood Chair, a Shadewood Door). The housing
+	/// check counts the tile (TileID.Sets.RoomNeeds), not the item. Seen in game (world_wof E53, 2026-10-18): room 2's Wooden Chair 4
+	/// Wood short with no Wood tree in reach for days, while the trees in sight gave Ebonwood.
+	/// </summary>
+	private static IReadOnlyList<int> FurnitureChoices(int item, BotContext ctx)
+	{
+		IGameKnowledge k = ctx.Knowledge;
+		int tile = k.TilePlacedBy(item);
+		if (tile < 0)
+			return new[] { item };
+		var size = ctx.World.Footprint(item);
+		// Made from the bag without plain Wood (4 Ebonwood carried for a chair): first, so the Wood goes to the pieces only Wood makes.
+		var fromBag = new List<int>();
+		var rest = new List<int>();
+		foreach (int other in k.ItemsPlacing(tile)) {
+			if (other == item || fromBag.Count + rest.Count + 1 >= MaxFurnitureChoices || ctx.World.Footprint(other) != size)
+				continue;
+			if (ctx.Inventory.Count(other) > 0 || k.RecipesFor(other).Any(r => r.Ingredients.Count > 0
+				&& r.Ingredients.All(ing => !ing.Accepts.Contains(ctx.Ids.Wood) && ctx.Inventory.CountAny(ing.Accepts) >= ing.Stack)))
+				fromBag.Add(other);
+			else if (k.RecipesFor(other).Any(r => r.Ingredients.Count > 0 && r.Ingredients.All(ing =>
+				ing.Accepts.Any(a => k.SourceOf(a).Kind == SourceKind.Tree) || ctx.Inventory.CountAny(ing.Accepts) >= ing.Stack)))
+				rest.Add(other);
+		}
+		return fromBag.Append(item).Concat(rest).ToList();
+	}
+
+	/// <summary>At most this many items are weighed for one piece of furniture (the plain one and the other woods').</summary>
+	public const int MaxFurnitureChoices = 8;
 
 	/// <summary>Rectangles (min, max) a new NPC room keeps off: the arenas, <see cref="ArenaHouseGap"/> round them (bosses kill town NPCs).</summary>
 	private List<(TilePos Min, TilePos Max)> NpcKeepOut(BotContext ctx)

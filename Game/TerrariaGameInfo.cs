@@ -241,7 +241,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		if (g.IsHalfBlock || g.Slope != SlopeType.Solid)
 			return "sloped ground";
 		if (!WorldGen.IsTileTypeFitForTree(g.TileType))
-			return $"soil {Lang.GetMapObjectName(Terraria.Map.MapHelper.TileToLookup(g.TileType, 0))}";
+			return $"soil {TileID.Search.GetName(g.TileType)}";
 		bool Fit(int i) => Main.tile[i, y + 1].HasTile && WorldGen.IsTileTypeFitForTree(Main.tile[i, y + 1].TileType);
 		if (!Fit(x - 1) && !Fit(x + 1))
 			return "no soil beside";

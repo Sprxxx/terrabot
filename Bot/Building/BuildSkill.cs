@@ -845,13 +845,14 @@ public sealed class BuildSkill : ISkill
 		foreach (PlanItem it in bp.Items.OrderBy(i => i.PlaceLast)) {
 			if (placedItems.Contains(it) || leftOut.Contains(it))
 				continue;
-			if (ctx.Inventory.Count(it.ItemType) <= 0) {
+			int item = CarriedFor(ctx, it);
+			if (item < 0) {
 				problem = $"missing item {it.ItemType}";
 				return null;
 			}
 			var min = new TilePos(Origin.X + it.X, Origin.Y + it.Y);
 			var max = new TilePos(min.X + it.Width - 1, min.Y + it.Height - 1);
-			return new Action(Kind.Item, min, AimFor(ctx, it), it.ItemType, (min, max), it.PlaceLast, it.Face);
+			return new Action(Kind.Item, min, AimFor(ctx, it), item, (min, max), it.PlaceLast, it.Face);
 		}
 		return null;
 	}
@@ -872,6 +873,24 @@ public sealed class BuildSkill : ISkill
 	}
 
 	private bool IsPlaced(BotContext ctx, PlanItem it) => IsPlaced(ctx, bp, Origin, it);
+
+	/// <summary>
+	/// The item to place for a plan item: the one it names if carried, else a carried item that places the same tile with the same
+	/// footprint (an Ebonwood Chair for a Wooden Chair: the housing check counts the tile, ProgressionPlanner.FurnitureChoices). -1: none.
+	/// </summary>
+	public static int CarriedFor(BotContext ctx, PlanItem it)
+	{
+		if (ctx.Inventory.Count(it.ItemType) > 0)
+			return it.ItemType;
+		int tile = ctx.Knowledge?.TilePlacedBy(it.ItemType) ?? -1;
+		if (tile < 0)
+			return -1;
+		var size = ctx.World.Footprint(it.ItemType);
+		foreach (int other in ctx.Knowledge.ItemsPlacing(tile))
+			if (other != it.ItemType && ctx.Inventory.Count(other) > 0 && ctx.World.Footprint(other) == size)
+				return other;
+		return -1;
+	}
 
 	/// <summary>Is the item already standing where the plan puts it (its tile at the aim cell)?</summary>
 	public static bool IsPlaced(BotContext ctx, Blueprint bp, TilePos origin, PlanItem it)
