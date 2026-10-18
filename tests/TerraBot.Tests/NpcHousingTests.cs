@@ -197,6 +197,31 @@ public class NpcHousingTests
 		}
 	}
 
+	/// <summary>
+	/// world_wof E46/E47 (2026-10-18): room 1 was one room with the house as the game floods it; the NPC living there had his home
+	/// outside room 1's plan, so the survey called room 1 empty and the bot waited six days for a Guide with no free room. The
+	/// game's room bounds count, and two cells in one game room are one room.
+	/// </summary>
+	[Fact]
+	public void ARoomJoinedToTheHouse_IsOneRoom_AndItsOccupantCounts()
+	{
+		var (g, ctx, brain, house) = Settled();
+		g.Homes.Add(Living(FakeGame.GuideNpc, "Guide", house));
+		GiveRoomMaterials(g, 2);
+		RunUntil(g, ctx, brain, () => brain.Planner.NpcRooms.Count == 1 && brain.Current == null, 60 * 60 * 20);
+		TilePos first = Assert.Single(brain.Planner.NpcRooms).Origin;
+		// The shared wall opened: the house and room 1 are one room now, the Guide's home in the house part.
+		for (int y = first.Y + 1; y < first.Y + 5; y++)
+			g.Grid.Set(first.X, y, TerraBot.Core.Grid.CellKind.Empty);
+		Assert.NotNull(g.RoomAt(house.X + 5, house.Y + 2));
+		ctx.Tick += ProgressionPlanner.NpcSurveyTicks;
+		RunUntil(g, ctx, brain, () => brain.Planner.NpcRooms.Count == 2 && brain.Current == null, 60 * 60 * 20);
+		var log = ((TestLog)ctx.Log).Lines;
+		foreach (string l in log.Where(l => l.StartsWith("NPC housing")))
+			output.WriteLine(l);
+		Assert.Contains(log, l => l.Contains("1 rooms (1 valid), 1 occupied (Guide), 0 empty") && l.Contains("building room 2"));
+	}
+
 	[Fact]
 	public void TwoCanCome_AndTheHouseIsEmpty_OneRoomMore()
 	{

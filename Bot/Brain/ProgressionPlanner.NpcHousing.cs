@@ -120,7 +120,19 @@ public sealed partial class ProgressionPlanner
 			return last.Survey;
 		var s = new NpcSurvey();
 		IReadOnlyList<TownNpcHome> homes = ctx.World.TownNpcHomes();
-		foreach (var (check, min, max) in RoomCells(ctx)) {
+		var seen = new HashSet<(TilePos, TilePos)>();
+		foreach (var (check, planMin, planMax) in RoomCells(ctx)) {
+			// The room as the game sees it (its flood fill), not the plan's bounds: a room built against another can be one room with
+			// it, and the home the game gives lies on its floor, anywhere in it. Seen in game (world_wof E46/E47, 2026-10-18): room 1
+			// "valid housing" and empty by its plan, ScoreRoom -1 (occupied) from inside it, the Dryad's home at (2059,258) outside
+			// the plan; the bot waited six days for a Guide with no free room.
+			TilePos min = planMin, max = planMax;
+			if (ctx.World.RoomAt(check.X, check.Y) is var (gMin, gMax)) {
+				if (!seen.Add((gMin, gMax)))
+					continue; // the same room as one counted already
+				min = new TilePos(Math.Min(planMin.X, gMin.X - 1), Math.Min(planMin.Y, gMin.Y - 1));
+				max = new TilePos(Math.Max(planMax.X, gMax.X + 1), Math.Max(planMax.Y, gMax.Y + 2));
+			}
 			s.Rooms++;
 			// A room someone lives in passes the check as well (TerrariaGameInfo.CheckHousing: ScoreRoom's -1 is "occupied").
 			string why = ctx.World.CheckHousing(check.X, check.Y);
