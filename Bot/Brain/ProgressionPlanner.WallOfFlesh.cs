@@ -481,15 +481,19 @@ public sealed partial class ProgressionPlanner
 			Status = $"{need.Label} not alive: the house first, for a room he can move into; {Status}";
 			return house;
 		}
-		if (HouseSite != null && Survey(ctx).Empty == 0 && ResolveNpcHousing(new Dictionary<int, int>(), 0, ctx) is ISkill room) {
+		// (Not only onto a house the bot built: one found standing has its rooms too, ResolveNpcHousing. E44: with the house found,
+		// not built, this was skipped, and the bot waited 7835 times.)
+		if (Survey(ctx).Empty == 0 && ResolveNpcHousing(new Dictionary<int, int>(), 0, ctx) is ISkill room) {
 			Status = $"{need.Label} cannot move back in: no free room; {Status}";
 			return room;
 		}
 		// The wait ends too once no room is free (a homeless NPC took it): the next room then. Seen in game (world_wof E43,
 		// 2026-10-18): each room built stood free a moment, a day's wait for the Guide began, a homeless NPC moved in, and the bot
 		// waited out the day with no room for him; three rooms in six game days.
+		// With a room free, the wait ends too once it is taken (the next room then); with none free and none to build, the day's wait.
+		bool roomFree = Survey(ctx).Empty > 0;
 		return Do($"waiting for {need.Label} (none alive: the doll would be wasted; he moves back in by day)",
-			new WaitSkill(need.Label, c => c.World.TownNpcAlive(need.Npc) || HouseSite != null && c.Tick % 60 == 0 && Survey(c).Empty == 0,
+			new WaitSkill(need.Label, c => c.World.TownNpcAlive(need.Npc) || roomFree && c.Tick % 60 == 0 && Survey(c).Empty == 0,
 				NightWaitTicks + NightLengthTicks));
 	}
 
