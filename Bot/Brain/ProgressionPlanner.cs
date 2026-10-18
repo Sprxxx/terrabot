@@ -897,6 +897,10 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	public void OnSkillFinished(ISkill skill, SkillStatus status, BotContext ctx)
 	{
 		NpcHousingFinished(skill, status, ctx);
+		if (skill is GatherWoodSkill && status == SkillStatus.Failed)
+			noTreesAt = ctx.Tick;
+		if (skill is PlantAcornsSkill)
+			plantedAt = ctx.Tick;
 		if (skill is BuildSkill { Blueprint.IsNpcRoom: true })
 			return; // not the house (below): the NPC rooms keep their own list
 		// A bench or furnace that would not go down here is not tried here again for a while: the walk to the one far away
@@ -1684,6 +1688,12 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		if (fromBag == null)
 		switch (src.Kind) {
 			case SourceKind.Tree: {
+				// No tree in reach the last time, acorns in the bag, near home: saplings first (they grow while the plan goes on), then
+				// the search. Once a day at most.
+				if (ctx.Tick - noTreesAt < 2 * DayTicks && ctx.Tick - plantedAt > DayTicks && ctx.Ids.Acorn > 0 && ctx.Inventory.Count(ctx.Ids.Acorn) > 0
+					&& (ctx.SpawnTile is not TilePos home || ctx.Node.ChebyshevTo(home) <= PlantNearHomeTiles))
+					return Do($"need {more} more {name}, no tree in reach the last time: planting acorns here first (they grow while the plan goes on)",
+						new PlantAcornsSkill(ctx.Ids.Acorn, AcornsPlanted));
 				// Every other wood the need takes counts too (an any-wood recipe: Ebonwood from the Corruption's trees). Seen in
 				// game (measured run U28): Wooden Arrows' wood gathered as Wood only beside Ebonwood trees, "need 16 more Wood".
 				int[] woods = h.Accepts.Where(a => a != item && k.SourceOf(a).Kind == SourceKind.Tree).ToArray();
@@ -1770,6 +1780,14 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		string have = string.Join(", ", recipe.Ingredients.Select(i => $"{k.ItemName(i.Item)} {ctx.Inventory.CountAny(i.Accepts)}/{i.Stack * crafts}"));
 		return Do($"crafting {more} {name} ({have})", new CraftSkill(item, target));
 	}
+
+	/// <summary>Acorns planted at once when no tree is in reach (a sapling takes about 9 game days on average: many at once).</summary>
+	public const int AcornsPlanted = 30;
+	/// <summary>A game day in ticks (54000 of day, 32400 of night).</summary>
+	public const long DayTicks = 86400;
+	/// <summary>Planting is done within this many tiles of the spawn (the base), not out on a trip.</summary>
+	public const int PlantNearHomeTiles = 200;
+	private long noTreesAt = long.MinValue / 2, plantedAt = long.MinValue / 2;
 
 	/// <summary>A recipe for <paramref name="more"/> of the item whose every ingredient the bag holds, unclaimed, as it is (no crafting below).</summary>
 	private static RecipeInfo RecipeFromTheBag(int item, int more, Dictionary<int, int> claims, BotContext ctx)

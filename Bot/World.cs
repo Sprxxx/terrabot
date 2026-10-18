@@ -45,6 +45,14 @@ public interface IWorldInfo
 	int TileTypeAt(int x, int y);
 
 	/// <summary>
+	/// Would a sapling planted in the cell (an acorn) grow into a tree, by WorldGen.GrowTree's rules (WorldGen.cs:22987): the cell
+	/// empty on soil fit for a tree (IsTileTypeFitForTree: grass, corrupt or crimson grass, jungle grass...) with fit soil beside it,
+	/// no back wall but a tree-friendly one, no liquid at the trunk's foot, the space two columns each side open for a short tree,
+	/// and no sapling or trunk within <c>2</c> columns (two trees would block each other).
+	/// </summary>
+	bool TreeSpot(int x, int y) => false;
+
+	/// <summary>
 	/// The tile's frame column (vanilla Tile.TileFrameX) at the cell, or -1 when there is no tile: which style of a tile
 	/// type it is (a corrupt plant at frame 144 is a vile mushroom, WorldGen.KillTile_GetItemDrops).
 	/// </summary>

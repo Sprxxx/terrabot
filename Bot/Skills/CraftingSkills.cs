@@ -128,6 +128,12 @@ public sealed class PlaceItemSkill : ISkill
 
 	public PlaceItemSkill(int itemType) => ItemType = itemType;
 
+	/// <summary>
+	/// Only cells this accepts (an acorn: <see cref="IWorldInfo.TreeSpot"/>); with it set, no pocket is dug and no wander made:
+	/// with no such cell within reach the skill fails, and its caller moves on.
+	/// </summary>
+	public Func<BotContext, TilePos, bool> Accept { get; init; }
+
 	public string Describe() => $"Place item {ItemType} at {spot?.ToString() ?? "?"}" + (walk != null ? " > " + walk.Describe() : "");
 	public void Start(BotContext ctx) => startCount = ctx.Inventory.Count(ItemType);
 
@@ -197,7 +203,7 @@ public sealed class PlaceItemSkill : ISkill
 			if (spot == null) {
 				if (ticks <= 30)
 					return SkillStatus.Running; // give perception a moment (just landed, a drop being picked up...)
-				if (pockets < MaxPockets && ctx.Body.Grounded && StartPocket(ctx, node))
+				if (Accept == null && pockets < MaxPockets && ctx.Body.Grounded && StartPocket(ctx, node))
 					return SkillStatus.Running;
 				if (++wanders > MaxWanders)
 					return Fail(ctx, $"no free floor within {SearchX} tiles, here or {MaxWanders} places around");
@@ -373,7 +379,7 @@ public sealed class PlaceItemSkill : ISkill
 		for (int dy = -SearchY; dy <= SearchY; dy++) {
 			for (int dx = -SearchX; dx <= SearchX; dx++) {
 				var c = new TilePos(node.X + dx, node.Y + dy);
-				if (bad.Contains(c) || !ctx.World.CanPlaceItem(ItemType, c.X, c.Y))
+				if (bad.Contains(c) || !ctx.World.CanPlaceItem(ItemType, c.X, c.Y) || Accept != null && !Accept(ctx, c))
 					continue;
 				int score = Math.Abs(dx) + 3 * Math.Abs(dy);
 				if (score < bestScore) {

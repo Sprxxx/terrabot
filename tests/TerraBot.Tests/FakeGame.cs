@@ -349,8 +349,25 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public int TilePlacedBy(int itemType) => itemType switch {
 		WorkBench or EbonwoodWorkBench => TileBench, Furnace => TileFurnace, IronAnvil or LeadAnvil => TileAnvil,
 		Table => TileTable, Chair => TileChair, Door => TileDoor, Torch => TileTorch,
-		Campfire => TileCampfire, HeartLantern => TileLantern, Bottle => TileBottles, _ => -1,
+		Campfire => TileCampfire, HeartLantern => TileLantern, Bottle => TileBottles, 27 => TileSapling, _ => -1,
 	};
+
+	public const int TileSapling = 20;
+
+	/// <summary>Simplified WorldGen.GrowTree check: open cell on solid ground, 5 wide and 10 tall open above, no sapling within 2.</summary>
+	public bool TreeSpot(int x, int y)
+	{
+		if (!Free(x, y) || !Grid.Get(x, y + 1).IsSolid() || !Grid.Get(x - 1, y + 1).IsSolid() && !Grid.Get(x + 1, y + 1).IsSolid())
+			return false;
+		for (int i = x - 2; i <= x + 2; i++) {
+			for (int j = y - 10; j <= y; j++)
+				if (Grid.Get(i, j).IsSolid() || IsTreeTrunk(i, j))
+					return false;
+			if (Furniture.TryGetValue(new TilePos(i, y), out int t) && t == TileSapling)
+				return false;
+		}
+		return true;
+	}
 
 	public string ItemName(int itemType) => $"item{itemType}";
 	/// <summary>Item values (copper) for inventory tests; unlisted items are worth 1.</summary>

@@ -225,6 +225,31 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return wood;
 	}
 
+	public bool TreeSpot(int x, int y)
+	{
+		if (!WorldGen.InWorld(x, y, 20) || Main.tile[x, y].HasTile)
+			return false;
+		Tile g = Main.tile[x, y + 1];
+		if (!g.HasTile || g.IsHalfBlock || g.Slope != SlopeType.Solid || !WorldGen.IsTileTypeFitForTree(g.TileType))
+			return false;
+		bool Fit(int i) => Main.tile[i, y + 1].HasTile && WorldGen.IsTileTypeFitForTree(Main.tile[i, y + 1].TileType);
+		if (!Fit(x - 1) && !Fit(x + 1))
+			return false;
+		if (Main.tile[x, y].WallType != 0 && !WorldGen.DefaultTreeWallTest(Main.tile[x, y].WallType))
+			return false;
+		for (int i = x - 1; i <= x + 1; i++)
+			if (Main.tile[i, y].LiquidAmount != 0)
+				return false;
+		// Room for a short tree (GrowTree's height is 5 to 16 plus 4, EmptyTileCheck of x-2..x+2 over it; 10 rows open here).
+		if (!WorldGen.EmptyTileCheck(x - 2, x + 2, y - 10, y - 1, TileID.Saplings))
+			return false;
+		for (int i = x - 2; i <= x + 2; i++)
+			for (int j = y - 1; j <= y; j++)
+				if (Main.tile[i, j].HasTile && (Main.tile[i, j].TileType == TileID.Saplings || Main.tile[i, j].TileType == TileID.Trees))
+					return false;
+		return true;
+	}
+
 	public bool CanPlaceItem(int itemType, int x, int y)
 	{
 		Item item = FindItem(itemType, out _);

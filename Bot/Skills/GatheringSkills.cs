@@ -519,3 +519,62 @@ public sealed class GatherWoodSkill : ISkill
 		return SkillStatus.Failed;
 	}
 }
+
+/// <summary>
+/// Plant acorns round here where a tree will grow (<see cref="IWorldInfo.TreeSpot"/>), one <see cref="PlaceItemSkill"/> each,
+/// until <see cref="Count"/> are planted, the acorns run out, or no spot is left in reach. Wood that grows back near the base: a
+/// sapling grows at 1 in 20 of its random tile updates (WorldGen.cs:66798), about 9 game days on average, so many are planted at
+/// once. Seen in game (world_wof E48 to E50, 2026-10-18): the forest round the base cut, 76 acorns carried, and the Guide's room
+/// waited three runs for 13 wood.
+/// </summary>
+public sealed class PlantAcornsSkill : ISkill
+{
+	public int Count { get; }
+	public int Planted { get; private set; }
+	private PlaceItemSkill current;
+	private readonly int acorn;
+
+	public PlantAcornsSkill(int acornItem, int count)
+	{
+		acorn = acornItem;
+		Count = count;
+	}
+
+	public string Name => "PlantAcorns";
+	public string Key => $"PlantAcorns {Count}";
+	public string FailureReason { get; private set; } = "";
+	public string Describe() => $"Plant acorns {Planted}/{Count}" + (current != null ? " > " + current.Describe() : "");
+	public void Start(BotContext ctx) { }
+	public void Stop(BotContext ctx) => current?.Stop(ctx);
+	public void Pause(BotContext ctx) => current?.Pause(ctx);
+	public void Resume(BotContext ctx) => current?.Resume(ctx);
+
+	public SkillStatus Tick(BotContext ctx)
+	{
+		ctx.Output = MoveInput.None;
+		if (Planted >= Count || ctx.Inventory.Count(acorn) <= 0)
+			return Done(ctx);
+		current ??= new PlaceItemSkill(acorn) { Accept = (c, t) => c.World.TreeSpot(t.X, t.Y) };
+		SkillStatus s = current.Tick(ctx);
+		if (s == SkillStatus.Running)
+			return s;
+		current.Stop(ctx);
+		if (s == SkillStatus.Failed) {
+			current = null;
+			if (Planted > 0)
+				return Done(ctx);
+			FailureReason = "no spot round here where a tree would grow";
+			ctx.Log.Warn($"PlantAcorns failed: {FailureReason}");
+			return SkillStatus.Failed;
+		}
+		Planted++;
+		current = null;
+		return SkillStatus.Running;
+	}
+
+	private SkillStatus Done(BotContext ctx)
+	{
+		ctx.Log.Info($"PlantAcorns: {Planted} planted");
+		return SkillStatus.Succeeded;
+	}
+}
