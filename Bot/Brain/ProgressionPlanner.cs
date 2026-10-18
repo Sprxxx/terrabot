@@ -897,8 +897,13 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	public void OnSkillFinished(ISkill skill, SkillStatus status, BotContext ctx)
 	{
 		NpcHousingFinished(skill, status, ctx);
-		if (skill is GatherWoodSkill && status == SkillStatus.Failed)
+		if (skill is GatherWoodSkill gw && status == SkillStatus.Failed) {
 			noTreesAt = ctx.Tick;
+			// A wood whose search came to nothing costs more next time: a recipe of another wood (Ebonwood furniture) can win.
+			fruitlessWoods[gw.ItemType] = fruitlessWoods.GetValueOrDefault(gw.ItemType) + 1;
+		}
+		else if (skill is GatherWoodSkill gathered && status == SkillStatus.Succeeded)
+			fruitlessWoods.Remove(gathered.ItemType);
 		if (skill is PlantAcornsSkill)
 			plantedAt = ctx.Tick;
 		if (skill is BuildSkill { Blueprint.IsNpcRoom: true })
@@ -3316,7 +3321,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			current[i] = src.Kind switch {
 				// An ore that mining keeps coming back without costs more each time, so an item with another tier (armour)
 				// switches to an ore that is still there.
-				SourceKind.Tree => TreeCost, SourceKind.Mine => MineCost * (1 + fruitlessMines.GetValueOrDefault(i)), SourceKind.Hunt => HuntCost, _ => float.PositiveInfinity,
+				SourceKind.Tree => TreeCost * (1 + FruitlessWoodWeight * fruitlessWoods.GetValueOrDefault(i)), SourceKind.Mine => MineCost * (1 + fruitlessMines.GetValueOrDefault(i)), SourceKind.Hunt => HuntCost, _ => float.PositiveInfinity,
 			};
 			if (src.Kind != SourceKind.None)
 				continue;
@@ -3580,6 +3585,10 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// <summary>A craft failed because the game saw no station in range: walk up to it before the next craft.</summary>
 	/// <summary>Mining jobs that ran out of places to look (explorations in a row found nothing), per item, since the last success.</summary>
 	private readonly Dictionary<int, int> fruitlessMines = new();
+	/// <summary>Failed searches for each wood (GatherWood), cleared by a search that found it: each makes the wood dearer.</summary>
+	private readonly Dictionary<int, int> fruitlessWoods = new();
+	/// <summary>How much dearer a wood gets per failed search (its tree cost times 1 + this per failure).</summary>
+	public const float FruitlessWoodWeight = 3f;
 	private readonly Dictionary<int, int> travelledFor = new();
 	/// <summary>
 	/// Where the current trip for new ore is going, until the bot gets there (whichever ore it was for). Seen in game

@@ -306,6 +306,16 @@ public sealed partial class ProgressionPlanner
 				ing.Accepts.Any(a => k.SourceOf(a).Kind == SourceKind.Tree) || ctx.Inventory.CountAny(ing.Accepts) >= ing.Stack)))
 				rest.Add(other);
 		}
+		// The woods whose trees the bot knows of (seen or remembered): with no plain Wood tree among them, the pieces of a known wood go
+		// before the plain one. Seen in game (world_wof E55, 2026-10-18): "need 4 more Wood" for six days, no Wood tree within 1500
+		// columns on the map, Ebonwood trees in sight the whole time.
+		var knownWoods = ctx.Seen.Trees.Concat(ctx.KnownTrees).Select(t => ctx.World.TreeWood(t.X, t.Y)).Where(w => w > 0).ToHashSet();
+		if (!knownWoods.Contains(ctx.Ids.Wood)) {
+			bool KnownWood(int other) => k.RecipesFor(other).Any(r => r.Ingredients.Any(ing => ing.Accepts.Any(knownWoods.Contains)));
+			var grown = rest.Where(KnownWood).ToList();
+			rest = rest.Where(o => !grown.Contains(o)).ToList();
+			fromBag.AddRange(grown);
+		}
 		return fromBag.Append(item).Concat(rest).ToList();
 	}
 

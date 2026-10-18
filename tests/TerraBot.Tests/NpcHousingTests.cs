@@ -301,6 +301,24 @@ public class NpcHousingTests
 		Assert.Equal(0, g.Count(FakeGame.Ebonwood));
 	}
 
+	/// <summary>world_wof E55 (2026-10-18): no Wood tree anywhere known, Ebonwood trees in sight: the chair is made of Ebonwood.</summary>
+	[Fact]
+	public void OnlyEbonwoodTreesKnown_TheChairIsEbonwood()
+	{
+		var (g, ctx, brain, house) = Settled();
+		var tree = new TilePos(60, 24);
+		g.Trees[tree] = 6;
+		g.TreeWoods[tree] = FakeGame.Ebonwood;
+		g.Refresh(ctx);
+		brain.Planner.SeeStationsForTest(ctx);
+		// The search for plain Wood came to nothing.
+		brain.Planner.OnSkillFinished(new GatherWoodSkill(FakeGame.Wood, 4), SkillStatus.Failed, ctx);
+		ISkill next = brain.Planner.ResolveForTest(new HaveItem(new[] { FakeGame.Chair, FakeGame.EbonwoodChair }, 1, "chair"), ctx);
+		output.WriteLine($"{brain.Planner.Status} -> {next?.Describe()}");
+		Assert.IsType<GatherWoodSkill>(next);
+		Assert.Equal(FakeGame.Ebonwood, ((GatherWoodSkill)next).ItemType);
+	}
+
 	[Fact]
 	public void TwoCanCome_AndTheHouseIsEmpty_OneRoomMore()
 	{
