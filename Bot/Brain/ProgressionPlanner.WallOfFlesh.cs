@@ -485,8 +485,12 @@ public sealed partial class ProgressionPlanner
 			Status = $"{need.Label} cannot move back in: no free room; {Status}";
 			return room;
 		}
+		// The wait ends too once no room is free (a homeless NPC took it): the next room then. Seen in game (world_wof E43,
+		// 2026-10-18): each room built stood free a moment, a day's wait for the Guide began, a homeless NPC moved in, and the bot
+		// waited out the day with no room for him; three rooms in six game days.
 		return Do($"waiting for {need.Label} (none alive: the doll would be wasted; he moves back in by day)",
-			new WaitSkill(need.Label, c => c.World.TownNpcAlive(need.Npc), NightWaitTicks + NightLengthTicks));
+			new WaitSkill(need.Label, c => c.World.TownNpcAlive(need.Npc) || HouseSite != null && c.Tick % 60 == 0 && Survey(c).Empty == 0,
+				NightWaitTicks + NightLengthTicks));
 	}
 
 	/// <summary>
