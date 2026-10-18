@@ -173,17 +173,23 @@ public sealed partial class ProgressionPlanner
 	/// </summary>
 	private ISkill ResolveNpcHousing(Dictionary<int, int> claims, int depth, BotContext ctx)
 	{
-		// A house that stood (a mod's base): its rooms are the NPCs'; rooms are built onto a house of the bot's own only.
-		if (ctx.World != null && HouseSite == null && FoundHomeValid(ctx) != null && !NpcHousingOff(ctx)) {
+		// A house that stood (a mod's base, or the bot's own from an earlier run once the planner's memory is fresh): its rooms are
+		// the NPCs'; with too few, rooms are built near it (NextNpcRoomSlot searches round its home). Seen in game (world_wof E45,
+		// 2026-10-18): the Guide dead, four NPCs homeless, "NPC rooms are built onto a house of the bot's own", no room in six days.
+		TilePos house;
+		if (ctx.World != null && HouseSite == null && FoundHomeValid(ctx) is TilePos foundHome && !NpcHousingOff(ctx)) {
 			NpcSurvey found = Survey(ctx);
-			NoteNpcHousing(ctx, $"the house that stood: {Describe(found)}");
-			if (found.Empty < found.Want)
-				LeaveNpcHousing(ctx, $"the house that stood has {found.Empty} empty rooms of the {found.Want} wanted; NPC rooms are built onto a house of the bot's own");
-			return null;
+			if (found.Empty >= found.Want) {
+				NoteNpcHousing(ctx, $"the house that stood: {Describe(found)}");
+				return null;
+			}
+			house = foundHome;
 		}
 		// The bot's own house first (its stage comes before this one): the rooms are built onto it, and it is a room too.
-		if (ctx.World == null || HouseSite is not TilePos house || HomeInside(ctx) == null || NpcHousingOff(ctx))
+		else if (ctx.World == null || HouseSite is not TilePos own || HomeInside(ctx) == null || NpcHousingOff(ctx))
 			return null;
+		else
+			house = own;
 		if (!npcRoomsLookedFor) {
 			npcRoomsLookedFor = true;
 			FindStandingNpcRooms(ctx, house);

@@ -1208,7 +1208,7 @@ public class BuildingTests
 	/// A house of no blueprint of the bot's standing by the bench (the user's world Journey Test, 2026-10-17: the base the mod
 	/// StartWithBase builds over the spawn): a room 14 by 6 inside its frame at x 20-35, rows 18-24, door, chair, table, torch.
 	/// </summary>
-	private static void ForeignHouse(FakeGame g)
+	internal static void ForeignHouse(FakeGame g)
 	{
 		for (int x = 20; x <= 35; x++)
 			g.Grid.Set(x, 18, CellKind.Solid);

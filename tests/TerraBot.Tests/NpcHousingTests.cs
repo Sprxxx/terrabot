@@ -148,6 +148,33 @@ public class NpcHousingTests
 		Assert.Contains("no free room", brain.Planner.Status);
 	}
 
+	/// <summary>
+	/// world_wof E45 (2026-10-18): after a resume the planner knew the house only as one that stood (HouseSite null); the Guide
+	/// dead, the Nurse in its one room, and "NPC rooms are built onto a house of the bot's own" left the town with no free room for
+	/// six days. A house that stood gets rooms built near it too.
+	/// </summary>
+	[Fact]
+	public void TheGuideDead_InAHouseThatStood_ARoomIsBuiltNearIt()
+	{
+		FakeGame g = EarlyGameTests.Field(90);
+		BuildingTests.ForeignHouse(g);
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.Reset(ProgressionPlanner.Plans.Housing);
+		p.SeeStationsForTest(ctx);
+		Assert.Null(p.ResolveForTest(new HouseBuilt("house"), ctx));
+		TilePos home = p.FoundHome.Value;
+		Assert.Null(p.HouseSite);
+		g.Homes.Add(new TownNpcHome(18, "Nurse", false, home));
+		g.AliveTownNpcs.Remove(FakeGame.GuideNpc);
+		GiveRoomMaterials(g, 1);
+		g.Refresh(ctx);
+		ISkill next = p.ResolveForTest(new TownNpcAlive(FakeGame.GuideNpc, "the Guide"), ctx);
+		output.WriteLine($"{p.Status} -> {next?.Describe()}");
+		Assert.IsNotType<WaitSkill>(next);
+		Assert.Contains(((TestLog)ctx.Log).Lines, s => s.Contains("building room 1 at"));
+	}
+
 	[Fact]
 	public void WhenTheNextMovesIn_AnotherRoomGoesOnTheRow()
 	{
