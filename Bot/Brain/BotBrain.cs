@@ -396,13 +396,13 @@ public sealed class BotBrain
 			if (e.Type != guardian)
 				continue;
 			ctx.IgnoreEvenClose(e.Id, GuardianIgnoreTicks);
-			if (Current is UseItemSkill u && u.ItemType == ctx.Ids.RecallPotion || Current is BossFightSkill)
+			if (Current is UseItemSkill u && ctx.IsRecallItem(u.ItemType) || Current is BossFightSkill)
 				return null;
-			bool recall = ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0;
+			bool recall = ctx.RecallItem > 0;
 			if (guardiansSeen.Add(e.Id) || recall)
 				ctx.Log.Warn($"Danger: a Dungeon Guardian at {e.FeetTile}, us at {ctx.Node}: {(recall ? "drinking a recall potion" : "no recall potion to escape it with")}"
 					+ (Current != null ? $" (was {Current.Name})" : ""));
-			return recall ? new UseItemSkill(ctx.Ids.RecallPotion) : null;
+			return recall ? new UseItemSkill(ctx.RecallItem) : null;
 		}
 		return null;
 	}
@@ -917,7 +917,11 @@ public sealed class BotBrain
 			int type = g.Key, n = g.Count();
 			if (!ctx.Infinite(type) || ctx.Inventory.IsGear(type) || System.Array.IndexOf(ctx.Ids.Coins, type) >= 0)
 				continue;
-			bool lastInUse = n < 2 && (type == ctx.Ids.Torch || ctx.Ids.BuildingBlocks.Contains(type));
+			// The last of a thing a slot holds one of (a mirror, a hook, a tool) is not duplicated back "when needed": nothing asks for
+			// it again. Seen in game (Journey run J2, log line 9536): the Magic Mirror trashed for a slot; in J3 the walk back to the
+			// arena took 7 game hours.
+			bool lastInUse = n < 2 && (type == ctx.Ids.Torch || ctx.Ids.BuildingBlocks.Contains(type) || ctx.Inventory.MaxStack(type) <= 1
+				|| ctx.IsRecallItem(type));
 			if (lastInUse)
 				continue;
 			(int, long) key = (n, g.Sum(s => (long)s.Stack));
@@ -996,6 +1000,8 @@ public sealed class BotBrain
 		// reserved (its packing list and reserve: the bridge's blocks, the fight's arrows, the potions kept back).
 		kept.UnionWith(ctx.NeededItems);
 		kept.UnionWith(ctx.Reservations.Items());
+		// The mirrors: the way home (BotContext.RecallItem), used without end.
+		kept.UnionWith(ids.RecallItems ?? System.Array.Empty<int>());
 		kept.Remove(0);
 		foreach (var s in stacks)
 			if (gearToo && ctx.Inventory.IsGear(s.Type))

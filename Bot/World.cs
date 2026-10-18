@@ -360,6 +360,12 @@ public sealed class GameIds
 	/// <summary>Recall Potion: drunk, it takes the player home to the spawn point.</summary>
 	public int RecallPotion { get; init; }
 	/// <summary>
+	/// What takes the player home like a recall potion but is never used up: Magic Mirror, Ice Mirror, Cell Phone. A Journey character
+	/// starts with a Magic Mirror (decompile UICharacterCreation.SetupPlayerStatsAndInventoryBasedOnDifficulty: item 50, beside the
+	/// Grappling Hook 84, 100 Rope 965 and the Creative Wings 4978).
+	/// </summary>
+	public int[] RecallItems { get; init; } = System.Array.Empty<int>();
+	/// <summary>
 	/// The evil-biome boss of a Corruption world (Milestone 10, docs M10_SPEC.md): the Eater of Worlds' head, body and tail
 	/// (NPC 13, 14, 15), summoned with Worm Food (30 Vile Powder + 15 Rotten Chunk at a Demon Altar, Recipe.cs:14407).
 	/// </summary>

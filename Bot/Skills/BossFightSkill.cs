@@ -1478,7 +1478,7 @@ public sealed class BossFightSkill : ISkill
 				: null;
 			if (why == null)
 				return null;
-			if (ctx.Ids.RecallPotion <= 0 || ctx.Inventory.Count(ctx.Ids.RecallPotion) <= 0) {
+			if (ctx.RecallItem <= 0) {
 				if (!escapeLogged) {
 					escapeLogged = true;
 					ctx.Log.Warn($"Boss fight: {why}, and no recall potion: running from it");
@@ -1487,7 +1487,7 @@ public sealed class BossFightSkill : ISkill
 			}
 			escapeWhy = why;
 			ctx.Log.Warn($"Boss fight: {why}; drinking a recall potion (boss at {(head is EntityInfo b ? $"{b.Life}/{b.LifeMax}" : "?")}, us {ctx.Combat.Life}/{ctx.Combat.LifeMax})");
-			escape = Start(ctx, new UseItemSkill(ctx.Ids.RecallPotion));
+			escape = Start(ctx, new UseItemSkill(ctx.RecallItem));
 		}
 		State = $"escaping: {escapeWhy}";
 		SkillStatus s = escape.Tick(ctx);

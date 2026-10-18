@@ -30,6 +30,12 @@ public static class JourneyGear
 		if (candidates.Count == 0)
 			return false;
 		var carried = inv.Stacks().Select(s => s.Type).Distinct().ToList();
+		// The way home: a researched mirror when none is carried (Journey run J2 trashed the starting Magic Mirror, and J3 walked
+		// 7 game hours back to the arena).
+		if (ctx.RecallItem == 0 || ctx.RecallItem == ctx.Ids.RecallPotion)
+			foreach (int m in ctx.Ids.RecallItems ?? System.Array.Empty<int>())
+				if (candidates.Contains(m))
+					return Duplicate(ctx, m, "the way home, used without end");
 
 		foreach (ArmorSlot slot in new[] { ArmorSlot.Head, ArmorSlot.Body, ArmorSlot.Legs }) {
 			int worn = inv.Worn(slot);

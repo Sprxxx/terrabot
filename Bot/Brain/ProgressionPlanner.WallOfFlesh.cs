@@ -471,8 +471,8 @@ public sealed partial class ProgressionPlanner
 		// gathered from there, a climb to row 372 at x 4111 and "no way up to the surface"; the housing stage gave up for a day.
 		bool roomWanted = HouseSite == null || Survey(ctx).Empty == 0;
 		if (roomWanted && ctx.SpawnTile is TilePos spawn && ctx.Node.ChebyshevTo(spawn) > HomeForRoomTiles) {
-			if (ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
-				return Do($"{need.Label} not alive and no free room: a recall potion home to build one", new UseItemSkill(ctx.Ids.RecallPotion));
+			if (ctx.RecallItem > 0)
+				return Do($"{need.Label} not alive and no free room: a recall potion home to build one", new UseItemSkill(ctx.RecallItem));
 			return Do($"{need.Label} not alive and no free room: home to build one ({ctx.Node.ChebyshevTo(spawn)} tiles away)",
 				new WalkToSkill(new GoalNearTile(spawn, HomeArrivedTiles, ctx.Physics)) { ToSurface = true });
 		}

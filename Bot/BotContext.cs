@@ -312,6 +312,23 @@ public sealed class BotContext
 	public System.Collections.Generic.Dictionary<int, long> ResearchRefused { get; } = new();
 
 	public GameIds Ids { get; set; } = GameIds.None;
+
+	/// <summary>
+	/// The way home to the spawn in the bag: a mirror (<see cref="GameIds.RecallItems"/>, never used up) first, else a recall potion;
+	/// 0 if neither. Seen in game (Journey run J3, 2026-10-18): the mirror trashed, the walk back to the arena took 7 game hours.
+	/// </summary>
+	public int RecallItem {
+		get {
+			if (Inventory == null)
+				return 0;
+			foreach (int m in Ids.RecallItems ?? System.Array.Empty<int>())
+				if (m > 0 && Inventory.Count(m) > 0)
+					return m;
+			return Ids.RecallPotion > 0 && Inventory.Count(Ids.RecallPotion) > 0 ? Ids.RecallPotion : 0;
+		}
+	}
+
+	public bool IsRecallItem(int itemType) => itemType > 0 && (itemType == Ids.RecallPotion || System.Array.IndexOf(Ids.RecallItems ?? System.Array.Empty<int>(), itemType) >= 0);
 	/// <summary>Best axe power in the hotbar (0 = none).</summary>
 	public int AxePower { get; set; }
 	/// <summary>Best pickaxe power in the hotbar (0 = none) and its tileBoost (tool range bonus).</summary>

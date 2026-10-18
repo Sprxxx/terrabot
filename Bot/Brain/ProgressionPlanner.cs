@@ -1030,7 +1030,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				// altar is no nearer from there. Seen in game (measured run U30): "no way back to the DemonAltar (2 walks failed);
 				// drinking a recall potion to go home" 5 times from t538000 to t561600, each walk from home back to the same lip at
 				// (1779,341) or pocket at (1792,324) under the corruption, until no potion was left and the altar was given up.
-				if (n >= MaxStationWalkFailures && placeable && ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0) {
+				if (n >= MaxStationWalkFailures && placeable && ctx.RecallItem > 0) {
 					// Like a player: drink a recall potion and be home, rather than rebuild the stations (an anvil is 15 ore).
 					ctx.Log.Info($"Auto: no way back to the {ctx.Knowledge.TileName(stationWalkType)} ({n} walks failed); drinking a recall potion to go home");
 					recallNext = true;
@@ -1278,8 +1278,8 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		}
 		if (recallNext) {
 			recallNext = false;
-			if (ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
-				return Do("drinking a recall potion to get home to the stations", new UseItemSkill(ctx.Ids.RecallPotion));
+			if (ctx.RecallItem > 0)
+				return Do("drinking a recall potion to get home to the stations", new UseItemSkill(ctx.RecallItem));
 		}
 		// A chest in sight comes first, as for a player: healing potions, accessories, better weapons.
 		if (NextChest(ctx) is ChestInfo chest)
@@ -1766,6 +1766,14 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			// An ingredient waiting for the night (the Eye's lenses): its stations first, by day.
 			if (sub != null && nightOnlyByDay && stuck == null && StationsByDay(recipe, name, claims, depth, ctx) is ISkill station)
 				return station;
+			// At night, deep down with a station of the recipe still to find (the altar): the station first, not the climb to the surface's
+			// hunt and the climb back down for the station by day. Seen in game (Journey run J3, 2026-10-18): the altar searched for 240 rows
+			// down by day, "need 2 more Lens (hunting to 6) -> Hunt [going up]" at nightfall, and down again the next morning.
+			if (sub is HuntSkill { SpawnsAboveRow: int top } && ctx.Node.Y > top + DeepForStationRows && stuck == null
+				&& StationsByDay(recipe, name, claims, depth, ctx) is ISkill below) {
+				Status = $"deep down (row {ctx.Node.Y}) at night: {Status}";
+				return below;
+			}
 			if (sub != null || stuck != null)
 				return sub;
 		}
@@ -1798,6 +1806,8 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	}
 
 	/// <summary>Acorns planted at once when no tree is in reach (a sapling takes about 9 game days on average: many at once).</summary>
+	/// <summary>Rows below a night hunt's spawning rows from which a recipe's station still to find is looked for first (ResolveItem).</summary>
+	public const int DeepForStationRows = 60;
 	public const int AcornsPlanted = 30;
 	/// <summary>A game day in ticks (54000 of day, 32400 of night).</summary>
 	public const long DayTicks = 86400;
@@ -2331,6 +2341,8 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			// To the arena first, by day, then wait there for night: seen in game (measured run S14), the summon made at an
 			// altar 360 rows down, the bot waited there all day, set off at nightfall, and the walk took the night.
 			if (ArenaBounds(ctx) is (int bx0, int bx1, int by) && !InArena(ctx.Node, bx0, bx1, by)) {
+				if (RecallToward(ctx, new TilePos((bx0 + bx1) / 2, by), $"the arena to summon the {b.Label}") is ISkill home)
+					return home;
 				return Do($"walking to the arena to summon the {b.Label}", ArenaWalk(ctx, bx0, bx1, by));
 			}
 			// No arena: open ground on the surface, not wherever the summon item was made. Seen in game (measured run U23,
@@ -2348,6 +2360,8 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				return Do($"too little night left for the {b.Label} ({ctx.NightTicksLeft / 60}s); waiting for the next night",
 					new WaitSkill("next night", c => c.IsNight && c.NightTicksLeft >= MinNightForBoss, NightWaitTicks + 32400));
 			if (ArenaBounds(ctx) is (int ax0, int ax1, int ay) && !InArena(ctx.Node, ax0, ax1, ay)) {
+				if (RecallToward(ctx, new TilePos((ax0 + ax1) / 2, ay), $"the arena to summon the {b.Label}") is ISkill home)
+					return home;
 				return Do($"walking to the arena to summon the {b.Label}", ArenaWalk(ctx, ax0, ax1, ay));
 			}
 			// Summon at (nearly) full life: the arena's campfire and the heart lantern bring it back up quickly.
@@ -2726,7 +2740,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				return Do($"resting to {SummonLifeFraction:P0} life by the Dungeon before night ({ctx.Combat.Life}/{ctx.Combat.LifeMax})", Rest());
 			return Do($"waiting by the Dungeon for night to summon {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
 		}
-		int byTime = ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0 ? SummonByTime : SummonByTimeNoRecall;
+		int byTime = ctx.RecallItem > 0 ? SummonByTime : SummonByTimeNoRecall;
 		int time = NightLengthTicks - ctx.NightTicksLeft;
 		if (time > byTime) {
 			if (!atWait)
@@ -3770,9 +3784,9 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		// walk out. Seen in game (world_eye run 64): the walk back to the spawn from row 408 followed caves east into the
 		// desert, where antlion swarmers killed the bot.
 		if (ctx.SpawnTile is TilePos home && home.ChebyshevTo(ctx.Node) > RecallDistance && dest.ChebyshevTo(ctx.Node) > dest.ChebyshevTo(home) + RecallDistance / 2
-			&& ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
+			&& ctx.RecallItem > 0)
 			return Do($"no more {name} found around here; drinking a recall potion to start the trip to {dest} from the spawn ({home.ChebyshevTo(ctx.Node)} tiles away)",
-				new UseItemSkill(ctx.Ids.RecallPotion));
+				new UseItemSkill(ctx.RecallItem));
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
 		// The ground over the body's own column, not the highest ground round it (SurfaceRow: a hill, the house's roof): from a dip in
@@ -3845,9 +3859,9 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			}
 		}
 		if (ctx.SpawnTile is TilePos spawn && spawn.ChebyshevTo(ctx.Node) > NoTripBackTiles) {
-			if (ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0 && spawn.ChebyshevTo(ctx.Node) > RecallDistance)
+			if (ctx.RecallItem > 0 && spawn.ChebyshevTo(ctx.Node) > RecallDistance)
 				return Do($"no more {name} found around here and nowhere to travel; drinking a recall potion to look again from the spawn",
-					new UseItemSkill(ctx.Ids.RecallPotion));
+					new UseItemSkill(ctx.RecallItem));
 			// Held like any way out (see TravelForOre).
 			exitTarget = spawn;
 			exitIsRow = false;
@@ -3985,11 +3999,28 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// </summary>
 	private ISkill RecallHome(BotContext ctx, TilePos station)
 	{
-		if (ctx.Ids.RecallPotion <= 0 || ctx.Inventory.Count(ctx.Ids.RecallPotion) <= 0 || ctx.SpawnTile is not TilePos spawn)
+		if (ctx.RecallItem <= 0 || ctx.SpawnTile is not TilePos spawn)
 			return null;
 		if (station.ChebyshevTo(ctx.Node) <= RecallDistance || station.ChebyshevTo(spawn) > RecallDistance / 2)
 			return null;
-		return Do($"drinking a recall potion to get home to the stations ({station.ChebyshevTo(ctx.Node)} tiles away)", new UseItemSkill(ctx.Ids.RecallPotion));
+		return Do($"drinking a recall potion to get home to the stations ({station.ChebyshevTo(ctx.Node)} tiles away)", new UseItemSkill(ctx.RecallItem));
+	}
+
+	/// <summary>
+	/// A long way to <paramref name="dest"/>, which lies by the spawn, with a mirror or a recall potion in the bag
+	/// (<see cref="BotContext.RecallItem"/>): home by it, then the short walk, as a player goes. Null when the walk is shorter: the
+	/// bot within <see cref="RecallDistance"/> of the place, or the spawn not nearer to it by half that. Seen in game (Journey run J3,
+	/// 2026-10-18): at nightfall 770 tiles from the arena under the ground, the spawn beside the arena, the walk took 7 game hours.
+	/// </summary>
+	private ISkill RecallToward(BotContext ctx, TilePos dest, string what)
+	{
+		int item = ctx.RecallItem;
+		if (item <= 0 || ctx.SpawnTile is not TilePos spawn)
+			return null;
+		int walk = dest.ChebyshevTo(ctx.Node);
+		if (walk <= RecallDistance || dest.ChebyshevTo(spawn) + RecallDistance / 2 >= walk)
+			return null;
+		return Do($"home by the {ctx.Knowledge?.ItemName(item) ?? "recall"} for {what} ({walk} tiles away, {dest.ChebyshevTo(spawn)} from the spawn)", new UseItemSkill(item));
 	}
 
 	/// <summary>Set when the way back to the stations is lost and a recall potion is carried: drink it next.</summary>
@@ -3998,7 +4029,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// <summary>Drink a recall potion as the next thing, if one is carried (false if none).</summary>
 	public bool RequestRecall(BotContext ctx)
 	{
-		if (ctx.Ids.RecallPotion <= 0 || ctx.Inventory.Count(ctx.Ids.RecallPotion) <= 0)
+		if (ctx.RecallItem <= 0)
 			return false;
 		recallNext = true;
 		return true;

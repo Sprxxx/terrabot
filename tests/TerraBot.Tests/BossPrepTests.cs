@@ -738,6 +738,37 @@ public class BossPlannerTests
 	}
 
 	[Fact]
+	public void LensesShort_AtNight_DeepDown_NoAltarKnown_LooksForTheAltarFirst_NotTheClimb()
+	{
+		// Measured run J3 (Journey, 2026-10-18): the altar searched for 240 rows down by day; at nightfall "need 2 more Lens
+		// (hunting to 6) -> Hunt [going up]", the climb to the surface from row 734, and the next morning down again.
+		var rows = Enumerable.Repeat(new string('.', 120), 25).ToList();
+		for (int y = 25; y < 140; y++)
+			rows.Add(y >= 118 && y <= 124 ? "#" + new string('.', 60) + new string('#', 59) : new string('#', 120));
+		char[] feet = rows[124].ToCharArray();
+		feet[12] = 'S';
+		rows[124] = new string(feet);
+		var g = new FakeGame(rows.ToArray());
+		g.Items[FakeGame.Lens] = 4;
+		g.IsNight = true;
+		BotContext ctx = g.CreateContext(output);
+		ctx.SurfaceY = 30; // the world's surface layer (Main.worldSurface), the night hunt's spawning rows above it
+		g.Refresh(ctx);
+		var p = new ProgressionPlanner();
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"bot {ctx.Node}: {p.Status} -> {s?.Describe()}");
+		Assert.IsNotType<HuntSkill>(s);
+		Assert.Contains("deep down", p.Status);
+		// Up by the surface, the night's hunt as before.
+		FakeGame up = ProgressionTests.Mine();
+		up.Items[FakeGame.Lens] = 4;
+		up.IsNight = true;
+		BotContext upCtx = up.CreateContext(output);
+		upCtx.SurfaceY = 30;
+		Assert.IsType<HuntSkill>(new ProgressionPlanner().ResolveForTest(Eye, upCtx));
+	}
+
+	[Fact]
 	public void WithTheSummonItem_WaitsForNight_ThenFights()
 	{
 		FakeGame g = ProgressionTests.Mine();
@@ -770,6 +801,32 @@ public class BossPlannerTests
 		var (x0, x1, standY) = p.ArenaBounds(ctx).Value;
 		Assert.True(walk.Goal.IsGoal(new TilePos((x0 + x1) / 2, standY)));
 		Assert.False(walk.Goal.IsGoal(new TilePos((x0 + x1) / 2 + 4, standY + 4)), "under the floor counted as there");
+	}
+
+	[Fact]
+	public void WithTheSummonItem_FarFromTheArena_ByTheSpawn_RecallsHome_NotTheWalk()
+	{
+		// Measured run J3 (Journey, 2026-10-18): at nightfall 770 tiles from the arena, under the ground, the spawn beside the
+		// arena; the walk back took 7 game hours (t224800-t248400) and the night was lost. A mirror or a potion takes the bot there.
+		FakeGame g = EarlyGameTests.Field(300, 50, 75);
+		BotContext ctx = g.CreateContext(output);
+		var p = new ProgressionPlanner();
+		p.ResolveForTest(new ArenaBuilt("arena"), ctx); // picks the site, by the start
+		var (x0, x1, standY) = p.ArenaBounds(ctx).Value;
+		ctx.SpawnTile = new TilePos(3, 24);
+		g.Items[FakeGame.SuspiciousEye] = 1;
+		g.Items[FakeGame.MagicMirror] = 1;
+		g.IsNight = true;
+		g.Sim.State.X += 250 * 16;
+		g.Refresh(ctx);
+		ISkill s = p.ResolveForTest(Eye, ctx);
+		output.WriteLine($"arena {x0}..{x1} row {standY}, bot {ctx.Node}: {p.Status} -> {s?.Describe()}");
+		var recall = Assert.IsType<UseItemSkill>(s);
+		Assert.Equal(FakeGame.MagicMirror, recall.ItemType);
+		// Nothing to recall with: the walk, as before.
+		g.Items[FakeGame.MagicMirror] = 0;
+		g.Refresh(ctx);
+		Assert.IsType<WalkToSkill>(p.ResolveForTest(Eye, ctx));
 	}
 
 	[Fact]

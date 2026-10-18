@@ -91,6 +91,39 @@ public class JourneyTests
 	}
 
 	[Fact]
+	public void KeepRoom_NeverTrashesTheLastMirror_OrHook_ForASlot()
+	{
+		// Measured run J2 (log line 9536): "trashing a stack of Magic Mirror (researched: duplicated again when needed)"; nothing
+		// asked for it again, and in J3 the walk back to the arena took 7 game hours. A slot holds one of these: the last one stays.
+		var (g, ctx) = Journey();
+		const int Hook = 84;
+		g.StackSize[Hook] = 1;
+		g.Gear.Add(Hook); // as the game has it (IsGear: a hook shoots its projectile)
+		g.SlotLimit = 4;
+		g.Items[FakeGame.MagicMirror] = 1;
+		g.Items[Hook] = 1;
+		g.Items[FakeGame.StoneBlock] = 999 + 999;
+		g.Journey.Caps[FakeGame.MagicMirror] = g.Journey.Caps[Hook] = 1;
+		g.Journey.Caps[FakeGame.StoneBlock] = 100;
+		g.Journey.MarkResearched(FakeGame.MagicMirror, Hook, FakeGame.StoneBlock);
+		BotBrain.KeepRoom(ctx);
+		Assert.Equal(1, g.Count(FakeGame.MagicMirror));
+		Assert.Equal(1, g.Count(Hook));
+		Assert.Contains(FakeGame.StoneBlock, g.Trashed);
+	}
+
+	[Fact]
+	public void RecallItem_TheMirrorFirst_ThenAPotion()
+	{
+		var (g, ctx) = Journey();
+		Assert.Equal(0, ctx.RecallItem);
+		g.Items[FakeGame.RecallPotion] = 2;
+		Assert.Equal(FakeGame.RecallPotion, ctx.RecallItem);
+		g.Items[FakeGame.MagicMirror] = 1;
+		Assert.Equal(FakeGame.MagicMirror, ctx.RecallItem);
+	}
+
+	[Fact]
 	public void Habit_GearInUse_IsResearched_AndComesBackDuplicated()
 	{
 		// The user (2026-10-17): accessories researched "and THEN" worn, "same thing with ammo": the one in use goes into
