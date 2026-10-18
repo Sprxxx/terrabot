@@ -56,6 +56,13 @@ public interface IWorldInfo
 	string TreeSpotBlocker(int x, int y) => "unknown";
 
 	/// <summary>
+	/// Trees on the map the player has revealed (no x-ray), one cell per tree (its lowest trunk cell), within <paramref name="radius"/>
+	/// columns of <paramref name="around"/> and a band of rows round its height, nearest first: where a player who cut the forest
+	/// round the base walks for wood.
+	/// </summary>
+	IReadOnlyList<TilePos> MapTrees(TilePos around, int radius) => System.Array.Empty<TilePos>();
+
+	/// <summary>
 	/// The tile's frame column (vanilla Tile.TileFrameX) at the cell, or -1 when there is no tile: which style of a tile
 	/// type it is (a corrupt plant at frame 144 is a vile mushroom, WorldGen.KillTile_GetItemDrops).
 	/// </summary>

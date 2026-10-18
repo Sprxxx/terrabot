@@ -50,4 +50,19 @@ public class PlantAcornsTests
 		p.OnSkillFinished(next, SkillStatus.Succeeded, ctx);
 		Assert.IsType<GatherWoodSkill>(p.ResolveForTest(new HaveItem(FakeGame.Wood, 10, "Wood"), ctx)); // once a day
 	}
+
+	/// <summary>world_wof E48-E54 (2026-10-18): no tree within the search's 280 tiles; one far off on the map is walked to.</summary>
+	[Fact]
+	public void NoTreeInReach_ATreeOnTheMap_IsWalkedTo()
+	{
+		FakeGame g = EarlyGameTests.Field(700, 650);
+		g.TreeSight = 40; // seen from near only (the map remembers it: MapTrees)
+		BotContext ctx = g.CreateContext(output);
+		var gather = new GatherWoodSkill(FakeGame.Wood, 3);
+		SkillStatus s = EarlyGameTests.RunSkill(g, ctx, gather, 60 * 60 * 30);
+		foreach (string l in ((TestLog)ctx.Log).Lines.Where(l => l.StartsWith("GatherWood")))
+			output.WriteLine(l);
+		Assert.Equal(SkillStatus.Succeeded, s);
+		Assert.Contains(((TestLog)ctx.Log).Lines, l => l.Contains("to a tree on the map at (650,"));
+	}
 }

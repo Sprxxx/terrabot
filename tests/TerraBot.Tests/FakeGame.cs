@@ -409,6 +409,8 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	// ---------- IWorldInfo ----------
 
 	public bool IsTreeTrunk(int x, int y) => Trees.Any(t => t.Key.X == x && y <= t.Key.Y && y > t.Key.Y - t.Value);
+	public IReadOnlyList<TilePos> MapTrees(TilePos around, int radius) =>
+		Trees.Keys.Where(t => Math.Abs(t.X - around.X) <= radius).OrderBy(t => Math.Abs(t.X - around.X)).ToList();
 	public int TreeWood(int x, int y) => Trees.ContainsKey(new TilePos(x, y)) ? TreeWoods.GetValueOrDefault(new TilePos(x, y), Wood) : 0;
 
 	public (int Width, int Height, int OriginX, int OriginY) Footprint(int itemType) => TilePlacedBy(itemType) switch {

@@ -229,6 +229,25 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 
 	public bool TreeSpot(int x, int y) => TreeSpotBlocker(x, y) == null;
 
+	public IReadOnlyList<TilePos> MapTrees(TilePos around, int radius)
+	{
+		var found = new List<TilePos>();
+		int x0 = Math.Max(2, around.X - radius), x1 = Math.Min(Main.maxTilesX - 3, around.X + radius);
+		int y0 = Math.Max(2, around.Y - 120), y1 = Math.Min(Main.maxTilesY - 3, around.Y + 60);
+		for (int x = x0; x <= x1; x++)
+			for (int y = y0; y <= y1; y++) {
+				Tile t = Main.tile[x, y];
+				if (!t.HasTile || t.TileType != TileID.Trees || !(XRay || Main.Map.IsRevealed(x, y)))
+					continue;
+				Tile below = Main.tile[x, y + 1];
+				if (below.HasTile && below.TileType == TileID.Trees)
+					continue; // not the lowest cell of the trunk
+				found.Add(new TilePos(x, y));
+			}
+		found.Sort((a, b) => Math.Abs(a.X - around.X).CompareTo(Math.Abs(b.X - around.X)));
+		return found;
+	}
+
 	public string TreeSpotBlocker(int x, int y)
 	{
 		if (!WorldGen.InWorld(x, y, 20))

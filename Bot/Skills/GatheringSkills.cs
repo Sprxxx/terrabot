@@ -450,8 +450,23 @@ public sealed class GatherWoodSkill : ISkill
 				sub.Start(ctx);
 				return SkillStatus.Running;
 			}
-			if (++explores > MaxExplores)
+			if (++explores > MaxExplores) {
+				// The forest round here cut: to the nearest tree of the wood on the map (seen on earlier trips), as a player walks
+				// to the next forest, and the search goes on from there. Seen in game (world_wof E48 to E54, 2026-10-18): no tree
+				// within 280 tiles of the base, "no reachable trees found" every day, the Guide's room never finished.
+				if (farTrips < MaxFarTrips && FarTree(ctx, here) is TilePos far) {
+					farTrips++;
+					explores = 0;
+					exploreFrom = far;
+					ctx.Log.Info($"GatherWood: no trees within {MaxExplores / 2 * ExploreStepTiles + TreeSearchTiles} tiles; to a tree on the map at {far} ({Math.Abs(far.X - here.X)} tiles off)");
+					walkingTo = far;
+					sub = new WalkToSkill(far) { Quiet = true, Tolerance = 4, Travel = true };
+					State = $"to the trees at {far}";
+					sub.Start(ctx);
+					return SkillStatus.Running;
+				}
 				return Fail(ctx, $"no reachable trees found after {MaxExplores} explorations");
+			}
 			// Outward from where the search began, the two sides in turn and further each time: +40, -40, +80, -80...
 			// Seen in game (measured run U8): stepping 40 tiles alternately from where it stood went to and fro between
 			// the same two places (2320 and 2375) for 19 game hours.
@@ -467,6 +482,18 @@ public sealed class GatherWoodSkill : ISkill
 	}
 
 	private TilePos? walkingTo;
+
+	/// <summary>Trips to a tree on the map (<see cref="IWorldInfo.MapTrees"/>) before giving up, and how far it looks (columns).</summary>
+	public const int MaxFarTrips = 2, FarTreeTiles = 1500;
+	private int farTrips;
+
+	private TilePos? FarTree(BotContext ctx, TilePos here)
+	{
+		foreach (TilePos t in ctx.World.MapTrees(here, FarTreeTiles))
+			if (Math.Abs(t.X - here.X) > TreeSearchTiles && !badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t) && Counts(ctx.World.TreeWood(t.X, t.Y)))
+				return t;
+		return null;
+	}
 
 	private TilePos? NearestKnownTree(BotContext ctx)
 	{
