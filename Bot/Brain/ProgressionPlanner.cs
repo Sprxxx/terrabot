@@ -1646,7 +1646,12 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				stationHeading ??= StationHeading(ctx, area);
 				return Do($"exploring for a {k.TileName(s.TileType)} (none seen yet)",
 					new ExploreSkill(k.TileName(s.TileType), c => c.World.FindTiles(tile, c.Node, StationSearchRadius).Count > 0, ExploreBias.Down, stationHeading.Value)
-					{ JobKey = $"Explore station {tile}" });
+					{
+						JobKey = $"Explore station {tile}",
+						// Where generation puts it: its rows, and not the skipped middle (Journey run J4: 2.5 days there).
+						Band = area is GenArea gc ? (gc.MinY, gc.MaxY) : null,
+						SkipColumns = area is GenArea gd ? (gd.SkipFromX, gd.SkipToX) : null,
+					});
 			}
 			KnownStations[s.TileType] = found.Value;
 			notedAt[s.TileType] = ctx.Tick + 60 * 60 * 60; // far away: do not forget it before going there

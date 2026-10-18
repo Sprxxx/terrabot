@@ -92,6 +92,17 @@ public sealed class ExploreSkill : ISkill
 	/// <summary>Per row outside <see cref="Band"/>: as much again as the downward pull per row (1.5), so above the band depth counts double.</summary>
 	public const float OutOfBandRowCost = 1.5f;
 
+	/// <summary>
+	/// Columns what is looked for is never in (the altars: the world's middle tenth, GenArea), if any: a leg ending in them costs
+	/// <see cref="SkippedColumnCost"/> a column into them, a pull out, not a ban. Seen in game (Journey run J4, 2026-10-18): 2.5 game
+	/// days exploring for a Demon Altar over x 2830-3210, most of it in columns 2880-3521, where the "Altars" pass puts none.
+	/// </summary>
+	public (int From, int To)? SkipColumns { get; init; }
+	public const float SkippedColumnCost = 3f;
+
+	private float ColumnCost(int x) =>
+		SkipColumns is not (int from, int to) || x < from || x > to ? 0f : (Math.Min(x - from, to - x) + 1) * SkippedColumnCost;
+
 	private float BandCost(int y) =>
 		Band is not (int top, int bottom) ? 0f : y < top ? (top - y) * OutOfBandRowCost : y > bottom ? (y - bottom) * OutOfBandRowCost : 0f;
 
@@ -500,6 +511,7 @@ public sealed class ExploreSkill : ISkill
 			// The depth terms by where the leg ends: in the open, on the floor below (LegEndRow).
 			int endY = LegEndRow(ctx, o);
 			score += BandCost(endY);
+			score += ColumnCost(o.X);
 			if (tooDeep)
 				score -= (n.Y - endY) * DownPullPerRow; // higher is better
 			else if (Bias == ExploreBias.Down)
@@ -543,7 +555,7 @@ public sealed class ExploreSkill : ISkill
 					score += VisitedPenalty;
 				if (Math.Sign(x - n.X) != heading)
 					score += TurnPenalty;
-				score += BandCost(y);
+				score += BandCost(y) + ColumnCost(x);
 				if (Bias == ExploreBias.Down)
 					score += DepthScore(ctx, n.Y, y); // deeper is better, down to the band (DepthScore)
 				else
