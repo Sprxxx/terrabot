@@ -3321,7 +3321,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			current[i] = src.Kind switch {
 				// An ore that mining keeps coming back without costs more each time, so an item with another tier (armour)
 				// switches to an ore that is still there.
-				SourceKind.Tree => TreeCost * (1 + FruitlessWoodWeight * fruitlessWoods.GetValueOrDefault(i)), SourceKind.Mine => MineCost * (1 + fruitlessMines.GetValueOrDefault(i)), SourceKind.Hunt => HuntCost, _ => float.PositiveInfinity,
+				SourceKind.Tree => TreeCost * (1 + FruitlessWoodWeight * fruitlessWoods.GetValueOrDefault(i)) * (WoodKnown(i, ctx) ? 1 : UnknownWoodFactor), SourceKind.Mine => MineCost * (1 + fruitlessMines.GetValueOrDefault(i)), SourceKind.Hunt => HuntCost, _ => float.PositiveInfinity,
 			};
 			if (src.Kind != SourceKind.None)
 				continue;
@@ -3587,6 +3587,16 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	private readonly Dictionary<int, int> fruitlessMines = new();
 	/// <summary>Failed searches for each wood (GatherWood), cleared by a search that found it: each makes the wood dearer.</summary>
 	private readonly Dictionary<int, int> fruitlessWoods = new();
+	/// <summary>
+	/// A wood no known tree gives (none seen nor remembered, stumps not counted) costs this many times a known one: Pearlwood before
+	/// Hardmode, Rich Mahogany far from the jungle. Seen in game (world_wof E56, 2026-10-18): with Wood and Ebonwood searched for in
+	/// vain, the room asked for Pearlwood, then Rich Mahogany, neither growing anywhere near.
+	/// </summary>
+	public const float UnknownWoodFactor = 6f;
+
+	private static bool WoodKnown(int wood, BotContext ctx) =>
+		ctx.Seen.Trees.Concat(ctx.KnownTrees).Any(t => ctx.World.IsTreeTrunk(t.X, t.Y - 1) && ctx.World.TreeWood(t.X, t.Y) == wood);
+
 	/// <summary>How much dearer a wood gets per failed search (its tree cost times 1 + this per failure).</summary>
 	public const float FruitlessWoodWeight = 3f;
 	private readonly Dictionary<int, int> travelledFor = new();

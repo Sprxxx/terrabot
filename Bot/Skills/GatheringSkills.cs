@@ -495,8 +495,15 @@ public sealed class GatherWoodSkill : ISkill
 		return null;
 	}
 
+	private readonly List<TilePos> stumps = new();
+
 	private TilePos? NearestKnownTree(BotContext ctx)
 	{
+		if (stumps.Count > 0) {
+			foreach (TilePos st in stumps)
+				ctx.KnownTrees.Remove(st);
+			stumps.Clear();
+		}
 		TilePos node = ctx.Node;
 		TilePos? best = null;
 		int bestDist = int.MaxValue;
@@ -504,6 +511,12 @@ public sealed class GatherWoodSkill : ISkill
 			int d = Math.Abs(t.X - node.X) + Math.Abs(t.Y - node.Y);
 			// A tree remembered with its ground (it was seen): one whose wood does not count is no use to go back to. Gone (no
 			// trunk there now): going there forgets it. A trunk of no wood (a gem tree, a mushroom tree: TreeWood 0) is not gone.
+			// A stump (the base left of a felled tree: no trunk above it) is gone too: it drops nothing. Seen in game (world_wof E55,
+			// E56, 2026-10-18): remembered trees walked back to and "chopped" in 254 ticks, frame (0,132), no wood, run after run.
+			if (ctx.World.IsTreeTrunk(t.X, t.Y) && !ctx.World.IsTreeTrunk(t.X, t.Y - 1)) {
+				stumps.Add(t);
+				continue;
+			}
 			int wood = ctx.World.TreeWood(t.X, t.Y);
 			bool gone = !ctx.World.IsTreeTrunk(t.X, t.Y);
 			if (d < bestDist && !badTrees.Contains(t) && !ctx.UnreachableTiles.Contains(t) && (gone || Counts(wood))) {
