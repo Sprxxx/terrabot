@@ -1774,10 +1774,16 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			// At night, deep down with a station of the recipe still to find (the altar): the station first, not the climb to the surface's
 			// hunt and the climb back down for the station by day. Seen in game (Journey run J3, 2026-10-18): the altar searched for 240 rows
 			// down by day, "need 2 more Lens (hunting to 6) -> Hunt [going up]" at nightfall, and down again the next morning.
-			if (sub is HuntSkill { SpawnsAboveRow: int top } && ctx.Node.Y > top + DeepForStationRows && stuck == null
-				&& StationsByDay(recipe, name, claims, depth, ctx) is ISkill below) {
-				Status = $"deep down (row {ctx.Node.Y}) at night: {Status}";
-				return below;
+			// StationsByDay sets the night-only wait when no station needs work: at night that is not so, the hunt stands (measured run
+			// J5: the flag left set at night, the night went to the next boss's day work, "exploring for the corruption", 0 lenses).
+			if (sub is HuntSkill { SpawnsAboveRow: int top } && ctx.Node.Y > top + DeepForStationRows && stuck == null) {
+				bool byDay = nightOnlyByDay;
+				ISkill below = StationsByDay(recipe, name, claims, depth, ctx);
+				nightOnlyByDay = byDay;
+				if (below != null) {
+					Status = $"deep down (row {ctx.Node.Y}) at night: {Status}";
+					return below;
+				}
 			}
 			if (sub != null || stuck != null)
 				return sub;

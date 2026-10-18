@@ -28,7 +28,10 @@ public sealed class ReadyForBossSkill : ISkill
 	private bool currentIsStaff;
 	private int summons;
 
-	public string Name => "Ready";
+	/// <summary>Minions only, no potions or food: after a death (BotBrain's minion reflex), the strongest staff into every free slot.</summary>
+	public bool StavesOnly { get; init; }
+
+	public string Name => StavesOnly ? "Minions" : "Ready";
 	public string Key => "Ready for a boss";
 	public string FailureReason => "";
 	/// <summary>Items used (potions, food) and minions summoned, for the log and the tests.</summary>
@@ -63,7 +66,7 @@ public sealed class ReadyForBossSkill : ISkill
 			}
 			current = null;
 		}
-		foreach (int item in ctx.Inventory.FightBuffItems()) {
+		foreach (int item in StavesOnly ? System.Array.Empty<int>() : ctx.Inventory.FightBuffItems()) {
 			if (!tried.Add(item))
 				continue;
 			return Begin(ctx, new UseItemSkill(item), staff: false);
@@ -90,7 +93,7 @@ public sealed class ReadyForBossSkill : ISkill
 	/// </summary>
 	public const int QuietTiles = 8;
 
-	private static bool ThreatNear(BotContext ctx)
+	internal static bool ThreatNear(BotContext ctx)
 	{
 		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
 		foreach (EntityInfo h in ctx.Hostiles)

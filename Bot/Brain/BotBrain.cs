@@ -337,7 +337,37 @@ public sealed class BotBrain
 		new Reflex("guardian", _ => GuardianBid, GuardianGate),
 		new Reflex("retreat", ctx => CriticalLife(ctx) ? CriticalRetreatBid : RetreatBid, RetreatGate),
 		new Reflex("fight", ctx => FightBackReason(ctx) != null ? CaughtBid : FightBid, FightGate),
+		new Reflex("minions", _ => MinionBid, MinionGate),
 	};
+
+	/// <summary>
+	/// Minions are gone after a death (Player.UpdateDead) and not in a save: due again then, and when the brain starts. The user
+	/// (2026-10-18): "After dying it should always use its strongest available summon."
+	/// </summary>
+	private bool minionsDue = true;
+	public const int MinionBid = 20;
+
+	/// <summary>
+	/// The minions due (<see cref="minionsDue"/>) and a staff carried whose minion fits the free slots and the mana: the strongest staff
+	/// (<see cref="IInventory.SummonStaves"/>, the most damage first) into every free slot, in a quiet moment (nothing hostile within
+	/// <see cref="ReadyForBossSkill.QuietTiles"/>). Not during a boss fight: it readies its own.
+	/// </summary>
+	private ISkill MinionGate(BotContext ctx)
+	{
+		if (!minionsDue || Current is BossFightSkill or ReadyForBossSkill || ctx.Inventory == null)
+			return null;
+		bool fits = false;
+		foreach (var (_, mana, slots) in ctx.Inventory.SummonStaves())
+			if (ctx.Combat.MinionSlotsFree + 1e-3f >= slots && ctx.Combat.Mana >= mana) {
+				fits = true;
+				break;
+			}
+		if (!fits || ReadyForBossSkill.ThreatNear(ctx))
+			return null;
+		minionsDue = false;
+		ctx.Log.Info($"Minions: summoning with the strongest staff ({ctx.Combat.MinionSlotsFree:0.#} slot(s) free)");
+		return new ReadyForBossSkill { StavesOnly = true };
+	}
 
 	/// <summary>One pass of the table: the first (highest) reflex whose gate opens and whose bid beats the running override's.</summary>
 	private void TickReflexes(BotContext ctx)
@@ -1072,6 +1102,7 @@ public sealed class BotBrain
 		// is left to notice it itself ("died").
 		if (ctx.Deaths != deathsSeen) {
 			deathsSeen = ctx.Deaths;
+			minionsDue = true;
 			if (Current != null && Current is not BossFightSkill) {
 				ctx.Log.Info($"Died during {Current.Name}{(Override != null && Work != null ? $" (paused: {Work.Name})" : "")}; starting afresh from {ctx.Node}");
 				LastResult = $"{Current.Name} Failed: died";
