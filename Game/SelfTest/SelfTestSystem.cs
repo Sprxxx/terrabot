@@ -989,6 +989,13 @@ public sealed class SelfTestSystem : ModSystem
 		Mod.Logger.Info($"SELFTEST SUMMARY {passed}/{queue.Count} passed{(error != null ? " -- aborted: " + error : "")}");
 		foreach (string l in summary)
 			Mod.Logger.Info("SELFTEST   " + l.Substring("SELFTEST ".Length));
+		// The run's end as a checkpoint ("end": world, player, map and the spot), so the next run goes on from here with the world and
+		// the player in step. Exiting saves neither the world nor the map: runs taken up from a copied end state got the player of
+		// the end with the world of an earlier save (2026-10-18, E40-E42: the town NPCs' rooms built in one run were gone in the next).
+		if (Program.LaunchParameters.ContainsKey(CheckpointFlag) && !Main.gameMenu) {
+			SaveCheckpoint("end");
+			Mod.Logger.Info("SELFTEST checkpoint end saved");
+		}
 		Mod.Logger.Info("SELFTEST EXIT");
 		Main.instance.Exit();
 	}
