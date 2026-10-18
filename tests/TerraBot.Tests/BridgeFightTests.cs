@@ -149,4 +149,19 @@ public class BridgeFightTests
 		Assert.True(g.Grid.Get(sx - 1, row).IsSolid() && g.Grid.Get(sx, row).IsSolid(), $"stand {sx - 1}-{sx} has no deck");
 		Assert.Equal(23, sx);
 	}
+
+	/// <summary>E62/E63: mining the first landing cell from a stand whose body (two columns wide) stood half on it.</summary>
+	[Fact]
+	public void TheLandingCells_AreMinedFromBesideThem_NotFromOnThem()
+	{
+		int sx = 4070, row = 1042, stand = row - 1;
+		foreach (int dir in new[] { 1, -1 }) {
+			TilePos at = ProgressionPlanner.MiningStand(sx, dir, stand);
+			int first = sx + dir * ProgressionPlanner.LandingFrom;
+			int bodyLeft = at.X, bodyRight = at.X + 1; // the node is the body's left column
+			output.WriteLine($"dir {dir}: stand {at}, body {bodyLeft}-{bodyRight}, first landing cell {first}");
+			Assert.True(first < bodyLeft || first > bodyRight, "the body stands on the cell it mines");
+			Assert.True(System.Math.Min(System.Math.Abs(first - bodyLeft), System.Math.Abs(first - bodyRight)) <= 1, "not beside it");
+		}
+	}
 }

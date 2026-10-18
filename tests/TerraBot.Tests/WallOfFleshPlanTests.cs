@@ -307,6 +307,14 @@ public class WallOfFleshPlanTests
 		Assert.All(open.Cells, c => Assert.False(g.Grid.Get(c.X, c.Y).IsSolid(), $"{c} still there"));
 		g.Refresh(ctx);
 		ISkill s = Next(p, ctx);
+		// E62/E63: the far cells first, then the first one from a stand off it (MiningStand).
+		for (int i = 0; i < 3 && s is MineCellsSkill more; i++) {
+			Assert.True(more.Cells.All(c => c.X < more.Stand.X || c.X > more.Stand.X + 1), $"mining {string.Join(",", more.Cells)} standing on one at {more.Stand}");
+			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, more, 5000));
+			p.OnSkillFinished(more, SkillStatus.Succeeded, ctx);
+			g.Refresh(ctx);
+			s = Next(p, ctx);
+		}
 		if (s is WalkToSkill toStand) {
 			Assert.Equal(SkillStatus.Succeeded, EarlyGameTests.RunSkill(g, ctx, toStand, 3000));
 			g.Refresh(ctx);

@@ -858,7 +858,7 @@ public sealed partial class ProgressionPlanner
 		List<TilePos> landing = LandingDeck(ctx, sx, dir, row);
 		if (landing.Count > 0) // from the deck's last column that stays: every landing cell within the pickaxe's reach
 			return Do($"opening the hellbridge's deck over the lava at x {landing[0].X}-{landing[^1].X} for the doll to fall through",
-				new MineCellsSkill(landing, new TilePos(sx + dir * (LandingFrom - 1), stand)));
+				FarCellsFirst(landing, sx, dir, stand));
 		// Near the summon column: the arrows first (a bench within FarStationTiles walked to, else made here).
 		if (ctx.Node.ChebyshevTo(endStand) <= FarStationTiles + HomeArrivedTiles && ArrowsBeforeTheSummon(ctx) is ISkill arrows) {
 			// Not at the summon end itself: a bench is placed and arrows made where the body stands, and the end is a stub of deck between
@@ -890,6 +890,27 @@ public sealed partial class ProgressionPlanner
 
 	/// <summary>Columns of lava past the landing window the summon column also wants: the throw may come from a column or two off.</summary>
 	public const int ThrowSlack = 2;
+
+	/// <summary>
+	/// Where the body stands to open the landing cells (from <see cref="LandingFrom"/> past the summon column): next to the first one,
+	/// but not on it. The node is the body's left column and the body is two wide, so going east it stands one column further back.
+	/// Seen in game (world_wof E62, E63, 2026-10-18): mining the deck's last cell (x 4073) from (4072,1041), the body half on it, it went
+	/// through with the cell and fell 35 rows into the lava, twice.
+	/// </summary>
+	public static TilePos MiningStand(int sx, int dir, int stand) => new(sx + dir * (LandingFrom - 1) - (dir > 0 ? 1 : 0), stand);
+
+	/// <summary>
+	/// The landing cells opened far ones first, from beside the first cell (the body may stand on it while it is there: the far cells
+	/// are within reach from there), then the first one from <see cref="MiningStand"/>, where the body is off it.
+	/// </summary>
+	public static MineCellsSkill FarCellsFirst(List<TilePos> landing, int sx, int dir, int stand)
+	{
+		int first = sx + dir * LandingFrom;
+		var far = landing.Where(c => c.X != first).ToList();
+		return far.Count > 0
+			? new MineCellsSkill(far, new TilePos(sx + dir * (LandingFrom - 1), stand))
+			: new MineCellsSkill(landing, MiningStand(sx, dir, stand));
+	}
 
 	/// <summary>The arrows before the summon (and the bench they may need) are made at least this many columns back from the summon column.</summary>
 	public const int ArrowsBackTiles = 10; // back to the far end: on a bridge taken as it stands, "from" is only where the bot stood
