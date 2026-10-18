@@ -1345,6 +1345,8 @@ public sealed class BotBrain
 		}
 		Work = null;
 		Target = null;
+		if (Auto && LoopGuard(skill, ctx))
+			return;
 		// A boss down: its loot first, before the plan moves on, as after any fight. The Eye of Cthulhu drops 30-90 demonite
 		// ore and 20-50 unholy arrows in a Classic Corruption world (ItemDropDatabase.cs:498-500), the makings of the Demon
 		// Bow the evil boss plan wants; items on the ground are not saved with the world, so left lying they are lost.
@@ -1401,10 +1403,43 @@ public sealed class BotBrain
 	private void Begin(ISkill skill, BotContext ctx)
 	{
 		Work = skill;
+		workStartedAt = ctx.Tick;
 		skill.Start(ctx);
 		if (Auto && Nav.Decision(ctx.Tick, Errand != null ? Errand.Status : Planner.Status, Goal) is string loop)
 			ctx.Log.Warn(loop);
 	}
+
+	private long workStartedAt;
+	private string instantKey;
+	private int instantRuns;
+	/// <summary>A job that ends within this many ticks of its start ended "at once".</summary>
+	public const int InstantTicks = 2;
+	/// <summary>The same job ending at once this many times in a row is a decision loop (<see cref="LoopGuard"/>).</summary>
+	public const int MaxInstantRuns = 5;
+
+	/// <summary>
+	/// The loop guard: the same job (its key) ending at once (<see cref="InstantTicks"/>) <see cref="MaxInstantRuns"/> times in a
+	/// row means the planner and the job disagree on what is done, and every tick is a planner pass: the game stands still. Then a
+	/// rest (<see cref="BackoffTicks"/>), with an error in the log the self-test counts. Seen in game (Journey run J7, 2026-10-18,
+	/// the user: "game seems to have frozen"): "exploring for the corruption (none seen yet)" and "Travel: the corruption in view",
+	/// three times a second, each pass 330 ms. True when it rested.
+	/// </summary>
+	private bool LoopGuard(ISkill skill, BotContext ctx)
+	{
+		bool instant = ctx.Tick - workStartedAt <= InstantTicks;
+		instantRuns = instant && skill.Key == instantKey ? instantRuns + 1 : instant ? 1 : 0;
+		instantKey = skill.Key;
+		if (instantRuns < MaxInstantRuns)
+			return false;
+		instantRuns = 0;
+		LoopsCaught++;
+		ctx.Log.Error($"Loop guard: {skill.Name} ended at once {MaxInstantRuns} times in a row ({LastResult}; plan \"{Planner.Status}\"); resting {BackoffTicks} ticks");
+		backoffUntil = ctx.Tick + BackoffTicks;
+		return true;
+	}
+
+	/// <summary>Decision loops the <see cref="LoopGuard"/> broke (the self-test fails a run with any).</summary>
+	public int LoopsCaught { get; private set; }
 
 	/// <summary>Wasted movement and plan loops, logged as "Nav waste" (<see cref="NavWatch"/>).</summary>
 	public NavWatch Nav { get; } = new();

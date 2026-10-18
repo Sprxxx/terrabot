@@ -96,6 +96,9 @@ public sealed class SelfTestSystem : ModSystem
 	/// <summary>Where a resumed real-world run started (Scenario.ResumeAtCheckpoint), or null at the spawn.</summary>
 	private TilePos? resumedFrom;
 	private int deathsAtStart;
+	/// <summary>The brain's caught decision loops at the run's start, and whether the run ended on one (a FAIL, never a quiet stall).</summary>
+	private int loopsAtStart;
+	private bool loopEnded;
 	/// <summary>Ticks between heartbeat lines during a scenario (30 game seconds).</summary>
 	/// <summary>Mode "surface": ticks under water before surfacing starts (breath about 140/200, as when the brain's reflex fires).</summary>
 	public const int SurfaceAfterTicks = 420;
@@ -379,6 +382,8 @@ public sealed class SelfTestSystem : ModSystem
 				bot.HurtCount = 0;
 				bot.DamageTaken = 0;
 				deathsAtStart = bot.Context.Deaths;
+				loopsAtStart = bot.Brain.LoopsCaught;
+				loopEnded = false;
 				bot.FallDamageHits = 0;
 				bot.FallingBlockHits = 0;
 				bot.SetDig(s.Dig);
@@ -537,6 +542,11 @@ public sealed class SelfTestSystem : ModSystem
 				if (!finished && !bot.Enabled && phaseTicks > 2) {
 					Mod.Logger.Warn($"SELFTEST {s.Name}: the bot was switched off (exception); ending the scenario");
 					finished = true;
+				}
+				// A decision loop (BotBrain.LoopGuard) ends the run at once, a FAIL: the user saw the game stand still for minutes (J7).
+				if (!finished && bot.Brain.LoopsCaught > loopsAtStart) {
+					Mod.Logger.Warn($"SELFTEST {s.Name}: the loop guard caught a decision loop; ending the scenario");
+					finished = loopEnded = true;
 				}
 				if (!finished && phaseTicks < Timeout(s))
 					return;
@@ -985,6 +995,8 @@ public sealed class SelfTestSystem : ModSystem
 		string reason = null;
 		if (spawnFailed)
 			reason = "fixture could not spawn the enemies";
+		else if (loopEnded)
+			reason = "decision loop (the loop guard)";
 		else if (!finished)
 			reason = "timeout";
 		else if (result.Succeeded != s.ExpectSuccess)

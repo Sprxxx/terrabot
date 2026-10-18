@@ -2999,7 +2999,9 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			new TravelUntilSkill($"the {ctx.Ids.EvilName}", new WalkToSkill(new Core.Pathfinding.GoalNearTile(dest, TravelArrivedTiles, ctx.Physics)) { Quiet = true, Travel = true },
 				c => {
 					evilReached[side] = side < 0 ? Math.Min(evilReached[side], c.Node.X) : Math.Max(evilReached[side], c.Node.X);
-					return c.InEvilBiome(c.Node) || EvilGround(c) != null;
+					// The planner's own test (EvilGround), so the walk ends only where the planner then knows the ground: with the
+					// two apart, a walk that ended at once was started again, three times a second (J7).
+					return EvilGround(c) != null;
 				}));
 	}
 
@@ -3048,8 +3050,12 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		int originX = ctx.SpawnTile?.X ?? ctx.Node.X;
 		TilePos? best = null, seen = null;
 		int bestCount = BotContext.CorruptionZoneTiles - 1, seenCount = -1;
+		// Round the spawn, and round the bot too: a biome far off the spawn is found by walking to it, and then it is where the bot
+		// is. Seen in game (Journey run J7, 2026-10-18): the corruption at x 5521, 2320 tiles east of the spawn, the bot standing in
+		// it, and "none seen yet" three times a second (the surface walk ended at once each time, "the corruption in view").
+		foreach (int o in ctx.Node.X == originX ? new[] { originX } : new[] { originX, ctx.Node.X })
 		for (int d = 0; d <= MaxTravelTiles; d += RouteSampleTiles)
-			foreach (int x in d == 0 ? new[] { originX } : new[] { originX - d, originX + d }) {
+			foreach (int x in d == 0 ? new[] { o } : new[] { o - d, o + d }) {
 				if (SurfaceAt(ctx.Grid, x) is not TilePos c || !ctx.InEvilBiome(c) || ZoneOutNear(ctx, c))
 					continue;
 				int n = ctx.CorruptionAround(c);
