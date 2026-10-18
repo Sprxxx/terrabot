@@ -51,6 +51,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		SilverTierChainmail = WorldGen.SavedOreTiers.Silver == TileID.Tungsten ? ItemID.TungstenChainmail : ItemID.SilverChainmail,
 		SilverTierGreaves = WorldGen.SavedOreTiers.Silver == TileID.Tungsten ? ItemID.TungstenGreaves : ItemID.SilverGreaves,
 		WoodWall = ItemID.WoodWall,
+		StoneWall = ItemID.StoneWall,
 		Door = ItemID.WoodenDoor,
 		Chair = ItemID.WoodenChair,
 		Table = ItemID.WoodenTable,
@@ -225,29 +226,37 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		return wood;
 	}
 
-	public bool TreeSpot(int x, int y)
+	public bool TreeSpot(int x, int y) => TreeSpotBlocker(x, y) == null;
+
+	public string TreeSpotBlocker(int x, int y)
 	{
-		if (!WorldGen.InWorld(x, y, 20) || Main.tile[x, y].HasTile)
-			return false;
+		if (!WorldGen.InWorld(x, y, 20))
+			return "edge";
+		if (Main.tile[x, y].HasTile)
+			return "occupied";
 		Tile g = Main.tile[x, y + 1];
-		if (!g.HasTile || g.IsHalfBlock || g.Slope != SlopeType.Solid || !WorldGen.IsTileTypeFitForTree(g.TileType))
-			return false;
+		if (!g.HasTile)
+			return "no ground";
+		if (g.IsHalfBlock || g.Slope != SlopeType.Solid)
+			return "sloped ground";
+		if (!WorldGen.IsTileTypeFitForTree(g.TileType))
+			return $"soil {Lang.GetMapObjectName(Terraria.Map.MapHelper.TileToLookup(g.TileType, 0))}";
 		bool Fit(int i) => Main.tile[i, y + 1].HasTile && WorldGen.IsTileTypeFitForTree(Main.tile[i, y + 1].TileType);
 		if (!Fit(x - 1) && !Fit(x + 1))
-			return false;
+			return "no soil beside";
 		if (Main.tile[x, y].WallType != 0 && !WorldGen.DefaultTreeWallTest(Main.tile[x, y].WallType))
-			return false;
+			return "back wall";
 		for (int i = x - 1; i <= x + 1; i++)
 			if (Main.tile[i, y].LiquidAmount != 0)
-				return false;
+				return "liquid";
 		// Room for a short tree (GrowTree's height is 5 to 16 plus 4, EmptyTileCheck of x-2..x+2 over it; 10 rows open here).
 		if (!WorldGen.EmptyTileCheck(x - 2, x + 2, y - 10, y - 1, TileID.Saplings))
-			return false;
+			return "no room above";
 		for (int i = x - 2; i <= x + 2; i++)
 			for (int j = y - 1; j <= y; j++)
 				if (Main.tile[i, j].HasTile && (Main.tile[i, j].TileType == TileID.Saplings || Main.tile[i, j].TileType == TileID.Trees))
-					return false;
-		return true;
+					return "a sapling or tree beside";
+		return null;
 	}
 
 	public bool CanPlaceItem(int itemType, int x, int y)

@@ -32,7 +32,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int Wood = 9, WorkBench = 36, WoodenSword = 24, Gel = 23, Torch = 8, StoneBlock = 3, DirtBlock = 2;
 	public const int Furnace = 33, IronOre = 11, IronBar = 22, IronAnvil = 35, IronPickaxe = 1;
 	public const int LeadOre = 700, LeadBar = 704, LeadAnvil = 716, LeadPickaxe = 3497, WoodPlatform = 94, IronFence = 2333;
-	public const int WoodWall = 93, Door = 25, Chair = 34, Table = 32;
+	public const int WoodWall = 93, Door = 25, Chair = 34, Table = 32, StoneWall = 4096;
 	public const int IronBroadsword = 4, IronHelmet = 90, IronChainmail = 81, IronGreaves = 77;
 	public const int SilverOre = 14, SilverBar = 21, SilverHelmet = 92, SilverChainmail = 83, SilverGreaves = 79, TileSilver = 9;
 	public const int TileDirt = 0, TileStone = 1, TileIron = 6, TileLead = 167, TileAnvil = 16, TileFurnace = 17, TileBench = 18;
@@ -75,7 +75,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Gel = Gel, Torch = Torch, FurnaceTile = TileFurnace, AnvilTile = TileAnvil, IronTierPickaxe = IronPickaxe,
 		IronTierBroadsword = IronBroadsword, IronTierHelmet = IronHelmet, IronTierChainmail = IronChainmail, IronTierGreaves = IronGreaves,
 		SilverTierHelmet = SilverHelmet, SilverTierChainmail = SilverChainmail, SilverTierGreaves = SilverGreaves,
-		WoodWall = WoodWall, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
+		WoodWall = WoodWall, StoneWall = StoneWall, Door = Door, Chair = Chair, Table = Table, BuildingBlocks = new[] { StoneBlock, DirtBlock },
 		LifeCrystal = LifeCrystal,
 		IronTierBow = IronBow, WoodenArrow = WoodenArrow, Lens = Lens, SuspiciousEye = SuspiciousEye, DemonAltarTile = TileDemonAltar,
 		EyeBoss = EyeNpc, EyeServant = ServantNpc,
@@ -227,6 +227,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 		Add(new RecipeInfo { Result = SilverChainmail, Ingredients = new[] { new Ingredient(25, SilverBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = SilverGreaves, Ingredients = new[] { new Ingredient(20, SilverBar) }, Stations = new[] { TileAnvil } });
 		Add(new RecipeInfo { Result = WoodWall, ResultStack = 4, Ingredients = new[] { new Ingredient(1, Wood) }, Stations = new[] { TileBench } });
+		Add(new RecipeInfo { Result = StoneWall, ResultStack = 4, Ingredients = new[] { new Ingredient(1, StoneBlock) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Door, Ingredients = new[] { new Ingredient(6, Wood) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Chair, Ingredients = new[] { new Ingredient(4, Wood) }, Stations = new[] { TileBench } });
 		Add(new RecipeInfo { Result = Table, Ingredients = new[] { new Ingredient(8, Wood) }, Stations = new[] { TileBench } });
@@ -355,18 +356,18 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 	public const int TileSapling = 20;
 
 	/// <summary>Simplified WorldGen.GrowTree check: open cell on solid ground, 5 wide and 10 tall open above, no sapling within 2.</summary>
-	public bool TreeSpot(int x, int y)
+	public string TreeSpotBlocker(int x, int y)
 	{
 		if (!Free(x, y) || !Grid.Get(x, y + 1).IsSolid() || !Grid.Get(x - 1, y + 1).IsSolid() && !Grid.Get(x + 1, y + 1).IsSolid())
-			return false;
+			return "ground";
 		for (int i = x - 2; i <= x + 2; i++) {
 			for (int j = y - 10; j <= y; j++)
 				if (Grid.Get(i, j).IsSolid() || IsTreeTrunk(i, j))
-					return false;
+					return "no room above";
 			if (Furniture.TryGetValue(new TilePos(i, y), out int t) && t == TileSapling)
-				return false;
+				return "a sapling beside";
 		}
-		return true;
+		return null;
 	}
 
 	public string ItemName(int itemType) => $"item{itemType}";
@@ -591,7 +592,7 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 
 	public bool CanPlaceWall(int wallItem, int x, int y)
 	{
-		if (wallItem != WoodWall || Walls.Contains(new TilePos(x, y)) || !Grid.InBounds(x, y))
+		if (wallItem != WoodWall && wallItem != StoneWall || Walls.Contains(new TilePos(x, y)) || !Grid.InBounds(x, y))
 			return false;
 		bool Anchor(int i, int j) => Grid.Get(i, j) != CellKind.Empty || Furniture.ContainsKey(new TilePos(i, j)) || Walls.Contains(new TilePos(i, j));
 		return Anchor(x + 1, y) || Anchor(x - 1, y) || Anchor(x, y + 1) || Anchor(x, y - 1);
@@ -892,10 +893,10 @@ public sealed class FakeGame : IWorldInfo, IInventory, ICrafter, IGameKnowledge
 			swingTimer = 20;
 		}
 		if (o.Tool == ToolRequest.Item && o.UseItem && o.HasAim && !swinging && Count(o.ToolItem) > 0 && Sim.InToolRange(new TilePos(o.AimX, o.AimY))) {
-			if (o.ToolItem == WoodWall) {
-				if (CanPlaceWall(WoodWall, o.AimX, o.AimY)) {
+			if (o.ToolItem is WoodWall or StoneWall) {
+				if (CanPlaceWall(o.ToolItem, o.AimX, o.AimY)) {
 					Walls.Add(new TilePos(o.AimX, o.AimY));
-					Items[WoodWall]--;
+					Items[o.ToolItem]--;
 				}
 			}
 			else if (CanPlaceItem(o.ToolItem, o.AimX, o.AimY))

@@ -254,6 +254,30 @@ public class FightSkillTests
 		}
 	}
 
+	/// <summary>
+	/// world_wof E44/E46/E50 (2026-10-18): a retreat caught by a weak hit became a fight-back, which outbid the retreat from then
+	/// on; King Slime's hits kept it fresh down to 3/320 and death. At critical life, no potion, with a hostile the fight cannot end
+	/// soon near, the retreat outbids the fight-back.
+	/// </summary>
+	[Fact]
+	public void Retreat_CaughtWithKingSlimeNear_GoesOnRetreating()
+	{
+		var (g, ctx, brain) = Retreating();
+		TilePos n = g.Sim.Node;
+		g.ExtraHostiles.Add(new EntityInfo(70, 50, "King Slime", (n.X - 8) * 16f, (n.Y - 2) * 16f, 40, 30, 0f, 0f, 1500, 2000, 30, 15));
+		bool fought = false;
+		for (int t = 1; t <= 12; t++) {
+			g.Refresh(ctx);
+			if (t == 2)
+				ctx.NoteHit(10);
+			brain.Tick(ctx);
+			g.Step(ctx);
+			fought |= brain.Current is FightSkill;
+			output.WriteLine($"t{t}: {brain.Describe()}");
+		}
+		Assert.True(brain.Current is ShelterSkill or StayHomeSkill, brain.Describe());
+	}
+
 	[Fact]
 	public void Retreat_WalkerBesideTheHole_IsFoughtBeforeItBites()
 	{

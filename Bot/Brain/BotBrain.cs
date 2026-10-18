@@ -301,14 +301,41 @@ public sealed class BotBrain
 	/// a reflex never asks the planner nor ends an errand. Loot after a fight and the climb-out bid lowest, so any reflex replaces them.
 	/// </summary>
 	private readonly record struct Reflex(string Name, System.Func<BotContext, int> Bid, System.Func<BotContext, ISkill> Fire);
-	public const int SurfaceBid = 100, GuardianBid = 90, CaughtBid = 75, RetreatBid = 70, FightBid = 60, ClimbOutBid = 50, LootBid = 10;
+	public const int SurfaceBid = 100, GuardianBid = 90, CriticalRetreatBid = 80, CaughtBid = 75, RetreatBid = 70, FightBid = 60, ClimbOutBid = 50, LootBid = 10;
+
+	/// <summary>
+	/// Life so low that one or two more of the hardest recent hits kill (under <see cref="RetreatBelow"/>, or within
+	/// <see cref="HitsInHand"/> of the biggest recent hit) with no potion to drink: the retreat then outbids a fight-back (it is not
+	/// caught back into the fight) and is not held off by one. Seen in game (world_wof E44, E46, E50, 2026-10-18): retreating from
+	/// King Slime at 151/320 potion sick, a Blue Slime's 1-damage hit was "caught", the fight-back (75) outbid the retreat (70) from
+	/// then on, and King Slime's hits kept the hold fresh down to 3/320 and death, three runs in a row.
+	/// A weak hostile beside the bot is still fought back (it dies in a few hits; running from it only takes more bites): only one
+	/// the fight cannot end soon, more life than <see cref="LongFightHits"/> of the bot's hits, makes the flight go on.
+	/// </summary>
+	public static bool CriticalLife(BotContext ctx) =>
+		ctx.Combat.LifeMax > 0 && NoPotion(ctx)
+		&& ctx.Combat.Life <= System.Math.Max(RetreatBelow * ctx.Combat.LifeMax, HitsInHand * ctx.BiggestRecentHit)
+		&& LongFightNear(ctx);
+
+	/// <summary>Hits of the bot's weapon a hostile's life is worth before a fight with it is too long to take at critical life.</summary>
+	public const int LongFightHits = 15;
+
+	private static bool LongFightNear(BotContext ctx)
+	{
+		float cx = ctx.Body.CenterX(ctx.Physics), cy = ctx.Body.CenterY(ctx.Physics);
+		int hit = System.Math.Max(BotContext.GoodWeaponDamage, ctx.Combat.WeaponDamage);
+		foreach (EntityInfo h in ctx.Hostiles)
+			if (h.Damage > 0 && h.Life > LongFightHits * hit && h.DistanceTo(cx, cy) <= ProgressionPlanner.DangerRadiusTiles * 16f)
+				return true;
+		return false;
+	}
 	private int overrideBid;
 	private Reflex[] reflexes;
 
 	private Reflex[] Reflexes => reflexes ??= new[] {
 		new Reflex("surface", _ => SurfaceBid, SurfaceGate),
 		new Reflex("guardian", _ => GuardianBid, GuardianGate),
-		new Reflex("retreat", _ => RetreatBid, RetreatGate),
+		new Reflex("retreat", ctx => CriticalLife(ctx) ? CriticalRetreatBid : RetreatBid, RetreatGate),
 		new Reflex("fight", ctx => FightBackReason(ctx) != null ? CaughtBid : FightBid, FightGate),
 	};
 
@@ -391,7 +418,7 @@ public sealed class BotBrain
 	{
 		if (Current is BossFightSkill || Current is ShelterSkill { Retreat: true } || Current is SurfaceSkill || Current is StayHomeSkill)
 			return null;
-		if (RetreatHeldOff(ctx) || ctx.Combat.LifeMax <= 0 || ctx.Combat.LifeFraction >= RetreatThreshold(ctx) || !NoPotion(ctx) || !ProgressionPlanner.InDanger(ctx))
+		if (RetreatHeldOff(ctx) && !CriticalLife(ctx) || ctx.Combat.LifeMax <= 0 || ctx.Combat.LifeFraction >= RetreatThreshold(ctx) || !NoPotion(ctx) || !ProgressionPlanner.InDanger(ctx))
 			return null;
 		if (ctx.Combat.HasRanged && FastFlierNear(ctx))
 			return null;

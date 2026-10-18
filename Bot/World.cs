@@ -50,7 +50,10 @@ public interface IWorldInfo
 	/// no back wall but a tree-friendly one, no liquid at the trunk's foot, the space two columns each side open for a short tree,
 	/// and no sapling or trunk within <c>2</c> columns (two trees would block each other).
 	/// </summary>
-	bool TreeSpot(int x, int y) => false;
+	bool TreeSpot(int x, int y) => TreeSpotBlocker(x, y) == null;
+
+	/// <summary>Why <see cref="TreeSpot"/> is false at the cell (the first rule it fails), null when a tree would grow there.</summary>
+	string TreeSpotBlocker(int x, int y) => "unknown";
 
 	/// <summary>
 	/// The tile's frame column (vanilla Tile.TileFrameX) at the cell, or -1 when there is no tile: which style of a tile
@@ -317,6 +320,8 @@ public sealed class GameIds
 	public int SilverTierGreaves { get; init; }
 	/// <summary>Furniture and walls for a house.</summary>
 	public int WoodWall { get; init; }
+	/// <summary>Stone Wall: 4 from a Stone Block at a work bench, a house wall as Wood Wall is (Main.wallHouse[5]).</summary>
+	public int StoneWall { get; init; }
 	public int Door { get; init; }
 	public int Chair { get; init; }
 	public int Table { get; init; }

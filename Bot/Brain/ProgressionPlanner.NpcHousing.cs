@@ -262,7 +262,7 @@ public sealed partial class ProgressionPlanner
 		if (blocks > 0)
 			needs.Add(new HaveItem(ctx.Ids.BuildingBlocks, blocks + BlockMargin, "building blocks"));
 		if (walls > 0)
-			needs.Add(new HaveItem(bp.WallItem, walls, ctx.Knowledge.ItemName(bp.WallItem)));
+			needs.Add(new HaveItem(bp.WallItems, walls, ctx.Knowledge.ItemName(bp.WallItems[0])));
 		foreach (PlanItem it in bp.Items)
 			if (!BuildSkill.IsPlaced(ctx, bp, site, it))
 				needs.Add(new HaveItem(it.ItemType, 1, ctx.Knowledge.ItemName(it.ItemType)));

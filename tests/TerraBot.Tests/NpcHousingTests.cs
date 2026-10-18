@@ -243,6 +243,24 @@ public class NpcHousingTests
 		Assert.IsType<GatherWoodSkill>(next);
 	}
 
+	/// <summary>world_wof E51 (2026-10-18): 10 of 24 Wood made the room's walls, the door 4 Wood short. Stone in the bag makes them.</summary>
+	[Fact]
+	public void TheRoomsWalls_AreStone_WhenStoneIsCarried()
+	{
+		var (g, ctx, brain, house) = Settled();
+		g.Homes.Add(Living(FakeGame.GuideNpc, "Guide", house));
+		g.Items[FakeGame.Wood] = 18; // the table, chair and door; none for walls
+		g.Items[FakeGame.Gel] = 2;
+		g.Items[FakeGame.DirtBlock] = 100;
+		g.Items[FakeGame.StoneBlock] = 100; // the frame's block claim counts as stone first (claims are by the first accepted item)
+		RunUntil(g, ctx, brain, () => brain.Planner.NpcRooms.Count == 1 && brain.Current == null, 60 * 60 * 20);
+		var room = Assert.Single(brain.Planner.NpcRooms);
+		Blueprint bp = Blueprint.NpcRoom(FakeGame.Ids, room.Shared);
+		Assert.Null(g.CheckHousing(room.Origin.X + bp.Inside.X, room.Origin.Y + bp.Inside.Y));
+		Assert.Equal(0, g.Count(FakeGame.WoodWall));
+		Assert.True(g.Walls.Count > 0 && g.Count(FakeGame.StoneBlock) < 100, $"stone left {g.Count(FakeGame.StoneBlock)}");
+	}
+
 	[Fact]
 	public void TwoCanCome_AndTheHouseIsEmpty_OneRoomMore()
 	{

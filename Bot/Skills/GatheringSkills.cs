@@ -563,7 +563,15 @@ public sealed class PlantAcornsSkill : ISkill
 			current = null;
 			if (Planted > 0)
 				return Done(ctx);
-			FailureReason = "no spot round here where a tree would grow";
+			// Why, over the place skill's search box: the rules the cells fail, most common first.
+			var why = new Dictionary<string, int>();
+			for (int dx = -PlaceItemSkill.SearchX; dx <= PlaceItemSkill.SearchX; dx++)
+				for (int dy = -PlaceItemSkill.SearchY; dy <= PlaceItemSkill.SearchY; dy++) {
+					string b = ctx.World.TreeSpotBlocker(ctx.Node.X + dx, ctx.Node.Y + dy);
+					if (b != null && b != "occupied" && b != "no ground")
+						why[b] = why.GetValueOrDefault(b) + 1;
+				}
+			FailureReason = $"no spot round {ctx.Node} where a tree would grow ({string.Join(", ", why.OrderByDescending(kv => kv.Value).Take(4).Select(kv => $"{kv.Key} x{kv.Value}"))})";
 			ctx.Log.Warn($"PlantAcorns failed: {FailureReason}");
 			return SkillStatus.Failed;
 		}

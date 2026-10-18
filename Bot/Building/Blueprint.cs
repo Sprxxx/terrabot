@@ -48,6 +48,13 @@ public sealed class Blueprint
 	public TilePos OutsideStand { get; }
 	/// <summary>Wall item to put on <see cref="PlanCell.Wall"/> cells.</summary>
 	public int WallItem { get; }
+	/// <summary>
+	/// Every wall item the plan takes, the preferred first (<see cref="WallItem"/> alone unless set): an NPC room takes Stone Wall
+	/// before Wood Wall, wood being what its furniture is made of. Seen in game (world_wof E51, 2026-10-18): 10 of the 24 Wood
+	/// carried made 38 Wood Walls for a room, and its door was 4 Wood short with no tree in reach.
+	/// </summary>
+	public IReadOnlyList<int> WallItems { get => wallItems ?? new[] { WallItem }; init => wallItems = value; }
+	private readonly IReadOnlyList<int> wallItems;
 	/// <summary>A house: the build ends with the game's housing check on <see cref="Inside"/>.</summary>
 	public bool IsHouse { get; init; } = true;
 	/// <summary>Fell trees standing in the plan's open cells (else a tree rules the site out).</summary>
@@ -200,6 +207,7 @@ public sealed class Blueprint
 			outsideStand: new TilePos(shared > 0 ? -3 : NpcRoomWidth + 2, 4),
 			wallItem: ids.WoodWall) {
 			IsNpcRoom = true, SharedSide = shared,
+			WallItems = ids.StoneWall > 0 ? new[] { ids.StoneWall, ids.WoodWall } : new[] { ids.WoodWall },
 			// A tree beside the house is felled for a room there, as a player would (the bot's own house keeps away from trees).
 			ChopTrees = true,
 		};

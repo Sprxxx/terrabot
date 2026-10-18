@@ -828,16 +828,17 @@ public sealed class BuildSkill : ISkill
 		// 3. Walls behind the room.
 		List<TilePos> missingWalls = Cells(PlanCell.Wall).Where(c => !w.HasWall(c.X, c.Y)).ToList();
 		if (missingWalls.Count > 0) {
-			if (ctx.Inventory.Count(bp.WallItem) <= 0) {
+			int wallItem = bp.WallItems.FirstOrDefault(i => ctx.Inventory.Count(i) > 0, -1);
+			if (wallItem < 0) {
 				problem = $"out of walls ({missingWalls.Count} left)";
 				return null;
 			}
-			TilePos? c = missingWalls.Where(m => w.CanPlaceWall(bp.WallItem, m.X, m.Y)).OrderBy(m => Math.Abs(m.X - node.X) + Math.Abs(m.Y - node.Y)).Cast<TilePos?>().FirstOrDefault();
+			TilePos? c = missingWalls.Where(m => w.CanPlaceWall(wallItem, m.X, m.Y)).OrderBy(m => Math.Abs(m.X - node.X) + Math.Abs(m.Y - node.Y)).Cast<TilePos?>().FirstOrDefault();
 			if (c == null) {
 				problem = "walls with nothing to attach to";
 				return null;
 			}
-			return new Action(Kind.Wall, c.Value, c.Value, bp.WallItem, null, false);
+			return new Action(Kind.Wall, c.Value, c.Value, wallItem, null, false);
 		}
 
 		// 4./5. Furniture, then the door from outside.
