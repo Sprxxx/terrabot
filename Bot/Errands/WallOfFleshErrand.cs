@@ -302,6 +302,16 @@ public sealed class WallOfFleshErrand : Errand
 			}
 			upgradeAfterDeath = false;
 		}
+		// Up at the base in the fight phase with the Guide dead: his room (or the wait for him) here, before the trip down. Seen in game
+		// (world_wof E38, 2026-10-18): the room was asked for from the Underworld, a recall potion took the bot home, and the trip
+		// down began at once, the room never built; the housing stage gave up after 6 game hours and the bot waited down there.
+		if (Phase == FightPhase && !DownThere(ctx)) {
+			ISkill guide = planner.ResolveNeeds(new Need[] { new TownNpcAlive(ids.Guide, "the Guide") }, ctx, out string guideBlocked);
+			if (guide != null && guideBlocked == null) {
+				Status = $"at the base: {planner.Status}";
+				return guide;
+			}
+		}
 		// The remaining demand: a resupply only when the rest of the work is not feasible with what is carried.
 		ISkill more = planner.ResolveNeeds(RemainingDemand(ctx), ctx, out string demandBlocked);
 		if (demandBlocked != null) {
