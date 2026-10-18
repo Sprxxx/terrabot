@@ -1723,6 +1723,9 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 					new GatherWoodSkill(item, woodTarget) { Also = woods });
 			}
 			case SourceKind.Mine:
+				// The evil ore: from its boss, below (BossDropOf), not mined where it is not.
+				if (fromBag == null && BossDropOf(item, ctx.Ids) != null)
+					break;
 				// Stone is also what the bot builds with on the way: seen in game, it mined exactly 20 stone for the furnace,
 				// used one to climb out of its hole on the way back to the bench, and went down for one more, forever.
 				if (ctx.Ids.BuildingBlocks.Contains(item))
@@ -2277,7 +2280,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	public static TilePos? FindBuiltArena(BotContext ctx, Blueprint bp, TilePos around)
 	{
 		for (int x = around.X - BuiltArenaSearchTiles; x <= around.X + BuiltArenaSearchTiles; x++) {
-			if (SurfaceAt(ctx.Grid, x) is not TilePos surface)
+			if (SurfaceAt(ctx, x) is not TilePos surface)
 				continue;
 			for (int y = surface.Y - bp.Height - 4; y <= surface.Y + 4; y++) {
 				var site = new TilePos(x, y);
@@ -2565,7 +2568,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		var jungle = new int[2];
 		foreach (int dir in new[] { -1, 1 })
 			for (int dx = RouteSampleTiles; dx <= DungeonScanTiles; dx += RouteSampleTiles) {
-				if (SurfaceAt(ctx.Grid, originX + dir * dx) is not TilePos c)
+				if (SurfaceAt(ctx, originX + dir * dx) is not TilePos c)
 					continue; // nowhere to stand (off the world, or open to the bottom)
 				int x = c.X, y = c.Y + 1;
 				if (ctx.World == null || !ctx.World.IsRevealed(x, y))
@@ -2624,7 +2627,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		if (ctx.Tick - dungeonHopFailedAt < DungeonHopRetryTicks)
 			return Do($"exploring {Way(side)} for the Dungeon {why} ({because}; the walk that way failed)",
 				new ExploreSkill("the Dungeon", DungeonInView, ExploreBias.Sideways, side) { JobKey = $"Explore dungeon {side}" });
-		if (SurfaceAt(ctx.Grid, node.X + side * DungeonHopTiles) is not TilePos dest) {
+		if (SurfaceAt(ctx, node.X + side * DungeonHopTiles) is not TilePos dest) {
 			// The world's edge that way, and no Dungeon: the other way (the spec's "west" was a coin flip).
 			if (++dungeonSideFlips > 1) {
 				stuck = $"no Dungeon found either way along the surface (at {node})";
@@ -2982,7 +2985,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		TilePos node = ctx.Node;
 		int side = evilHeading;
 		int from = side < 0 ? Math.Min(node.X, evilReached.GetValueOrDefault(side, node.X)) : Math.Max(node.X, evilReached.GetValueOrDefault(side, node.X));
-		if (SurfaceAt(ctx.Grid, from + side * DungeonHopTiles) is not TilePos dest || ctx.WorldWidth > 0 && (dest.X < 300 || dest.X > ctx.WorldWidth - 300)) {
+		if (SurfaceAt(ctx, from + side * DungeonHopTiles) is not TilePos dest || ctx.WorldWidth > 0 && (dest.X < 300 || dest.X > ctx.WorldWidth - 300)) {
 			// The world's edge that way (its last 300 columns are ocean): the other way, once.
 			// Both ways walked (or no surface to walk): the exploration underground, a new heading each time, as before.
 			if (++evilEdges > 1) {
@@ -3056,7 +3059,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		foreach (int o in ctx.Node.X == originX ? new[] { originX } : new[] { originX, ctx.Node.X })
 		for (int d = 0; d <= MaxTravelTiles; d += RouteSampleTiles)
 			foreach (int x in d == 0 ? new[] { o } : new[] { o - d, o + d }) {
-				if (SurfaceAt(ctx.Grid, x) is not TilePos c || !ctx.InEvilBiome(c) || ZoneOutNear(ctx, c))
+				if (SurfaceAt(ctx, x) is not TilePos c || !ctx.InEvilBiome(c) || ZoneOutNear(ctx, c))
 					continue;
 				int n = ctx.CorruptionAround(c);
 				if (n >= EvilGroundTiles) {
@@ -3077,7 +3080,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		if (best == null && ctx.KnownEvil.Count > 0) {
 			TilePos from = ctx.SpawnTile ?? ctx.Node;
 			foreach (TilePos e in ctx.KnownEvil.All.OrderBy(e => Math.Abs(e.X - from.X)))
-				if (Math.Abs(e.X - originX) <= MaxTravelTiles && SurfaceAt(ctx.Grid, e.X) is TilePos above && !ZoneOutNear(ctx, above)) {
+				if (Math.Abs(e.X - originX) <= MaxTravelTiles && SurfaceAt(ctx, e.X) is TilePos above && !ZoneOutNear(ctx, above)) {
 					best = above;
 					break;
 				}
@@ -3097,7 +3100,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 						nearest = e;
 					break; // the nearest of its kind
 				}
-			if (nearest is TilePos found && SurfaceAt(ctx.Grid, found.X) is TilePos over && !ZoneOutNear(ctx, over)) {
+			if (nearest is TilePos found && SurfaceAt(ctx, found.X) is TilePos over && !ZoneOutNear(ctx, over)) {
 				best = over;
 				if (mappedEvilNoted != found) {
 					mappedEvilNoted = found;
@@ -3591,6 +3594,13 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	{
 		if (item <= 0)
 			return null;
+		// The evil ore too: the evil boss drops it with its scales (the Eater of Worlds 30-59 Demonite Ore, the Brain 40-90 Crimtane),
+		// where mining finds it only in the evil biome. Seen in game (Journey run J7b, 2026-10-18): "need 15 more Demonite Ore (mining
+		// to 36)" for 4 game days round x 2830-2860, the corruption 2300 tiles east, 21 ore at the end.
+		if (item == ids.DemoniteOre && ids.DemoniteOre > 0 && !ids.Crimson)
+			item = ids.ShadowScale;
+		else if (item == ids.CrimtaneOre && ids.CrimtaneOre > 0 && ids.Crimson)
+			item = ids.TissueSample;
 		if (item == ids.ShadowScale && ids.EvilBoss > 0 && !ids.Crimson)
 			return new BossDefeated(ids.EvilBoss, ids.WormFood, new[] { ids.EvilBossBody, ids.EvilBossTail }, "Eater of Worlds") { NightOnly = false, InEvilBiome = true, Again = true };
 		if (item == ids.TissueSample && ids.BrainOfCthulhu > 0 && ids.Crimson)
@@ -3743,13 +3753,13 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// floor, where the only way out goes east and up (away from the goal), and found no path, 18 game hours.
 	/// </summary>
 	/// <summary>The surface over the body's own column (<see cref="SurfaceAt"/>), else <see cref="SurfaceRow"/>: where "up to the surface" ends.</summary>
-	public static int LocalSurfaceRow(BotContext ctx) => SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos s ? s.Y : SurfaceRow(ctx);
+	public static int LocalSurfaceRow(BotContext ctx) => SurfaceAt(ctx, ctx.Node.X) is TilePos s ? s.Y : SurfaceRow(ctx);
 
 	public static int SurfaceRow(BotContext ctx)
 	{
 		int row = ctx.SurfaceY > 0 ? ctx.SurfaceY : int.MaxValue;
 		for (int dx = -SurfaceRowSpan; dx <= SurfaceRowSpan; dx += SurfaceRowStep)
-			if (SurfaceAt(ctx.Grid, ctx.Node.X + dx) is TilePos s && s.Y < row)
+			if (SurfaceAt(ctx, ctx.Node.X + dx) is TilePos s && s.Y < row)
 				row = s.Y;
 		return row == int.MaxValue ? 0 : row;
 	}
@@ -3839,7 +3849,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		// the surface the highest ground's row is above the ground here, and the "way up" was a pillar into the air, then the trip
 		// walked back down. Seen in game (Journey run J2, 2026-10-18): up the same slope toward the trees and back down, over and over.
 		int surfaceRow = LocalSurfaceRow(ctx);
-		if (surfaceRow > 0 && ctx.Node.Y > surfaceRow + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
+		if (surfaceRow > 0 && ctx.Node.Y > surfaceRow + TravelFromSurfaceRows && SurfaceAt(ctx, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
 			// Out of somewhere off limits, or under a desert's or evil biome's ground: back to the spawn instead. Seen in game
 			// (world_eye run 61): "up to the surface" from the underground desert's edge, four times, each interrupted by a
 			// fight and started again from wherever the bot was, drifted 100 tiles into the desert, where a charger killed it.
@@ -3941,7 +3951,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		for (int i = 0; i < MaxTravelTiles / TravelTiles; i++) {
 			int r = (reach - TravelTiles + i * TravelTiles) % MaxTravelTiles + TravelTiles;
 			foreach (int d in new[] { dir, -dir })
-				if ((columns == null || columns(originX + d * r)) && SurfaceAt(ctx.Grid, originX + d * r) is TilePos c && c.ChebyshevTo(ctx.Node) > ExploreSkill.MaxLegTiles && !FailedLately(c) && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
+				if ((columns == null || columns(originX + d * r)) && SurfaceAt(ctx, originX + d * r) is TilePos c && c.ChebyshevTo(ctx.Node) > ExploreSkill.MaxLegTiles && !FailedLately(c) && !ctx.OffLimits(c) && !ctx.BiomeGround(c) && !ctx.OffLimitsBelow(c) && !RouteCrossesBiome(ctx, originX, c.X))
 					return c;
 		}
 		return null;
@@ -3993,12 +4003,36 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 		bool armed = ctx.Combat.WeaponDamage >= BotContext.GoodWeaponDamage;
 		int dir = Math.Sign(toX - fromX);
 		for (int x = fromX + dir * RouteSampleTiles; dir != 0 && (toX - x) * dir > 0; x += dir * RouteSampleTiles)
-			if (SurfaceAt(ctx.Grid, x) is TilePos c && (armed ? ctx.InDangerZone(c) : ctx.BiomeGround(c) || ctx.OffLimits(c)))
+			if (SurfaceAt(ctx, x) is TilePos c && (armed ? ctx.InDangerZone(c) : ctx.BiomeGround(c) || ctx.OffLimits(c)))
 				return true;
 		return false;
 	}
 
 	/// <summary>The first spot to stand on, coming down from the sky in column <paramref name="x"/>; null if none.</summary>
+	/// <summary>
+	/// <see cref="SurfaceAt(ITileGrid, int)"/>, but never a living tree's top (its wood and leaves, <see cref="GameIds.TreeTiles"/>):
+	/// the nearest column beside it, out to <see cref="TreeSideTiles"/>, whose surface stands on the ground. Seen in game (Journey
+	/// runs J2 and J7b, 2026-10-18; the user: "it just built a stone stair to one of the big trees and walked over the tree"):
+	/// "on to new ground at (2841,357)", a living tree's canopy 57 rows above the ground, and a 20-block stair up to it.
+	/// </summary>
+	public static TilePos? SurfaceAt(BotContext ctx, int x)
+	{
+		TilePos? s = SurfaceAt(ctx.Grid, x);
+		if (s is not TilePos t || ctx.World == null || ctx.Ids.TreeTiles == null || ctx.Ids.TreeTiles.Length == 0 || !OnTree(ctx, t))
+			return s;
+		for (int d = 1; d <= TreeSideTiles; d++)
+			foreach (int cx in new[] { x - d, x + d })
+				if (SurfaceAt(ctx.Grid, cx) is TilePos c && !OnTree(ctx, c))
+					return c;
+		return s;
+	}
+
+	/// <summary>Columns either side of a living tree looked at for ground beside it (the canopies are 20-40 wide).</summary>
+	public const int TreeSideTiles = 40;
+
+	private static bool OnTree(BotContext ctx, TilePos stand) =>
+		System.Array.IndexOf(ctx.Ids.TreeTiles, ctx.World.TileTypeAt(stand.X, stand.Y + 1)) >= 0;
+
 	public static TilePos? SurfaceAt(ITileGrid g, int x)
 	{
 		TilePos? floating = null;

@@ -365,6 +365,8 @@ public sealed class GameIds
 	/// Grappling Hook 84, 100 Rope 965 and the Creative Wings 4978).
 	/// </summary>
 	public int[] RecallItems { get; init; } = System.Array.Empty<int>();
+	/// <summary>A living tree's blocks (Living Wood, Leaf Block, Living Mahogany and its leaves): not the ground (ProgressionPlanner.SurfaceAt).</summary>
+	public int[] TreeTiles { get; init; } = System.Array.Empty<int>();
 	/// <summary>
 	/// The evil-biome boss of a Corruption world (Milestone 10, docs M10_SPEC.md): the Eater of Worlds' head, body and tail
 	/// (NPC 13, 14, 15), summoned with Worm Food (30 Vile Powder + 15 Rotten Chunk at a Demon Altar, Recipe.cs:14407).

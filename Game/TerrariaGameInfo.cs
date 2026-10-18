@@ -79,6 +79,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 		HeartLantern = ItemID.HeartLantern,
 		RecallPotion = ItemID.RecallPotion,
 		RecallItems = new int[] { ItemID.MagicMirror, ItemID.IceMirror, ItemID.CellPhone },
+		TreeTiles = new int[] { TileID.LivingWood, TileID.LeafBlock, TileID.LivingMahogany, TileID.LivingMahoganyLeaves },
 		// Milestone 10 (docs M10_SPEC.md): the Eater of Worlds and the Worm Food path.
 		EvilBoss = NPCID.EaterofWorldsHead,
 		EvilBossBody = NPCID.EaterofWorldsBody,
