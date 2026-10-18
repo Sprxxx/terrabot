@@ -234,7 +234,12 @@ public sealed class WallOfFleshErrand : Errand
 				yield return new BridgeBlocks("bridge blocks") { Batch = BridgeBatch };
 				break;
 			case FightPhase:
-				yield return ProgressionPlanner.WofFightArrowsNeed(ids);
+				// Up at the base (after a death) the fight's full count, refilled under its least, with the trees and stone near
+				// home; down there nothing is gathered (the bag's makings are made into arrows at the summon column). Seen in game
+				// (E33): summoned with 456 arrows, out at 3999/8000; (E37): wood looked for in the Underworld for two game hours.
+				if (!DownThere(ctx))
+					yield return new HaveItem(Tiers(ids.WoodenArrow, ids.UnholyArrow), ProgressionPlanner.WofFightArrows, "arrows for the fight")
+						{ RefillBelow = ProgressionPlanner.WofFightArrowsMin };
 				break;
 		}
 	}

@@ -762,14 +762,9 @@ public sealed partial class ProgressionPlanner
 			return null;
 		int[] all = Tiers(arrow, ctx.Ids.UnholyArrow);
 		int have = ctx.Inventory.CountAny(all);
-		// Under the fight's least, no summon: the arrows got whatever it takes (stone mined if the bag has none). Seen in game
-		// (world_wof E33, 2026-10-18): summoned with 456 (the walk's refill line is 400, the bag's stone was spent), "out of arrows"
-		// with the Wall at 3999/8000, and the bot killed.
-		if (have < WofFightArrowsMin) {
-			ISkill get = Resolve(new HaveItem(all, WofFightArrowsMin, "arrows for the fight (none summoned with fewer)"), new Dictionary<int, int>(), 1, ctx);
-			if (get != null)
-				return get;
-		}
+		// (Below the fight's least the arrows are got at the base, after a death, with the trees near home: WallOfFleshErrand's
+		// demand. Down here only the bag's makings: E37, 2026-10-18, a gate here sent the bot gathering wood in the Underworld for
+		// two game hours.)
 		int crafts = r.Ingredients.Min(i => ctx.Inventory.CountAny(i.Accepts) / Math.Max(1, i.Stack));
 		int target = Math.Min(WofFightArrows, have + crafts * r.ResultStack);
 		if (crafts <= 0 || target <= have)
