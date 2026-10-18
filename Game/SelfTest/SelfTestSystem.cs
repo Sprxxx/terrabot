@@ -591,11 +591,37 @@ public sealed class SelfTestSystem : ModSystem
 			return;
 		var power = Terraria.GameContent.Creative.CreativePowerManager.Instance.GetPower<Terraria.GameContent.Creative.CreativePowers.FarPlacementRangePower>();
 		farReachBefore ??= power.IsEnabledForPlayer(p.whoAmI);
-		bool on = !s.NoFarReach && farReachBefore.Value;
+		// Off for every run: the user (2026-10-18) chose Journey with research and duplication only, every other power off.
+		bool on = false;
 		if (power.IsEnabledForPlayer(p.whoAmI) != on) {
 			power.SetEnabledState(p.whoAmI, on);
 			Mod.Logger.Info($"SELFTEST {s.Name}: Journey's placement-range power {(on ? "on" : "off")} (it pulls items in from 240 px farther)");
 		}
+		ClassicStrength(s);
+	}
+
+	/// <summary>Where the difficulty slider makes enemies as strong as on Classic (x1): CreativePowers.DifficultySliderPower's Click_Normal.</summary>
+	public const float ClassicSliderValue = 0.33f;
+
+	/// <summary>
+	/// A Journey world's difficulty slider set to Classic strength (x1) for the run: its default is x0.5 (DifficultySliderPower.Reset,
+	/// slider 0, Remap 0..0.33 to 0.5..1). The user (2026-10-18): Journey for the materials only, enemies as strong as before. The
+	/// slider's setter is internal (ASharedSliderPower.SetValueKeyboardForced), so it is set by reflection, as its "Normal" button
+	/// would; a test fixture, as the placement-range toggle above.
+	/// </summary>
+	private void ClassicStrength(Scenario s)
+	{
+		if (!Main.GameModeInfo.IsJourneyMode)
+			return;
+		var slider = Terraria.GameContent.Creative.CreativePowerManager.Instance.GetPower<Terraria.GameContent.Creative.CreativePowers.DifficultySliderPower>();
+		if (System.Math.Abs(slider.StrengthMultiplierToGiveNPCs - 1f) < 0.01f)
+			return;
+		var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+		var type = typeof(Terraria.GameContent.Creative.CreativePowers.ASharedSliderPower);
+		type.GetField("_sliderCurrentValueCache", flags)?.SetValue(slider, ClassicSliderValue);
+		type.GetField("_currentTargetValue", flags)?.SetValue(slider, ClassicSliderValue);
+		slider.GetType().GetMethod("UpdateInfoFromSliderValueCache", flags)?.Invoke(slider, null);
+		Mod.Logger.Info($"SELFTEST {s.Name}: Journey's difficulty slider set to Classic strength: enemies x{slider.StrengthMultiplierToGiveNPCs:0.00}");
 	}
 
 	/// <summary>
