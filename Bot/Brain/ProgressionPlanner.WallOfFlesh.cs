@@ -862,24 +862,31 @@ public sealed partial class ProgressionPlanner
 		// Near the summon column: the arrows first (a bench within FarStationTiles walked to, else made here).
 		if (ctx.Node.ChebyshevTo(endStand) <= FarStationTiles + HomeArrivedTiles && ArrowsBeforeTheSummon(ctx) is ISkill arrows)
 			return arrows;
-		// At the summon column, or a column short of it (the doll lands 3-6 columns past it from either, LandingFrom).
-		if (ctx.Node.Y != stand || Math.Abs(ctx.Node.X - endStand.X) > 1)
+		// At the summon column, or a column short of it (the doll lands 3-6 columns past it from either, LandingFrom), and only where
+		// the columns it lands in from where the body stands are lava. Seen in game (world_wof E60, 2026-10-18): thrown east from x 4073,
+		// two columns past the stand, the doll lay on the ground at x 4079 beyond the lava; the walk to pick it up left the deck and a
+		// Hellbat killed the bot under it.
+		if (ctx.Node.Y != stand || Math.Abs(ctx.Node.X - endStand.X) > 1 || !LavaBeyond(ctx, ctx.Node.X, dir, row))
 			return Do($"to the hellbridge's summon column at {endStand} to summon the {b.Label}", new WalkToSkill(new GoalStandAt(endStand, ctx.Physics)) { Quiet = true });
 		if ((ctx.Combat.LifeFraction < 1f || ctx.Combat.PotionSickTicks > 0) && ctx.Tick - lastRestEnd > MaxRestTicks)
 			return Do($"resting to full life before summoning the {b.Label} ({ctx.Combat.Life}/{ctx.Combat.LifeMax})",
 				new WaitSkill("life", c => c.Combat.LifeFraction >= 1f && c.Combat.PotionSickTicks == 0, MaxRestTicks));
 		thrownByPlan = true;
+		ctx.Log.Info($"Auto: the doll's landing columns from {ctx.Node} (first thing under the deck): {LandingScan(ctx, ctx.Node.X, dir, row)}");
 		return Do($"summoning the {b.Label}: a Guide Voodoo Doll into the lava off the hellbridge at x {sx}", WallOfFleshFight(b, ctx));
 	}
 
 	/// <summary>The column the doll is thrown from: the summon end with lava under where it lands, else the last column back toward the start with it; null with none.</summary>
-	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeBack, dir, row); // back to the far end: on a bridge taken as it stands, "from" is only where the bot stood
+	public int? SummonColumn(BotContext ctx, int dir, int row) => LastLavaColumn(ctx, bridgeTo, bridgeBack, dir, row, ThrowSlack);
+
+	/// <summary>Columns of lava past the landing window the summon column also wants: the throw may come from a column or two off.</summary>
+	public const int ThrowSlack = 2; // back to the far end: on a bridge taken as it stands, "from" is only where the bot stood
 
 	/// <summary>The last column from <paramref name="end"/> back toward <paramref name="start"/> with lava under where the doll lands past it (<see cref="LavaBeyond"/>), or null.</summary>
-	public static int? LastLavaColumn(BotContext ctx, int end, int start, int dir, int row)
+	public static int? LastLavaColumn(BotContext ctx, int end, int start, int dir, int row, int slack = 0)
 	{
 		for (int x = end; (x - start) * dir >= 0; x -= dir)
-			if (LavaBeyond(ctx, x, dir, row))
+			if (LavaBeyond(ctx, x, dir, row, slack))
 				return x;
 		return null;
 	}
@@ -908,9 +915,9 @@ public sealed partial class ProgressionPlanner
 	/// Lava the first thing under the bridge's row in every column the doll may land in (<see cref="LandingFrom"/>-<see cref="LandingTo"/>
 	/// past the end): what a player sees glowing below. The doll lies on anything else (items rest on blocks, Item.cs:50828).
 	/// </summary>
-	public static bool LavaBeyond(BotContext ctx, int endX, int dir, int row)
+	public static bool LavaBeyond(BotContext ctx, int endX, int dir, int row, int slack = 0)
 	{
-		for (int k = LandingFrom; k <= LandingTo; k++) {
+		for (int k = LandingFrom; k <= LandingTo + slack; k++) {
 			int x = endX + dir * k;
 			bool lava = false;
 			for (int y = row + 1; y <= row + LavaScanRows; y++) {
@@ -926,6 +933,25 @@ public sealed partial class ProgressionPlanner
 				return false;
 		}
 		return true;
+	}
+
+	/// <summary>Per landing column (<see cref="LandingFrom"/>-<see cref="LandingTo"/>+<see cref="ThrowSlack"/>): the first non-empty cell under the row, for the logs.</summary>
+	public static string LandingScan(BotContext ctx, int fromX, int dir, int row)
+	{
+		var parts = new List<string>();
+		for (int k = LandingFrom; k <= LandingTo + ThrowSlack; k++) {
+			int x = fromX + dir * k;
+			string what = "nothing";
+			for (int y = row + 1; y <= row + LavaScanRows; y++) {
+				CellKind c = ctx.Grid.Get(x, y);
+				if (c != CellKind.Empty) {
+					what = $"{c}@{y}";
+					break;
+				}
+			}
+			parts.Add($"{x}:{what}");
+		}
+		return string.Join(" ", parts);
 	}
 
 	/// <summary>S8: the loot where the Wall died, its brick box opened by the walk (any pickaxe breaks demonite brick): picked up, then done.</summary>

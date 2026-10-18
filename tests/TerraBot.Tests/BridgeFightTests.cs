@@ -1,5 +1,6 @@
 using System.Linq;
 using TerraBot.Bot;
+using TerraBot.Bot.Brain;
 using TerraBot.Bot.Skills;
 using TerraBot.Core.Grid;
 using TerraBot.Core.Physics;
@@ -101,5 +102,28 @@ public class BridgeFightTests
 		// Ten columns in: free to move, but not into the last three columns.
 		var (lo, hi) = ShotDodge.DeckBounds(g.Grid, n.X - 10, (n.X - 10) * 16f, w, deck);
 		Assert.True(hi <= (n.X + 2 - ShotDodge.DeckEdgeKeep) * 16f - w + 0.01f && hi > (n.X - 10) * 16f, $"{lo / 16f:0.0}..{hi / 16f:0.0}");
+	}
+
+	/// <summary>
+	/// E60: thrown from x 4073, two columns past the stand, the doll lay on ground at x 4079 past the lava, and the walk to pick it up
+	/// left the deck (a Hellbat killed the bot under it). The summon column wants lava 2 columns past the landing window too, and the
+	/// throw is made only where the columns it lands in from the body's column are lava.
+	/// </summary>
+	[Fact]
+	public void TheSummonColumn_HasLavaPastTheLandingWindow_AndAThrowFromTooFarOnIsRefused()
+	{
+		var (g, ctx) = Field();
+		int row = 20;
+		for (int x = 0; x < 60; x++)
+			for (int y = row + 1; y <= row + 6; y++)
+				g.Grid.Set(x, y, CellKind.Empty);
+		for (int x = 10; x <= 16; x++)
+			g.Grid.Set(x, row + 6, CellKind.Lava); // the lava sea under x 10-16
+		for (int x = 17; x < 30; x++)
+			g.Grid.Set(x, row + 6, CellKind.Solid); // ground past it
+		Assert.Equal(10, ProgressionPlanner.LastLavaColumn(ctx, 20, 0, 1, row)); // the old pick: lands 13-16, no margin
+		Assert.Equal(8, ProgressionPlanner.LastLavaColumn(ctx, 20, 0, 1, row, ProgressionPlanner.ThrowSlack));
+		Assert.True(ProgressionPlanner.LavaBeyond(ctx, 8, 1, row));
+		Assert.False(ProgressionPlanner.LavaBeyond(ctx, 12, 1, row)); // from two columns on: lands 15-18, onto the ground
 	}
 }

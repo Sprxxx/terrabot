@@ -163,7 +163,7 @@ public sealed class ThrowItemSkill : ISkill
 					}
 					lastSeen = (item.X, item.Y);
 					if (stillTicks >= RestTicks)
-						return Fail(ctx, $"the {What} did not reach lava: it lies at {item.Tile} ({phaseTicks} ticks after the throw)");
+						return Fail(ctx, $"the {What} did not reach lava: it lies at {item.Tile} ({phaseTicks} ticks after the throw); the grid there: {CellsAround(ctx, item.Tile)}");
 				}
 				if (phaseTicks < MaxWatchTicks)
 					return SkillStatus.Running;
@@ -183,5 +183,18 @@ public sealed class ThrowItemSkill : ISkill
 		FailureReason = reason;
 		ctx.Log.Warn($"Throw failed: {reason}");
 		return SkillStatus.Failed;
+	}
+
+	/// <summary>What the bot's grid holds in and round the cell an item came to rest in (columns -1..+1, rows -1..+2): for the logs.</summary>
+	public static string CellsAround(BotContext ctx, TerraBot.Core.Grid.TilePos t)
+	{
+		var parts = new System.Collections.Generic.List<string>();
+		for (int y = t.Y - 1; y <= t.Y + 2; y++) {
+			var row = new System.Collections.Generic.List<string>();
+			for (int x = t.X - 1; x <= t.X + 1; x++)
+				row.Add(ctx.Grid.Get(x, y).ToString());
+			parts.Add($"row {y}: {string.Join("/", row)}");
+		}
+		return string.Join("; ", parts);
 	}
 }
