@@ -458,6 +458,25 @@ public class BossPlannerTests
 		Assert.IsNotType<ExploreSkill>(t);
 	}
 
+	/// <summary>
+	/// Journey run J2 (2026-10-18): out of the middle tenth to (2841,357), just west of it, the safer side (east) took each search
+	/// back into the middle and the trip out began again, over and over. Outside the middle, the search heads away from it.
+	/// </summary>
+	[Fact]
+	public void OutOfTheMiddle_TheAltarSearch_HeadsAwayFromIt()
+	{
+		FakeGame g = ProgressionTests.Mine(width: 600, sky: 60);
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		int x = ctx.Node.X; // x 3: west of the skipped columns below
+		var area = new GenArea(0, 599, x + 20, x + 200, 0, 80);
+		Assert.True(area.HoldsColumn(x) || x < area.SkipFromX);
+		var west = new GenArea(-400, 599, x + 20, x + 200, 0, 80); // room to the west
+		Assert.Equal(-1, ProgressionPlanner.StationHeading(ctx, west));
+		var east = new GenArea(-400, 599, x - 200, x - 20, 0, 80); // the middle west of us: east
+		Assert.Equal(1, ProgressionPlanner.StationHeading(ctx, east));
+	}
+
 	[Fact]
 	public void GenArea_ColumnsAndRoom()
 	{

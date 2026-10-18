@@ -1613,11 +1613,13 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				// Aggressive Site, 6400 wide, spawn at x 3198): every exploration for a DemonAltar went over x 3050-3320 and every
 				// trip to x 3078 or 3318, all within x 2880-3520 where the "Altars" pass puts none; 354 explorations, none found.
 				GenArea? area = k.GenerationArea(s.TileType);
-				// Once each time the bot is in those columns: with no trip possible, it explores there as before.
-				if (area is GenArea ga && ga.HoldsColumn(ctx.Node.X))
+				// Once each time the bot is in those columns, and once a day at most: with no trip possible, it explores there as before.
+				// (The base is in the middle: every walk home started the same trip out again, J2.)
+				if (area is GenArea ga && ga.HoldsColumn(ctx.Node.X) && ctx.Tick - areaTripAt.GetValueOrDefault(tripKey, long.MinValue / 2) >= DayTicks)
 					areaTripTried.Remove(tripKey);
 				else if (area is GenArea gb && travelDest == null && areaTripTried.Add(tripKey)
 					&& fruitlessMines.GetValueOrDefault(tripKey) == travelledFor.GetValueOrDefault(tripKey)) {
+					areaTripAt[tripKey] = ctx.Tick;
 					ctx.Log.Info($"Auto: no {k.TileName(s.TileType)} is generated in columns {gb.SkipFromX}-{gb.SkipToX} (the world's middle tenth); travelling out of them to look");
 					NoteFruitless(tripKey);
 					stationHeading = null;
@@ -2337,7 +2339,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			// (wall)" every few seconds in 17 tiles of room, 28800 ticks, the Eye at 1927/2800 when the fight gave up.
 			if (ArenaBounds(ctx) == null && UnderTheSurface(ctx))
 				return Do($"up to the surface to summon the {b.Label} on open ground (no arena)", new WalkToSkill(
-					new Core.Pathfinding.GoalRow(SurfaceRow(ctx) + TravelFromSurfaceRows - 3, ctx.Node.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true });
+					new Core.Pathfinding.GoalRow(LocalSurfaceRow(ctx) + TravelFromSurfaceRows - 3, ctx.Node.X, ctx.Physics) { Accept = t => !ctx.OffLimits(t) }) { Quiet = true, ToSurface = true });
 			if (b.NightOnly && !ctx.IsNight)
 				return Do($"waiting for night to summon the {b.Label}", new WaitSkill("night", c => c.IsNight, NightWaitTicks));
 			// The Eye leaves at dawn: seen in game, summoned late after a long fight with demon eyes, it flew off at
@@ -3426,6 +3428,7 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	private int? stationHeading;
 	/// <summary>Station trips forced out of the columns generation puts none in, since the bot was last in columns it does.</summary>
 	private readonly HashSet<int> areaTripTried = new();
+	private readonly Dictionary<int, long> areaTripAt = new();
 	public const int MaxStationExplores = 10;
 	/// <summary>Trips to new ground for a station nothing can place (a demon altar), before the plan is stuck.</summary>
 	public const int MaxStationTrips = 6;
@@ -3679,7 +3682,10 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// at about row 285 but above the world's surface row, "up first" never came; the trip west planned from the chasm's
 	/// floor, where the only way out goes east and up (away from the goal), and found no path, 18 game hours.
 	/// </summary>
-	internal static int SurfaceRow(BotContext ctx)
+	/// <summary>The surface over the body's own column (<see cref="SurfaceAt"/>), else <see cref="SurfaceRow"/>: where "up to the surface" ends.</summary>
+	public static int LocalSurfaceRow(BotContext ctx) => SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos s ? s.Y : SurfaceRow(ctx);
+
+	public static int SurfaceRow(BotContext ctx)
 	{
 		int row = ctx.SurfaceY > 0 ? ctx.SurfaceY : int.MaxValue;
 		for (int dx = -SurfaceRowSpan; dx <= SurfaceRowSpan; dx += SurfaceRowStep)
@@ -3769,7 +3775,10 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 				new UseItemSkill(ctx.Ids.RecallPotion));
 		// Up to the surface first, then along it, as a player travels: from underground the trip went through the caverns
 		// below the depth limit and a poison spit killed the bot there (world_eye run 53).
-		int surfaceRow = SurfaceRow(ctx);
+		// The ground over the body's own column, not the highest ground round it (SurfaceRow: a hill, the house's roof): from a dip in
+		// the surface the highest ground's row is above the ground here, and the "way up" was a pillar into the air, then the trip
+		// walked back down. Seen in game (Journey run J2, 2026-10-18): up the same slope toward the trees and back down, over and over.
+		int surfaceRow = LocalSurfaceRow(ctx);
 		if (surfaceRow > 0 && ctx.Node.Y > surfaceRow + TravelFromSurfaceRows && SurfaceAt(ctx.Grid, ctx.Node.X) is TilePos up && up.Y < ctx.Node.Y) {
 			// Out of somewhere off limits, or under a desert's or evil biome's ground: back to the spawn instead. Seen in game
 			// (world_eye run 61): "up to the surface" from the underground desert's edge, four times, each interrupted by a
@@ -3889,11 +3898,17 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	/// The way to explore for a station looked for in the world: the safer side, unless the ground it is generated in runs out
 	/// that way within a few legs (the world's edge, or the middle tenth it is never put in) and there is more the other way.
 	/// </summary>
-	private static int StationHeading(BotContext ctx, GenArea? area)
+	public static int StationHeading(BotContext ctx, GenArea? area)
 	{
 		int safer = ctx.SaferSide(ctx.Node);
 		if (area is not GenArea a || !a.HoldsColumn(ctx.Node.X))
 			return safer;
+		// Away from the skipped middle, where none is generated, unless the world's edge is too near that way. Seen in game (Journey
+		// run J2, 2026-10-18): out of the middle to (2841,357), just west of it, the safer side east took each exploration back into it,
+		// and the trip out began again: "on to new ground at (2841,357)" over and over, the bot up and down the same slope.
+		int outward = ctx.Node.X < a.SkipFromX ? -1 : 1;
+		if (a.RoomFrom(ctx.Node.X, outward) >= StationRoomTiles)
+			return outward;
 		int room = a.RoomFrom(ctx.Node.X, safer), other = a.RoomFrom(ctx.Node.X, -safer);
 		return room < StationRoomTiles && other > room ? -safer : safer;
 	}

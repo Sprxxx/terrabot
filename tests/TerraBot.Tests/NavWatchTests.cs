@@ -1,3 +1,4 @@
+using TerraBot.Bot;
 using TerraBot.Bot.Brain;
 using TerraBot.Core.Grid;
 using Xunit;
@@ -66,5 +67,30 @@ public class NavWatchTests
 		output.WriteLine(loop);
 		Assert.NotNull(loop);
 		Assert.Equal(1, w.PlanLoops);
+	}
+
+	/// <summary>
+	/// Journey run J2 (2026-10-18): "up to the surface before travelling" from a dip aimed at the highest ground round the bot (a hill),
+	/// above the ground there: a pillar into the air toward the trees, then back down. The way up ends at the ground over the body.
+	/// </summary>
+	[Fact]
+	public void UpToTheSurface_FromADip_IsTheGroundHere_NotTheHillsRow()
+	{
+		// 80 wide, the ground at row 100 (SurfaceAt looks from row 40 down), the body at x 3.
+		var rows = new string[110];
+		for (int y = 0; y < rows.Length; y++)
+			rows[y] = new string(y <= 100 ? '.' : '#', 80);
+		rows[100] = "...S" + new string('.', 76);
+		FakeGame g = new FakeGame(rows);
+		BotContext ctx = g.CreateContext(output);
+		g.Refresh(ctx);
+		TilePos n = ctx.Node;
+		for (int x = n.X + 4; x <= n.X + 14; x++)
+			for (int y = 80; y <= 100; y++)
+				g.Grid.Set(x, y, TerraBot.Core.Grid.CellKind.Solid); // a hill 20 rows high beside the dip
+		g.Refresh(ctx);
+		output.WriteLine($"surface row {ProgressionPlanner.SurfaceRow(ctx)}, here {ProgressionPlanner.LocalSurfaceRow(ctx)}, body {n}");
+		Assert.True(ProgressionPlanner.SurfaceRow(ctx) < n.Y - 15, "the hill reads as the surface round here");
+		Assert.Equal(n.Y, ProgressionPlanner.LocalSurfaceRow(ctx));
 	}
 }
