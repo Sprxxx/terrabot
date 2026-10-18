@@ -38,6 +38,29 @@ public sealed class ShotDodge
 	/// The columns of floor (a block or a platform under the feet row) that run on unbroken from the body's two columns at
 	/// <paramref name="nodeX"/>, inside the deck and its slack: where a dodge may go.
 	/// </summary>
+	/// <summary>Columns kept free at each end of the floor a dodge runs on.</summary>
+	public const int DeckEdgeKeep = 3;
+
+	/// <summary>
+	/// The body's left edge (px) a dodge on the deck may move between: over the floor that is there (<see cref="FloorSpan"/>), inside
+	/// the deck, and not into the floor's last <see cref="DeckEdgeKeep"/> columns: a dodge's jump carries on past where its plan ends.
+	/// Already in those columns: stay or go inward, never outward. Seen in game (world_wof E59, 2026-10-18): "dodge right + jump 15" from
+	/// (4074,1041), the deck's end at 4073, a 25-row fall beside lava and death. (E28: a dodge onto the doll's opened columns.)
+	/// </summary>
+	public static (float MinX, float MaxX) DeckBounds(ITileGrid grid, int nodeX, float bodyX, float width, (int MinX, int MaxX, int StandY) deck)
+	{
+		var (l, r) = FloorSpan(grid, nodeX, deck);
+		float minX = Math.Max(deck.MinX * 16f, (l + DeckEdgeKeep) * 16f);
+		float maxX = Math.Min((deck.MaxX + 1) * 16f - width, (r + 1 - DeckEdgeKeep) * 16f - width);
+		if (bodyX > maxX)
+			maxX = bodyX;
+		if (bodyX < minX)
+			minX = bodyX;
+		if (maxX < minX)
+			maxX = minX = bodyX;
+		return (minX, maxX);
+	}
+
 	public static (int Left, int Right) FloorSpan(ITileGrid grid, int nodeX, (int MinX, int MaxX, int StandY) deck)
 	{
 		int floor = deck.StandY + 1, l = nodeX, r = nodeX + 1;
@@ -73,11 +96,7 @@ public sealed class ShotDodge
 			// columns opened for the Guide Voodoo Doll to fall through at the summon column), and a dodge plan does not see the fall
 			// it ends in within its horizon. Seen in game (world_wof E28, 2026-10-18): a dodge right at the summon end stepped onto the
 			// opened columns, a 35-row fall into lava.
-			var (l, r) = FloorSpan(ctx.Grid, ctx.Node.X, (x0, x1, standY));
-			minX = Math.Max(x0 * 16f, l * 16f);
-			maxX = Math.Min((x1 + 1) * 16f - p.Width, (r + 1) * 16f - p.Width);
-			if (maxX < minX)
-				maxX = minX = ctx.Body.X;
+			(minX, maxX) = DeckBounds(ctx.Grid, ctx.Node.X, ctx.Body.X, p.Width, (x0, x1, standY));
 			maxBottom = (standY + 2) * 16f;
 		}
 		else {

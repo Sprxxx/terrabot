@@ -222,10 +222,53 @@ public sealed class FightSkill : ISkill
 
 	public SkillStatus Tick(BotContext ctx)
 	{
+		if (ctx.BodyIssue == null && OutOfLava(ctx))
+			return SkillStatus.Running;
 		SkillStatus s = Fight(ctx);
 		if (s == SkillStatus.Running && ctx.BodyIssue == null)
 			DodgeThreats(ctx);
 		return s;
+	}
+
+	/// <summary>Columns each side searched for a way out of lava.</summary>
+	public const int LavaExitTiles = 10;
+
+	/// <summary>
+	/// In lava, stepping out comes before the fight: toward the nearer column within <see cref="LavaExitTiles"/> whose body cells hold no
+	/// lava, jumping (lava slows a walk; a jump carries the body up its edge), the heal kept. Seen in game (world_wof E59, 2026-10-18):
+	/// under the bridge's end in lava, "Hurt 22 (other 2)" four times in a row while the fight shot a Lava Slime and stood "waiting for
+	/// it in the open", dead at 1/240.
+	/// </summary>
+	public bool OutOfLava(BotContext ctx)
+	{
+		TilePos n = ctx.Node;
+		if (!BodyInLava(ctx.Grid, n.X, n.Y))
+			return false;
+		int dir = 0;
+		for (int d = 1; d <= LavaExitTiles && dir == 0; d++) {
+			if (!BodyInLava(ctx.Grid, n.X + d, n.Y) && !ctx.Grid.Get(n.X + d, n.Y).IsSolid())
+				dir = 1;
+			else if (!BodyInLava(ctx.Grid, n.X - d, n.Y) && !ctx.Grid.Get(n.X - d, n.Y).IsSolid())
+				dir = -1;
+		}
+		ctx.Output = MoveInput.None;
+		ctx.Output.Horizontal = dir != 0 ? dir : ctx.Combat.Facing;
+		ctx.Output.Jump = true;
+		if (State != "out of the lava")
+			ctx.Log.Info($"Fight: in lava at {n}; out first ({(dir > 0 ? "right" : dir < 0 ? "left" : "no dry column near, jumping")})");
+		State = "out of the lava";
+		Heal(ctx);
+		return true;
+	}
+
+	/// <summary>Lava in any of the body's cells (2 columns, 3 rows up from the feet node).</summary>
+	public static bool BodyInLava(Core.Grid.ITileGrid g, int x, int y)
+	{
+		for (int i = x; i <= x + 1; i++)
+			for (int j = y - 2; j <= y; j++)
+				if (g.Get(i, j).HasLava())
+					return true;
+		return false;
 	}
 
 	private SkillStatus Fight(BotContext ctx)
@@ -316,7 +359,11 @@ public sealed class FightSkill : ISkill
 
 		bool comes = ComesAtUs(t);
 		turnOnly = false;
-		if (!inReach && UseRanged(ctx, t, cx, cy)) {
+		// A flier in reach is shot too when a bow and arrows are carried: a bat's erratic flight makes a glove's swings miss while each
+		// pass hits back. Seen in game (world_wof E59, 2026-10-18): Hellbats and a Demon swung at from 1.2-1.9 tiles, hits of 20-31
+		// about each second, "kills 0" in every fight that ended in death, 664 arrows carried.
+		bool flierInReach = inReach && FlyingAiStyles.Contains(t.AiStyle);
+		if ((!inReach || flierInReach) && UseRanged(ctx, t, cx, cy)) {
 			Shoot(ctx, t, cx, cy);
 			if (comes)
 				KeepOffEdge(ctx);
