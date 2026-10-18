@@ -269,9 +269,14 @@ public sealed partial class ProgressionPlanner
 			wallItems = new[] { ctx.Ids.StoneWall };
 		if (walls > 0)
 			needs.Add(new HaveItem(wallItems, walls, ctx.Knowledge.ItemName(wallItems[0])));
+		// The plain Wood carried short of what the plain pieces take: the pieces with a choice made without it leave the plain one
+		// out, so the Wood goes to those only Wood makes (a Glass Chair, the Wood to the door).
+		var missing = bp.Items.Where(it => !BuildSkill.IsPlaced(ctx, bp, site, it) && BuildSkill.CarriedFor(ctx, it) < 0).ToList();
+		int woodWanted = missing.Sum(it => PlainWoodFor(it.ItemType, ctx));
+		bool woodShort = woodWanted > ctx.Inventory.Count(ctx.Ids.Wood);
 		foreach (PlanItem it in bp.Items)
 			if (!BuildSkill.IsPlaced(ctx, bp, site, it))
-				needs.Add(new HaveItem(FurnitureChoices(it.ItemType, ctx), 1, ctx.Knowledge.ItemName(it.ItemType)));
+				needs.Add(new HaveItem(FurnitureChoices(it.ItemType, ctx, woodShort), 1, ctx.Knowledge.ItemName(it.ItemType)));
 		foreach (Need n in needs) {
 			ISkill sub = Resolve(n, claims, depth + 1, ctx);
 			if (sub != null || stuck != null)
@@ -286,7 +291,7 @@ public sealed partial class ProgressionPlanner
 	/// check counts the tile (TileID.Sets.RoomNeeds), not the item. Seen in game (world_wof E53, 2026-10-18): room 2's Wooden Chair 4
 	/// Wood short with no Wood tree in reach for days, while the trees in sight gave Ebonwood.
 	/// </summary>
-	private static IReadOnlyList<int> FurnitureChoices(int item, BotContext ctx)
+	private IReadOnlyList<int> FurnitureChoices(int item, BotContext ctx, bool woodShort = false)
 	{
 		IGameKnowledge k = ctx.Knowledge;
 		int tile = k.TilePlacedBy(item);
@@ -299,8 +304,11 @@ public sealed partial class ProgressionPlanner
 		foreach (int other in k.ItemsPlacing(tile)) {
 			if (other == item || fromBag.Count + rest.Count + 1 >= MaxFurnitureChoices || ctx.World.Footprint(other) != size)
 				continue;
+			// Made from the bag through crafts too (a Glass Chair: Glass from carried Sand at a furnace, at a Glass Kiln of Iron Bars from
+			// carried ore): no wood at all. Seen in game (world_wof E57, 2026-10-18): every wood searched for in vain, 168 Sand carried.
 			if (ctx.Inventory.Count(other) > 0 || k.RecipesFor(other).Any(r => r.Ingredients.Count > 0
-				&& r.Ingredients.All(ing => !ing.Accepts.Contains(ctx.Ids.Wood) && ctx.Inventory.CountAny(ing.Accepts) >= ing.Stack)))
+				&& r.Ingredients.All(ing => !ing.Accepts.Contains(ctx.Ids.Wood) && ctx.Inventory.CountAny(ing.Accepts) >= ing.Stack))
+				|| MakeableFromBag(other, 1, ctx, new Dictionary<int, int>(), 0) && !UsesPlainWood(other, ctx))
 				fromBag.Add(other);
 			else if (k.RecipesFor(other).Any(r => r.Ingredients.Count > 0 && r.Ingredients.All(ing =>
 				ing.Accepts.Any(a => k.SourceOf(a).Kind == SourceKind.Tree) || ctx.Inventory.CountAny(ing.Accepts) >= ing.Stack)))
@@ -317,8 +325,27 @@ public sealed partial class ProgressionPlanner
 			rest = rest.Where(o => !grown.Contains(o)).ToList();
 			fromBag.AddRange(grown);
 		}
+		if (woodShort && fromBag.Count > 0 && PlainWoodFor(item, ctx) > 0)
+			return fromBag.Concat(rest).ToList();
 		return fromBag.Append(item).Concat(rest).ToList();
 	}
+
+	/// <summary>The plain Wood the item's cheapest Wood recipe takes (0: none takes it, or the item is carried).</summary>
+	private static int PlainWoodFor(int item, BotContext ctx)
+	{
+		if (ctx.Inventory.Count(item) > 0)
+			return 0;
+		int best = 0;
+		foreach (RecipeInfo r in ctx.Knowledge.RecipesFor(item))
+			foreach (Ingredient ing in r.Ingredients)
+				if (ing.Accepts.Contains(ctx.Ids.Wood) && (best == 0 || ing.Stack < best))
+					best = ing.Stack;
+		return best;
+	}
+
+	/// <summary>Does any recipe of the item take plain Wood (directly)?</summary>
+	private static bool UsesPlainWood(int item, BotContext ctx) =>
+		ctx.Knowledge.RecipesFor(item).All(r => r.Ingredients.Any(ing => ing.Accepts.Contains(ctx.Ids.Wood)));
 
 	/// <summary>At most this many items are weighed for one piece of furniture (the plain one and the other woods').</summary>
 	public const int MaxFurnitureChoices = 8;

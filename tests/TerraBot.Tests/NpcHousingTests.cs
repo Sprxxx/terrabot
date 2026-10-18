@@ -319,6 +319,29 @@ public class NpcHousingTests
 		Assert.Equal(FakeGame.Ebonwood, ((GatherWoodSkill)next).ItemType);
 	}
 
+	/// <summary>world_wof E57 (2026-10-18): every wood searched for in vain, 168 Sand carried: the chair is glass (Sand to Glass at a furnace).</summary>
+	[Fact]
+	public void NoWoodAnywhere_TheChairIsGlass_FromCarriedSand()
+	{
+		var (g, ctx, brain, house) = Settled();
+		g.Homes.Add(Living(FakeGame.GuideNpc, "Guide", house));
+		var furnace = new TilePos(house.X + 6, house.Y + 4);
+		g.Stations[FakeGame.TileFurnace] = furnace;
+		g.Furniture[furnace] = FakeGame.TileFurnace;
+		for (int i = 0; i < 20; i++)
+			g.Refresh(ctx);
+		g.Items[FakeGame.Wood] = 14; // the table and the door
+		g.Items[FakeGame.SandBlock] = 10;
+		g.Items[FakeGame.Gel] = 2;
+		g.Items[FakeGame.DirtBlock] = 100;
+		g.Items[FakeGame.StoneBlock] = 100;
+		RunUntil(g, ctx, brain, () => brain.Planner.NpcRooms.Count == 1 && brain.Current == null, 60 * 60 * 20);
+		var room = Assert.Single(brain.Planner.NpcRooms);
+		Blueprint bp = Blueprint.NpcRoom(FakeGame.Ids, room.Shared);
+		Assert.Null(g.CheckHousing(room.Origin.X + bp.Inside.X, room.Origin.Y + bp.Inside.Y));
+		Assert.True(g.Count(FakeGame.SandBlock) <= 2, $"sand left {g.Count(FakeGame.SandBlock)}");
+	}
+
 	[Fact]
 	public void TwoCanCome_AndTheHouseIsEmpty_OneRoomMore()
 	{
