@@ -870,6 +870,7 @@ public sealed class TerrariaGameInfo : IWorldInfo, IInventory, ICrafter, IGameKn
 	{
 		if (!WorldGen.InWorld(x, y, 10))
 			return "outside the world";
+		TownSpawnWatch.Note(x, y);
 		if (!WorldGen.StartRoomCheck(x, y))
 			return $"room: {WorldGen.roomCheckFailureReason}";
 		if (!WorldGen.RoomNeeds(NPCID.Guide)) {
