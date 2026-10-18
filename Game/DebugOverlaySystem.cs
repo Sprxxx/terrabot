@@ -121,6 +121,7 @@ public sealed class DebugOverlaySystem : ModSystem
 		}
 
 		Line(sb, $"TerraBot ON   {keys}", x, ref y, Color.LightGreen);
+		GoalBox(sb, bot.Brain.Goal, x, ref y);
 		Line(sb, bot.Brain.Describe(), x, ref y, Color.White);
 		if (bot.Brain.Current is WalkToSkill w) {
 			if (w.Executor?.Current is PathStep cur)
@@ -132,6 +133,20 @@ public sealed class DebugOverlaySystem : ModSystem
 		TilePos node = Body.NodeOf(bot.Player.position.X, bot.Player.position.Y, bot.LivePhysics);
 		Line(sb, $"tile {bot.FeetTile()} node {node} vel ({bot.Player.velocity.X:0.00},{bot.Player.velocity.Y:0.00}) input {bot.LastOutput}"
 			+ (bot.TraceTicksLeft > 0 ? $"  TRACE {bot.TraceTicksLeft / 60}s" : ""), x, ref y, Color.LightGray);
+	}
+
+	/// <summary>The long-term goal in a box (the user, 2026-10-18), above the fast-changing status line.</summary>
+	private static void GoalBox(SpriteBatch sb, string goal, float x, ref float y)
+	{
+		if (string.IsNullOrEmpty(goal))
+			return;
+		string text = $"Goal: {goal}";
+		const float scale = 1f;
+		Vector2 size = Terraria.GameContent.FontAssets.MouseText.Value.MeasureString(text) * scale;
+		var box = new Rectangle((int)(x - size.X / 2f - 12f), (int)y, (int)(size.X + 24f), (int)(size.Y + 10f));
+		Utils.DrawInvBG(sb, box, new Color(23, 25, 81, 200));
+		Utils.DrawBorderString(sb, text, new Vector2(x, y + 6f), Color.Gold, scale, 0.5f, 0f);
+		y += box.Height + 6f;
 	}
 
 	private static void Line(SpriteBatch sb, string text, float x, ref float y, Color color)

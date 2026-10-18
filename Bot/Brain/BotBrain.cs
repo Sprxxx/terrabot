@@ -1365,6 +1365,36 @@ public sealed class BotBrain
 		skill.Start(ctx);
 	}
 
+	/// <summary>
+	/// The long-term goal for the overlay (the user, 2026-10-18): the errand that owns the bot and its phase ("Wall of Flesh: fight"),
+	/// else the plan's stage being worked on (<see cref="ProgressionPlanner.Goal"/>). It changes when the work does, not each pass.
+	/// </summary>
+	public string Goal
+	{
+		get {
+			if (!Auto)
+				return "";
+			if (Errand != null)
+				return $"{ErrandName(Errand.Id)}: {Errand.Phase}";
+			return Planner.Complete ? $"done: {Planner.Status}" : Planner.Goal;
+		}
+	}
+
+	/// <summary>"boss:WallOfFlesh" as "Wall of Flesh", "access:underworld" as "Underworld access".</summary>
+	public static string ErrandName(string id)
+	{
+		int colon = id.IndexOf(':');
+		string kind = colon > 0 ? id[..colon] : "", what = colon > 0 ? id[(colon + 1)..] : id;
+		var sb = new System.Text.StringBuilder();
+		for (int i = 0; i < what.Length; i++) {
+			if (i > 0 && char.IsUpper(what[i]) && !char.IsUpper(what[i - 1]))
+				sb.Append(' ');
+			sb.Append(i == 0 ? char.ToUpperInvariant(what[i]) : what[i]);
+		}
+		string name = sb.ToString().Replace(" Of ", " of ");
+		return kind == "boss" || kind == "" ? name : $"{name} {kind}";
+	}
+
 	public string Describe() =>
 		Falls.Active ? (Auto ? "auto: " : "") + "fall: " + Falls.State + (Current != null ? " (" + Current.Describe() + ")" : "")
 		: Current != null ? (Auto ? "auto: " : "") + (Errand != null && Override == null ? Errand.Id + " > " : "") + Current.Describe()

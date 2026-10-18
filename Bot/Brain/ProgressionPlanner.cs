@@ -364,6 +364,11 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 	public enum Schedulers { Restart, Operation, Errands }
 	public Schedulers Scheduler { get; set; } = Schedulers.Errands;
 	public string Status { get; private set; } = "";
+	/// <summary>
+	/// The stage of the plan being worked on (its label), for the overlay's goal box: the user (2026-10-18) wanted the long-term goal
+	/// shown beside the fast-changing status. Set only by the stage pass, so a chest, a crystal or a fight on the way does not change it.
+	/// </summary>
+	public string Goal { get; private set; } = "";
 	public bool Complete { get; private set; }
 	/// <summary>Set when a stage cannot be resolved (no recipe, nothing places the station...).</summary>
 	public bool Stuck => stuck != null;
@@ -1320,12 +1325,14 @@ public sealed partial class ProgressionPlanner : Errands.IErrandSupport
 			}
 			// The stage's errand (Schedulers.Errands): the brain runs it in place of the plan from here.
 			if (Proposed != null) {
+				Goal = stage.Label;
 				Status = $"{stage.Label}: the errand {Proposed.Id}";
 				Complete = false;
 				return null;
 			}
 			if (skill == null)
 				continue;
+			Goal = stage.Label;
 			if (nightOnlyByDay && DayWorkBeforeTheNight(stages, i + 1, ctx) is ISkill day) {
 				DayWorkBeforeNight = true;
 				return AtNight(day, ctx);
