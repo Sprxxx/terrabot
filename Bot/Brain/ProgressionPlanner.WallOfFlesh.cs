@@ -456,6 +456,9 @@ public sealed partial class ProgressionPlanner
 	}
 
 	/// <summary>S2: a town NPC alive (the Guide): else wait for him; he moves back in by day (Main.cs:82805-82818, 83255-83260).</summary>
+	/// <summary>Farther than this from the spawn (tiles), a room for a dead town NPC is gone home for first.</summary>
+	public const int HomeForRoomTiles = 80;
+
 	private ISkill ResolveTownNpc(TownNpcAlive need, BotContext ctx)
 	{
 		if (need.Npc <= 0 || ctx.World == null || ctx.World.TownNpcAlive(need.Npc))
@@ -463,6 +466,16 @@ public sealed partial class ProgressionPlanner
 		// The game moves a town NPC in only where a valid room is free (WorldGen.SpawnTownNPC). With none (a homeless NPC took the dead
 		// one's room) the wait never ends: a room first. Seen in game (world_wof E32, 2026-10-18): "waiting for the Guide" for over two
 		// game days, the Nurse and the Zoologist homeless before the summon took him.
+		// A room wanted and the bot far from home (the Underworld): home first, the room is built there (its wood, its stations).
+		// Seen in game (world_wof E39, 2026-10-18): asked from the bridge's east end with no recall potion, the room's wood was
+		// gathered from there, a climb to row 372 at x 4111 and "no way up to the surface"; the housing stage gave up for a day.
+		bool roomWanted = HouseSite == null || Survey(ctx).Empty == 0;
+		if (roomWanted && ctx.SpawnTile is TilePos spawn && ctx.Node.ChebyshevTo(spawn) > HomeForRoomTiles) {
+			if (ctx.Ids.RecallPotion > 0 && ctx.Inventory.Count(ctx.Ids.RecallPotion) > 0)
+				return Do($"{need.Label} not alive and no free room: a recall potion home to build one", new UseItemSkill(ctx.Ids.RecallPotion));
+			return Do($"{need.Label} not alive and no free room: home to build one ({ctx.Node.ChebyshevTo(spawn)} tiles away)",
+				new WalkToSkill(new GoalNearTile(spawn, HomeArrivedTiles, ctx.Physics)) { ToSurface = true });
+		}
 		// The house first if the planner does not know it (a run resumed down there: the house stage never ran): found as it stands.
 		if (HouseSite == null && Resolve(new HouseBuilt("house"), new Dictionary<int, int>(), 1, ctx) is ISkill house) {
 			Status = $"{need.Label} not alive: the house first, for a room he can move into; {Status}";
